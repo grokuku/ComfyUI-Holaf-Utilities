@@ -1,0 +1,13 @@
+# === Holaf Terminal Dependencies ===
+#
+# This file lists external Python packages required by the Holaf Terminal node.
+# To install, run the following command in your ComfyUI's Python environment:
+# pip install -r requirements.txt
+
+# Tornado is required for creating custom WebSocket and HTTP handlers within ComfyUI.
+tornado
+
+# pywinpty provides a PTY-like interface for Windows, enabling full terminal
+# functionality (resizing, colors, echo) by using the ConPTY API.
+# It is only used on Windows.
+pywinpty; sys_platform == 'win32'

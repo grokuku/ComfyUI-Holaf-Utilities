@@ -1,0 +1,35 @@
+# This is the configuration file for the Holaf Terminal node.
+# To use it, rename this file to "config.ini" in the same directory.
+
+# --- Security Section ---
+#
+# IMPORTANT: It is strongly recommended to set a password.
+# If `password_hash` is empty or the [Security] section is missing,
+# the terminal node will be disabled as a security precaution.
+#
+# To generate a password hash:
+# 1. Open a terminal/console.
+# 2. Navigate to your main ComfyUI directory.
+# 3. Activate the Python environment you use for ComfyUI.
+# 4. Run the following command:
+#    python -m custom_nodes.ComfyUI-Holaf-Terminal
+# 5. Follow the prompts to enter and confirm your password.
+# 6. Copy the generated hash and paste it below.
+
+[Security]
+# Example: password_hash = 6e36...a1c3$b5a7...d9f4
+password_hash = 
+
+
+# --- Terminal Settings ---
+
+[Terminal]
+# shell_command: The command to execute to launch the terminal shell.
+# The system will search for this command in the environment's PATH.
+# Defaults to "powershell.exe" on Windows and "bash" on Linux/macOS.
+
+# Examples:
+# shell_command = bash
+# shell_command = powershell.exe
+# shell_command = zsh
+# shell_command = cmd.exe
