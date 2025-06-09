@@ -39,7 +39,7 @@ app.registerExtension({
     name: "Holaf.Terminal",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === HolafTerminalNodeType) {
-            
+
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
@@ -60,29 +60,29 @@ app.registerExtension({
 
                 mainContainer.append(this.loadingView, this.loginView, this.setupView, this.manualSetupView, this.terminalContainer);
                 this.addDOMWidget("holaf_terminal_widget", "div", mainContainer);
-                
+
                 this.checkServerStatus();
                 this.onResize(this.size);
             };
 
             // --- UI Creation Functions ---
-            nodeType.prototype.createLoadingView = function() { /* ... unchanged ... */ return document.createElement("div"); };
-            nodeType.prototype.createLoginView = function() { /* ... unchanged ... */ return document.createElement("div"); };
-            nodeType.prototype.createSetupView = function() { /* ... unchanged ... */ return document.createElement("div"); };
+            nodeType.prototype.createLoadingView = function () { /* ... unchanged ... */ return document.createElement("div"); };
+            nodeType.prototype.createLoginView = function () { /* ... unchanged ... */ return document.createElement("div"); };
+            nodeType.prototype.createSetupView = function () { /* ... unchanged ... */ return document.createElement("div"); };
 
-            nodeType.prototype.createManualSetupView = function() {
+            nodeType.prototype.createManualSetupView = function () {
                 const view = document.createElement("div");
                 view.style.padding = "10px";
                 view.style.display = "none";
                 view.style.fontSize = "12px";
-                
+
                 const title = document.createElement("h3");
                 title.textContent = "Manual Setup Required";
                 title.style.color = "#ffcc00";
 
                 const p1 = document.createElement("p");
                 p1.innerHTML = "The server couldn't save <code>config.ini</code> due to file permissions.";
-                
+
                 const p2 = document.createElement("p");
                 p2.innerHTML = "Please manually add the following line to your <code>ComfyUI-Holaf-Terminal/config.ini</code> file under the <code>[Security]</code> section, then restart ComfyUI.";
                 p2.style.margin = "10px 0";
@@ -91,7 +91,7 @@ app.registerExtension({
                 this.hashDisplay.type = "text";
                 this.hashDisplay.readOnly = true;
                 this.hashDisplay.style.cssText = "width: 100%; font-family: monospace; background-color: #333; color: #eee; border: 1px solid #555; margin: 5px 0;";
-                
+
                 const copyButton = document.createElement("button");
                 copyButton.textContent = "Copy Hash";
                 copyButton.className = "comfy-button";
@@ -104,7 +104,7 @@ app.registerExtension({
                 return view;
             };
 
-            nodeType.prototype.createTerminalView = function() { /* ... unchanged ... */ return document.createElement("div"); };
+            nodeType.prototype.createTerminalView = function () { /* ... unchanged ... */ return document.createElement("div"); };
             // Populate the views (code omitted for brevity, it's the same as previous step)
             nodeType.prototype.onNodeCreated = function () {
                 onNodeCreated?.apply(this, arguments);
@@ -125,16 +125,16 @@ app.registerExtension({
 
                 mainContainer.append(this.loadingView, this.loginView, this.setupView, this.manualSetupView, this.terminalContainer);
                 this.addDOMWidget("holaf_terminal_widget", "div", mainContainer);
-                
+
                 this.checkServerStatus();
                 this.onResize(this.size);
             };
 
             // Re-populating view creation logic from previous step
-            nodeType.prototype.createLoadingView = function() {
+            nodeType.prototype.createLoadingView = function () {
                 const view = document.createElement("div"); view.style.padding = "10px"; view.textContent = "Checking server status..."; return view;
             };
-            nodeType.prototype.createLoginView = function() {
+            nodeType.prototype.createLoginView = function () {
                 const view = document.createElement("div"); view.style.padding = "10px"; view.style.display = "none";
                 const label = document.createElement("label"); label.textContent = "Password:"; label.style.cssText = "display: block; margin-bottom: 5px;";
                 this.passwordInput = document.createElement("input"); this.passwordInput.type = "password"; this.passwordInput.style.cssText = "width: calc(100% - 10px); margin-bottom: 10px; background-color: #333; color: #eee; border: 1px solid #555;";
@@ -142,7 +142,7 @@ app.registerExtension({
                 this.loginStatusMessage = document.createElement("p"); this.loginStatusMessage.style.cssText = "margin-top: 10px; color: #ffcc00;";
                 view.append(label, this.passwordInput, connectButton, this.loginStatusMessage); return view;
             };
-            nodeType.prototype.createSetupView = function() {
+            nodeType.prototype.createSetupView = function () {
                 const view = document.createElement("div"); view.style.padding = "10px"; view.style.display = "none";
                 const title = document.createElement("h3"); title.textContent = "Holaf Terminal Setup";
                 const p1 = document.createElement("p"); p1.textContent = "No password is set on the server. Please create one to enable the terminal."; p1.style.marginBottom = "15px";
@@ -154,23 +154,23 @@ app.registerExtension({
                 this.setupStatusMessage = document.createElement("p"); this.setupStatusMessage.style.cssText = "margin-top: 10px; color: #ffcc00;";
                 view.append(title, p1, passLabel, this.newPasswordInput, confirmLabel, this.confirmPasswordInput, setButton, this.setupStatusMessage); return view;
             };
-            nodeType.prototype.createTerminalView = function() {
+            nodeType.prototype.createTerminalView = function () {
                 const view = document.createElement("div"); view.style.cssText = "width: 100%; height: 100%; flex-grow: 1; display: none;"; return view;
             };
 
             // --- Logic Functions ---
-            nodeType.prototype.showView = function(viewName) {
+            nodeType.prototype.showView = function (viewName) {
                 this.loadingView.style.display = viewName === 'loading' ? 'block' : 'none';
                 this.loginView.style.display = viewName === 'login' ? 'block' : 'none';
                 this.setupView.style.display = viewName === 'setup' ? 'block' : 'none';
                 this.manualSetupView.style.display = viewName === 'manual_setup' ? 'block' : 'none';
                 this.terminalContainer.style.display = viewName === 'terminal' ? 'block' : 'none';
             };
-            
-            nodeType.prototype.checkServerStatus = async function() { /* ... unchanged ... */ };
-            
+
+            nodeType.prototype.checkServerStatus = async function () { /* ... unchanged ... */ };
+
             // MODIFICATION: setPassword now handles the hybrid response
-            nodeType.prototype.setPassword = async function() {
+            nodeType.prototype.setPassword = async function () {
                 const newPass = this.newPasswordInput.value;
                 const confirmPass = this.confirmPasswordInput.value;
 
@@ -200,21 +200,21 @@ app.registerExtension({
                     } else {
                         this.setupStatusMessage.textContent = `Error: ${data.message || 'An unknown error occurred'}`;
                     }
-                } catch(e) {
+                } catch (e) {
                     this.setupStatusMessage.textContent = `Error: Could not contact server.`;
                 }
             };
-            
+
             // Other functions (authenticateAndConnect, connectWebSocket, lifecycle) remain unchanged from the previous step.
-            nodeType.prototype.checkServerStatus = async function() {
+            nodeType.prototype.checkServerStatus = async function () {
                 this.showView('loading');
                 try {
                     const response = await fetch("/holaf/terminal/status");
                     const data = await response.json();
                     if (data.password_is_set) { this.showView('login'); } else { this.showView('setup'); }
-                } catch(e) { this.loadingView.textContent = "Error: Could not contact server."; }
+                } catch (e) { this.loadingView.textContent = "Error: Could not contact server."; }
             };
-            nodeType.prototype.authenticateAndConnect = async function() {
+            nodeType.prototype.authenticateAndConnect = async function () {
                 const password = this.passwordInput.value;
                 if (!password) { this.loginStatusMessage.textContent = "Error: Password cannot be empty."; return; }
                 this.loginStatusMessage.textContent = "Authenticating...";
@@ -224,7 +224,7 @@ app.registerExtension({
                     if (response.ok) { this.connectWebSocket(responseData.session_token); } else { this.loginStatusMessage.textContent = `Error: ${responseData.message || 'Authentication Failed'}`; }
                 } catch (error) { this.loginStatusMessage.textContent = "Error: Could not reach server."; } finally { this.passwordInput.value = ""; }
             };
-            nodeType.prototype.connectWebSocket = async function(sessionToken) {
+            nodeType.prototype.connectWebSocket = async function (sessionToken) {
                 if (!sessionToken) { this.loginStatusMessage.textContent = "Error: No session token received."; return; }
                 this.showView('terminal');
                 try {
@@ -243,14 +243,14 @@ app.registerExtension({
                 this.socket.onerror = (e) => { console.error("Holaf Terminal: WebSocket error.", e); this.terminal.writeln("\r\n\r\n--- CONNECTION ERROR ---"); };
             };
             const onResize = nodeType.prototype.onResize;
-            nodeType.prototype.onResize = function(size) {
+            nodeType.prototype.onResize = function (size) {
                 onResize?.apply(this, arguments);
-                if (this.fitAddon) { if (this.resizeTimeout) clearTimeout(this.resizeTimeout); this.resizeTimeout = setTimeout(() => { this.fitAddon.fit(); const dims = this.fitAddon.proposeDimensions(); if (dims && this.socket && this.socket.readyState === WebSocket.OPEN) { try { this.socket.send(JSON.stringify({ resize: [dims.rows, dims.cols] })); } catch(e) { console.error("Holaf Terminal: Resize failed.", e); } } }, 100); }
+                if (this.fitAddon) { if (this.resizeTimeout) clearTimeout(this.resizeTimeout); this.resizeTimeout = setTimeout(() => { this.fitAddon.fit(); const dims = this.fitAddon.proposeDimensions(); if (dims && this.socket && this.socket.readyState === WebSocket.OPEN) { try { this.socket.send(JSON.stringify({ resize: [dims.rows, dims.cols] })); } catch (e) { console.error("Holaf Terminal: Resize failed.", e); } } }, 100); }
             };
             const onRemoved = nodeType.prototype.onRemoved;
-            nodeType.prototype.onRemoved = function() { onRemoved?.apply(this, arguments); if (this.socket) this.socket.close(); if (this.terminal) this.terminal.dispose(); };
-            nodeType.prototype.computeSize = function() { return [600, 400]; };
-            nodeType.prototype.onDrawForeground = function(ctx) {};
+            nodeType.prototype.onRemoved = function () { onRemoved?.apply(this, arguments); if (this.socket) this.socket.close(); if (this.terminal) this.terminal.dispose(); };
+            nodeType.prototype.computeSize = function () { return [600, 400]; };
+            nodeType.prototype.onDrawForeground = function (ctx) { };
         }
     },
 });
