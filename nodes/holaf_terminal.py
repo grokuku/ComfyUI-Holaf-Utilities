@@ -1,20 +1,19 @@
 # === Documentation ===
 # Author: Holaf, with assistance from Cline (AI Assistant)
-# Date: 2025-05-15
+# Date: 2025-05-16
 #
 # Purpose:
 # This file contains the backend logic for the Holaf Terminal node. It defines
 # the aiohttp WebSocket handler that manages the shell process and the ComfyUI
 # node class itself.
 #
-# Design Choices & Rationale (v21 - I/O Wrapper Fix):
-# - The previous fix attempt for the str/bytes issue was incorrect.
-# - The core problem is that pywinpty's API uses `str` for I/O, while the Unix
-#   pty uses `bytes`.
-# - This version introduces a `WindowsPty` wrapper class that mirrors the
-#   `UnixPty` one. This new class handles the str <-> bytes conversion
-#   internally, creating a consistent API for the `proc` object across
-#   all platforms.
+# Design Choices & Rationale (v26 - Suppress Conda stderr):
+# - The `conda activate` command, while ultimately successful, was printing a
+#   transient error to stderr in the PTY context.
+# - The solution is to redirect the stderr of the activation command to `nul`
+#   (e.g., `... 2>nul`). This suppresses the confusing but harmless error
+#   message, leading to a clean terminal startup, while still allowing the
+#   user's target shell to show its own errors later.
 # === End Documentation ===
 
 import os
@@ -44,6 +43,36 @@ else:
         print("🔴 [Holaf-Terminal] Critical: 'pywinpty' is not installed or accessible. Terminal will not function on Windows.")
         PtyProcess = None
 
+def get_platform_specific_launch_config():
+    """
+    Detects the virtual environment and constructs the appropriate shell command
+    to ensure the terminal opens in the correct context.
+    """
+    user_shell = CONFIG['shell_command']
+    
+    # 1. Detect Conda Environment
+    conda_prefix = os.environ.get('CONDA_PREFIX')
+    if conda_prefix:
+        print(f"🔵 [Holaf-Terminal] Conda environment detected: {conda_prefix}")
+        if IS_WINDOWS:
+            # Use `call conda activate ... 2>nul` to robustly activate the environment
+            # and suppress the harmless "EnvironmentLocationNotFound" error.
+            inner_cmd = f'call conda activate "{conda_prefix}" 2>nul && {user_shell}'
+            return ['cmd.exe', '/K', inner_cmd]
+        else: # Linux/macOS
+            cmd_string = f'eval "$(conda shell.bash hook)" && conda activate "{conda_prefix}" && exec {user_shell}'
+            return ['/bin/bash', '-c', cmd_string]
+
+    # 2. Detect Venv Environment
+    venv_path = os.environ.get('VIRTUAL_ENV')
+    if venv_path:
+        print(f"🔵 [Holaf-Terminal] Venv environment detected: {venv_path}")
+        return shlex.split(user_shell)
+
+    # 3. Fallback to default behavior
+    print("🔵 [Holaf-Terminal] No virtual environment detected. Using default shell.")
+    return shlex.split(user_shell)
+
 
 @server.PromptServer.instance.routes.get("/holaf/terminal")
 async def holaf_terminal_websocket_handler(request: web.Request):
@@ -64,55 +93,39 @@ async def holaf_terminal_websocket_handler(request: web.Request):
     proc = None
 
     try:
+        # Get the smart, environment-aware launch command
+        shell_cmd_list = get_platform_specific_launch_config()
+        print(f"🔵 [Holaf-Terminal] Spawning shell with command: {shell_cmd_list}")
+        
         if IS_WINDOWS:
             if not PtyProcess:
                 await ws.close(code=1011, message=b'pywinpty library not found on server')
                 return ws
             
-            # MODIFICATION: Create a wrapper for the Windows PTY to handle str/bytes conversion
             class WindowsPty:
-                def __init__(self, pty_process):
-                    self.pty = pty_process
-                
-                def read(self, size):
-                    # winpty returns str, encode to bytes to be consistent with Unix
-                    return self.pty.read(size).encode('utf-8')
-                
-                def write(self, data):
-                    # winpty expects str, decode from bytes
-                    return self.pty.write(data.decode('utf-8', errors='ignore'))
-                
-                def setwinsize(self, rows, cols):
-                    self.pty.setwinsize(rows, cols)
+                def __init__(self, pty_process): self.pty = pty_process
+                def read(self, size): return self.pty.read(size).encode('utf-8')
+                def write(self, data): return self.pty.write(data.decode('utf-8', errors='ignore'))
+                def setwinsize(self, rows, cols): self.pty.setwinsize(rows, cols)
+                def isalive(self): return self.pty.isalive()
+                def terminate(self, force=False): self.pty.terminate(force)
 
-                def isalive(self):
-                    return self.pty.isalive()
-                    
-                def terminate(self, force=False):
-                    self.pty.terminate(force)
-
-            shell_cmd_list = shlex.split(CONFIG['shell_command'])
             raw_proc = PtyProcess.spawn(shell_cmd_list, dimensions=(24, 80))
             proc = WindowsPty(raw_proc)
 
-        else:
-            # Unix uses the standard pty.fork()
+        else: # Unix
             pid, fd = pty.fork()
             if pid == 0:
-                env = os.environ.copy(); env["TERM"] = "xterm"
-                
-                shell_cmd_list = shlex.split(CONFIG['shell_command'])
-                shell_path = shell_cmd_list[0]
+                env = os.environ.copy()
+                env["TERM"] = "xterm"
                 try:
-                    os.execvpe(shell_path, shell_cmd_list, env)
+                    os.execvpe(shell_cmd_list[0], shell_cmd_list, env)
                 except FileNotFoundError:
                     os.execvpe("/bin/sh", ["/bin/sh"], env)
                 sys.exit(1)
                 
             class UnixPty:
-                def __init__(self, pid, fd):
-                    self.pid = pid
-                    self.fd = fd
+                def __init__(self, pid, fd): self.pid, self.fd = pid, fd
                 def read(self, size): return os.read(self.fd, size)
                 def write(self, data): return os.write(self.fd, data)
                 def setwinsize(self, rows, cols):
@@ -132,9 +145,9 @@ async def holaf_terminal_websocket_handler(request: web.Request):
             __import__('termios').tcsetattr(fd, __import__('termios').TCSANOW, attrs)
             proc = UnixPty(pid, fd)
 
+        # --- The rest of the function remains the same ---
 
         def reader_thread_target():
-            """PRODUCER: Reads from PTY and puts data into the queue. Now platform-agnostic."""
             try:
                 while proc.isalive():
                     data = proc.read(1024)
@@ -148,7 +161,6 @@ async def holaf_terminal_websocket_handler(request: web.Request):
         reader_thread.start()
 
         async def sender():
-            """CONSUMER: Gets data from queue and sends to WebSocket. Now platform-agnostic."""
             while True:
                 data = await queue.get()
                 if data is None: break
@@ -157,7 +169,6 @@ async def holaf_terminal_websocket_handler(request: web.Request):
             if not ws.closed: await ws.close()
         
         async def receiver():
-            """RECEIVER: Gets data from WebSocket and writes to PTY. Now platform-agnostic."""
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
                     try:
