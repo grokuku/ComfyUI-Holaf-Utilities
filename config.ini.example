@@ -1,11 +1,11 @@
-# This is the configuration file for the Holaf Terminal node.
+# This is the configuration file for the Holaf Terminal extension.
 # To use it, rename this file to "config.ini" in the same directory.
 
 # --- Security Section ---
 #
 # IMPORTANT: It is strongly recommended to set a password.
 # If `password_hash` is empty or the [Security] section is missing,
-# the terminal node will be disabled as a security precaution.
+# the terminal will be disabled as a security precaution and will prompt for setup.
 #
 # To generate a password hash:
 # 1. Open a terminal/console.
@@ -15,6 +15,8 @@
 #    python -m custom_nodes.ComfyUI-Holaf-Terminal
 # 5. Follow the prompts to enter and confirm your password.
 # 6. Copy the generated hash and paste it below.
+#
+# Note: You can also set the password for the first time directly from the UI.
 
 [Security]
 # Example: password_hash = 6e36...a1c3$b5a7...d9f4
@@ -26,10 +28,28 @@ password_hash =
 [Terminal]
 # shell_command: The command to execute to launch the terminal shell.
 # The system will search for this command in the environment's PATH.
-# Defaults to "powershell.exe" on Windows and "bash" on Linux/macOS.
+# Defaults to "cmd.exe" on Windows and "bash" on Linux/macOS.
 
 # Examples:
 # shell_command = bash
 # shell_command = powershell.exe
 # shell_command = zsh
 # shell_command = cmd.exe
+
+
+# --- UI Settings ---
+# These settings are automatically saved when you change them in the UI.
+# You can manually edit them here if needed.
+
+[UI]
+# theme: The name of the color theme. (e.g., Dark, Light, Solarized Dark, Monokai)
+# font_size: The font size in pixels.
+# panel_x, panel_y: The top-left position of the panel. (Leave blank for default center)
+# panel_width, panel_height: The size of the panel in pixels.
+#
+# theme = Dark
+# font_size = 14
+# panel_x = 200
+# panel_y = 150
+# panel_width = 700
+# panel_height = 500
