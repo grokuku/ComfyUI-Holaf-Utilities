@@ -1,16 +1,16 @@
 # === Documentation ===
 # Author: Holaf, with assistance from Cline (AI Assistant)
-# Date: 2025-05-15
+# Date: 2025-05-17
 #
 # Purpose:
 # This __init__.py file is the main entry point for the 'ComfyUI-Holaf-Terminal'
 # custom node package. It handles security, WebSocket communication, and node registration.
 #
-# Design Choices & Rationale (v13 - Hybrid Setup):
-# - "Try, then Guide" Setup: The backend now attempts to automatically save the new
-#   password hash to config.ini.
-# - Graceful Fallback: If a `PermissionError` occurs during the save attempt,
-#   it hashes the password and returns the hash string to the frontend for manual setup.
+# Design Choices & Rationale (v14 - CMD Default on Windows):
+# - Based on user feedback, the default shell on Windows is now `cmd.exe`.
+# - It is more stable and less prone to complex profile/environment issues than
+#   PowerShell, providing a better out-of-the-box experience.
+# - Power users can still specify `powershell.exe` in `config.ini`.
 # === End Documentation ===
 
 import server
@@ -58,7 +58,8 @@ def get_config():
     config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
     config.read(config_path)
 
-    default_shell = 'powershell.exe' if IS_WINDOWS else ('bash' if os.path.exists('/bin/bash') else 'sh')
+    # Changed the default shell on Windows to 'cmd.exe' for maximum compatibility.
+    default_shell = 'cmd.exe' if IS_WINDOWS else ('bash' if os.path.exists('/bin/bash') else 'sh')
     
     shell_cmd = config.get('Terminal', 'shell_command', fallback=default_shell)
     password_hash = config.get('Security', 'password_hash', fallback=None)

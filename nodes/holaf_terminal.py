@@ -1,19 +1,22 @@
 # === Documentation ===
 # Author: Holaf, with assistance from Cline (AI Assistant)
-# Date: 2025-05-16
+# Date: 2025-05-17
 #
 # Purpose:
 # This file contains the backend logic for the Holaf Terminal node. It defines
 # the aiohttp WebSocket handler that manages the shell process and the ComfyUI
 # node class itself.
 #
-# Design Choices & Rationale (v26 - Suppress Conda stderr):
-# - The `conda activate` command, while ultimately successful, was printing a
-#   transient error to stderr in the PTY context.
-# - The solution is to redirect the stderr of the activation command to `nul`
-#   (e.g., `... 2>nul`). This suppresses the confusing but harmless error
-#   message, leading to a clean terminal startup, while still allowing the
-#   user's target shell to show its own errors later.
+# Design Choices & Rationale (v30 - Final Env Logic):
+# - Default shell on Windows is now `cmd.exe` (set in __init__.py) for stability.
+# - The logic now correctly handles all known use cases:
+#   1. ComfyUI run from an activated Conda env: Activates the same env.
+#   2. ComfyUI run from an activated Venv: Inherits env correctly.
+#   3. Portable ComfyUI run from a standard terminal: Works as is.
+#   4. Portable ComfyUI run from a Conda-activated terminal: This was the tricky
+#      case. The logic now detects this situation and cleanses the inherited
+#      Conda variables from the new shell's environment to prevent conflicts
+#      and incorrect prompts like "(base)".
 # === End Documentation ===
 
 import os
@@ -43,35 +46,14 @@ else:
         print("🔴 [Holaf-Terminal] Critical: 'pywinpty' is not installed or accessible. Terminal will not function on Windows.")
         PtyProcess = None
 
-def get_platform_specific_launch_config():
-    """
-    Detects the virtual environment and constructs the appropriate shell command
-    to ensure the terminal opens in the correct context.
-    """
-    user_shell = CONFIG['shell_command']
-    
-    # 1. Detect Conda Environment
+
+def is_running_in_conda():
     conda_prefix = os.environ.get('CONDA_PREFIX')
-    if conda_prefix:
-        print(f"🔵 [Holaf-Terminal] Conda environment detected: {conda_prefix}")
-        if IS_WINDOWS:
-            # Use `call conda activate ... 2>nul` to robustly activate the environment
-            # and suppress the harmless "EnvironmentLocationNotFound" error.
-            inner_cmd = f'call conda activate "{conda_prefix}" 2>nul && {user_shell}'
-            return ['cmd.exe', '/K', inner_cmd]
-        else: # Linux/macOS
-            cmd_string = f'eval "$(conda shell.bash hook)" && conda activate "{conda_prefix}" && exec {user_shell}'
-            return ['/bin/bash', '-c', cmd_string]
+    return conda_prefix and sys.executable.startswith(os.path.normpath(conda_prefix))
 
-    # 2. Detect Venv Environment
+def is_running_in_venv():
     venv_path = os.environ.get('VIRTUAL_ENV')
-    if venv_path:
-        print(f"🔵 [Holaf-Terminal] Venv environment detected: {venv_path}")
-        return shlex.split(user_shell)
-
-    # 3. Fallback to default behavior
-    print("🔵 [Holaf-Terminal] No virtual environment detected. Using default shell.")
-    return shlex.split(user_shell)
+    return venv_path and sys.executable.startswith(os.path.normpath(venv_path))
 
 
 @server.PromptServer.instance.routes.get("/holaf/terminal")
@@ -93,8 +75,41 @@ async def holaf_terminal_websocket_handler(request: web.Request):
     proc = None
 
     try:
-        # Get the smart, environment-aware launch command
-        shell_cmd_list = get_platform_specific_launch_config()
+        user_shell = CONFIG['shell_command']
+        shell_cmd_list = []
+        env = os.environ.copy()
+        
+        in_conda = is_running_in_conda()
+        in_venv = is_running_in_venv()
+
+        if in_conda:
+            conda_prefix = os.environ.get('CONDA_PREFIX')
+            print(f"🔵 [Holaf-Terminal] Running in a Conda environment: {conda_prefix}")
+            if IS_WINDOWS:
+                inner_cmd = f'call conda activate "{conda_prefix}" 2>nul && {user_shell}'
+                shell_cmd_list = ['cmd.exe', '/K', inner_cmd]
+            else:
+                cmd_string = f'eval "$(conda shell.bash hook)" && conda activate "{conda_prefix}" && exec {user_shell}'
+                shell_cmd_list = ['/bin/bash', '-c', cmd_string]
+        
+        elif in_venv:
+            print(f"🔵 [Holaf-Terminal] Running in a Venv environment: {os.environ.get('VIRTUAL_ENV')}")
+            shell_cmd_list = shlex.split(user_shell)
+
+        else: # Portable or global install
+            print(f"🔵 [Holaf-Terminal] Not running in a detectable venv/conda. Using default shell for Python at: {sys.executable}")
+            shell_cmd_list = shlex.split(user_shell)
+            
+            # Cleanse inherited Conda variables if a portable version was launched from a Conda prompt
+            if 'CONDA_PREFIX' in env:
+                print("🔵 [Holaf-Terminal] Inherited Conda context detected. Cleansing environment.")
+                conda_vars_to_remove = [
+                    'CONDA_PREFIX', 'CONDA_SHLVL', 'CONDA_DEFAULT_ENV', 'CONDA_PROMPT_MODIFIER'
+                ]
+                for var in conda_vars_to_remove:
+                    if var in env:
+                        del env[var]
+
         print(f"🔵 [Holaf-Terminal] Spawning shell with command: {shell_cmd_list}")
         
         if IS_WINDOWS:
@@ -109,16 +124,17 @@ async def holaf_terminal_websocket_handler(request: web.Request):
                 def setwinsize(self, rows, cols): self.pty.setwinsize(rows, cols)
                 def isalive(self): return self.pty.isalive()
                 def terminate(self, force=False): self.pty.terminate(force)
-
-            raw_proc = PtyProcess.spawn(shell_cmd_list, dimensions=(24, 80))
+            
+            # Pass the (potentially cleansed) environment to the new process
+            raw_proc = PtyProcess.spawn(shell_cmd_list, dimensions=(24, 80), env=env)
             proc = WindowsPty(raw_proc)
 
         else: # Unix
             pid, fd = pty.fork()
             if pid == 0:
-                env = os.environ.copy()
                 env["TERM"] = "xterm"
                 try:
+                    # Pass the (potentially cleansed) environment to the new process
                     os.execvpe(shell_cmd_list[0], shell_cmd_list, env)
                 except FileNotFoundError:
                     os.execvpe("/bin/sh", ["/bin/sh"], env)
@@ -144,8 +160,6 @@ async def holaf_terminal_websocket_handler(request: web.Request):
             attrs[3] &= ~__import__('termios').ICANON; attrs[3] |= __import__('termios').ECHO
             __import__('termios').tcsetattr(fd, __import__('termios').TCSANOW, attrs)
             proc = UnixPty(pid, fd)
-
-        # --- The rest of the function remains the same ---
 
         def reader_thread_target():
             try:
