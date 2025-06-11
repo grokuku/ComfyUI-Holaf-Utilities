@@ -1,14 +1,14 @@
-# === Holaf Terminal Password Utility ===
+# === Holaf Utilities Password Utility ===
 #
-# This script is used to generate a secure password hash for use in config.ini.
-# It uses PBKDF2 with a random salt, which is a strong, standard practice for
-# password storage.
+# This script is used to generate a secure password hash for use in config.ini
+# for the Terminal utility. It uses PBKDF2 with a random salt, which is a
+# strong, standard practice for password storage.
 #
 # HOW TO USE:
 # 1. Navigate to your ComfyUI root directory in a terminal.
 # 2. Make sure your Python virtual environment is activated.
 # 3. Run the script using the following command:
-#    python -m custom_nodes.ComfyUI-Holaf-Terminal
+#    python -m custom_nodes.ComfyUI-Holaf-Utilities
 # 4. The script will securely prompt you to enter and confirm a password.
 # 5. It will then print a hash string. Copy this entire string.
 # 6. Paste it into your `config.ini` file under the [Security] section,
@@ -24,7 +24,7 @@ import getpass
 
 def generate_password_hash():
     """Securely prompts for a password and generates a salted hash."""
-    print("--- Holaf Terminal Password Setup ---")
+    print("--- Holaf Utilities Password Setup ---")
     print("This will generate a secure hash for your config.ini file.")
     
     try:
@@ -59,7 +59,7 @@ def generate_password_hash():
     print("Copy the following line into your config.ini file under [Security]:")
     print(f"password_hash = {stored_hash}")
     print("="*40)
-    print("\nIf the file doesn't exist, create 'config.ini' in the 'ComfyUI-Holaf-Terminal' directory.")
+    print("\nIf the file doesn't exist, create 'config.ini' in the 'ComfyUI-Holaf-Utilities' directory.")
 
 if __name__ == "__main__":
     generate_password_hash()

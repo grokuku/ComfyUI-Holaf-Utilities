@@ -1,9 +1,9 @@
-# This is the configuration file for the Holaf Terminal extension.
+# This is the configuration file for the Holaf Utilities extension.
 # To use it, rename this file to "config.ini" in the same directory.
 
-# --- Security Section ---
+# --- Security Section (for Terminal) ---
 #
-# IMPORTANT: It is strongly recommended to set a password.
+# IMPORTANT: It is strongly recommended to set a password for the Terminal.
 # If `password_hash` is empty or the [Security] section is missing,
 # the terminal will be disabled as a security precaution and will prompt for setup.
 #
@@ -12,7 +12,7 @@
 # 2. Navigate to your main ComfyUI directory.
 # 3. Activate the Python environment you use for ComfyUI.
 # 4. Run the following command:
-#    python -m custom_nodes.ComfyUI-Holaf-Terminal
+#    python -m custom_nodes.ComfyUI-Holaf-Utilities
 # 5. Follow the prompts to enter and confirm your password.
 # 6. Copy the generated hash and paste it below.
 #
@@ -40,6 +40,7 @@ password_hash =
 # --- UI Settings ---
 # These settings are automatically saved when you change them in the UI.
 # You can manually edit them here if needed.
+# Note: Currently, these settings are only used by the Terminal.
 
 [UI]
 # theme: The name of the color theme. (e.g., Dark, Light, Solarized Dark, Monokai)

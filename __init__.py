@@ -1,17 +1,24 @@
 # === Documentation ===
 # Author: Holaf, with assistance from Cline (AI Assistant)
-# Date: 2025-05-21
+# Date: 2025-05-23
 #
 # Purpose:
-# This __init__.py file is the main entry point for the 'ComfyUI-Holaf-Terminal'
-# custom extension. It handles security, WebSocket communication, and registers
-# the web assets for the floating terminal panel.
+# This __init__.py file is the main entry point for the 'ComfyUI-Holaf-Utilities'
+# custom extension. It handles two primary functions:
+# 1.  Initializes and runs the Holaf Terminal, including its security, API
+#     endpoints, and WebSocket PTY management.
+# 2.  Dynamically loads all additional node/API modules from the 'nodes'
+#     subdirectory, allowing for modular features like the Holaf Model Manager.
 #
-# Design Choices & Rationale (v17 - UI Persistence):
-# - Added a [UI] section to config.ini to store panel state (position, theme, etc.).
-# - Created a new endpoint `/holaf/terminal/save-settings` to persist UI changes.
-# - The `/holaf/terminal/status` endpoint now also returns the saved UI settings on load.
-# - All file write operations are protected by an asyncio.Lock.
+# Design Choices & Rationale (v18 - Unified Loader):
+# - Combined Logic: This file now contains the complete logic for the Terminal
+#   while also acting as a dynamic loader for other modules. This keeps all
+#   initialization logic in one place.
+# - Dynamic Loading: The script iterates through the 'nodes' folder and imports
+#   all Python files, aggregating their NODE_CLASS_MAPPINGS. This makes the
+#   extension scalable without needing to modify this file to add new features.
+# - Centralized Web Assets: The `WEB_DIRECTORY = "js"` serves all JavaScript
+#   and CSS files for all components (Terminal, Model Manager, etc.).
 # === End Documentation ===
 
 import server
@@ -27,35 +34,33 @@ import hmac
 import json
 import threading
 import shlex
+import importlib.util
 
 from aiohttp import web
 
-# --- Platform-specific imports ---
+# --- Platform-specific imports for Terminal ---
 IS_WINDOWS = platform.system() == "Windows"
 if not IS_WINDOWS:
     try:
         import pty, termios, tty, fcntl, select
     except ImportError:
-        print("🔴 [Holaf-Terminal] Critical: pty/termios modules not found. Terminal will not work on non-Windows system.")
+        print("🔴 [Holaf-Utilities] Critical: pty/termios modules not found. Terminal will not work on non-Windows system.")
 else:
     try:
         from winpty import PtyProcess
     except ImportError:
-        print("🔴 [Holaf-Terminal] Critical: 'pywinpty' is not installed. Terminal will not work on Windows.")
+        print("🔴 [Holaf-Utilities] Critical: 'pywinpty' is not installed. Terminal will not work on Windows.")
         print("   Please run 'pip install pywinpty' in your ComfyUI Python environment.")
         PtyProcess = None
 
-try:
-    import tornado.web, tornado.websocket
-    from tornado.ioloop import IOLoop
-except ImportError:
-    print("🔴 [Holaf-Terminal] Critical: 'tornado' module not found. Please run 'pip install tornado'.")
-    raise
+# Removed unnecessary tornado import that could crash the init process.
+# The terminal now uses aiohttp for WebSockets, which is native to ComfyUI.
 
+# --- Global Configuration and State ---
 CONFIG_LOCK = asyncio.Lock()
 SESSION_TOKENS = set()
 
-# --- Configuration Loading ---
+# --- Configuration Loading for Terminal ---
 def get_config():
     config = configparser.ConfigParser()
     config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
@@ -89,7 +94,7 @@ def get_config():
 
 CONFIG = get_config()
 
-# --- Password Hashing and Verification Logic ---
+# --- Password Hashing and Verification Logic for Terminal ---
 def _hash_password(password: str) -> str:
     salt = os.urandom(16)
     iterations = 260000
@@ -107,7 +112,7 @@ def _verify_password(stored_hash, provided_password):
     new_key = hashlib.pbkdf2_hmac('sha256', provided_password.encode('utf-8'), salt, iterations)
     return hmac.compare_digest(new_key, key)
 
-# --- API Endpoints ---
+# --- API Endpoints for Terminal ---
 @server.PromptServer.instance.routes.get("/holaf/terminal/status")
 async def holaf_terminal_status(request: web.Request):
     is_set = CONFIG.get('password_hash') is not None
@@ -118,90 +123,57 @@ async def holaf_terminal_status(request: web.Request):
 
 @server.PromptServer.instance.routes.post("/holaf/terminal/save-settings")
 async def holaf_terminal_save_settings(request: web.Request):
-    # Basic security: only allow saving settings if a password is set
     if not CONFIG.get('password_hash'):
         return web.json_response({"status": "error", "message": "Cannot save settings before a password is set."}, status=403)
-        
     async with CONFIG_LOCK:
         try:
             data = await request.json()
-            
             config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
             config = configparser.ConfigParser()
             config.read(config_path)
-
             if not config.has_section('UI'):
                 config.add_section('UI')
-            
-            # Update values from request data
-            if 'theme' in data:
-                config.set('UI', 'theme', str(data['theme']))
-                CONFIG['ui']['theme'] = str(data['theme'])
-            if 'font_size' in data:
-                config.set('UI', 'font_size', str(data['font_size']))
-                CONFIG['ui']['font_size'] = int(data['font_size'])
-            if 'panel_x' in data and data['panel_x'] is not None:
-                config.set('UI', 'panel_x', str(data['panel_x']))
-                CONFIG['ui']['panel_x'] = int(data['panel_x'])
-            if 'panel_y' in data and data['panel_y'] is not None:
-                config.set('UI', 'panel_y', str(data['panel_y']))
-                CONFIG['ui']['panel_y'] = int(data['panel_y'])
-            if 'panel_width' in data:
-                config.set('UI', 'panel_width', str(data['panel_width']))
-                CONFIG['ui']['panel_width'] = int(data['panel_width'])
-            if 'panel_height' in data:
-                config.set('UI', 'panel_height', str(data['panel_height']))
-                CONFIG['ui']['panel_height'] = int(data['panel_height'])
-
-            with open(config_path, 'w') as configfile:
-                config.write(configfile)
-            
+            if 'theme' in data: config.set('UI', 'theme', str(data['theme'])); CONFIG['ui']['theme'] = str(data['theme'])
+            if 'font_size' in data: config.set('UI', 'font_size', str(data['font_size'])); CONFIG['ui']['font_size'] = int(data['font_size'])
+            if 'panel_x' in data and data['panel_x'] is not None: config.set('UI', 'panel_x', str(data['panel_x'])); CONFIG['ui']['panel_x'] = int(data['panel_x'])
+            if 'panel_y' in data and data['panel_y'] is not None: config.set('UI', 'panel_y', str(data['panel_y'])); CONFIG['ui']['panel_y'] = int(data['panel_y'])
+            if 'panel_width' in data: config.set('UI', 'panel_width', str(data['panel_width'])); CONFIG['ui']['panel_width'] = int(data['panel_width'])
+            if 'panel_height' in data: config.set('UI', 'panel_height', str(data['panel_height'])); CONFIG['ui']['panel_height'] = int(data['panel_height'])
+            with open(config_path, 'w') as configfile: config.write(configfile)
             return web.json_response({"status": "ok", "message": "Settings saved."})
         except Exception as e:
-            print(f"🔴 [Holaf-Terminal] Error saving settings: {e}")
+            print(f"🔴 [Holaf-Utilities] Error saving settings: {e}")
             return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 @server.PromptServer.instance.routes.post("/holaf/terminal/set-password")
 async def holaf_terminal_set_password(request: web.Request):
     async with CONFIG_LOCK:
-        current_config = get_config()
-        if current_config.get('password_hash'):
+        if get_config().get('password_hash'):
             return web.json_response({"status": "error", "message": "Password is already set."}, status=409)
-
         try:
             data = await request.json()
             password = data.get('password')
             if not password or len(password) < 4:
                 return web.json_response({"status": "error", "message": "Password is too short."}, status=400)
-            
             new_hash = _hash_password(password)
             config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
             config = configparser.ConfigParser()
             config.read(config_path)
-
             if not config.has_section('Security'):
                 config.add_section('Security')
-            
             config.set('Security', 'password_hash', new_hash)
-
             try:
                 with open(config_path, 'w') as configfile:
                     config.write(configfile)
                 CONFIG['password_hash'] = new_hash
-                print("🔑 [Holaf-Terminal] A new password has been set and saved via the UI.")
+                print("🔑 [Holaf-Utilities] A new password has been set and saved via the UI.")
                 return web.json_response({"status": "ok", "action": "reload"})
             except PermissionError:
-                print("🔵 [Holaf-Terminal] A user tried to set a password, but file permissions prevented saving.")
-                return web.json_response({
-                    "status": "manual_required",
-                    "hash": new_hash,
-                    "message": "Could not save config.ini due to file permissions."
-                }, status=200)
-
+                print("🔵 [Holaf-Utilities] A user tried to set a password, but file permissions prevented saving.")
+                return web.json_response({"status": "manual_required", "hash": new_hash, "message": "Could not save config.ini due to file permissions."}, status=200)
         except Exception as e:
-            print(f"🔴 [Holaf-Terminal] Error setting password: {e}")
+            print(f"🔴 [Holaf-Utilities] Error setting password: {e}")
             return web.json_response({"status": "error", "message": str(e)}, status=500)
-
 
 @server.PromptServer.instance.routes.post("/holaf/terminal/auth")
 async def holaf_terminal_authenticate(request: web.Request):
@@ -222,9 +194,7 @@ async def holaf_terminal_authenticate(request: web.Request):
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)}, status=400)
 
-
-# --- WebSocket PTY Handler ---
-
+# --- WebSocket PTY Handler for Terminal ---
 def is_running_in_conda():
     conda_prefix = os.environ.get('CONDA_PREFIX')
     return conda_prefix and sys.executable.startswith(os.path.normpath(conda_prefix))
@@ -242,24 +212,15 @@ async def holaf_terminal_websocket_handler(request: web.Request):
     
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-
     print("🟢 [Holaf-Terminal] WebSocket connection opened and authenticated.")
     loop = asyncio.get_event_loop()
     queue = asyncio.Queue()
-    
-    sender_task = None
-    receiver_task = None
-    proc = None
-
+    sender_task, receiver_task, proc = None, None, None
     try:
         user_shell = CONFIG['shell_command']
         shell_cmd_list = []
         env = os.environ.copy()
-        
-        in_conda = is_running_in_conda()
-        in_venv = is_running_in_venv()
-
-        if in_conda:
+        if is_running_in_conda():
             conda_prefix = os.environ.get('CONDA_PREFIX')
             print(f"🔵 [Holaf-Terminal] Running in a Conda environment: {conda_prefix}")
             if IS_WINDOWS:
@@ -268,73 +229,51 @@ async def holaf_terminal_websocket_handler(request: web.Request):
             else:
                 cmd_string = f'eval "$(conda shell.bash hook)" && conda activate "{conda_prefix}" && exec {user_shell}'
                 shell_cmd_list = ['/bin/bash', '-c', cmd_string]
-        
-        elif in_venv:
+        elif is_running_in_venv():
             print(f"🔵 [Holaf-Terminal] Running in a Venv environment: {os.environ.get('VIRTUAL_ENV')}")
             shell_cmd_list = shlex.split(user_shell)
-
-        else: # Portable or global install
-            print(f"🔵 [Holaf-Terminal] Not running in a detectable venv/conda. Using default shell for Python at: {sys.executable}")
+        else:
+            print(f"🔵 [Holaf-Terminal] Not in venv/conda. Using default shell for Python at: {sys.executable}")
             shell_cmd_list = shlex.split(user_shell)
-            
             if 'CONDA_PREFIX' in env:
                 print("🔵 [Holaf-Terminal] Inherited Conda context detected. Cleansing environment.")
-                conda_vars_to_remove = [
-                    'CONDA_PREFIX', 'CONDA_SHLVL', 'CONDA_DEFAULT_ENV', 'CONDA_PROMPT_MODIFIER'
-                ]
-                for var in conda_vars_to_remove:
-                    if var in env:
-                        del env[var]
-
+                for var in ['CONDA_PREFIX', 'CONDA_SHLVL', 'CONDA_DEFAULT_ENV', 'CONDA_PROMPT_MODIFIER']:
+                    if var in env: del env[var]
         print(f"🔵 [Holaf-Terminal] Spawning shell with command: {shell_cmd_list}")
-        
         if IS_WINDOWS:
-            if not PtyProcess:
-                await ws.close(code=1011, message=b'pywinpty library not found on server')
-                return ws
-            
+            if not PtyProcess: await ws.close(code=1011, message=b'pywinpty library not found'); return ws
             class WindowsPty:
-                def __init__(self, pty_process): self.pty = pty_process
-                def read(self, size): return self.pty.read(size).encode('utf-8')
-                def write(self, data): return self.pty.write(data.decode('utf-8', errors='ignore'))
-                def setwinsize(self, rows, cols): self.pty.setwinsize(rows, cols)
+                def __init__(self, p): self.pty=p
+                def read(self, s): return self.pty.read(s).encode('utf-8')
+                def write(self, d): return self.pty.write(d.decode('utf-8', errors='ignore'))
+                def setwinsize(self, r, c): self.pty.setwinsize(r, c)
                 def isalive(self): return self.pty.isalive()
-                def terminate(self, force=False): self.pty.terminate(force)
-            
-            raw_proc = PtyProcess.spawn(shell_cmd_list, dimensions=(24, 80), env=env)
-            proc = WindowsPty(raw_proc)
-
-        else: # Unix
+                def terminate(self, f=False): self.pty.terminate(f)
+            proc = WindowsPty(PtyProcess.spawn(shell_cmd_list, dimensions=(24, 80), env=env))
+        else:
             pid, fd = pty.fork()
             if pid == 0:
                 env["TERM"] = "xterm"
-                try:
-                    os.execvpe(shell_cmd_list[0], shell_cmd_list, env)
-                except FileNotFoundError:
-                    os.execvpe("/bin/sh", ["/bin/sh"], env)
+                try: os.execvpe(shell_cmd_list[0], shell_cmd_list, env)
+                except FileNotFoundError: os.execvpe("/bin/sh", ["/bin/sh"], env)
                 sys.exit(1)
-                
             class UnixPty:
-                def __init__(self, pid, fd): self.pid, self.fd = pid, fd
-                def read(self, size): return os.read(self.fd, size)
-                def write(self, data): return os.write(self.fd, data)
-                def setwinsize(self, rows, cols):
-                    winsize = __import__('struct').pack('HHHH', rows, cols, 0, 0)
-                    __import__('fcntl').ioctl(self.fd, __import__('termios').TIOCSWINSZ, winsize)
+                def __init__(self, p, f): self.pid, self.fd = p, f
+                def read(self, s): return os.read(self.fd, s)
+                def write(self, d): return os.write(self.fd, d)
+                def setwinsize(self, r, c): __import__('fcntl').ioctl(self.fd, __import__('termios').TIOCSWINSZ, __import__('struct').pack('HHHH', r, c, 0, 0))
                 def isalive(self):
                     try: os.kill(self.pid, 0); return True
                     except OSError: return False
-                def terminate(self, force=False):
+                def terminate(self, f=False):
                     try: os.kill(self.pid, 15)
                     except ProcessLookupError: pass
-            
             initial_winsize = __import__('struct').pack('HHHH', 24, 80, 0, 0)
             __import__('fcntl').ioctl(fd, __import__('termios').TIOCSWINSZ, initial_winsize)
             attrs = __import__('termios').tcgetattr(fd)
             attrs[3] &= ~__import__('termios').ICANON; attrs[3] |= __import__('termios').ECHO
             __import__('termios').tcsetattr(fd, __import__('termios').TCSANOW, attrs)
             proc = UnixPty(pid, fd)
-
         def reader_thread_target():
             try:
                 while proc.isalive():
@@ -342,12 +281,8 @@ async def holaf_terminal_websocket_handler(request: web.Request):
                     if not data: break
                     loop.call_soon_threadsafe(queue.put_nowait, data)
             except (IOError, EOFError): pass
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, None)
-
-        reader_thread = threading.Thread(target=reader_thread_target, daemon=True)
-        reader_thread.start()
-
+            finally: loop.call_soon_threadsafe(queue.put_nowait, None)
+        reader_thread = threading.Thread(target=reader_thread_target, daemon=True); reader_thread.start()
         async def sender():
             while True:
                 data = await queue.get()
@@ -355,54 +290,70 @@ async def holaf_terminal_websocket_handler(request: web.Request):
                 try: await ws.send_bytes(data)
                 except ConnectionResetError: break
             if not ws.closed: await ws.close()
-        
         async def receiver():
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
                     try:
                         data = json.loads(msg.data)
-                        if 'resize' in data and isinstance(data['resize'], list) and len(data['resize']) == 2:
-                            rows, cols = data['resize']
-                            proc.setwinsize(rows, cols)
-                            print(f"🔵 [Holaf-Terminal] Resized to {rows}x{cols}")
-                    except (json.JSONDecodeError, TypeError):
-                        proc.write(msg.data.encode('utf-8'))
-                elif msg.type == web.WSMsgType.BINARY:
-                    proc.write(msg.data)
+                        if 'resize' in data and len(data['resize']) == 2: proc.setwinsize(*data['resize']); print(f"🔵 [Holaf-Terminal] Resized to {data['resize'][0]}x{data['resize'][1]}")
+                    except (json.JSONDecodeError, TypeError): proc.write(msg.data.encode('utf-8'))
+                elif msg.type == web.WSMsgType.BINARY: proc.write(msg.data)
                 elif msg.type == web.WSMsgType.ERROR: break
-        
-        sender_task = asyncio.create_task(sender())
-        receiver_task = asyncio.create_task(receiver())
+        sender_task, receiver_task = asyncio.create_task(sender()), asyncio.create_task(receiver())
         await asyncio.gather(sender_task, receiver_task)
-
     finally:
         print("⚫ [Holaf-Terminal] Cleaning up PTY session.")
         if sender_task: sender_task.cancel()
         if receiver_task: receiver_task.cancel()
-        if proc and proc.isalive():
-            proc.terminate(force=True)
+        if proc and proc.isalive(): proc.terminate(force=True)
         if not ws.closed: await ws.close()
-
     return ws
 
-# --- Extension Registration ---
+# --- Dynamic Node and API Loading ---
+base_dir = os.path.dirname(os.path.abspath(__file__))
+nodes_dir = os.path.join(base_dir, "nodes")
 
-# This variable is picked up by ComfyUI.
-WEB_DIRECTORY = "js"
-# We don't have any nodes to register.
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
+print("--- Initializing Holaf Utilities ---")
+if os.path.isdir(nodes_dir):
+    for filename in os.listdir(nodes_dir):
+        if filename.endswith(".py") and not filename.startswith("__"):
+            # THIS IS THE FIX: Create a safe, folder-independent module name.
+            # This avoids issues with invalid characters like hyphens in the folder name.
+            safe_module_name = f"holaf_utilities_node_{os.path.splitext(filename)[0]}"
+            file_path = os.path.join(nodes_dir, filename)
+            try:
+                spec = importlib.util.spec_from_file_location(safe_module_name, file_path)
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[safe_module_name] = module
+                spec.loader.exec_module(module)
+                
+                if hasattr(module, "NODE_CLASS_MAPPINGS"):
+                    NODE_CLASS_MAPPINGS.update(module.NODE_CLASS_MAPPINGS)
+                    print(f"  > Loaded nodes from: {filename}")
+                if hasattr(module, "NODE_DISPLAY_NAME_MAPPINGS"):
+                    NODE_DISPLAY_NAME_MAPPINGS.update(module.NODE_DISPLAY_NAME_MAPPINGS)
+            except Exception as e:
+                print(f"🔴 [Holaf-Utilities] Error loading {filename}: {e}", file=sys.stderr)
+else:
+    print("🟡 [Holaf-Utilities] 'nodes' directory not found. No custom nodes or APIs will be loaded.")
+
+
+# --- Extension Registration ---
+WEB_DIRECTORY = "js"
 
 print("\n" + "="*50)
-print("✅ [Holaf-Terminal] Extension initialized.")
-print(f"SHELL COMMAND: {CONFIG['shell_command']}")
+print("✅ [Holaf-Utilities] Extension initialized.")
+print(f"  > Terminal Shell: {CONFIG['shell_command']}")
 if CONFIG.get('password_hash'):
-    print("🔑 [Holaf-Terminal] Password is set. Terminal is ENABLED.")
+    print("  > Terminal Status: 🔑 Password is set. Terminal is ENABLED.")
 else:
-    print("🔵 [Holaf-Terminal] No password set. Setup required in the terminal panel.")
+    print("  > Terminal Status: 🔵 No password set. Setup required in the terminal panel.")
+if not NODE_CLASS_MAPPINGS:
+    print("  > Additional Nodes: None found.")
 print("="*50 + "\n")
 sys.stdout.flush()
 
-# Don't export WEB_DIRECTORY, it's not a node.
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
