@@ -8,9 +8,8 @@
 
 /* --- SHARED STYLES FOR UTILITY PANELS --- */
 
-/* Base style for menu buttons (Terminal, Manager) */
-#holaf-terminal-menu-button,
-#holaf-manager-menu-button {
+/* Base style for the main "Utilities" button */
+#holaf-utilities-menu-button {
     background-color: var(--comfy-menu-bg, #222);
     color: var(--fg-color, white);
     font-size: 14px;
@@ -22,8 +21,7 @@
     transition: background-color 0.2s;
 }
 
-#holaf-terminal-menu-button:hover,
-#holaf-manager-menu-button:hover {
+#holaf-utilities-menu-button:hover {
     background-color: var(--comfy-menu-item-bg-hover, #333);
 }
 
@@ -35,11 +33,11 @@
     transform: translate(-50%, -50%);
     min-width: 400px;
     min-height: 300px;
-    width: 60vw;
-    height: 70vh;
+    width: 600px;  /* Default width */
+    height: 400px; /* Default height */
     max-width: 1200px;
-    max-height: 800px;
-    background-color: #1e1e1e; /* Darker background */
+    max-height: 90vh;
+    background-color: #1e1e1e;
     border: 1px solid #444;
     border-radius: 8px;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6);
@@ -64,7 +62,6 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-family: sans-serif;
     font-weight: bold;
     flex-shrink: 0;
 }
@@ -109,10 +106,14 @@
     background-color: #252525;
     border-bottom: 1px solid #3a3a3a;
     flex-shrink: 0;
+    /* THIS IS THE FIX: Ensure the toolbar is a flex container */
+    display: flex;
+    align-items: center;
 }
 
 #holaf-manager-panel .holaf-manager-search {
-    width: 100%;
+    /* Let the search bar grow to fill the available space */
+    flex-grow: 1;
     padding: 6px 10px;
     background-color: #333;
     border: 1px solid #555;
@@ -120,6 +121,7 @@
     color: #e0e0e0;
     font-size: 14px;
     outline: none;
+    margin-left: 10px;
 }
 
 #holaf-manager-panel .holaf-manager-search:focus {
@@ -219,6 +221,12 @@
 
 /* --- TERMINAL SPECIFIC STYLES --- */
 
+/* The terminal panel uses the shared .holaf-utility-panel class */
+#holaf-terminal-panel {
+    font-family: monospace; /* Specific font for terminal */
+}
+
+/* Specific header styles for terminal */
 #holaf-terminal-panel .holaf-utility-header {
     gap: 10px;
 }
@@ -270,10 +278,10 @@
     color: white;
 }
 
+/* Main content area for the terminal */
 #holaf-terminal-content {
     flex-grow: 1;
     overflow: hidden;
-    /* THIS IS THE FIX: make the content area a flex container */
     display: flex;
     flex-direction: column;
 }
@@ -284,15 +292,18 @@
     height: 100%;
 }
 
+/* Non-terminal views (login, setup) styling */
 #holaf-terminal-panel .non-terminal-view {
     padding: 15px;
 }
 
+/* Wrapper for the xterm.js instance for padding */
 #holaf-terminal-panel .terminal-view-wrapper {
+    flex-grow: 1;
     padding: 0px 5px 5px 10px;
 }
 
-
+/* Generic button style inside the terminal panel */
 #holaf-terminal-content .comfy-button {
     background-color: var(--comfy-button-bg);
     color: var(--fg-color);

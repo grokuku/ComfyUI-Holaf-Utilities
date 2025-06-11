@@ -16,7 +16,6 @@
  */
 
 import { app } from "../../../scripts/app.js";
-import { api } from "../../../scripts/api.js";
 
 // Utility to format file sizes for human readability
 function formatBytes(bytes, decimals = 2) {
@@ -50,81 +49,19 @@ const HolafModelManager = {
     init() {
         if (this.isInitialized) return;
 
-        this.addUtilitiesMenu();
+        this.addMenuItem();
         this.createPanel();
 
         this.isInitialized = true;
     },
 
     // --- UI Creation ---
-    addUtilitiesMenu() {
-        const self = this;
-
-        let menuContainer = document.getElementById("holaf-utilities-menu-container");
-        let dropdownMenu;
-
-        if (!menuContainer) {
-            menuContainer = document.createElement("div");
-            menuContainer.id = "holaf-utilities-menu-container";
-            menuContainer.style.position = "relative";
-            menuContainer.style.display = "inline-block";
-            menuContainer.style.margin = "0 4px";
-
-            const mainButton = document.createElement("button");
-            mainButton.id = "holaf-utilities-menu-button";
-            mainButton.textContent = "Utilities";
-            mainButton.className = "holaf-main-utility-button";
-            mainButton.style.cssText = `
-                background-color: var(--comfy-menu-bg, #222);
-                color: var(--fg-color, white);
-                font-size: 14px;
-                padding: 10px;
-                cursor: pointer;
-                border: 1px solid var(--border-color, #444);
-                border-radius: 8px;
-            `;
-            mainButton.onmouseover = () => { mainButton.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
-            mainButton.onmouseout = () => { mainButton.style.backgroundColor = 'var(--comfy-menu-bg, #222)'; };
-
-            dropdownMenu = document.createElement("ul");
-            dropdownMenu.id = "holaf-utilities-dropdown-menu";
-            dropdownMenu.style.cssText = `
-                display: none;
-                position: absolute;
-                background-color: var(--comfy-menu-bg, #2a2a2a);
-                border: 1px solid var(--border-color, #444);
-                border-radius: 4px;
-                list-style: none;
-                padding: 5px 0;
-                margin: 2px 0 0;
-                z-index: 1002;
-                min-width: 140px;
-                right: 0;
-            `;
-
-            mainButton.onclick = (e) => {
-                e.stopPropagation();
-                dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
-            };
-
-            document.addEventListener('click', () => {
-                if (dropdownMenu.style.display === "block") {
-                    dropdownMenu.style.display = 'none';
-                }
-            });
-            dropdownMenu.addEventListener('click', (e) => e.stopPropagation());
-
-            menuContainer.append(mainButton, dropdownMenu);
-            const settingsButton = app.menu.settingsGroup.element;
-            if (settingsButton) {
-                settingsButton.before(menuContainer);
-            } else {
-                console.error("[Holaf Utilities] Could not find settings button to anchor Utilities menu.");
-                const menu = document.querySelector(".comfy-menu");
-                if (menu) menu.append(menuContainer);
-            }
-        } else {
-            dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
+    addMenuItem() {
+        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
+        if (!dropdownMenu) {
+            console.error("[Holaf ModelManager] Could not find the main utilities dropdown menu. Retrying...");
+            setTimeout(() => this.addMenuItem(), 500);
+            return;
         }
 
         const managerMenuItem = document.createElement("li");
@@ -138,7 +75,7 @@ const HolafModelManager = {
         managerMenuItem.onmouseout = () => { managerMenuItem.style.backgroundColor = 'transparent'; };
 
         managerMenuItem.onclick = () => {
-            self.show();
+            this.show();
             dropdownMenu.style.display = "none";
         };
 
@@ -166,12 +103,18 @@ const HolafModelManager = {
         const toolbar = document.createElement("div");
         toolbar.className = "holaf-manager-toolbar";
 
+        const refreshButton = document.createElement("button");
+        refreshButton.textContent = "🔄 Refresh";
+        refreshButton.onclick = () => this.loadAndDisplayModels();
+
         this.searchInput = document.createElement("input");
         this.searchInput.type = "text";
         this.searchInput.placeholder = "Search models...";
         this.searchInput.className = "holaf-manager-search";
         this.searchInput.oninput = (e) => this.filterAndRenderModels(e.target.value);
-        toolbar.appendChild(this.searchInput);
+        
+        // THIS IS THE FIX: A simpler and more robust way to build the toolbar.
+        toolbar.append(refreshButton, this.searchInput);
 
         this.content = document.createElement("div");
         this.content.className = "holaf-manager-content";
@@ -199,18 +142,23 @@ const HolafModelManager = {
         this.content.innerHTML = '<p class="holaf-manager-message">Loading models...</p>';
         this.statusBar.textContent = "Fetching...";
         try {
-            // THIS IS THE FIX: Use standard fetch() without the /api prefix
+            console.log("[Holaf ModelManager] Fetching /holaf/models...");
             const response = await fetch("/holaf/models");
+            
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error("[Holaf ModelManager] Server returned an error:", response.status, errorText);
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
+
             this.allModels = await response.json();
+            console.log(`[Holaf ModelManager] Received ${this.allModels.length} models.`);
 
             this.filterAndRenderModels(this.searchInput.value);
 
         } catch (error) {
-            console.error("Holaf Manager Error:", error);
-            this.content.innerHTML = `<p class="holaf-manager-message error">Error loading models. Check console.</p>`;
+            console.error("[Holaf ModelManager] Error in loadAndDisplayModels:", error);
+            this.content.innerHTML = `<p class="holaf-manager-message error">Error loading models. Check browser and server console.</p>`;
             this.statusBar.textContent = "Error";
         }
     },
@@ -222,7 +170,6 @@ const HolafModelManager = {
         }
 
         try {
-            // Use standard fetch() for the delete endpoint as well
             const response = await fetch("/holaf/models/delete", {
                 method: "POST",
                 headers: {
@@ -254,10 +201,10 @@ const HolafModelManager = {
 
         if (filteredModels.length === 0) {
             if (this.allModels.length === 0) {
-                this.content.innerHTML = '<p class="holaf-manager-message">No models found in your ComfyUI directories.</p>';
-                this.statusBar.textContent = '0 models';
+                this.content.innerHTML = '<p class="holaf-manager-message">No models found in your ComfyUI directories. Click Refresh to try again.</p>';
+                this.statusBar.textContent = '0 models found';
             } else {
-                this.content.innerHTML = `<p class="holaf-manager-message">No models match "${this.currentFilter}".</p>`;
+                this.content.innerHTML = `<p class="holaf-manager-message">No models match your search for "${this.currentFilter}".</p>`;
                 this.statusBar.textContent = `0 of ${this.allModels.length} models shown`;
             }
             return;
@@ -322,7 +269,8 @@ const HolafModelManager = {
     // --- Dialog Visibility and Drag/Resize ---
     show() {
         this.panel.style.display = "flex";
-        this.loadAndDisplayModels();
+        this.content.innerHTML = '<p class="holaf-manager-message">Click Refresh to load models.</p>';
+        this.statusBar.textContent = "Ready";
         this.searchInput.focus();
     },
 

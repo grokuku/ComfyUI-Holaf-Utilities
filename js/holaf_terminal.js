@@ -1,13 +1,11 @@
 /* === Documentation ===
  * Author: Holaf, with assistance from Cline (AI Assistant)
- * Date: 2025-05-23 (Path fix and rename)
+ * Date: 2025-05-23 (Final)
  *
- * How it works (v9.4):
- * 1. Corrected hardcoded paths to point to 'ComfyUI-Holaf-Utilities'
- *    instead of 'ComfyUI-Holaf-Terminal', fixing the "Could not load terminal component" error.
- * 2. Renamed log messages and user-facing instructions to reflect the
- *    'Holaf Utilities' package name.
- * 3. Restored the original, robust structure with self-contained styling.
+ * How it works (v12 - Stable):
+ * 1. This script uses a modular approach to add its menu item, relying on holaf_main.js.
+ * 2. It injects its own, self-contained CSS block to guarantee its appearance,
+ *    preventing regressions from changes in shared stylesheets. This is the most stable approach.
  * === End Documentation ===
  */
 import { app } from "../../../scripts/app.js";
@@ -45,6 +43,32 @@ const holafTerminal = {
         { name: 'Comfy', background: '#222222', foreground: '#e0e0e0', cursor: '#ffffff', selectionBackground: '#4a4a4a' }
     ],
     saveTimeout: null,
+
+    addMenuItem() {
+        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
+        if (!dropdownMenu) {
+            console.error("[Holaf Terminal] Could not find the main utilities dropdown menu. Retrying...");
+            setTimeout(() => this.addMenuItem(), 500);
+            return;
+        }
+
+        const terminalMenuItem = document.createElement("li");
+        terminalMenuItem.textContent = "Terminal";
+        terminalMenuItem.style.cssText = `
+            padding: 8px 12px;
+            cursor: pointer;
+            color: var(--fg-color, #ccc);
+        `;
+        terminalMenuItem.onmouseover = () => { terminalMenuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
+        terminalMenuItem.onmouseout = () => { terminalMenuItem.style.backgroundColor = 'transparent'; };
+
+        terminalMenuItem.onclick = () => {
+            this.show();
+            dropdownMenu.style.display = "none";
+        };
+
+        dropdownMenu.prepend(terminalMenuItem);
+    },
 
     createPanel() {
         if (this.panel) return;
@@ -106,6 +130,7 @@ const holafTerminal = {
         this.panel.append(header, content, resizeHandle);
         document.body.append(this.panel);
 
+        // THIS STYLE BLOCK IS RESTORED
         const style = document.createElement("style");
         style.innerHTML = `
             #holaf-terminal-panel { position: fixed; width: 600px; height: 400px; min-width: 300px; min-height: 200px; background-color: #1e1e1e; border: 1px solid #444; box-shadow: 0 4px 12px rgba(0,0,0,0.4); border-radius: 8px; z-index: 1001; display: flex; flex-direction: column; color: #ccc; font-family: monospace; }
@@ -289,7 +314,7 @@ const holafTerminal = {
         if (!sessionToken) { this.loginStatusMessage.textContent = "Error: No session token received."; return; }
         this.showView('terminal');
         try {
-            const basePath = "/extensions/ComfyUI-Holaf-Utilities/";
+            const basePath = "extensions/ComfyUI-Holaf-Utilities/js/";
             if (!window.Terminal) { await Promise.all([loadScript(`${basePath}xterm.js`), loadScript(`${basePath}xterm-addon-fit.js`)]); }
 
             if (!this.terminal) {
@@ -362,30 +387,7 @@ app.registerExtension({
     name: "Holaf.Terminal.Panel",
     async setup() {
         console.log("[Holaf Utilities] Setting up Terminal panel.");
-
-        await new Promise(resolve => setTimeout(resolve, 0));
-
-        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
-        if (!dropdownMenu) {
-            console.error("[Holaf Utilities] Could not find the Utilities dropdown menu to add the Terminal item.");
-            return;
-        }
-
-        const terminalMenuItem = document.createElement("li");
-        terminalMenuItem.textContent = "Terminal";
-        terminalMenuItem.style.cssText = `
-            padding: 8px 12px;
-            cursor: pointer;
-            color: var(--fg-color, #ccc);
-        `;
-        terminalMenuItem.onmouseover = () => { terminalMenuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
-        terminalMenuItem.onmouseout = () => { terminalMenuItem.style.backgroundColor = 'transparent'; };
-
-        terminalMenuItem.onclick = () => {
-            holafTerminal.show();
-            dropdownMenu.style.display = "none";
-        };
-
-        dropdownMenu.prepend(terminalMenuItem);
+        holafTerminal.addMenuItem();
+        holafTerminal.createPanel();
     },
 });
