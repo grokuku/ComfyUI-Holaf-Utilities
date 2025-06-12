@@ -1,0 +1,270 @@
+/*
+ * Copyright (C) 2025 Holaf
+ * Holaf Utilities - Shared Stylesheet
+ *
+ * This file contains shared CSS rules for all Holaf utility panels
+ * (Terminal, Model Manager, etc.) to ensure a consistent look and feel.
+ */
+
+/* --- SHARED STYLES FOR UTILITY PANELS --- */
+
+/* Base style for the main "Utilities" button */
+#holaf-utilities-menu-button {
+    background-color: var(--comfy-menu-bg, #222);
+    color: var(--fg-color, white);
+    font-size: 14px;
+    padding: 10px;
+    cursor: pointer;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 8px;
+    margin: 0 4px;
+    transition: background-color 0.2s;
+}
+
+#holaf-utilities-menu-button:hover {
+    background-color: var(--comfy-menu-item-bg-hover, #333);
+}
+
+/* Base style for floating panels - TEST AVEC !important */
+.holaf-utility-panel {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    /* Default to centered */
+    min-width: 300px !important;
+    /* Réduit pour le test si jamais c'est trop grand */
+    min-height: 200px !important;
+    /* Réduit pour le test */
+    width: 500px !important;
+    /* Taille par défaut pour test */
+    height: 350px !important;
+    /* Taille par défaut pour test */
+    max-width: 1200px !important;
+    max-height: 90vh !important;
+    background-color: #003366 !important;
+    /* Bleu foncé pour test visible */
+    border: 3px solid #FF00FF !important;
+    /* Magenta vif pour test visible */
+    border-radius: 8px !important;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6) !important;
+    z-index: 1001 !important;
+    /* On top of canvas, below critical UI */
+    display: flex !important;
+    /* Essentiel, déjà forcé par JS mais on assure */
+    flex-direction: column !important;
+    /* Essentiel */
+    font-family: sans-serif !important;
+    overflow: hidden !important;
+    /* Prevent content from spilling during resize */
+    color: #e0e0e0 !important;
+}
+
+/* Header for dragging, title, and buttons */
+.holaf-utility-header {
+    background-color: #2a2a2a !important;
+    color: white !important;
+    padding: 8px 12px !important;
+    cursor: move !important;
+    user-select: none !important;
+    border-bottom: 1px solid #444 !important;
+    border-top-left-radius: 8px !important;
+    border-top-right-radius: 8px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    font-weight: bold !important;
+    flex-shrink: 0 !important;
+    /* Header should not shrink */
+}
+
+/* Close button on the header */
+.holaf-utility-close-button {
+    background: none !important;
+    color: #ccc !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 24px !important;
+    height: 24px !important;
+    line-height: 24px !important;
+    text-align: center !important;
+    cursor: pointer !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    transition: background-color 0.2s, color 0.2s !important;
+    margin-left: auto !important;
+    /* Push to the right */
+}
+
+.holaf-utility-close-button:hover {
+    background-color: #c44 !important;
+    color: white !important;
+}
+
+/* Resize handle at the bottom-right corner */
+.holaf-utility-resize-handle {
+    position: absolute !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    width: 16px !important;
+    height: 16px !important;
+    cursor: se-resize !important;
+    background-image: linear-gradient(135deg, transparent 0%, transparent 50%, #888 50%, #888 75%, transparent 75%, transparent 100%) !important;
+    /* Poignée plus visible */
+    z-index: 2 !important;
+    /* On top of content */
+}
+
+/* Common button style for inside panels, if needed by a utility */
+.holaf-utility-panel .comfy-button {
+    background-color: var(--comfy-button-bg, #4CAF50) !important;
+    color: var(--fg-color, white) !important;
+    border: 1px solid var(--border-color, #3e8e41) !important;
+    padding: 6px 12px !important;
+    text-align: center !important;
+    text-decoration: none !important;
+    display: inline-block !important;
+    font-size: 14px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition: background-color 0.2s !important;
+}
+
+.holaf-utility-panel .comfy-button:hover {
+    background-color: var(--comfy-button-bg-hover, #45a049) !important;
+}
+
+.holaf-utility-panel .comfy-button:active {
+    background-color: var(--comfy-button-bg-active, #3e8e41) !important;
+}
+
+
+/* --- MODEL MANAGER SPECIFIC STYLES --- */
+/* The panel itself uses .holaf-utility-panel */
+
+#holaf-manager-panel .holaf-manager-toolbar {
+    padding: 8px 12px;
+    background-color: #252525;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* Add some gap between toolbar items */
+}
+
+#holaf-manager-panel .holaf-manager-search {
+    flex-grow: 1;
+    padding: 6px 10px;
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 14px;
+    outline: none;
+}
+
+#holaf-manager-panel .holaf-manager-search:focus {
+    border-color: #007acc;
+}
+
+#holaf-manager-panel .holaf-manager-content {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+#holaf-manager-panel .holaf-manager-message {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding-top: 20px;
+}
+
+#holaf-manager-panel .holaf-manager-message.error {
+    color: #ff8a8a;
+    font-weight: bold;
+}
+
+/* Individual Model Card */
+#holaf-manager-panel .holaf-model-card {
+    background-color: #2d2d2d;
+    border: 1px solid #484848;
+    border-radius: 4px;
+    padding: 10px 15px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+#holaf-manager-panel .holaf-model-card:hover {
+    background-color: #353535;
+    border-color: #666;
+}
+
+#holaf-manager-panel .holaf-model-name {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 15px;
+    flex-grow: 1;
+}
+
+#holaf-manager-panel .holaf-model-info {
+    color: #aaa;
+    font-size: 0.9em;
+    flex-shrink: 0;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+#holaf-manager-panel .holaf-model-type {
+    background-color: #444;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: #ddd;
+}
+
+#holaf-manager-panel .holaf-model-size {
+    min-width: 80px;
+    /* Align sizes */
+    text-align: right;
+}
+
+#holaf-manager-panel .holaf-manager-statusbar {
+    padding: 5px 12px;
+    background-color: #2a2a2a;
+    border-top: 1px solid #444;
+    font-size: 0.8em;
+    color: #888;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+/* Custom scrollbar for manager content area */
+#holaf-manager-panel .holaf-manager-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+#holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-track {
+    background: #2a2a2a;
+}
+
+#holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb {
+    background-color: #555;
+    border-radius: 5px;
+    border: 2px solid #2a2a2a;
+}
+
+
+/* --- TERMINAL SPECIFIC STYLES --- */
+/*
+ * Terminal styles are mostly self-contained and injected by holaf_terminal.js.
+ * This is to maintain its stability.
+ * The panel itself uses the shared .holaf-utility-panel class.
+*/

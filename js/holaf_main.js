@@ -3,15 +3,17 @@
  * Holaf Utilities - Main Menu Initializer
  *
  * This script is responsible for creating the main "Utilities" button and dropdown menu.
+ * It also ensures that shared CSS for utility panels is loaded.
  * Other utility scripts will then add their own items to this menu.
- * This makes the system modular and resilient; if one utility fails to load,
- * it won't prevent the main menu from appearing.
  */
 
 import { app } from "../../../scripts/app.js";
 
 const HolafUtilitiesMenu = {
     init() {
+        // Load shared CSS for all utility panels
+        this.loadSharedCss();
+
         // Find or create the main container for the menu
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
 
@@ -31,7 +33,7 @@ const HolafUtilitiesMenu = {
         const mainButton = document.createElement("button");
         mainButton.id = "holaf-utilities-menu-button";
         mainButton.textContent = "Utilities";
-        mainButton.className = "holaf-main-utility-button";
+        // mainButton.className = "holaf-main-utility-button"; // Class removed, direct style instead
         mainButton.style.cssText = `
             background-color: var(--comfy-menu-bg, #222);
             color: var(--fg-color, white);
@@ -85,14 +87,26 @@ const HolafUtilitiesMenu = {
             const menu = document.querySelector(".comfy-menu");
             if (menu) menu.append(menuContainer);
         }
+    },
+
+    loadSharedCss() {
+        const cssId = "holaf-utilities-shared-css";
+        if (!document.getElementById(cssId)) {
+            const link = document.createElement("link");
+            link.id = cssId;
+            link.rel = "stylesheet";
+            link.type = "text/css";
+            // MODIFIED LINE: Assumes holaf_utilities.css is now in js/css/
+            link.href = "extensions/ComfyUI-Holaf-Utilities/css/holaf_utilities.css";
+            document.head.appendChild(link);
+            console.log("[Holaf Utilities] Shared CSS loaded (attempting from js/css/).");
+        }
     }
 };
 
 // --- Extension Registration ---
 app.registerExtension({
-    name: "Holaf.Utilities.Menu",
-    // This setup runs first to ensure the menu exists for other components.
-    // The name is alphabetically first.
+    name: "Holaf.Utilities.Menu", // Name ensures it runs early
     async setup() {
         HolafUtilitiesMenu.init();
     }

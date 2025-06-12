@@ -112,7 +112,7 @@ const HolafModelManager = {
         this.searchInput.placeholder = "Search models...";
         this.searchInput.className = "holaf-manager-search";
         this.searchInput.oninput = (e) => this.filterAndRenderModels(e.target.value);
-        
+
         // THIS IS THE FIX: A simpler and more robust way to build the toolbar.
         toolbar.append(refreshButton, this.searchInput);
 
@@ -144,7 +144,7 @@ const HolafModelManager = {
         try {
             console.log("[Holaf ModelManager] Fetching /holaf/models...");
             const response = await fetch("/holaf/models");
-            
+
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error("[Holaf ModelManager] Server returned an error:", response.status, errorText);
@@ -325,16 +325,17 @@ const HolafModelManager = {
     }
 };
 
-// --- Extension Registration ---
+/* // ON COMMENCE LE COMMENTAIRE ICI
 app.registerExtension({
     name: "Holaf.ModelManager",
     async setup() {
-        const link = document.createElement("link");
-        link.rel = "stylesheet";
-        link.type = "text/css";
-        link.href = "extensions/ComfyUI-Holaf-Utilities/holaf_utilities.css";
-        document.head.appendChild(link);
+        // const link = document.createElement("link"); // Cette ligne chargeait le CSS partagé
+        // link.rel = "stylesheet";
+        // link.type = "text/css";
+        // link.href = "extensions/ComfyUI-Holaf-Utilities/holaf_utilities.css";
+        // document.head.appendChild(link);
 
         HolafModelManager.init();
     }
 });
+*/ // ON TERMINE LE COMMENTAIRE ICI
