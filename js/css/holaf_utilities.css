@@ -50,9 +50,10 @@
     /* Gardé pour l'esthétique */
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6) !important;
     /* Gardé pour l'effet de profondeur */
-    z-index: 1001 !important;
+    z-index: 1001;
+    /* MODIFIÉ: !important retiré pour permettre au JS de gérer le z-index dynamiquement */
     display: flex;
-    /* MODIFIÉ: !important retiré pour permettre la fermeture via JS */
+    /* MODIFIÉ: !important retiré pour permettre la fermeture via JS (déjà fait, commentaire conservé pour contexte) */
     flex-direction: column !important;
     /* Essentiel pour la structure interne */
     font-family: sans-serif !important;
@@ -114,6 +115,7 @@
     cursor: se-resize !important;
     background-image: linear-gradient(135deg, transparent 0%, transparent 50%, #888 50%, #888 75%, transparent 75%, transparent 100%) !important;
     z-index: 2 !important;
+    /* Ce z-index est relatif au panneau, c'est OK */
 }
 
 /* Common button style for inside panels, if needed by a utility */

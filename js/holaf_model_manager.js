@@ -1,62 +1,28 @@
 /*
  * Copyright (C) 2025 Holaf
+ * Holaf Utilities - Model Manager UI
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * This script provides the client-side logic for the Holaf Model Manager.
  */
 
 import { app } from "../../../scripts/app.js";
+import { HolafPanelManager } from "./holaf_panel_manager.js";
 
-// Utility to format file sizes for human readability
-function formatBytes(bytes, decimals = 2) {
-    if (!+bytes) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-}
-
-const HolafModelManager = {
-    // --- HTML Elements ---
-    panel: null,
-    content: null,
-    statusBar: null,
-    searchInput: null,
-
-    // --- State ---
+const holafModelManager = {
+    panelElements: null,
     isInitialized: false,
-    allModels: [], // Store all models fetched from the API
-    currentFilter: "",
-
-    // --- Drag & Resize State ---
-    isDragging: false,
-    isResizing: false,
-    dragOffsetX: 0,
-    dragOffsetY: 0,
-
-    // --- Initialization ---
-    init() {
-        if (this.isInitialized) return;
-
-        this.addMenuItem();
-        this.createPanel();
-
-        this.isInitialized = true;
+    isLoading: false,
+    models: [],
+    settings: {
+        panel_x: null,
+        panel_y: null,
+        panel_width: 700,
+        panel_height: 500,
     },
+    saveTimeout: null,
 
-    // --- UI Creation ---
     addMenuItem() {
+        console.log("[Holaf ModelManager] addMenuItem called.");
         const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
         if (!dropdownMenu) {
             console.error("[Holaf ModelManager] Could not find the main utilities dropdown menu. Retrying...");
@@ -64,278 +30,222 @@ const HolafModelManager = {
             return;
         }
 
-        const managerMenuItem = document.createElement("li");
-        managerMenuItem.textContent = "Model Manager";
-        managerMenuItem.style.cssText = `
+        const menuItem = document.createElement("li");
+        menuItem.textContent = "Model Manager";
+        menuItem.style.cssText = `
             padding: 8px 12px;
             cursor: pointer;
             color: var(--fg-color, #ccc);
         `;
-        managerMenuItem.onmouseover = () => { managerMenuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
-        managerMenuItem.onmouseout = () => { managerMenuItem.style.backgroundColor = 'transparent'; };
+        menuItem.onmouseover = () => { menuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
+        menuItem.onmouseout = () => { menuItem.style.backgroundColor = 'transparent'; };
 
-        managerMenuItem.onclick = () => {
+        menuItem.onclick = () => {
+            console.log("[Holaf ModelManager] Model Manager menu item clicked.");
             this.show();
             dropdownMenu.style.display = "none";
         };
 
-        dropdownMenu.appendChild(managerMenuItem);
+        const terminalMenuItem = Array.from(dropdownMenu.children).find(child => child.textContent === "Terminal");
+        if (terminalMenuItem && terminalMenuItem.nextSibling) {
+            dropdownMenu.insertBefore(menuItem, terminalMenuItem.nextSibling);
+        } else if (terminalMenuItem) {
+            dropdownMenu.appendChild(menuItem);
+        } else {
+            dropdownMenu.prepend(menuItem);
+        }
+        console.log("[Holaf ModelManager] Menu item added.");
     },
 
     createPanel() {
-        this.panel = document.createElement("div");
-        this.panel.id = "holaf-manager-panel";
-        this.panel.className = "holaf-utility-panel";
-        this.panel.style.display = "none";
-
-        const header = document.createElement("div");
-        header.className = "holaf-utility-header";
-        header.innerHTML = `
-            <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 5px;"><path d="M2 6h12M2 12h12M2 18h12M18 9l3 3-3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>Holaf Model Manager</span>
-        `;
-
-        const closeButton = document.createElement("button");
-        closeButton.className = "holaf-utility-close-button";
-        closeButton.textContent = "✖";
-        closeButton.onclick = () => this.hide();
-        header.appendChild(closeButton);
-
-        const toolbar = document.createElement("div");
-        toolbar.className = "holaf-manager-toolbar";
-
-        const refreshButton = document.createElement("button");
-        refreshButton.textContent = "🔄 Refresh";
-        refreshButton.onclick = () => this.loadAndDisplayModels();
-
-        this.searchInput = document.createElement("input");
-        this.searchInput.type = "text";
-        this.searchInput.placeholder = "Search models...";
-        this.searchInput.className = "holaf-manager-search";
-        this.searchInput.oninput = (e) => this.filterAndRenderModels(e.target.value);
-
-        // THIS IS THE FIX: A simpler and more robust way to build the toolbar.
-        toolbar.append(refreshButton, this.searchInput);
-
-        this.content = document.createElement("div");
-        this.content.className = "holaf-manager-content";
-
-        this.statusBar = document.createElement("div");
-        this.statusBar.className = "holaf-manager-statusbar";
-
-        const resizeHandle = document.createElement("div");
-        resizeHandle.className = "holaf-utility-resize-handle";
-
-        this.panel.append(header, toolbar, this.content, this.statusBar, resizeHandle);
-        document.body.appendChild(this.panel);
-
-        header.addEventListener('mousedown', (e) => this.startDrag(e));
-        resizeHandle.addEventListener('mousedown', (e) => this.startResize(e));
-        document.addEventListener('mousemove', (e) => {
-            this.drag(e);
-            this.resize(e);
-        });
-        document.addEventListener('mouseup', () => this.stopActions());
-    },
-
-    // --- Data Fetching and Rendering ---
-    async loadAndDisplayModels() {
-        this.content.innerHTML = '<p class="holaf-manager-message">Loading models...</p>';
-        this.statusBar.textContent = "Fetching...";
-        try {
-            console.log("[Holaf ModelManager] Fetching /holaf/models...");
-            const response = await fetch("/holaf/models");
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error("[Holaf ModelManager] Server returned an error:", response.status, errorText);
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            this.allModels = await response.json();
-            console.log(`[Holaf ModelManager] Received ${this.allModels.length} models.`);
-
-            this.filterAndRenderModels(this.searchInput.value);
-
-        } catch (error) {
-            console.error("[Holaf ModelManager] Error in loadAndDisplayModels:", error);
-            this.content.innerHTML = `<p class="holaf-manager-message error">Error loading models. Check browser and server console.</p>`;
-            this.statusBar.textContent = "Error";
+        console.log("[Holaf ModelManager] createPanel called.");
+        if (this.panelElements && this.panelElements.panelEl) {
+            console.log("[Holaf ModelManager] Panel already exists, skipping creation.");
+            return;
         }
-    },
+        console.log("[Holaf ModelManager] Panel does not exist, proceeding with creation.");
 
-    async handleDeleteRequest(model) {
-        const confirmation = confirm(`Are you sure you want to permanently delete this model?\n\nFile: ${model.name}`);
-        if (!confirmation) {
+        try {
+            this.panelElements = HolafPanelManager.createPanel({
+                id: "holaf-manager-panel",
+                title: "Holaf Model Manager <span style='font-size:0.8em; color:#aaa;'>(WIP - Preview)</span>", // MODIFIED
+                defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
+                defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
+                onClose: () => {
+                    console.log("[Holaf ModelManager] Panel close button clicked.");
+                },
+                onStateChange: (newState) => {
+                    console.log("[Holaf ModelManager] onStateChange triggered by PanelManager:", newState);
+                    this.settings.panel_x = newState.x;
+                    this.settings.panel_y = newState.y;
+                    this.settings.panel_width = newState.width;
+                    this.settings.panel_height = newState.height;
+                },
+                onResize: () => {
+                    console.log("[Holaf ModelManager] onResize triggered by PanelManager.");
+                }
+            });
+            console.log("[Holaf ModelManager] PanelManager.createPanel call completed. Panel elements:", this.panelElements);
+        } catch (e) {
+            console.error("[Holaf ModelManager] Error during HolafPanelManager.createPanel:", e);
+            alert("[Holaf ModelManager] Error creating panel. Check console.");
             return;
         }
 
+        this.populatePanelContent();
+        console.log("[Holaf ModelManager] createPanel finished.");
+    },
+
+    populatePanelContent() {
+        const contentEl = this.panelElements.contentEl;
+        contentEl.innerHTML = `
+            <div class="holaf-manager-toolbar">
+                <input type="text" id="holaf-manager-search-input" class="holaf-manager-search" placeholder="Search models...">
+                <button id="holaf-manager-refresh-button" class="comfy-button">Refresh</button> 
+            </div>
+            <div id="holaf-manager-models-area" class="holaf-manager-content">
+                <p class="holaf-manager-message">Initializing...</p>
+            </div>
+            <div id="holaf-manager-statusbar" class="holaf-manager-statusbar">
+                Status: Ready
+            </div>
+        `;
+
+        document.getElementById("holaf-manager-refresh-button").onclick = () => this.loadModels();
+        document.getElementById("holaf-manager-search-input").oninput = (e) => this.filterModels(e.target.value);
+    },
+
+    async loadModels() {
+        if (this.isLoading) {
+            console.log("[Holaf ModelManager] Already loading models.");
+            return;
+        }
+        this.isLoading = true;
+        const modelsArea = document.getElementById("holaf-manager-models-area");
+        const statusBar = document.getElementById("holaf-manager-statusbar");
+
+        if (modelsArea) modelsArea.innerHTML = `<p class="holaf-manager-message">Loading models...</p>`;
+        if (statusBar) statusBar.textContent = "Status: Loading...";
+
         try {
-            const response = await fetch("/holaf/models/delete", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ path: model.path }),
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                this.allModels = this.allModels.filter(m => m.path !== model.path);
-                this.filterAndRenderModels(this.currentFilter);
-            } else {
-                throw new Error(result.message || "An unknown error occurred on the server.");
+            const response = await fetch("/holaf/models");
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            this.models = await response.json();
+            this.renderModels();
+            if (statusBar) statusBar.textContent = `Status: ${this.models.length} models loaded.`;
+            console.log("[Holaf ModelManager] Models loaded:", this.models.length);
         } catch (error) {
-            console.error("Holaf Manager: Delete failed", error);
-            alert(`Error deleting model: ${error.message}`);
+            console.error("[Holaf ModelManager] Error loading models:", error);
+            if (modelsArea) modelsArea.innerHTML = `<p class="holaf-manager-message error">Error loading models: ${error.message}</p>`;
+            if (statusBar) statusBar.textContent = "Status: Error loading models.";
+        } finally {
+            this.isLoading = false;
         }
     },
 
-    filterAndRenderModels(searchTerm = '') {
-        this.currentFilter = searchTerm.toLowerCase();
+    renderModels(filterText = "") {
+        const modelsArea = document.getElementById("holaf-manager-models-area");
+        if (!modelsArea) return;
 
-        const filteredModels = this.allModels.filter(model =>
-            model.name.toLowerCase().includes(this.currentFilter)
+        modelsArea.innerHTML = '';
+
+        const filteredModels = this.models.filter(model =>
+            model.name.toLowerCase().includes(filterText.toLowerCase()) ||
+            model.type.toLowerCase().includes(filterText.toLowerCase())
         );
 
         if (filteredModels.length === 0) {
-            if (this.allModels.length === 0) {
-                this.content.innerHTML = '<p class="holaf-manager-message">No models found in your ComfyUI directories. Click Refresh to try again.</p>';
-                this.statusBar.textContent = '0 models found';
-            } else {
-                this.content.innerHTML = `<p class="holaf-manager-message">No models match your search for "${this.currentFilter}".</p>`;
-                this.statusBar.textContent = `0 of ${this.allModels.length} models shown`;
-            }
+            modelsArea.innerHTML = `<p class="holaf-manager-message">${filterText ? 'No models match your search.' : 'No models found.'}</p>`;
             return;
         }
 
-        this.content.innerHTML = '';
-        const fragment = document.createDocumentFragment();
-
         filteredModels.forEach(model => {
-            const modelElement = document.createElement('div');
-            modelElement.className = 'holaf-model-card';
+            const card = document.createElement("div");
+            card.className = "holaf-model-card";
 
-            const modelName = document.createElement('div');
-            modelName.className = 'holaf-model-name';
-            modelName.title = model.path;
-            modelName.textContent = model.name;
+            const sizeMB = (model.size_bytes / (1024 * 1024)).toFixed(2);
 
-            const modelInfo = document.createElement('div');
-            modelInfo.className = 'holaf-model-info';
-
-            const modelType = document.createElement('span');
-            modelType.className = 'holaf-model-type';
-            modelType.textContent = model.type;
-
-            const modelSize = document.createElement('span');
-            modelSize.className = 'holaf-model-size';
-            modelSize.textContent = formatBytes(model.size_bytes);
-
-            const modelActions = document.createElement('div');
-            modelActions.style.marginLeft = '15px';
-
-            const deleteButton = document.createElement('button');
-            deleteButton.textContent = '🗑️';
-            deleteButton.title = 'Delete Model';
-            deleteButton.style.cssText = `
-                background: #553333;
-                color: #f0b0b0;
-                border: 1px solid #774444;
-                border-radius: 4px;
-                cursor: pointer;
-                padding: 2px 6px;
-                font-size: 14px;
-                line-height: 1;
-                transition: background-color 0.2s, color 0.2s;
+            card.innerHTML = `
+                <span class="holaf-model-name" title="${model.path}">${model.name}</span>
+                <div class="holaf-model-info">
+                    <span class="holaf-model-type">${model.type}</span>
+                    <span class="holaf-model-size">${sizeMB} MB</span>
+                </div>
             `;
-            deleteButton.onmouseover = () => { deleteButton.style.backgroundColor = '#c44'; deleteButton.style.color = 'white'; };
-            deleteButton.onmouseout = () => { deleteButton.style.backgroundColor = '#553333'; deleteButton.style.color = '#f0b0b0'; };
-
-            deleteButton.onclick = () => this.handleDeleteRequest(model);
-
-            modelActions.appendChild(deleteButton);
-            modelInfo.append(modelType, modelSize, modelActions);
-            modelElement.append(modelName, modelInfo);
-
-            fragment.appendChild(modelElement);
+            modelsArea.appendChild(card);
         });
-
-        this.content.appendChild(fragment);
-        this.statusBar.textContent = `${filteredModels.length} of ${this.allModels.length} models shown`;
     },
 
-    // --- Dialog Visibility and Drag/Resize ---
-    show() {
-        this.panel.style.display = "flex";
-        this.content.innerHTML = '<p class="holaf-manager-message">Click Refresh to load models.</p>';
-        this.statusBar.textContent = "Ready";
-        this.searchInput.focus();
-    },
-
-    hide() {
-        this.panel.style.display = "none";
-    },
-
-    _bakePosition(panel) {
-        if (panel.style.transform && panel.style.transform !== 'none') {
-            const rect = panel.getBoundingClientRect();
-            panel.style.top = `${rect.top}px`;
-            panel.style.left = `${rect.left}px`;
-            panel.style.transform = 'none';
+    filterModels(searchText) {
+        this.renderModels(searchText);
+        const statusBar = document.getElementById("holaf-manager-statusbar");
+        const modelsArea = document.getElementById("holaf-manager-models-area");
+        if (statusBar && modelsArea) { // modelsArea check added
+            const count = modelsArea.getElementsByClassName("holaf-model-card").length;
+            statusBar.textContent = `Status: Displaying ${count} of ${this.models.length} models.`;
         }
     },
 
-    startDrag(e) {
-        if (e.target.closest("button")) return;
-        this._bakePosition(this.panel);
-        this.isDragging = true;
-        this.dragOffsetX = e.clientX - this.panel.offsetLeft;
-        this.dragOffsetY = e.clientY - this.panel.offsetTop;
-        this.panel.style.userSelect = 'none';
+    show() {
+        console.log("[Holaf ModelManager] show called.");
+        if (!this.panelElements || !this.panelElements.panelEl) {
+            console.log("[Holaf ModelManager] Panel not created or panelEl missing. Calling createPanel().");
+            this.createPanel();
+            if (!this.panelElements || !this.panelElements.panelEl) {
+                console.error("[Holaf ModelManager] Panel creation FAILED in show(). Aborting show.");
+                return;
+            }
+        }
+
+        this.applySettings();
+
+        const panelIsVisible = this.panelElements.panelEl.style.display === "flex";
+
+        if (panelIsVisible) {
+            console.log("[Holaf ModelManager] Panel already visible. Hiding it.");
+            this.panelElements.panelEl.style.display = "none";
+        } else {
+            console.log("[Holaf ModelManager] Setting panel display to flex.");
+            this.panelElements.panelEl.style.display = "flex";
+            HolafPanelManager.bringToFront(this.panelElements.panelEl); // Bring to front when shown
+            if (!this.isInitialized) {
+                this.loadModels();
+                this.isInitialized = true;
+            }
+        }
+        console.log("[Holaf ModelManager] show finished.");
     },
 
-    startResize(e) {
-        e.preventDefault();
-        this._bakePosition(this.panel);
-        this.isResizing = true;
-    },
+    applySettings() {
+        console.log("[Holaf ModelManager] applySettings called with current settings:", JSON.parse(JSON.stringify(this.settings)));
+        if (this.panelElements && this.panelElements.panelEl) {
+            this.panelElements.panelEl.style.width = `${this.settings.panel_width}px`;
+            this.panelElements.panelEl.style.height = `${this.settings.panel_height}px`;
 
-    drag(e) {
-        if (!this.isDragging) return;
-        e.preventDefault();
-        this.panel.style.left = `${e.clientX - this.dragOffsetX}px`;
-        this.panel.style.top = `${e.clientY - this.dragOffsetY}px`;
-    },
-
-    resize(e) {
-        if (!this.isResizing) return;
-        e.preventDefault();
-        const newWidth = e.clientX - this.panel.offsetLeft + 8;
-        const newHeight = e.clientY - this.panel.offsetTop + 8;
-        this.panel.style.width = `${newWidth}px`;
-        this.panel.style.height = `${newHeight}px`;
-    },
-
-    stopActions() {
-        this.isDragging = false;
-        this.isResizing = false;
-        this.panel.style.userSelect = '';
+            if (this.settings.panel_x !== null && this.settings.panel_y !== null) {
+                this.panelElements.panelEl.style.left = `${this.settings.panel_x}px`;
+                this.panelElements.panelEl.style.top = `${this.settings.panel_y}px`;
+                this.panelElements.panelEl.style.transform = 'none';
+            } else {
+                this.panelElements.panelEl.style.left = `50%`;
+                this.panelElements.panelEl.style.top = `50%`;
+                this.panelElements.panelEl.style.transform = 'translate(-50%, -50%)';
+            }
+            console.log("[Holaf ModelManager] Panel dimensions and position applied from settings.");
+        } else {
+            console.log("[Holaf ModelManager] applySettings: panelElements not ready.");
+        }
     }
 };
 
-/* // ON COMMENCE LE COMMENTAIRE ICI
 app.registerExtension({
-    name: "Holaf.ModelManager",
+    name: "Holaf.ModelManager.Panel",
     async setup() {
-        // const link = document.createElement("link"); // Cette ligne chargeait le CSS partagé
-        // link.rel = "stylesheet";
-        // link.type = "text/css";
-        // link.href = "extensions/ComfyUI-Holaf-Utilities/holaf_utilities.css";
-        // document.head.appendChild(link);
-
-        HolafModelManager.init();
-    }
+        console.log("[Holaf ModelManager] Extension setup() called.");
+        holafModelManager.addMenuItem();
+    },
 });
-*/ // ON TERMINE LE COMMENTAIRE ICI
+
+export default holafModelManager;
