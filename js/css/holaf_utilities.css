@@ -25,57 +25,60 @@
     background-color: var(--comfy-menu-item-bg-hover, #333);
 }
 
-/* Base style for floating panels - TEST AVEC !important */
+/* Base style for floating panels */
 .holaf-utility-panel {
-    position: fixed !important;
-    top: 50% !important;
-    left: 50% !important;
-    transform: translate(-50%, -50%) !important;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     /* Default to centered */
     min-width: 300px !important;
-    /* Réduit pour le test si jamais c'est trop grand */
     min-height: 200px !important;
-    /* Réduit pour le test */
-    width: 500px !important;
-    /* Taille par défaut pour test */
-    height: 350px !important;
-    /* Taille par défaut pour test */
+    width: 500px;
+    /* Default, overridden by JS or saved settings */
+    height: 350px;
+    /* Default, overridden by JS or saved settings */
     max-width: 1200px !important;
     max-height: 90vh !important;
-    background-color: #003366 !important;
-    /* Bleu foncé pour test visible */
-    border: 3px solid #FF00FF !important;
-    /* Magenta vif pour test visible */
+    /* --- COULEURS NORMALES --- */
+    background-color: var(--comfy-input-bg, #1c1c1c);
+    /* Couleur de fond plus neutre, alignée avec ComfyUI */
+    border: 1px solid var(--border-color, #444);
+    /* Bordure discrète */
+    /* --- FIN COULEURS NORMALES --- */
     border-radius: 8px !important;
+    /* Gardé pour l'esthétique */
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6) !important;
+    /* Gardé pour l'effet de profondeur */
     z-index: 1001 !important;
-    /* On top of canvas, below critical UI */
-    display: flex !important;
-    /* Essentiel, déjà forcé par JS mais on assure */
+    display: flex;
+    /* MODIFIÉ: !important retiré pour permettre la fermeture via JS */
     flex-direction: column !important;
-    /* Essentiel */
+    /* Essentiel pour la structure interne */
     font-family: sans-serif !important;
     overflow: hidden !important;
-    /* Prevent content from spilling during resize */
-    color: #e0e0e0 !important;
+    color: var(--fg-color, #e0e0e0) !important;
+    /* Couleur de texte alignée avec ComfyUI */
 }
 
 /* Header for dragging, title, and buttons */
 .holaf-utility-header {
-    background-color: #2a2a2a !important;
-    color: white !important;
+    background-color: var(--comfy-menu-bg, #2a2a2a) !important;
+    /* Alignée avec les menus ComfyUI */
+    color: var(--fg-color, white) !important;
     padding: 8px 12px !important;
     cursor: move !important;
     user-select: none !important;
-    border-bottom: 1px solid #444 !important;
+    border-bottom: 1px solid var(--border-color, #444) !important;
     border-top-left-radius: 8px !important;
+    /* Correspond au panel */
     border-top-right-radius: 8px !important;
+    /* Correspond au panel */
     display: flex !important;
     justify-content: space-between !important;
     align-items: center !important;
     font-weight: bold !important;
     flex-shrink: 0 !important;
-    /* Header should not shrink */
 }
 
 /* Close button on the header */
@@ -93,11 +96,11 @@
     font-weight: bold !important;
     transition: background-color 0.2s, color 0.2s !important;
     margin-left: auto !important;
-    /* Push to the right */
 }
 
 .holaf-utility-close-button:hover {
     background-color: #c44 !important;
+    /* Rouge pour indiquer la suppression/fermeture */
     color: white !important;
 }
 
@@ -110,9 +113,7 @@
     height: 16px !important;
     cursor: se-resize !important;
     background-image: linear-gradient(135deg, transparent 0%, transparent 50%, #888 50%, #888 75%, transparent 75%, transparent 100%) !important;
-    /* Poignée plus visible */
     z-index: 2 !important;
-    /* On top of content */
 }
 
 /* Common button style for inside panels, if needed by a utility */
@@ -150,7 +151,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    /* Add some gap between toolbar items */
 }
 
 #holaf-manager-panel .holaf-manager-search {
@@ -232,7 +232,6 @@
 
 #holaf-manager-panel .holaf-model-size {
     min-width: 80px;
-    /* Align sizes */
     text-align: right;
 }
 

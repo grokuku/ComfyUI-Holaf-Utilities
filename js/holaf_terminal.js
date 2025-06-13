@@ -271,21 +271,22 @@ const holafTerminal = {
                 box-sizing: border-box;
             }
             #holaf-terminal-panel .holaf-terminal-view-wrapper { 
-                flex-grow: 1;
+                flex-grow: 1; /* Ce wrapper prend l'espace vertical disponible */
                 padding: 0 5px 5px 10px; 
                 overflow: hidden; 
                 width: 100%; 
-                height: 100%; 
+                /* height: 100%; REMOVED - flex-grow should handle parent height */
                 display: flex; 
                 flex-direction: column; 
             }
-            /* COMMENTED OUT FOR TESTING DRAG/RESIZE - Re-enable later if needed */
-            /*
-            #holaf-terminal-panel .holaf-terminal-view-wrapper > div { 
-                width: 100% !important; 
-                height: 100% !important; 
+            /* MODIFIED AND UNCOMMENTED */
+            #holaf-terminal-panel .holaf-terminal-view-wrapper > div { /* Cible _xterm_container */
+                flex-grow: 1; /* _xterm_container prend l'espace vertical dans le wrapper */
+                width: 100% !important; /* width peut rester important si xterm le nécessite */
+                /* height: 100% !important; REMOVED - flex-grow should handle it */
+                display: flex; /* Pour que les enfants de xterm (canvas) s'adaptent bien */
+                flex-direction: column; /* idem */
             }
-            */
         `;
         document.head.appendChild(style);
         console.log("[Holaf Terminal] Terminal-specific CSS injected.");
