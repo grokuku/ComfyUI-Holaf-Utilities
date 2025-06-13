@@ -10,19 +10,19 @@
 
 /* Base style for the main "Utilities" button */
 #holaf-utilities-menu-button {
-    background-color: var(--comfy-menu-bg, #222);
+    background-color: #D84315; /* MODIFIED: Vibrant orange color */
     color: var(--fg-color, white);
     font-size: 14px;
     padding: 10px;
     cursor: pointer;
-    border: 1px solid var(--border-color, #444);
+    border: 1px solid #BF360C; /* MODIFIED: Darker orange for border */
     border-radius: 8px;
     margin: 0 4px;
     transition: background-color 0.2s;
 }
 
 #holaf-utilities-menu-button:hover {
-    background-color: var(--comfy-menu-item-bg-hover, #333);
+    background-color: #F4511E; /* MODIFIED: Lighter orange for hover */
 }
 
 /* Base style for floating panels */
@@ -38,7 +38,7 @@
     /* Default, overridden by JS or saved settings */
     height: 350px;
     /* Default, overridden by JS or saved settings */
-    max-width: 1200px !important;
+    max-width: 90vw !important;
     max-height: 90vh !important;
     /* --- COULEURS NORMALES --- */
     background-color: var(--comfy-input-bg, #1c1c1c);

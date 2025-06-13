@@ -37,7 +37,7 @@ const holafModelManager = {
             cursor: pointer;
             color: var(--fg-color, #ccc);
         `;
-        menuItem.onmouseover = () => { menuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
+        menuItem.onmouseover = () => { menuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #D84315)'; };
         menuItem.onmouseout = () => { menuItem.style.backgroundColor = 'transparent'; };
 
         menuItem.onclick = () => {

@@ -33,18 +33,8 @@ const HolafUtilitiesMenu = {
         const mainButton = document.createElement("button");
         mainButton.id = "holaf-utilities-menu-button";
         mainButton.textContent = "Utilities";
-        // mainButton.className = "holaf-main-utility-button"; // Class removed, direct style instead
-        mainButton.style.cssText = `
-            background-color: var(--comfy-menu-bg, #222);
-            color: var(--fg-color, white);
-            font-size: 14px;
-            padding: 10px;
-            cursor: pointer;
-            border: 1px solid var(--border-color, #444);
-            border-radius: 8px;
-        `;
-        mainButton.onmouseover = () => { mainButton.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
-        mainButton.onmouseout = () => { mainButton.style.backgroundColor = 'var(--comfy-menu-bg, #222)'; };
+        // The style is now primarily controlled by holaf_utilities.css
+        // We remove the inline styles that were overriding the CSS file.
 
         // --- Create the dropdown menu (ul) ---
         const dropdownMenu = document.createElement("ul");

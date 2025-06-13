@@ -129,7 +129,7 @@ const holafTerminal = {
             cursor: pointer;
             color: var(--fg-color, #ccc);
         `;
-        terminalMenuItem.onmouseover = () => { terminalMenuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #333)'; };
+        terminalMenuItem.onmouseover = () => { terminalMenuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #D84315)'; };
         terminalMenuItem.onmouseout = () => { terminalMenuItem.style.backgroundColor = 'transparent'; };
 
         terminalMenuItem.onclick = () => {
