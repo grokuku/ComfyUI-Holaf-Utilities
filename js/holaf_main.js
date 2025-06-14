@@ -40,7 +40,7 @@ const HolafUtilitiesMenu = {
 
         const mainButton = document.createElement("button");
         mainButton.id = "holaf-utilities-menu-button";
-        mainButton.textContent = "Utilities";
+        mainButton.textContent = "Holaf's Utilities";
 
         // Créer le menu déroulant une seule fois et l'attacher au body (caché)
         if (!this.dropdownMenuEl) {

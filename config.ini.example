@@ -37,20 +37,42 @@ password_hash =
 # shell_command = cmd.exe
 
 
-# --- UI Settings ---
+# --- UI Settings (Auto-Saved) ---
 # These settings are automatically saved when you change them in the UI.
 # You can manually edit them here if needed.
-# Note: Currently, these settings are only used by the Terminal.
 
-[UI]
-# theme: The name of the color theme. (e.g., Dark, Light, Solarized Dark, Monokai)
-# font_size: The font size in pixels.
+[TerminalUI]
+# theme: The name of the color theme. 
+#        (e.g., "Graphite Orange", "Midnight Purple", "Ashy Light")
+# font_size: The font size for the terminal text in pixels.
 # panel_x, panel_y: The top-left position of the panel. (Leave blank for default center)
 # panel_width, panel_height: The size of the panel in pixels.
 #
-# theme = Dark
+# theme = Graphite Orange
 # font_size = 14
 # panel_x = 200
 # panel_y = 150
 # panel_width = 700
 # panel_height = 500
+
+[ModelManagerUI]
+# theme: The name of the color theme.
+#        (e.g., "Graphite Orange", "Midnight Purple", "Ashy Light")
+# panel_x, panel_y: The top-left position of the panel. (Leave blank for default center)
+# panel_width, panel_height: The size of the panel in pixels.
+# filter_type: The last selected model type filter.
+# filter_search_text: The last used search text.
+# sort_column: The column by which the model list was last sorted.
+# sort_order: The sort order ('asc' or 'desc').
+# zoom_level: The zoom level for the Model Manager UI (e.g., 0.8, 1.0, 1.2).
+#
+# theme = Graphite Orange
+# panel_x = 300
+# panel_y = 250
+# panel_width = 800
+# panel_height = 550
+# filter_type = Checkpoints
+# filter_search_text = sdxl
+# sort_column = name
+# sort_order = asc
+# zoom_level = 1.0

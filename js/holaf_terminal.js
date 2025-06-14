@@ -3,13 +3,13 @@
  * Date: 2025-05-23 (Final)
  *
  * MODIFIED: Added delayed fitTerminal on initial socket open for better initial sizing.
+ * MODIFIED: Unified theme management using HOLAF_THEMES from holaf_panel_manager.
  * === End Documentation ===
  */
 import { app } from "../../../scripts/app.js";
-import { HolafPanelManager } from "./holaf_panel_manager.js";
+import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
 
 function loadScript(src) {
-    // ... (contenu de loadScript inchangé)
     return new Promise((resolve, reject) => {
         const existingScript = document.querySelector(`script[src="${src}"]`);
         if (existingScript && existingScript.dataset.loaded) {
@@ -62,7 +62,6 @@ function loadScript(src) {
 }
 
 const holafTerminal = {
-    // ... (propriétés inchangées : panelElements, terminal, etc.)
     panelElements: null,
     terminal: null,
     fitAddon: null,
@@ -71,22 +70,16 @@ const holafTerminal = {
     scriptsLoaded: false, 
     settings: {
         fontSize: 14,
-        theme: 'Dark',
+        theme: HOLAF_THEMES[0].name, // Default to the first theme in the shared list
         panel_x: null,
         panel_y: null,
         panel_width: 600,
         panel_height: 400,
     },
-    themes: [
-        { name: 'Dark', background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc', selectionBackground: '#555555' },
-        { name: 'Light', background: '#fdf6e3', foreground: '#657b83', cursor: '#657b83', selectionBackground: '#eee8d5' },
-        { name: 'Solarized Dark', background: '#002b36', foreground: '#839496', cursor: '#93a1a1', selectionBackground: '#073642' },
-        { name: 'Monokai', background: '#272822', foreground: '#f8f8f2', cursor: '#f8f8f2', selectionBackground: '#49483e' },
-        { name: 'Comfy', background: '#222222', foreground: '#e0e0e0', cursor: '#ffffff', selectionBackground: '#4a4a4a' }
-    ],
+    // themes array is now removed, using HOLAF_THEMES from panel_manager
     saveTimeout: null,
 
-    async ensureScriptsLoaded() { /* ... (inchangé) ... */ 
+    async ensureScriptsLoaded() { 
         if (this.scriptsLoaded) return true;
         try {
             const basePath = "extensions/ComfyUI-Holaf-Utilities/js/";
@@ -108,7 +101,7 @@ const holafTerminal = {
             return false;
         }
     },
-    addMenuItem() { /* ... (inchangé) ... */ 
+    addMenuItem() { 
         const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
         if (!dropdownMenu) {
             setTimeout(() => { 
@@ -124,8 +117,6 @@ const holafTerminal = {
             cursor: pointer;
             color: var(--fg-color, #ccc);
         `;
-        terminalMenuItem.onmouseover = () => { terminalMenuItem.style.backgroundColor = 'var(--comfy-menu-item-bg-hover, #D84315)'; };
-        terminalMenuItem.onmouseout = () => { terminalMenuItem.style.backgroundColor = 'transparent'; };
 
         terminalMenuItem.onclick = () => {
             this.show();
@@ -133,7 +124,7 @@ const holafTerminal = {
         };
         dropdownMenu.prepend(terminalMenuItem);
     },
-    createPanel() { /* ... (inchangé) ... */ 
+    createPanel() { 
         if (this.panelElements && this.panelElements.panelEl) {
             return;
         }
@@ -147,7 +138,7 @@ const holafTerminal = {
         themeButton.className = "holaf-header-button"; 
         themeButton.title = "Change Theme";
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
-        const themeMenu = this.createThemeMenu(); 
+        const themeMenu = this.createThemeMenu(); // Uses HOLAF_THEMES
         themeButton.onclick = (e) => {
             e.stopPropagation();
             themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
@@ -227,21 +218,22 @@ const holafTerminal = {
             this.manualSetupView, this.terminalContainer
         );
     },
-    createThemeMenu() { /* ... (inchangé) ... */ 
+    createThemeMenu() { 
         const menu = document.createElement("ul");
         menu.className = "holaf-theme-menu";
-        this.themes.forEach(theme => {
+        HOLAF_THEMES.forEach(theme => { // Iterate over HOLAF_THEMES
             const item = document.createElement("li");
             item.textContent = theme.name;
             item.onclick = (e) => {
-                e.stopPropagation(); this.setTheme(theme.name);
+                e.stopPropagation(); 
+                this.setTheme(theme.name);
                 if (menu) menu.style.display = 'none';
             };
             menu.appendChild(item);
         });
         return menu;
     },
-    async show() { /* ... (inchangé) ... */ 
+    async show() { 
         if (!this.panelElements || !this.panelElements.panelEl) {
             this.createPanel();
             if (!this.panelElements || !this.panelElements.panelEl) {
@@ -260,7 +252,9 @@ const holafTerminal = {
         if (HolafPanelManager && typeof HolafPanelManager.bringToFront === 'function') {
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
         }
-        this.applySettings(); 
+        
+        // Settings are applied by checkServerStatus or applySettings called from it
+        // await this.applySettings(); // No longer needed here as checkServerStatus will call it or setTheme
 
         const scriptsReady = await this.ensureScriptsLoaded();
         if (!scriptsReady) {
@@ -270,7 +264,7 @@ const holafTerminal = {
         }
 
         if (!this.isInitialized || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-            this.checkServerStatus(); 
+            this.checkServerStatus(); // This will load settings and then apply theme
             this.isInitialized = true;
         } else if (this.terminal) { 
             this.showView('terminal'); 
@@ -279,7 +273,7 @@ const holafTerminal = {
             });
         }
     },
-    applySettings() { /* ... (inchangé) ... */ 
+    applySettings(themeJustSet = false) { 
         if (this.panelElements && this.panelElements.panelEl) {
             this.panelElements.panelEl.style.width = `${this.settings.panel_width}px`;
             this.panelElements.panelEl.style.height = `${this.settings.panel_height}px`;
@@ -293,13 +287,15 @@ const holafTerminal = {
                 this.panelElements.panelEl.style.transform = 'translate(-50%, -50%)';
             }
         }
-        this.setTheme(this.settings.theme, false); 
+        if (!themeJustSet) { // Avoid re-applying if setTheme just called this
+            this.setTheme(this.settings.theme, false); // Apply current theme, don't re-save
+        }
         if (this.terminal) {
             this.terminal.options.fontSize = this.settings.fontSize;
             this.fitTerminal();
         }
     },
-    saveSettings(newSettings) { /* ... (inchangé) ... */ 
+    saveSettings(newSettings) { 
         if (newSettings && typeof newSettings === 'object') {
             Object.assign(this.settings, newSettings); 
         }
@@ -307,7 +303,8 @@ const holafTerminal = {
         this.saveTimeout = setTimeout(async () => {
             try {
                 const settingsToSave = {
-                    theme: this.settings.theme, font_size: this.settings.fontSize,
+                    theme: this.settings.theme, // Theme name is already updated
+                    font_size: this.settings.fontSize,
                     panel_x: this.settings.panel_x, panel_y: this.settings.panel_y,
                     panel_width: this.settings.panel_width, panel_height: this.settings.panel_height,
                 };
@@ -324,20 +321,20 @@ const holafTerminal = {
             }
         }, 750);
     },
-    createTerminalView() { /* ... (inchangé) ... */ 
+    createTerminalView() { 
         const wrapper = document.createElement("div");
         wrapper.className = "holaf-terminal-view-wrapper";
         this._xterm_container = document.createElement("div"); 
         wrapper.appendChild(this._xterm_container);
         return wrapper;
     },
-    createLoadingView() { /* ... (inchangé) ... */ 
+    createLoadingView() { 
         const v = document.createElement("div");
         v.className = "holaf-terminal-non-terminal-view";
         v.textContent = "Checking server status...";
         return v;
     },
-    createLoginView() { /* ... (inchangé) ... */ 
+    createLoginView() { 
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view";
         const ptitle = document.createElement("h4"); ptitle.textContent = "Terminal Access"; ptitle.style.marginTop = "0";
@@ -350,7 +347,7 @@ const holafTerminal = {
         view.append(ptitle, label, this.passwordInput, connectButton, this.loginStatusMessage);
         return view;
     },
-    createSetupView() { /* ... (inchangé) ... */ 
+    createSetupView() { 
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view";
         const title = document.createElement("h3"); title.textContent = "Holaf Terminal Setup"; title.style.color="#4CAF50";
@@ -366,7 +363,7 @@ const holafTerminal = {
         view.append(title, p1, passLabel, this.newPasswordInput, confirmLabel, this.confirmPasswordInput, setButton, this.setupStatusMessage);
         return view;
     },
-    createManualSetupView() { /* ... (inchangé) ... */ 
+    createManualSetupView() { 
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view"; view.style.fontSize = "12px";
         const title = document.createElement("h3"); title.textContent = "Manual Setup Required"; title.style.color = "#f9a825";
@@ -379,7 +376,7 @@ const holafTerminal = {
         view.append(title, p1, p2, this.hashDisplay, copyButton, p3);
         return view;
     },
-    showView(viewName) { /* ... (inchangé) ... */ 
+    showView(viewName) { 
         if (!this.contentContainer) { console.error("[Holaf Terminal] showView: contentContainer is null!"); return; }
         const views = {
             loading: this.loadingView, login: this.loginView, setup: this.setupView,
@@ -398,19 +395,23 @@ const holafTerminal = {
             this.newPasswordInput.focus();
         }
     },
-    checkServerStatus: async function () { /* ... (inchangé) ... */ 
+    checkServerStatus: async function () { 
         this.showView('loading');
         try {
-            const r = await fetch("/holaf/terminal/status");
+            const r = await fetch("/holaf/utilities/settings");
             const d = await r.json();
-            if (d.ui_settings) {
-                this.settings.theme = d.ui_settings.theme || this.settings.theme;
-                this.settings.fontSize = d.ui_settings.font_size || this.settings.fontSize;
-                this.settings.panel_x = d.ui_settings.panel_x; 
-                this.settings.panel_y = d.ui_settings.panel_y; 
-                this.settings.panel_width = d.ui_settings.panel_width || this.settings.panel_width;
-                this.settings.panel_height = d.ui_settings.panel_height || this.settings.panel_height;
-                this.applySettings(); 
+            if (d.ui_terminal_settings) {
+                // Ensure the theme from settings is valid, otherwise use default
+                const validTheme = HOLAF_THEMES.find(t => t.name === d.ui_terminal_settings.theme);
+                this.settings.theme = validTheme ? d.ui_terminal_settings.theme : HOLAF_THEMES[0].name;
+                
+                this.settings.fontSize = d.ui_terminal_settings.font_size || this.settings.fontSize;
+                this.settings.panel_x = d.ui_terminal_settings.panel_x; 
+                this.settings.panel_y = d.ui_terminal_settings.panel_y; 
+                this.settings.panel_width = d.ui_terminal_settings.panel_width || this.settings.panel_width;
+                this.settings.panel_height = d.ui_terminal_settings.panel_height || this.settings.panel_height;
+                
+                this.applySettings(); // Apply all loaded settings, including theme
             }
             d.password_is_set ? this.showView('login') : this.showView('setup');
         } catch (e) {
@@ -418,7 +419,7 @@ const holafTerminal = {
             if(this.loadingView) this.loadingView.textContent = "Error: Could not contact server.";
         }
     },
-    setPassword: async function () { /* ... (inchangé) ... */ 
+    setPassword: async function () { 
         if(!this.newPasswordInput || !this.confirmPasswordInput || !this.setupStatusMessage) return;
         const newPass = this.newPasswordInput.value; const confirmPass = this.confirmPasswordInput.value; 
         if (!newPass || newPass.length < 4) { this.setupStatusMessage.textContent = "Password must be at least 4 characters long."; return; } 
@@ -439,7 +440,7 @@ const holafTerminal = {
             this.setupStatusMessage.textContent = `Error: Could not contact server.`; console.error("[Holaf Terminal] Error setting password:", e); 
         } 
     },
-    authenticateAndConnect: async function () { /* ... (inchangé) ... */ 
+    authenticateAndConnect: async function () { 
         if(!this.passwordInput || !this.loginStatusMessage) return;
         const password = this.passwordInput.value; 
         if (!password) { this.loginStatusMessage.textContent = "Error: Password cannot be empty."; return; } 
@@ -471,7 +472,9 @@ const holafTerminal = {
         
         try {
             if (!this.terminal) {
-                const currentThemeSettings = this.themes.find(t => t.name === this.settings.theme) || this.themes[0];
+                // Find the current theme config from HOLAF_THEMES
+                const currentThemeConfig = HOLAF_THEMES.find(t => t.name === this.settings.theme) || HOLAF_THEMES[0];
+
                 if (!window.Terminal || !window.FitAddon) {
                     console.error("[Holaf Terminal] xterm.js or FitAddon not loaded!");
                     if(this.loadingView) this.loadingView.textContent = "Error: Terminal library not loaded.";
@@ -479,7 +482,13 @@ const holafTerminal = {
                 }
                 this.terminal = new window.Terminal({
                     cursorBlink: true, fontSize: this.settings.fontSize,
-                    theme: currentThemeSettings, fontFamily: "monospace", rows: 24,
+                    theme: { // Apply colors directly from HOLAF_THEMES
+                        background: currentThemeConfig.colors.backgroundPrimary,
+                        foreground: currentThemeConfig.colors.textPrimary,
+                        cursor: currentThemeConfig.colors.cursor,
+                        selectionBackground: currentThemeConfig.colors.selectionBackground
+                    }, 
+                    fontFamily: "monospace", rows: 24,
                 });
                 this.fitAddon = new window.FitAddon.FitAddon();
                 this.terminal.loadAddon(this.fitAddon);
@@ -493,8 +502,9 @@ const holafTerminal = {
                 this.terminal.onData(data => { if (this.socket && this.socket.readyState === WebSocket.OPEN) this.socket.send(data); });
                 this.terminal.attachCustomKeyEventHandler(e => { if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && e.type === 'keydown') { if (this.terminal.hasSelection()) { try { navigator.clipboard.writeText(this.terminal.getSelection()); } catch(err){} return false; } } if (e.ctrlKey && (e.key === 'v' || e.key === 'V') && e.type === 'keydown') { try { navigator.clipboard.readText().then(text => { if (text && this.terminal) this.terminal.paste(text); });} catch(err){} return false; } return true; });
             } else {
+                // If terminal exists, ensure its theme and font size are up-to-date
+                this.setTheme(this.settings.theme, false); // Update xterm theme options
                 this.terminal.options.fontSize = this.settings.fontSize;
-                this.setTheme(this.settings.theme, false);
             }
         } catch (e) {
             console.error("Holaf Utilities: Terminal component instantiation error", e);
@@ -542,24 +552,24 @@ const holafTerminal = {
         };
     },
 
-    fitTerminal() { /* ... (inchangé, avec les logs précédents) ... */ 
+    fitTerminal() { 
         if (this.terminal && this.fitAddon && 
             this.panelElements && this.panelElements.panelEl.style.display === 'flex' && 
             this._xterm_container && this._xterm_container.offsetWidth > 10 && this._xterm_container.offsetHeight > 10 &&
             this._xterm_container.isConnected) { 
             try {
-                console.log(`[Holaf Terminal FIT] Before fit. Container W: ${this._xterm_container.offsetWidth}, H: ${this._xterm_container.offsetHeight}`);
-                const termRect = this.terminal.element ? this.terminal.element.getBoundingClientRect() : {width:0, height:0};
-                console.log(`[Holaf Terminal FIT] Before fit. XTerm Element W: ${termRect.width}, H: ${termRect.height}`);
+                // console.log(`[Holaf Terminal FIT] Before fit. Container W: ${this._xterm_container.offsetWidth}, H: ${this._xterm_container.offsetHeight}`);
+                // const termRect = this.terminal.element ? this.terminal.element.getBoundingClientRect() : {width:0, height:0};
+                // console.log(`[Holaf Terminal FIT] Before fit. XTerm Element W: ${termRect.width}, H: ${termRect.height}`);
 
                 this.fitAddon.fit();
                 const dims = this.fitAddon.proposeDimensions();
 
-                if (dims) {
-                    console.log(`[Holaf Terminal FIT] Proposed Dims - Cols: ${dims.cols}, Rows: ${dims.rows}. Sent to PTY.`);
-                } else {
-                    console.log("[Holaf Terminal FIT] proposeDimensions() returned undefined.");
-                }
+                // if (dims) {
+                //     console.log(`[Holaf Terminal FIT] Proposed Dims - Cols: ${dims.cols}, Rows: ${dims.rows}. Sent to PTY.`);
+                // } else {
+                //     console.log("[Holaf Terminal FIT] proposeDimensions() returned undefined.");
+                // }
 
                 if (dims && this.socket && this.socket.readyState === WebSocket.OPEN) {
                     this.socket.send(JSON.stringify({ resize: [dims.rows, dims.cols] }));
@@ -569,19 +579,47 @@ const holafTerminal = {
             }
         }
     },
-    setTheme(themeName, doSave = true) { /* ... (inchangé) ... */ 
-        const themeConfig = this.themes.find(t => t.name === themeName);
-        if (!themeConfig) { return; }
-        this.settings.theme = themeName;
+    setTheme(themeName, doSave = true) {
+        const themeConfig = HOLAF_THEMES.find(t => t.name === themeName);
+        if (!themeConfig) {
+            console.warn(`[Holaf Terminal] Theme '${themeName}' not found. Defaulting to ${HOLAF_THEMES[0].name}`);
+            this.setTheme(HOLAF_THEMES[0].name, doSave); // Recursive call with default
+            return;
+        }
+
+        this.settings.theme = themeName; // Store the name of the theme
+
         if (this.terminal) {
             this.terminal.options.theme = {
-                background: themeConfig.background, foreground: themeConfig.foreground,
-                cursor: themeConfig.cursor, selectionBackground: themeConfig.selectionBackground,
+                background: themeConfig.colors.backgroundPrimary,
+                foreground: themeConfig.colors.textPrimary,
+                cursor: themeConfig.colors.cursor,
+                selectionBackground: themeConfig.colors.selectionBackground,
+                // Optionally add more colors if xterm.js theme object supports them
+                // and if they are defined in HOLAF_THEMES (e.g., black, red, green, etc.)
             };
         }
+
+        if (this.panelElements && this.panelElements.panelEl) {
+            // Remove all other theme classes from HOLAF_THEMES
+            HOLAF_THEMES.forEach(t => {
+                if (this.panelElements.panelEl.classList.contains(t.className)) {
+                    this.panelElements.panelEl.classList.remove(t.className);
+                }
+            });
+            // Add the new theme class
+            this.panelElements.panelEl.classList.add(themeConfig.className);
+            console.log(`[Holaf Terminal] Theme set to: ${themeName} (Class: ${themeConfig.className})`);
+        }
+        
         if (doSave) this.saveSettings({ theme: themeName });
+        // Call applySettings with themeJustSet=true to avoid re-applying xterm options if not needed
+        // but still ensure panel dimensions etc. are correct.
+        // However, applySettings itself calls setTheme(..., false), so this might be redundant or cause a loop.
+        // Let's rely on the natural flow: setTheme updates, saveSettings saves.
+        // applySettings (called by checkServerStatus) will correctly apply the loaded theme initially.
     },
-    increaseFontSize() { /* ... (inchangé) ... */ 
+    increaseFontSize() { 
         if (this.settings.fontSize < 30) {
             this.settings.fontSize++;
             if (this.terminal) this.terminal.options.fontSize = this.settings.fontSize;
@@ -589,7 +627,7 @@ const holafTerminal = {
             this.saveSettings({ font_size: this.settings.fontSize }); 
         }
     },
-    decreaseFontSize() { /* ... (inchangé) ... */ 
+    decreaseFontSize() { 
         if (this.settings.fontSize > 6) {
             this.settings.fontSize--;
             if (this.terminal) this.terminal.options.fontSize = this.settings.fontSize;
@@ -601,7 +639,9 @@ const holafTerminal = {
 
 app.registerExtension({
     name: "Holaf.Terminal.Panel",
-    async setup() { /* ... (inchangé) ... */ 
+    async setup() { 
+        // Load settings first, so theme is known before panel creation
+        // This is handled by checkServerStatus when the panel is first shown.
         const addMenuItemWhenReady = () => {
             if (window.HolafUtilitiesMenuReady) {
                 holafTerminal.addMenuItem();

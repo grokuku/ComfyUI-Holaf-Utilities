@@ -1,0 +1,79 @@
+Phase 1 : Deep Scan Local (Implémentée et Corrigée)
+
+    Déclenchement :
+
+        L'utilisateur sélectionne un ou plusieurs modèles dans l'interface du Model Manager.
+
+        Un bouton "Deep Scan" est disponible. Il n'est actif que si au moins un fichier .safetensors est sélectionné (pour cette phase initiale).
+
+        Au clic, une requête est envoyée au backend avec les chemins (sous une forme canonique : relatifs à la base de ComfyUI avec des séparateurs /, ou absolus avec des / si hors de l'arborescence ComfyUI standard) des modèles sélectionnés.
+
+    Traitement Backend (pour chaque modèle sélectionné) :
+
+        Identification du Fichier : Le backend reconstruit le chemin absolu du fichier sur le serveur (spécifique à l'OS) à partir du chemin canonique reçu.
+
+        Calcul du Hash SHA256 :
+
+            Le hash SHA256 complet du fichier est calculé.
+
+            Technique : Lecture du fichier par blocs pour gérer les gros fichiers sans surcharger la mémoire, mise à jour du hasher hashlib.sha256.
+
+        Extraction des Métadonnées (pour les fichiers .safetensors) :
+
+            Si le fichier est une extension .safetensors et que la bibliothèque safetensors est disponible :
+
+                Le fichier est ouvert en utilisant safetensors.safe_open.
+
+                La section metadata() (correspondant au dictionnaire __metadata__ dans le header du fichier) est extraite.
+
+                Le JSON brut de ces métadonnées est stocké.
+
+                Des champs spécifiques sont parsés à partir de ces métadonnées (si présents), notamment :
+
+                    ss_tags ou ss_tag (tags d'entraînement, souvent de Kohya SS).
+
+                    ss_trigger_words (mots déclencheurs pour les LoRAs).
+
+                    ss_sd_model_name ou ss_base_model_version (modèle de base utilisé, ex: SD1.5, SDXL).
+
+                    ss_resolution (résolution d'entraînement, ex: "512x512").
+
+            Si la bibliothèque safetensors n'est pas disponible, cette étape est sautée pour les métadonnées.
+
+        Stockage en Base de Données :
+
+            Les informations collectées (SHA256, JSON des métadonnées, champs parsés) sont stockées dans la base de données SQLite (holaf_models.sqlite3) dans des colonnes dédiées de la table models. La clé de recherche et de stockage pour le chemin du modèle est sa forme canonique.
+
+            Un timestamp last_deep_scanned_at est également enregistré.
+
+        Gestion des Erreurs : Les erreurs (fichier non trouvé sur le serveur après reconstruction du chemin, échec du hash, échec de l'extraction des métadonnées, modèle non trouvé en base avec le chemin canonique, erreur de base de données) sont capturées et retournées au frontend.
+
+    Retour Frontend :
+
+        Le backend retourne un statut global de l'opération, le nombre de modèles mis à jour, et une liste des erreurs rencontrées (chaque erreur étant associée au chemin canonique du modèle concerné).
+
+        Le frontend affiche un message de statut et logue les erreurs détaillées dans la console du navigateur.
+
+        La liste des modèles est ensuite rafraîchie pour que les données en mémoire JavaScript soient à jour avec la base de données.
+
+    Normalisation des Chemins (Point clé de la correction) :
+
+        Une stratégie de normalisation des chemins a été implémentée pour assurer la cohérence entre le client, le serveur et la base de données.
+
+        Forme Canonique : Les chemins sont stockés dans la base de données et échangés avec le client sous une "forme canonique" :
+
+            Relatifs au répertoire de base de ComfyUI (ex: models/checkpoints/mon_modele.safetensors) si le modèle est détecté comme étant à l'intérieur de cette arborescence.
+
+            Absolus dans les autres cas (ex: pour les modèles provenant de extra_model_paths.yaml qui sont en dehors du répertoire ComfyUI principal).
+
+            Dans tous les cas, la forme canonique utilise des slashes / comme séparateurs de répertoires.
+
+        Conversion :
+
+            Lors du scan initial des modèles (scan_and_update_db), les chemins de fichiers spécifiques à l'OS sont convertis en cette forme canonique avant d'être stockés dans la base de données.
+
+            Lorsqu'un client demande la liste des modèles (get_all_models_from_db), les chemins canoniques sont récupérés de la base et envoyés.
+
+            Lorsqu'une requête de "deep scan" est reçue du client, le chemin canonique fourni est utilisé pour rechercher le modèle dans la base de données. Pour les opérations sur le système de fichiers (calcul de hash, lecture de métadonnées), ce chemin canonique est reconverti par le backend en un chemin absolu spécifique à l'OS.
+
+        Cette approche résout les problèmes antérieurs où des différences de format de chemin (ex: \ vs /, chemins absolus vs relatifs non standardisés) pouvaient entraîner des erreurs "Model not found in DB" lors des opérations de deep scan.
