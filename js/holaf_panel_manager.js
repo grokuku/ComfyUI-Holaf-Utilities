@@ -6,8 +6,8 @@
  * and resizing floating panels within the ComfyUI interface.
  */
 
-const BASE_Z_INDEX = 1000;
-let currentMaxZIndex = BASE_Z_INDEX;
+const BASE_Z_INDEX = 1000; // Base for panels
+let currentMaxZIndex = BASE_Z_INDEX; // Tracks the highest z-index currently assigned to a panel
 const openPanels = new Set();
 
 export const HolafPanelManager = {
@@ -31,37 +31,64 @@ export const HolafPanelManager = {
             panel.style.transform = 'translate(-50%, -50%)';
         }
 
-        // Initial z-index: set by bringToFront called from utility's show() or later interaction
-        // panel.style.zIndex = BASE_Z_INDEX; // Start at base, bringToFront will elevate
         openPanels.add(panel);
-
 
         // --- Header ---
         const header = document.createElement("div");
         header.className = "holaf-utility-header";
 
         const title = document.createElement("span");
-        title.innerHTML = options.title;
+        title.innerHTML = options.title; // title can now contain HTML
+        title.style.flexGrow = "1"; // Allow title to take space
+        title.style.overflow = "hidden";
+        title.style.textOverflow = "ellipsis";
+        title.style.whiteSpace = "nowrap";
+
         header.appendChild(title);
 
+
         if (options.headerContent) {
-            header.appendChild(options.headerContent);
+            // Header content (like buttons) should be wrapped to control its flex behavior
+            const headerControlsWrapper = document.createElement("div");
+            headerControlsWrapper.style.display = "flex";
+            headerControlsWrapper.style.alignItems = "center";
+            // The order of elements in header (title, headerContent, closeButton) is now more explicit
+            // headerContent itself can define its order via `order` CSS property if needed by the specific utility
+            headerControlsWrapper.appendChild(options.headerContent);
+            header.appendChild(headerControlsWrapper);
         }
 
         const closeButton = document.createElement("button");
         closeButton.className = "holaf-utility-close-button";
         closeButton.textContent = "✖";
-        closeButton.onclick = (e) => { // Added event 'e'
-            e.stopPropagation(); // Prevent mousedown on panel from firing after close
+        closeButton.style.marginLeft = "auto"; // Push close button to the far right if no other controls
+        if (options.headerContent) {
+             closeButton.style.marginLeft = "10px"; // Add some space if there are other header controls
+        }
+
+        closeButton.onclick = (e) => {
+            e.stopPropagation();
             panel.style.display = "none";
             openPanels.delete(panel);
-            // Optional: Recalculate currentMaxZIndex if needed, though less critical
-            // if new panels always increment from a potentially gapped currentMaxZIndex.
+            // Recalculate currentMaxZIndex if the closed panel was the top one
+            if (parseInt(panel.style.zIndex) === currentMaxZIndex && openPanels.size > 0) {
+                currentMaxZIndex = BASE_Z_INDEX; // Reset
+                openPanels.forEach(p => {
+                    const pZIndex = parseInt(p.style.zIndex);
+                    if (pZIndex > currentMaxZIndex) {
+                        currentMaxZIndex = pZIndex;
+                    }
+                });
+            } else if (openPanels.size === 0) {
+                currentMaxZIndex = BASE_Z_INDEX; // Reset if no panels are open
+            }
+
             if (options.onClose) {
                 options.onClose();
             }
         };
         header.appendChild(closeButton);
+
 
         // --- Content ---
         const content = document.createElement("div");
@@ -69,7 +96,7 @@ export const HolafPanelManager = {
         content.style.display = "flex";
         content.style.flexDirection = "column";
         content.style.overflow = "hidden";
-        content.style.position = "relative";
+        content.style.position = "relative"; // Needed for some internal absolute positioning like resize handle
 
         // --- Resize Handle ---
         const resizeHandle = document.createElement("div");
@@ -78,49 +105,52 @@ export const HolafPanelManager = {
         panel.append(header, content, resizeHandle);
         document.body.appendChild(panel);
 
-        // MODIFIED: Add mousedown listener to the panel itself in capture phase
-        panel.addEventListener("mousedown", () => {
-            this.bringToFront(panel);
-        }, true); // true for capture phase
+        panel.addEventListener("mousedown", (e) => { // Capture phase not strictly necessary but fine
+            // Only bring to front if the mousedown is on the panel itself or its header, not interactive elements inside content
+            if (e.target === panel || header.contains(e.target)) {
+                 this.bringToFront(panel);
+            }
+        }, true);
+
 
         this.makeDraggable(panel, header, options.onStateChange);
         this.makeResizable(panel, resizeHandle, options.onStateChange, options.onResize);
+        
+        this.bringToFront(panel); // Bring to front on creation
 
-        // Set initial z-index after creation and event listeners are set up
-        // This ensures it gets a z-index in the sequence.
-        // It will be immediately brought to front if it's the only one or by the show() method.
-        this.bringToFront(panel);
-
-
-        return { panelEl: panel, contentEl: content };
+        return { panelEl: panel, contentEl: content, headerEl: header }; // Return headerEl for direct manipulation
     },
 
     bringToFront(panelEl) {
         if (!openPanels.has(panelEl)) {
-            console.warn(`[HolafPanelManager] Panel ${panelEl.id} not managed. Cannot bring to front.`);
+            // console.warn(`[HolafPanelManager] Panel ${panelEl.id} not managed. Cannot bring to front.`);
             return;
         }
 
-        // Check if it's already the top-most visually active panel
-        // (currentMaxZIndex should ideally always be the z-index of the current top panel)
-        // If its zIndex is less than the current known max, it needs to come up.
-        const panelZIndex = parseInt(panelEl.style.zIndex) || BASE_Z_INDEX;
+        // Find the current highest z-index among ALL open panels
+        let maxZ = BASE_Z_INDEX;
+        openPanels.forEach(p => {
+            const pZIndex = parseInt(p.style.zIndex);
+            if (!isNaN(pZIndex) && pZIndex > maxZ) {
+                maxZ = pZIndex;
+            }
+        });
+        currentMaxZIndex = maxZ; // Update global tracker
 
-        if (panelZIndex < currentMaxZIndex || openPanels.size === 1) {
-            // If multiple panels share the same currentMaxZIndex (e.g. after one was closed),
-            // or if this panel is simply behind the currentMaxZIndex.
+        const panelZIndex = parseInt(panelEl.style.zIndex);
+
+        // If the panel is not already the one with the highest z-index, bring it up
+        if (isNaN(panelZIndex) || panelZIndex < currentMaxZIndex || openPanels.size === 1) {
             currentMaxZIndex++;
             panelEl.style.zIndex = currentMaxZIndex;
-            console.log(`[HolafPanelManager] Brought panel ${panelEl.id} to front with z-index: ${currentMaxZIndex}`);
-        } else if (panelZIndex === currentMaxZIndex && panelEl.style.zIndex !== String(currentMaxZIndex)) {
-            // This case handles if currentMaxZIndex somehow got desynced or if zIndex was manually changed.
-            // Force it to be the currentMaxZIndex, potentially incrementing if another panel also claims this.
-            // This is more of a safeguard.
+            // console.log(`[HolafPanelManager] Brought panel ${panelEl.id} to front with z-index: ${currentMaxZIndex}`);
+        } else if (panelEl.style.zIndex !== String(currentMaxZIndex) && panelZIndex === currentMaxZIndex) {
+            // This can happen if multiple panels were at maxZ, and one was clicked.
+            // The one clicked should get a new higher z-index.
             currentMaxZIndex++;
             panelEl.style.zIndex = currentMaxZIndex;
-            console.log(`[HolafPanelManager] Synced panel ${panelEl.id} to front with z-index: ${currentMaxZIndex}`);
         }
-        // If panelZIndex is already currentMaxZIndex, it's considered on top.
+        // If panelZIndex is already currentMaxZIndex, it's considered on top (or was just set).
     },
 
     _bakePosition(panel) {
@@ -129,96 +159,118 @@ export const HolafPanelManager = {
             panel.style.top = `${rect.top}px`;
             panel.style.left = `${rect.left}px`;
             panel.style.transform = 'none';
-            // console.log("[HolafPanelManager] Baked position. New L/T:", panel.style.left, panel.style.top); // Less verbose
         }
     },
 
     makeDraggable(panel, handle, onStateChange) {
-        let isDragging = false, offsetX, offsetY;
         handle.addEventListener("mousedown", (e) => {
-            // bringToFront is handled by the panel's own mousedown listener
+            // Prevent drag if mousedown is on an interactive element within the handle (e.g. buttons in header)
             if (e.target.closest("button, input, select, textarea, a")) {
-                return; // Do not prevent default or start drag for these elements in header
+                return;
             }
-            e.preventDefault(); // Prevent text selection on header while dragging
+            e.preventDefault(); // Prevent text selection during drag
+
+            this.bringToFront(panel); // Bring to front on drag start
             this._bakePosition(panel);
-            isDragging = true;
-            offsetX = e.clientX - panel.offsetLeft;
-            offsetY = e.clientY - panel.offsetTop;
+
+            const offsetX = e.clientX - panel.offsetLeft;
+            const offsetY = e.clientY - panel.offsetTop;
+
+            const onMouseMove = (moveEvent) => {
+                let newLeft = moveEvent.clientX - offsetX;
+                let newTop = moveEvent.clientY - offsetY;
+
+                // Basic boundary collision with viewport
+                const panelRect = panel.getBoundingClientRect(); // Get current dimensions
+                const margin = 10; // Small margin from edge
+
+                if (newTop < margin) newTop = margin;
+                if (newLeft < margin) newLeft = margin;
+                if (newLeft + panelRect.width > window.innerWidth - margin) newLeft = window.innerWidth - panelRect.width - margin;
+                if (newTop + panelRect.height > window.innerHeight - margin) newTop = window.innerHeight - panelRect.height - margin;
+
+
+                panel.style.left = `${newLeft}px`;
+                panel.style.top = `${newTop}px`;
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener("mousemove", onMouseMove);
+                document.removeEventListener("mouseup", onMouseUp);
+
+                if (onStateChange) {
+                    onStateChange({
+                        x: panel.offsetLeft,
+                        y: panel.offsetTop,
+                        width: panel.offsetWidth,
+                        height: panel.offsetHeight,
+                    });
+                }
+            };
 
             document.addEventListener("mousemove", onMouseMove);
             document.addEventListener("mouseup", onMouseUp);
         });
-
-        const onMouseMove = (e) => {
-            if (isDragging) {
-                const newLeft = e.clientX - offsetX;
-                const newTop = e.clientY - offsetY;
-                panel.style.left = `${newLeft}px`;
-                panel.style.top = `${newTop}px`;
-            }
-        };
-
-        const onMouseUp = (e) => {
-            if (!isDragging) return;
-            isDragging = false;
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
-            if (onStateChange) {
-                onStateChange({
-                    x: panel.offsetLeft,
-                    y: panel.offsetTop,
-                    width: panel.offsetWidth,
-                    height: panel.offsetHeight,
-                });
-            }
-        };
     },
 
     makeResizable(panel, handle, onStateChange, onResize) {
-        let isResizing = false, initialX, initialY, initialWidth, initialHeight;
-
         handle.addEventListener("mousedown", (e) => {
-            // bringToFront is handled by the panel's own mousedown listener
-            e.preventDefault(); // Prevent default actions on resize handle
+            e.preventDefault();
+            e.stopPropagation(); // Prevent drag from starting if resize handle is on header edge
+
+            this.bringToFront(panel); // Bring to front on resize start
             this._bakePosition(panel);
-            isResizing = true;
-            initialX = e.clientX;
-            initialY = e.clientY;
-            initialWidth = panel.offsetWidth;
-            initialHeight = panel.offsetHeight;
+
+            const initialX = e.clientX;
+            const initialY = e.clientY;
+            const initialWidth = panel.offsetWidth;
+            const initialHeight = panel.offsetHeight;
+
+            // Get min dimensions from CSS or set defaults
+            const minWidth = parseInt(getComputedStyle(panel).minWidth) || 100;
+            const minHeight = parseInt(getComputedStyle(panel).minHeight) || 50;
+
+
+            const onResizeMove = (moveEvent) => {
+                const deltaX = moveEvent.clientX - initialX;
+                const deltaY = moveEvent.clientY - initialY;
+                
+                let newWidth = initialWidth + deltaX;
+                let newHeight = initialHeight + deltaY;
+
+                // Enforce minimum dimensions
+                if (newWidth < minWidth) newWidth = minWidth;
+                if (newHeight < minHeight) newHeight = minHeight;
+
+                // Optional: Max dimensions (e.g., viewport based)
+                // const maxWidth = window.innerWidth - panel.offsetLeft - 10;
+                // if (newWidth > maxWidth) newWidth = maxWidth;
+                // const maxHeight = window.innerHeight - panel.offsetTop - 10;
+                // if (newHeight > maxHeight) newHeight = maxHeight;
+
+                panel.style.width = `${newWidth}px`;
+                panel.style.height = `${newHeight}px`;
+                if (onResize) {
+                    onResize(); // Callback for things like xterm.fit()
+                }
+            };
+
+            const onResizeUp = () => {
+                document.removeEventListener("mousemove", onResizeMove);
+                document.removeEventListener("mouseup", onResizeUp);
+
+                if (onStateChange) {
+                    onStateChange({
+                        x: panel.offsetLeft,
+                        y: panel.offsetTop,
+                        width: panel.offsetWidth,
+                        height: panel.offsetHeight,
+                    });
+                }
+            };
 
             document.addEventListener("mousemove", onResizeMove);
             document.addEventListener("mouseup", onResizeUp);
         });
-
-        const onResizeMove = (e) => {
-            if (isResizing) {
-                const deltaX = e.clientX - initialX;
-                const deltaY = e.clientY - initialY;
-                const newWidth = initialWidth + deltaX;
-                const newHeight = initialHeight + deltaY;
-                panel.style.width = `${newWidth}px`;
-                panel.style.height = `${newHeight}px`;
-                if (onResize) {
-                    onResize();
-                }
-            }
-        };
-
-        const onResizeUp = (e) => {
-            if (!isResizing) return;
-            isResizing = false;
-            document.removeEventListener("mousemove", onResizeMove);
-            document.removeEventListener("mouseup", onResizeUp);
-            if (onStateChange) {
-                onStateChange({
-                    x: panel.offsetLeft,
-                    y: panel.offsetTop,
-                    width: panel.offsetWidth,
-                    height: panel.offsetHeight,
-                });
-            }
-        };
     }
 };

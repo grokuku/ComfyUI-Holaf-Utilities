@@ -10,15 +10,12 @@
 # 2.  Dynamically loads all additional node/API modules from the 'nodes'
 #     subdirectory, allowing for modular features like the Holaf Model Manager.
 #
-# Design Choices & Rationale (v18 - Unified Loader):
-# - Combined Logic: This file now contains the complete logic for the Terminal
-#   while also acting as a dynamic loader for other modules. This keeps all
-#   initialization logic in one place.
-# - Dynamic Loading: The script iterates through the 'nodes' folder and imports
-#   all Python files, aggregating their NODE_CLASS_MAPPINGS. This makes the
-#   extension scalable without needing to modify this file to add new features.
-# - Centralized Web Assets: The `WEB_DIRECTORY = "js"` serves all JavaScript
-#   and CSS files for all components (Terminal, Model Manager, etc.).
+# Design Choices & Rationale (v19 - Centralized API Registration):
+# - All API endpoints (Terminal and Model Manager) are now registered in this
+#   file to guarantee they are loaded correctly by the ComfyUI server.
+# - The 'nodes' subdirectory contains helper modules that expose functions
+#   (like model scanning) but do not register their own routes. This centralizes
+#   the critical API registration logic and makes the extension more robust.
 # === End Documentation ===
 
 import server
@@ -37,6 +34,7 @@ import shlex
 import importlib.util
 
 from aiohttp import web
+from .nodes import holaf_model_manager as model_manager_helper
 
 # --- Platform-specific imports for Terminal ---
 IS_WINDOWS = platform.system() == "Windows"
@@ -52,9 +50,6 @@ else:
         print("🔴 [Holaf-Utilities] Critical: 'pywinpty' is not installed. Terminal will not work on Windows.")
         print("   Please run 'pip install pywinpty' in your ComfyUI Python environment.")
         PtyProcess = None
-
-# Removed unnecessary tornado import that could crash the init process.
-# The terminal now uses aiohttp for WebSockets, which is native to ComfyUI.
 
 # --- Global Configuration and State ---
 CONFIG_LOCK = asyncio.Lock()
@@ -309,6 +304,51 @@ async def holaf_terminal_websocket_handler(request: web.Request):
         if not ws.closed: await ws.close()
     return ws
 
+# --- API Endpoints for Model Manager ---
+MODEL_TYPES_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'model_types.json')
+
+@server.PromptServer.instance.routes.get("/holaf/models/config")
+async def get_model_types_config(request):
+    try:
+        if not os.path.exists(MODEL_TYPES_CONFIG_PATH):
+            return web.json_response({"error": "model_types.json not found on server"}, status=404)
+        with open(MODEL_TYPES_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+        return web.json_response(config_data)
+    except Exception as e:
+        print(f"🔴 [Holaf-ModelManager] Error reading model_types.json: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.get("/holaf/models")
+async def get_models_route(request):
+    try:
+        models = model_manager_helper.get_all_models_from_db()
+        return web.json_response(models)
+    except Exception as e:
+        print(f"🔴 [Holaf-ModelManager] Critical error during model fetch: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/holaf/models/delete")
+async def delete_model_route(request):
+    try:
+        data = await request.json()
+        model_path = data.get("path")
+        if not model_path:
+            return web.json_response({"status": "error", "message": "No path provided"}, status=400)
+        
+        if not model_manager_helper.is_path_safe_for_deletion(model_path):
+            return web.json_response({"status": "error", "message": "Deletion of this file is not allowed."}, status=403)
+
+        os.remove(model_path)
+        print(f"🔵 [Holaf-ModelManager] Deleted model: {model_path}")
+        return web.json_response({"status": "ok", "message": f"Model '{os.path.basename(model_path)}' deleted."})
+    except FileNotFoundError:
+        return web.json_response({"status": "error", "message": "File not found."}, status=404)
+    except Exception as e:
+        print(f"🔴 [Holaf-ModelManager] Error deleting model: {e}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+
 # --- Dynamic Node and API Loading ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
 nodes_dir = os.path.join(base_dir, "nodes")
@@ -320,8 +360,6 @@ print("--- Initializing Holaf Utilities ---")
 if os.path.isdir(nodes_dir):
     for filename in os.listdir(nodes_dir):
         if filename.endswith(".py") and not filename.startswith("__"):
-            # THIS IS THE FIX: Create a safe, folder-independent module name.
-            # This avoids issues with invalid characters like hyphens in the folder name.
             safe_module_name = f"holaf_utilities_node_{os.path.splitext(filename)[0]}"
             file_path = os.path.join(nodes_dir, filename)
             try:

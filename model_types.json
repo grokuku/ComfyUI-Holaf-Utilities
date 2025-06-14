@@ -1,0 +1,163 @@
+[
+    {
+        "type": "Checkpoints",
+        "folder_name": "checkpoints",
+        "formats": [".safetensors", ".ckpt"],
+        "description": "Modèles de base pour la génération d'images (Stable Diffusion). Contiennent UNet, VAE et encodeurs de texte.",
+        "category": "Génération d'Image (Coeur)",
+        "priority": 1
+    },
+    {
+        "type": "LoRAs",
+        "folder_name": "loras",
+        "formats": [".safetensors", ".ckpt", ".pt"],
+        "description": "Modèles légers pour modifier les checkpoints avec des styles, personnages ou concepts spécifiques.",
+        "category": "Génération d'Image (Modificateur)",
+        "priority": 2
+    },
+    {
+        "type": "VAE",
+        "folder_name": "vae",
+        "formats": [".safetensors", ".pt"],
+        "description": "Décode l'espace latent en pixels. Crucial pour la qualité des couleurs et des détails.",
+        "category": "Génération d'Image (Coeur)",
+        "priority": 3
+    },
+    {
+        "type": "ControlNet",
+        "folder_name": "controlnet",
+        "formats": [".safetensors", ".pth"],
+        "description": "Modèles pour contrôler la composition d'une image (poses, profondeur, contours).",
+        "category": "Contrôle d'Image",
+        "priority": 4
+    },
+    {
+        "type": "Upscale Models",
+        "folder_name": "upscale_models",
+        "formats": [".safetensors", ".pth"],
+        "description": "Modèles pour augmenter la résolution des images (ESRGAN, SwinIR, etc.).",
+        "category": "Post-Processing",
+        "priority": 5
+    },
+    {
+        "type": "Embeddings",
+        "folder_name": "embeddings",
+        "formats": [".safetensors", ".pt", ".bin"],
+        "description": "Fichiers de 'Textual Inversion' qui enseignent de nouveaux concepts, invoqués dans le prompt.",
+        "category": "Génération d'Image (Modificateur)",
+        "priority": 6
+    },
+    {
+        "type": "IPAdapter",
+        "folder_name": "ipadapter",
+        "formats": [".safetensors", ".bin", ".pth"],
+        "description": "Utilise une image de référence comme guide pour le style et la composition.",
+        "category": "Contrôle d'Image",
+        "priority": 4
+    },
+    {
+        "type": "CLIP Vision",
+        "folder_name": "clip_vision",
+        "formats": [".safetensors", ".pt"],
+        "description": "Encodeurs d'images, essentiels pour les IPAdapters et les prompts basés sur une image.",
+        "category": "Contrôle d'Image",
+        "priority": 4
+    },
+    {
+        "type": "AnimateDiff Models",
+        "folder_name": "animatediff_models",
+        "formats": [".safetensors", ".ckpt"],
+        "description": "Modèles de mouvement de base pour la génération d'animations (AnimateDiff).",
+        "category": "Animation",
+        "priority": 6
+    },
+    {
+        "type": "AnimateDiff Motion LoRAs",
+        "folder_name": "animatediff_motion_lora",
+        "formats": [".safetensors", ".ckpt"],
+        "description": "LoRAs qui modifient spécifiquement le mouvement dans les animations (panoramique, zoom, etc.).",
+        "category": "Animation",
+        "priority": 7
+    },
+    {
+        "type": "CLIP",
+        "folder_name": "clip",
+        "formats": [".safetensors", ".pt"],
+        "description": "Encodeurs de texte qui interprètent les prompts. Parfois chargés séparément.",
+        "category": "Génération d'Image (Coeur)",
+        "priority": 7
+    },
+    {
+        "type": "Hypernetworks",
+        "folder_name": "hypernetworks",
+        "formats": [".pt"],
+        "description": "Ancienne méthode pour modifier les checkpoints, similaire aux LoRAs.",
+        "category": "Génération d'Image (Modificateur)",
+        "priority": 8
+    },
+    {
+        "type": "UNet",
+        "folder_name": "unet",
+        "formats": [".safetensors", ".pth"],
+        "description": "Le coeur du processus de débruitage d'un checkpoint. Peut être chargé séparément.",
+        "category": "Génération d'Image (Coeur)",
+        "priority": 9
+    },
+    {
+        "type": "Style Models",
+        "folder_name": "style_models",
+        "formats": [".safetensors", ".pth"],
+        "description": "Modèles pour les T2I-Adapters, appliquant un style artistique prédéfini.",
+        "category": "Contrôle d'Image",
+        "priority": 9
+    },
+    {
+        "type": "GLIGEN",
+        "folder_name": "gligen",
+        "formats": [".safetensors", ".pth"],
+        "description": "Modèles pour positionner des objets dans une image à l'aide de boîtes englobantes.",
+        "category": "Contrôle d'Image",
+        "priority": 9
+    },
+    {
+        "type": "Face Detection",
+        "folder_name": "facedetection",
+        "formats": [".pth", ".onnx"],
+        "description": "Modèles pour la détection de visages (ex: YOLO). Utilisés par divers noeuds de manipulation faciale.",
+        "category": "Analyse d'Image",
+        "priority": 10
+    },
+    {
+        "type": "Face Restoration",
+        "folder_name": "facerestore_models",
+        "formats": [".pth"],
+        "description": "Modèles pour corriger et améliorer les visages dans les images générées (ex: CodeFormer).",
+        "category": "Post-Processing",
+        "priority": 10
+    },
+    {
+        "type": "Background Removal",
+        "folder_name": "rembg",
+        "formats": [".onnx"],
+        "description": "Modèles pour supprimer l'arrière-plan d'une image.",
+        "category": "Post-Processing",
+        "priority": 10
+    },
+    {
+        "type": "SVD",
+        "folder_name": "svd",
+        "formats": [".safetensors"],
+        "description": "Modèles Stable Video Diffusion pour la génération d'images vers vidéo.",
+        "category": "Animation",
+        "priority": 8
+    },
+    {
+        "type": "Diffusers",
+        "folder_name": "diffusers",
+        "formats": ["dossier avec model_index.json"],
+        "storage_hint": "directory", 
+        "description": "Format de modèle contenant plusieurs composants dans un dossier, utilisé par la bibliothèque Hugging Face.",
+        "category": "Génération d'Image (Coeur)",
+        "priority": 8
+    }
+]
