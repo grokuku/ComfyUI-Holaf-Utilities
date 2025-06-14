@@ -3,6 +3,7 @@
  * Holaf Utilities - Model Manager UI
  *
  * This script provides the client-side logic for the Holaf Model Manager.
+ * MODIFIED: Added model family display and sorting.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -13,15 +14,17 @@ const holafModelManager = {
     isInitialized: false,
     isLoading: false,
     models: [],
-    modelTypesConfig: [], // Configuration lue depuis model_types.json
-    modelCountsPerDisplayType: {}, // Compte des modèles par display_type réel
+    modelTypesConfig: [], 
+    modelCountsPerDisplayType: {}, 
     selectedType: "All", 
+    selectedModelPaths: new Set(),
+    currentSort: { column: 'name', order: 'asc' }, // Default sort
     settings: {
         theme: 'Dark',
         panel_x: null,
         panel_y: null,
-        panel_width: 700,
-        panel_height: 500,
+        panel_width: 800, // Increased width for the new column
+        panel_height: 550,
     },
     themes: [
         { name: 'Dark', className: 'holaf-theme-dark' },
@@ -66,7 +69,7 @@ const holafModelManager = {
         menuItem.onclick = () => {
             console.log("[Holaf ModelManager] Model Manager menu item clicked.");
             this.show();
-            dropdownMenu.style.display = "none";
+            if(dropdownMenu) dropdownMenu.style.display = "none";
         };
 
         dropdownMenu.appendChild(menuItem);
@@ -104,7 +107,7 @@ const holafModelManager = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-manager-panel",
-                title: "Holaf Model Manager <span style='font-size:0.8em; color:#aaa;'>(WIP - Preview)</span>",
+                title: "Holaf Model Manager <span style='font-size:0.8em; color:#aaa;'>(WIP - Family View)</span>",
                 headerContent: managerHeaderControls,
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
@@ -116,8 +119,9 @@ const holafModelManager = {
                     this.settings.panel_y = newState.y;
                     this.settings.panel_width = newState.width;
                     this.settings.panel_height = newState.height;
+                    // No saveSettings here, could be too frequent. Maybe save on close or specific action.
                 },
-                onResize: () => {}
+                onResize: () => {} 
             });
             console.log("[Holaf ModelManager] PanelManager.createPanel call completed.");
         } catch (e) {
@@ -128,7 +132,6 @@ const holafModelManager = {
 
         this.setTheme(this.settings.theme);
         this.populatePanelContent();
-        // populateModelTypes() est maintenant appelé DANS loadModels()
         console.log("[Holaf ModelManager] createPanel finished.");
     },
 
@@ -176,6 +179,18 @@ const holafModelManager = {
                     <button class="comfy-button" title="Placeholder 5">B5</button>
                 </div>
             </div>
+
+            <div class="holaf-manager-list-header">
+                <div class="holaf-manager-header-col holaf-header-checkbox">
+                    <input type="checkbox" id="holaf-manager-select-all-checkbox" title="Select/Deselect All">
+                </div>
+                <div class="holaf-manager-header-col holaf-header-name" data-sort-by="name">Nom</div>
+                <div class="holaf-manager-header-col holaf-header-path" data-sort-by="path">Chemin</div>
+                <div class="holaf-manager-header-col holaf-header-type" data-sort-by="display_type">Type</div>
+                <div class="holaf-manager-header-col holaf-header-family" data-sort-by="model_family">Famille</div>
+                <div class="holaf-manager-header-col holaf-header-size" data-sort-by="size_bytes">Taille</div>
+            </div>
+
             <div id="holaf-manager-models-area" class="holaf-manager-content">
                 <p class="holaf-manager-message">Initializing...</p>
             </div>
@@ -186,6 +201,38 @@ const holafModelManager = {
 
         document.getElementById("holaf-manager-type-select").onchange = (e) => this.filterModels();
         document.getElementById("holaf-manager-search-input").oninput = (e) => this.filterModels();
+
+        contentEl.querySelectorAll(".holaf-manager-list-header .holaf-manager-header-col[data-sort-by]").forEach(headerCol => {
+            headerCol.onclick = () => {
+                const sortBy = headerCol.dataset.sortBy;
+                if (this.currentSort.column === sortBy) {
+                    this.currentSort.order = this.currentSort.order === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.currentSort.column = sortBy;
+                    this.currentSort.order = 'asc';
+                }
+                this.filterModels();
+            };
+        });
+        
+        const selectAllCheckbox = contentEl.querySelector("#holaf-manager-select-all-checkbox");
+        if (selectAllCheckbox) {
+            selectAllCheckbox.onclick = (e) => {
+                const isChecked = e.target.checked;
+                this.selectedModelPaths.clear();
+                const currentlyVisibleModels = this.getCurrentlyFilteredModels();
+
+                if (isChecked) {
+                    currentlyVisibleModels.forEach(model => this.selectedModelPaths.add(model.path));
+                }
+                // Update visual state of individual checkboxes
+                const modelsArea = document.getElementById("holaf-manager-models-area");
+                if (modelsArea) {
+                    modelsArea.querySelectorAll(".holaf-model-checkbox").forEach(cb => cb.checked = isChecked);
+                }
+                this.updateActionButtonsState(); 
+            };
+        }
     },
 
     populateModelTypes() {
@@ -222,7 +269,7 @@ const holafModelManager = {
                 const option = document.createElement("option");
                 option.value = "Holaf--Category--Others"; 
                 option.textContent = `Autres (${otherCount})`;
-                selectEl.appendChild(option); // Add "Autres" at the end for now
+                selectEl.appendChild(option); 
             }
         }
     },
@@ -248,8 +295,8 @@ const holafModelManager = {
                 this.modelCountsPerDisplayType[dtype] = (this.modelCountsPerDisplayType[dtype] || 0) + 1;
             });
             
-            this.populateModelTypes(); // Update dropdown AFTER models and counts are known
-            this.filterModels(); 
+            this.populateModelTypes(); 
+            this.filterModels();
             
             if (statusBar) statusBar.textContent = `Status: ${this.models.length} models loaded.`;
         } catch (error) {
@@ -268,58 +315,175 @@ const holafModelManager = {
 
         if (modelsToRender.length === 0) {
             modelsArea.innerHTML = `<p class="holaf-manager-message">No models match your criteria.</p>`;
+            const selectAllCheckbox = document.getElementById("holaf-manager-select-all-checkbox");
+            if (selectAllCheckbox) selectAllCheckbox.checked = false;
             return;
         }
 
         modelsToRender.forEach(model => {
             const card = document.createElement("div");
             card.className = "holaf-model-card";
-            const sizeMB = (model.size_bytes / (1024 * 1024)).toFixed(2);
+            const sizeInBytes = Number(model.size_bytes);
+            const sizeMB = (sizeInBytes / (1024 * 1024)).toFixed(2);
+            const modelPath = model.path || "N/A";
+            const modelName = model.name || "N/A";
+            const displayType = model.display_type || "N/A";
+            const modelFamily = model.model_family || "N/A"; // Get family
+
             card.innerHTML = `
-                <span class="holaf-model-name" title="${model.path}">${model.name}</span>
-                <div class="holaf-model-info">
-                    <span class="holaf-model-type">${model.display_type}</span>
+                <div class="holaf-model-col holaf-col-checkbox">
+                    <input type="checkbox" class="holaf-model-checkbox" data-model-path="${modelPath}" ${this.selectedModelPaths.has(modelPath) ? 'checked' : ''}>
+                </div>
+                <div class="holaf-model-col holaf-col-name" title="${modelName}\n${modelPath}">
+                    <span class="holaf-model-name">${modelName}</span>
+                    <span class="holaf-model-path">${modelPath}</span>
+                </div>
+                <div class="holaf-model-col holaf-col-type">
+                    <span class="holaf-model-type-tag">${displayType}</span>
+                </div>
+                <div class="holaf-model-col holaf-col-family">
+                    <span class="holaf-model-family-tag">${modelFamily}</span>
+                </div>
+                <div class="holaf-model-col holaf-col-size">
                     <span class="holaf-model-size">${sizeMB} MB</span>
                 </div>
             `;
+            
+            const checkbox = card.querySelector(".holaf-model-checkbox");
+            checkbox.onchange = (e) => {
+                if (e.target.checked) {
+                    this.selectedModelPaths.add(modelPath);
+                } else {
+                    this.selectedModelPaths.delete(modelPath);
+                }
+                this.updateSelectAllCheckboxState();
+                this.updateActionButtonsState();
+            };
             modelsArea.appendChild(card);
         });
+        this.updateSelectAllCheckboxState();
     },
 
-    filterModels() {
+    getCurrentlyFilteredModels() {
         const typeSelect = document.getElementById("holaf-manager-type-select");
         const searchInput = document.getElementById("holaf-manager-search-input");
-        const statusBar = document.getElementById("holaf-manager-statusbar");
-
+        
         const selectedTypeFilterValue = typeSelect ? typeSelect.value : "All";
         const searchText = searchInput ? searchInput.value.toLowerCase() : "";
 
-        const filteredModels = this.models.filter(model => {
+        return this.models.filter(model => {
             let typeMatch = false;
             if (selectedTypeFilterValue === "All") {
                 typeMatch = true;
             } else if (selectedTypeFilterValue === "Holaf--Category--Others") {
                 typeMatch = model.display_type && model.display_type.startsWith("Autres (");
             } else {
-                // Direct match for specific display_types (e.g., "Checkpoints", "LoRAs")
                 typeMatch = (model.display_type === selectedTypeFilterValue);
             }
-            
-            const textMatch = (model.name.toLowerCase().includes(searchText));
+            // Search text now also checks model_family
+            const textMatch = (
+                model.name.toLowerCase().includes(searchText) ||
+                (model.model_family && model.model_family.toLowerCase().includes(searchText)) ||
+                model.path.toLowerCase().includes(searchText) // Keep path search
+            );
             return typeMatch && textMatch;
         });
-        
-        this.renderModels(filteredModels);
-        
+    },
+    
+    sortAndRenderModels() {
+        let modelsToDisplay = this.getCurrentlyFilteredModels();
+        const { column, order } = this.currentSort;
+
+        modelsToDisplay.sort((a, b) => {
+            let valA = a[column];
+            let valB = b[column];
+
+            if (column === 'size_bytes') {
+                valA = Number(valA) || 0;
+                valB = Number(valB) || 0;
+            } else { // Textual sort for name, path, display_type, model_family
+                valA = String(valA || "").toLowerCase(); // Handle null/undefined for model_family
+                valB = String(valB || "").toLowerCase();
+            }
+
+            if (valA < valB) return order === 'asc' ? -1 : 1;
+            if (valA > valB) return order === 'asc' ? 1 : -1;
+            
+            // Secondary sort by name if primary sort values are equal
+            if (column !== 'name') {
+                let nameA = String(a.name || "").toLowerCase();
+                let nameB = String(b.name || "").toLowerCase();
+                if (nameA < nameB) return -1;
+                if (nameA > nameB) return 1;
+            }
+            return 0;
+        });
+
+        this.renderModels(modelsToDisplay);
+        this.updateSortIndicators();
+    },
+
+    filterModels() {
+        this.sortAndRenderModels(); 
+        const statusBar = document.getElementById("holaf-manager-statusbar");
         if (statusBar) {
-            const totalShown = filteredModels.length;
+            const modelsToDisplay = this.getCurrentlyFilteredModels();
+            const totalShown = modelsToDisplay.length;
             const totalAvailable = this.models.length;
+            const typeSelect = document.getElementById("holaf-manager-type-select");
+            const searchInput = document.getElementById("holaf-manager-search-input");
+            const selectedTypeFilterValue = typeSelect ? typeSelect.value : "All";
+            const searchText = searchInput ? searchInput.value.toLowerCase() : "";
+
             if (totalShown === totalAvailable && selectedTypeFilterValue === "All" && searchText === "") {
                  statusBar.textContent = `Status: ${totalAvailable} models loaded.`;
             } else {
-                 statusBar.textContent = `Status: Displaying ${totalShown} of ${totalAvailable} models.`;
+                 statusBar.textContent = `Status: Displaying ${totalShown} of ${totalAvailable} models. Filtered by type: '${selectedTypeFilterValue}', search: '${searchText || 'none'}'.`;
             }
         }
+    },
+
+    updateSortIndicators() {
+        const headerCols = document.querySelectorAll(".holaf-manager-list-header .holaf-manager-header-col[data-sort-by]");
+        headerCols.forEach(col => {
+            col.classList.remove('sort-asc', 'sort-desc');
+            if (col.dataset.sortBy === this.currentSort.column) {
+                col.classList.add(this.currentSort.order === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        });
+    },
+    
+    updateSelectAllCheckboxState() {
+        const selectAllCheckbox = document.getElementById("holaf-manager-select-all-checkbox");
+        if (!selectAllCheckbox) return;
+
+        const visibleCheckboxes = document.querySelectorAll("#holaf-manager-models-area .holaf-model-checkbox");
+        if (visibleCheckboxes.length === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+            return;
+        }
+
+        let allChecked = true;
+        let noneChecked = true;
+        for (const cb of visibleCheckboxes) {
+            if (cb.checked) noneChecked = false;
+            else allChecked = false;
+        }
+
+        selectAllCheckbox.checked = allChecked;
+        selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+    },
+
+    updateActionButtonsState() {
+        const actionButtons = document.querySelectorAll("#holaf-manager-button-group .comfy-button");
+        const hasSelection = this.selectedModelPaths.size > 0;
+        actionButtons.forEach(btn => {
+            btn.style.opacity = hasSelection ? '1' : '0.5';
+            btn.style.cursor = hasSelection ? 'pointer' : 'not-allowed';
+            // btn.disabled = !hasSelection; // Uncomment to actually disable
+        });
+        console.log("Selected paths:", Array.from(this.selectedModelPaths));
     },
 
     show() {
@@ -341,15 +505,14 @@ const holafModelManager = {
         } else {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
-            // Load models only if not initialized, or if explicitly requested by a refresh button later
             if (!this.isInitialized) { 
-                this.loadModels(); // This will also call populateModelTypes
+                this.loadModels(); // Load models if not initialized
                 this.isInitialized = true;
             } else {
-                // If already initialized, ensure dropdown is up-to-date in case models changed via external means
-                // and a refresh mechanism isn't implemented yet. For now, this is okay.
-                // this.populateModelTypes(); // Peut-être pas nécessaire ici si on ne recharge pas les modèles.
+                // If models are already loaded, ensure list is up-to-date with current filters/sort
+                this.filterModels();
             }
+             this.updateActionButtonsState();
         }
         console.log("[Holaf ModelManager] show finished.");
     },
@@ -386,8 +549,7 @@ app.registerExtension({
         };
         addMenuItemWhenReady();
         
-        holafModelManager.loadModelConfig(); // Charge les définitions des types depuis model_types.json
-        // Note: loadModels() (qui appelle populateModelTypes) est appelé la première fois que le panel est montré.
+        holafModelManager.loadModelConfig(); // Load model type definitions early
     },
 });
 

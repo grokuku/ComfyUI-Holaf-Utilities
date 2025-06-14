@@ -9,6 +9,7 @@
 # - Added a check in _process_model_item to immediately skip paths already
 #   present in found_on_disk_paths for the current scan run. This is the
 #   primary defense against UNIQUE constraint errors from reprocessing.
+# MODIFIED: Added model_family detection.
 # === End Documentation ===
 
 import os
@@ -17,9 +18,9 @@ import sqlite3
 import json
 import time
 import traceback
+import re
 
 # --- Globals & Configuration ---
-# ... (inchangé) ...
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
@@ -30,8 +31,54 @@ MODEL_TYPES_CONFIG_PATH = os.path.join(EXTENSION_BASE_DIR, '..', 'model_types.js
 MODEL_TYPE_DEFINITIONS = []
 KNOWN_MODEL_EXTENSIONS = {'.safetensors', '.ckpt', '.pt', '.pth', '.bin', '.onnx'}
 
+# --- Model Family Detection Configuration ---
+# Order matters: more specific/longer keywords should come first.
+# Each tuple: (Family Name, [list of lowercase keywords], optional_model_type_keys_filter)
+# If optional_model_type_keys_filter is present, the family is only assigned if model_type_key matches.
+MODEL_FAMILY_KEYWORDS = [
+    ("Hunyuan-DiT", ["hunyuan-dit-"], ["checkpoints"]), # More specific than just "hunyuan"
+    ("Hunyuan", ["hunyuan"], ["checkpoints"]),
+    ("Flux", ["flux.1"], ["checkpoints"]), # flux.1 for FLUX.1 models
+    ("Flux", ["flux"], ["checkpoints"]),
+    ("Kolors", ["kolors"], ["checkpoints"]),
+    ("Playground v2.5", ["playgroundv2.5"], ["checkpoints"]),
+    ("Playground v2", ["playgroundv2"], ["checkpoints"]),
+    ("Playground", ["playground"], ["checkpoints"]),
+    ("PixArt-Σ", ["pixart-sigma", "pixartsigma"], ["checkpoints"]),
+    ("PixArt-α", ["pixart-alpha", "pixartalpha", "pixart_alpha"], ["checkpoints"]),
+    ("PixArt", ["pixart"], ["checkpoints"]),
+    ("Stable Cascade", ["stable_cascade", "stablecascade"], ["checkpoints"]),
+    ("Würstchen", ["würstchen", "wuerstchen"], ["checkpoints", "unet"]),
+    ("AuraFlow", ["auraflow"], ["checkpoints"]),
+    ("DeepFloyd IF", ["deepfloyd_if", "deepfloydif"], ["checkpoints"]),
+    ("Kandinsky 3.x", ["kandinsky3", "kandinsky_3"], ["checkpoints"]),
+    ("Kandinsky 2.x", ["kandinsky2", "kandinsky_2"], ["checkpoints"]),
+    ("Kandinsky", ["kandinsky"], ["checkpoints"]),
+    ("SDXL Turbo", ["sdxl_turbo", "sdxlturbo"], ["checkpoints", "loras"]),
+    ("SDXL Lightning", ["sdxl_lightning", "sdxllightning"], ["checkpoints", "loras"]),
+    ("SDXL", ["sdxl", "sd_xl"], ["checkpoints", "loras", "unet"]),
+    ("Pony", ["pony"], ["checkpoints", "loras"]), # Often SDXL based
+    ("SD 2.1", ["sd2.1", "sd21"], ["checkpoints", "loras"]),
+    ("SD 2.0", ["sd2.0", "sd20"], ["checkpoints", "loras"]),
+    ("SD 2.x", ["sd2"], ["checkpoints", "loras"]),
+    ("SD 1.5", ["sd1.5", "sd15"], ["checkpoints", "loras"]),
+    ("SD 1.x", ["sd1"], ["checkpoints", "loras"]),
+    ("SVD XT", ["svd_xt", "svdxt"], ["checkpoints", "svd"]),
+    ("SVD", ["svd", "stable_video_diffusion"], ["checkpoints", "svd"]),
+    ("AnimateDiff", ["animatediff", "motion_module"], ["animatediff_models", "animatediff_motion_lora"]),
+    ("HotshotXL", ["hotshotxl", "hotshot_xl"], ["animatediff_models"]),
+    ("VideoCrafter", ["videocrafter"], ["checkpoints"]),
+    ("Latte", ["latte"], ["checkpoints"]),
+    ("OpenSora", ["opensora"], ["checkpoints"]),
+    ("SSD-1B", ["ssd-1b", "ssd_1b"], ["checkpoints"]), # SSD-1B is SDXL-distilled
+    ("SegMoE", ["segmoe"], ["checkpoints"]),
+    ("Yamer", ["yamer"], ["checkpoints"]), # Yamer's models
+    ("LCM", ["lcm"], ["checkpoints", "loras"]), # Latent Consistency Models
+    ("Hyper-SD", ["hyper-sd", "hypersd"], ["checkpoints", "loras"]),
+]
+
+
 # --- Database Management ---
-# ... (init_db, load_model_type_definitions inchangés) ...
 def _get_db_connection():
     conn = sqlite3.connect(HOLAF_MODELS_DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -49,6 +96,7 @@ def init_db():
             path TEXT NOT NULL UNIQUE,
             model_type_key TEXT NOT NULL,
             display_type TEXT,
+            model_family TEXT, -- New column for specific model family
             size_bytes INTEGER,
             is_directory BOOLEAN DEFAULT 0,
             discovered_at REAL DEFAULT (STRFTIME('%s', 'now')),
@@ -57,7 +105,15 @@ def init_db():
         )
         ''')
         conn.commit()
-        # print(f"  [Holaf-ModelManager] Database initialized successfully at: {HOLAF_MODELS_DB_PATH}") # Moins verbeux
+
+        # Check and add model_family column if it doesn't exist (for upgrades)
+        cursor.execute("PRAGMA table_info(models)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'model_family' not in columns:
+            cursor.execute("ALTER TABLE models ADD COLUMN model_family TEXT")
+            conn.commit()
+            print("  [Holaf-ModelManager] Added 'model_family' column to 'models' table.")
+        # print(f"  [Holaf-ModelManager] Database initialized successfully at: {HOLAF_MODELS_DB_PATH}")
     except sqlite3.Error as e:
         print(f"🔴 [Holaf-ModelManager] CRITICAL: Database initialization error: {e}")
     finally:
@@ -73,7 +129,7 @@ def load_model_type_definitions():
             return
         with open(MODEL_TYPES_CONFIG_PATH, 'r', encoding='utf-8') as f:
             MODEL_TYPE_DEFINITIONS = json.load(f)
-        # print(f"  [Holaf-ModelManager] Loaded {len(MODEL_TYPE_DEFINITIONS)} model type definitions.") # Moins verbeux
+        # print(f"  [Holaf-ModelManager] Loaded {len(MODEL_TYPE_DEFINITIONS)} model type definitions.")
     except Exception as e:
         print(f"🔴 [Holaf-ModelManager] CRITICAL: Error loading/parsing model_types.json: {e}")
         MODEL_TYPE_DEFINITIONS = []
@@ -96,7 +152,6 @@ def get_folder_size(folder_path):
 
 
 def _get_base_model_roots():
-    # ... (inchangé)
     roots = set()
     if hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
         roots.add(os.path.normpath(folder_paths.models_dir))
@@ -113,19 +168,55 @@ def _get_base_model_roots():
     if not roots: 
         roots.add(os.path.normpath(os.path.join(os.getcwd(), "models"))) 
         print("🟡 [Holaf-ModelManager] Warning: Could not determine ComfyUI model roots reliably, falling back to CWD/models.")
-    # print(f"DEBUG: Base model roots: {list(roots)}")    
     return list(roots)
+
+def _detect_model_family(filename: str, model_type_key: str) -> str:
+    """
+    Detects the specific model family based on filename and model type.
+    """
+    fn_lower = filename.lower()
+    
+    # Check for specific patterns first for diffusers-like structures (if item_name is the folder name)
+    if model_type_key == "diffusers": # Example: for diffusers, filename might be the directory name
+        # A 'diffusers' model_type_key typically means the filename IS the directory.
+        # This could be more complex if we need to inspect model_index.json, etc.
+        # For now, we'll rely on the directory name matching keywords if it's a diffuser type.
+        pass # Allow normal keyword matching on the directory name for now
+
+    # Iterate through configured keywords
+    for family_name, keywords, *type_filters in MODEL_FAMILY_KEYWORDS:
+        # Check model_type_key filter if present
+        if type_filters:
+            allowed_types = type_filters[0]
+            if model_type_key not in allowed_types:
+                continue # Skip this family if model_type_key doesn't match filter
+
+        for keyword in keywords:
+            # Using regex to match keyword as a whole word or part of a compound word
+            # This helps avoid partial matches like 'sd' in 'sdxl' if 'sd' is checked after 'sdxl'
+            # Or 'lora' in 'kolors'
+            # We want to match "sdxl_turbo" or "sdxl-turbo"
+            # We can use word boundaries for standalone keywords, or just `in` for substrings.
+            # For simplicity and to catch variants like "sdxlvae", "sdxl-base", we use `in`
+            # The order in MODEL_FAMILY_KEYWORDS is crucial.
+            if keyword in fn_lower:
+                return family_name
+    
+    # Default if no specific family is found
+    if model_type_key == "checkpoints":
+        return "Generic Checkpoint"
+    if model_type_key == "loras":
+        return "Generic LoRA"
+        
+    return "Autre"
 
 
 def _process_model_item(conn, cursor, item_name, full_path, model_type_key, display_type, storage_hint, allowed_formats, current_time, found_on_disk_paths, db_models_dict):
     full_path = os.path.normpath(full_path) 
 
-    if full_path in found_on_disk_paths: # <--- MODIFICATION CRUCIALE ICI
-        # print(f"🔵 DEBUG _process_model_item: Path '{full_path}' already in found_on_disk_paths. Skipping duplicate processing.")
+    if full_path in found_on_disk_paths:
         return 
     
-    # print(f"🔵 DEBUG _process_model_item: Processing item: Name='{item_name}', Path='{full_path}', TypeKey='{model_type_key}'")
-
     is_dir_on_fs = os.path.isdir(full_path)
     model_should_be_directory = (storage_hint == "directory")
     actual_size = 0
@@ -146,13 +237,12 @@ def _process_model_item(conn, cursor, item_name, full_path, model_type_key, disp
                     pass 
     
     if is_valid_model_entry:
-        found_on_disk_paths.add(full_path) # Add to set *after* validation and *before* DB ops for this path
+        found_on_disk_paths.add(full_path)
         
-        # print(f"🔵 DEBUG _process_model_item: Item valid. Path to check in db_models_dict: '{full_path}'")
-        # if full_path in db_models_dict:
-        #     print(f"🔵 DEBUG _process_model_item: Path '{full_path}' FOUND in db_models_dict. DB ID: {db_models_dict[full_path]['id']}. Expecting UPDATE.")
-        # else:
-        #     print(f"🟡 DEBUG _process_model_item: Path '{full_path}' NOT FOUND in db_models_dict. Expecting INSERT.")
+        # Detect model family
+        # For diffusers, item_name might be the directory name.
+        # For files, item_name is the file name.
+        model_family = _detect_model_family(item_name, model_type_key)
             
         existing_model_data = db_models_dict.get(full_path)
 
@@ -161,26 +251,27 @@ def _process_model_item(conn, cursor, item_name, full_path, model_type_key, disp
                 existing_model_data['size_bytes'] != actual_size or
                 existing_model_data['is_directory'] != model_should_be_directory or
                 existing_model_data['display_type'] != display_type or
-                existing_model_data['model_type_key'] != model_type_key):
-                # print(f"🔵 DEBUG _process_model_item: Updating model {full_path}")
+                existing_model_data['model_type_key'] != model_type_key or
+                existing_model_data.get('model_family') != model_family): # Check family change
                 cursor.execute("""
                     UPDATE models 
-                    SET name = ?, size_bytes = ?, is_directory = ?, model_type_key = ?, display_type = ?, last_scanned_at = ?
+                    SET name = ?, size_bytes = ?, is_directory = ?, model_type_key = ?, 
+                        display_type = ?, model_family = ?, last_scanned_at = ?
                     WHERE id = ?
-                """, (item_name, actual_size, model_should_be_directory, model_type_key, display_type, current_time, existing_model_data['id']))
+                """, (item_name, actual_size, model_should_be_directory, model_type_key, 
+                      display_type, model_family, current_time, existing_model_data['id']))
             else: 
                 cursor.execute("UPDATE models SET last_scanned_at = ? WHERE id = ?", (current_time, existing_model_data['id']))
         else: 
-            # print(f"🟡 DEBUG _process_model_item: Inserting new model {full_path}")
             try:
                 cursor.execute("""
-                    INSERT INTO models (name, path, model_type_key, display_type, size_bytes, is_directory, discovered_at, last_scanned_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (item_name, full_path, model_type_key, display_type, actual_size, model_should_be_directory, current_time, current_time))
+                    INSERT INTO models (name, path, model_type_key, display_type, model_family, 
+                                        size_bytes, is_directory, discovered_at, last_scanned_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (item_name, full_path, model_type_key, display_type, model_family, 
+                      actual_size, model_should_be_directory, current_time, current_time))
             except sqlite3.IntegrityError as ie: 
-                print(f"🔴 ERROR during INSERT for {full_path}: {ie}. This path was likely already added in this scan run by a different processing path or a subtle duplication. Skipped via found_on_disk_paths normally.")
-    # else:
-    #      print(f"🟡 DEBUG _process_model_item: Item {full_path} (key: {model_type_key}) invalid or skipped. IsDirFS:{is_dir_on_fs}, ShouldBeDir:{model_should_be_directory}, Formats:{allowed_formats}, Ext:{os.path.splitext(item_name)[1].lower() if not is_dir_on_fs else 'N/A'}")
+                print(f"🔴 ERROR during INSERT for {full_path}: {ie}. This path was likely already added in this scan run.")
 
 
 def scan_and_update_db():
@@ -193,7 +284,8 @@ def scan_and_update_db():
         conn = _get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, path, name, size_bytes, is_directory, model_type_key, display_type FROM models")
+        # Include model_family in the selection
+        cursor.execute("SELECT id, path, name, size_bytes, is_directory, model_type_key, display_type, model_family FROM models")
         db_models_dict = {os.path.normpath(row['path']): dict(row) for row in cursor.fetchall()}
 
         known_type_folder_names = {td['folder_name'] for td in MODEL_TYPE_DEFINITIONS}
@@ -206,7 +298,13 @@ def scan_and_update_db():
             allowed_formats = set(type_def.get('formats', [])) if storage_hint == 'file' else set()
 
             if model_type_key not in folder_paths.folder_names_and_paths:
-                continue 
+                # Handle 'diffusers' specially if it's not in folder_names_and_paths but is a concept
+                if model_type_key == 'diffusers' and 'diffusers' in folder_paths.folder_types:
+                    # This logic assumes folder_paths.get_filename_list can handle 'diffusers' if it's a registered type
+                    # Or we might need a custom way to list diffuser directories if they are not typical "files"
+                    pass # Let it try, get_filename_list might work or return empty
+                else:
+                    continue # Skip if type not found in comfy's path manager
             
             items_in_type_folder = folder_paths.get_filename_list(model_type_key)
             if not items_in_type_folder:
@@ -217,33 +315,36 @@ def scan_and_update_db():
                 if not full_path or not os.path.exists(full_path): 
                     continue
                 
+                # For 'diffusers', item_name is usually the directory name, and full_path points to it.
+                # The _process_model_item will use item_name (dir name for diffusers) for family detection.
                 _process_model_item(conn, cursor, os.path.basename(item_name), full_path, model_type_key, display_name, storage_hint, allowed_formats, current_time, found_on_disk_paths, db_models_dict)
         
         conn.commit()
         print("✅ [Holaf-ModelManager] Phase 1 completed.")
 
-        print("🔵 [Holaf-ModelManager] Phase 2: Scanning for unknown directories...")
+        print("🔵 [Holaf-ModelManager] Phase 2: Scanning for unknown directories (files within them)...")
         base_model_root_dirs = _get_base_model_roots()
         
         for root_dir in base_model_root_dirs:
             if not os.path.isdir(root_dir):
                 continue
             
-            # print(f"DEBUG: Phase 2 scanning root_dir: {root_dir}")
             for top_level_item_name in os.listdir(root_dir):
                 top_level_item_path = os.path.join(root_dir, top_level_item_name)
                 
                 if os.path.isdir(top_level_item_path) and top_level_item_name not in known_type_folder_names:
-                    # print(f"DEBUG: Phase 2 found unknown directory: {top_level_item_path}")
-                    display_type_for_unknown = f"Autres ({top_level_item_name})" 
-                    model_type_key_for_unknown = f"unknown_{top_level_item_name}"
+                    display_type_for_unknown_dir_files = f"Autres ({top_level_item_name})" 
+                    # Use a generic key, or derive one. This key is for internal grouping.
+                    model_type_key_for_unknown_dir_files = f"unknown_dir_{top_level_item_name}"
 
                     for dirpath, _, filenames in os.walk(top_level_item_path):
                         for fname in filenames:
                             file_ext = os.path.splitext(fname)[1].lower()
                             if file_ext in KNOWN_MODEL_EXTENSIONS: 
                                 model_full_path = os.path.join(dirpath, fname)
-                                _process_model_item(conn, cursor, fname, model_full_path, model_type_key_for_unknown, display_type_for_unknown, "file", {file_ext}, current_time, found_on_disk_paths, db_models_dict)
+                                # For these files, the model_type_key is a bit artificial.
+                                # The family detection will mostly rely on filename.
+                                _process_model_item(conn, cursor, fname, model_full_path, model_type_key_for_unknown_dir_files, display_type_for_unknown_dir_files, "file", {file_ext}, current_time, found_on_disk_paths, db_models_dict)
         
         conn.commit()
         print("✅ [Holaf-ModelManager] Phase 2 completed.")
@@ -251,7 +352,6 @@ def scan_and_update_db():
         print("🔵 [Holaf-ModelManager] Phase 3: Cleaning up old entries...")
         db_paths_to_remove = set(db_models_dict.keys()) - found_on_disk_paths 
         if db_paths_to_remove:
-            # print(f"🔵 [Holaf-ModelManager] Removing {len(db_paths_to_remove)} models from DB not found on disk.")
             for path_to_remove in db_paths_to_remove: 
                 cursor.execute("DELETE FROM models WHERE path = ?", (path_to_remove,))
             conn.commit()
@@ -260,7 +360,6 @@ def scan_and_update_db():
 
     except sqlite3.Error as e:
         print(f"🔴 [Holaf-ModelManager] SQLite error during scan_and_update_db: {e}")
-        # traceback.print_exc() 
         if conn: conn.rollback()
     except Exception as e:
         print(f"🔴 [Holaf-ModelManager] General error during scan_and_update_db: {e}")
@@ -270,15 +369,36 @@ def scan_and_update_db():
         if conn:
             conn.close()
 
-# ... (get_all_models_from_db, is_path_safe_for_deletion inchangés) ...
+
 def get_all_models_from_db():
     conn = None
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, path, model_type_key, display_type, size_bytes, is_directory, discovered_at, last_scanned_at FROM models ORDER BY display_type COLLATE NOCASE, name COLLATE NOCASE")
-        models = [dict(row) for row in cursor.fetchall()]
-        return models
+        # Select the new model_family column
+        cursor.execute("""
+            SELECT id, name, path, model_type_key, display_type, model_family, 
+                   size_bytes, is_directory, discovered_at, last_scanned_at 
+            FROM models 
+            ORDER BY display_type COLLATE NOCASE, model_family COLLATE NOCASE, name COLLATE NOCASE
+        """)
+        
+        models_data = []
+        comfyui_base_path = os.path.normpath(folder_paths.base_path)
+
+        for row in cursor.fetchall():
+            model_dict = dict(row)
+            original_path = os.path.normpath(model_dict["path"])
+            
+            try:
+                if original_path.startswith(comfyui_base_path + os.sep):
+                    model_dict["path"] = os.path.relpath(original_path, comfyui_base_path)
+            except ValueError:
+                pass 
+
+            models_data.append(model_dict)
+        
+        return models_data
     except sqlite3.Error as e:
         print(f"🔴 [Holaf-ModelManager] Error fetching models from DB: {e}")
         return []
@@ -310,9 +430,9 @@ def is_path_safe_for_deletion(path_to_delete, is_directory_model=False):
     if not is_safe:
         print(f"🔴 [Holaf-ModelManager] SECURITY: Attempt to access/delete item '{safe_path}' outside of or as a root model directory was blocked.")
     return is_safe
+
 # --- Initialization ---
-# print("  > [Holaf-ModelManager] Helper module loading...") # Moins verbeux
 load_model_type_definitions()
-init_db()
+init_db() # This will now also handle the model_family column.
 scan_and_update_db() 
-print("  > [Holaf-ModelManager] Holaf Model Manager DB Initialized & Scanned.")
+print("  > [Holaf-ModelManager] Holaf Model Manager DB Initialized & Scanned (with family detection).")

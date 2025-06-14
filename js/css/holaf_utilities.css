@@ -4,6 +4,7 @@
  *
  * This file contains shared CSS rules for all Holaf utility panels
  * (Terminal, Model Manager, etc.) to ensure a consistent look and feel.
+ * MODIFIED: Added styles for model family column.
  */
 
 /* --- SHARED STYLES FOR UTILITY PANELS --- */
@@ -25,7 +26,7 @@
     background-color: #F4511E; /* Lighter orange for hover */
 }
 
-/* --- SHARED STYLES FOR HEADER BUTTONS --- */
+/* --- SHARED STYLES FOR HEADER BUTTONS (Panel Header) --- */
 
 .holaf-header-button-group {
     display: flex !important;
@@ -60,8 +61,8 @@
     background-color: var(--comfy-menu-bg, #2a2a2a) !important;
     border: 1px solid var(--border-color, #444) !important;
     border-radius: 4px !important;
-    z-index: 1002 !important; /* z-index relative to its parent container */
-    display: none; /* JS will manage this */
+    z-index: 1002 !important; 
+    display: none; 
     list-style: none !important;
     padding: 5px !important;
     margin: 2px 0 0 !important;
@@ -88,15 +89,15 @@
     transform: translate(-50%, -50%);
     min-width: 300px !important;
     min-height: 200px !important;
-    width: 500px;
-    height: 350px;
+    width: 700px; /* Default width (Model Manager overrides this via JS settings) */
+    height: 550px; /* Default height (Model Manager overrides this via JS settings) */
     max-width: 90vw !important;
     max-height: 90vh !important;
     background-color: var(--comfy-input-bg, #1c1c1c);
     border: 1px solid var(--border-color, #444);
     border-radius: 8px !important;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6) !important;
-    z-index: 1001; /* Initial z-index, managed by PanelManager.js */
+    z-index: 1001; 
     display: flex;
     flex-direction: column !important;
     font-family: sans-serif !important;
@@ -115,23 +116,19 @@
     border-top-left-radius: 8px !important;
     border-top-right-radius: 8px !important;
     display: flex !important;
-    align-items: center !important; /* MODIFIED: Vertical alignment */
-    /* MODIFIED: justify-content removed to allow flex-grow and margin-left:auto to control layout */
+    align-items: center !important; 
     font-weight: bold !important;
     flex-shrink: 0 !important;
-    gap: 8px; /* MODIFIED: Add a gap between title, controls, and close button */
+    gap: 8px; 
 }
 
-/* MODIFIED: Add rule for title to make it expand */
-.holaf-utility-header > span:first-of-type {
+.holaf-utility-header > span:first-of-type { /* Title span */
     flex-grow: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-
-/* Close button on the header */
 .holaf-utility-close-button {
     background: none !important;
     color: #ccc !important;
@@ -145,8 +142,8 @@
     font-size: 16px !important;
     font-weight: bold !important;
     transition: background-color 0.2s, color 0.2s !important;
-    margin-left: auto !important; /* MODIFIED: Pushes button to the far right */
-    flex-shrink: 0; /* MODIFIED: Prevent button from shrinking */
+    margin-left: auto !important; 
+    flex-shrink: 0; 
 }
 
 .holaf-utility-close-button:hover {
@@ -154,7 +151,6 @@
     color: white !important;
 }
 
-/* Resize handle at the bottom-right corner */
 .holaf-utility-resize-handle {
     position: absolute !important;
     bottom: 0 !important;
@@ -178,7 +174,7 @@
     font-size: 14px !important;
     border-radius: 4px !important;
     cursor: pointer !important;
-    transition: background-color 0.2s !important;
+    transition: background-color 0.2s, opacity 0.2s !important;
 }
 
 .holaf-utility-panel .comfy-button:hover {
@@ -189,9 +185,7 @@
     background-color: var(--comfy-button-bg-active, #3e8e41) !important;
 }
 
-
 /* --- MODEL MANAGER SPECIFIC STYLES --- */
-/* The panel itself uses .holaf-utility-panel */
 
 #holaf-manager-panel .holaf-manager-toolbar {
     background-color: var(--manager-toolbar-bg, #252525);
@@ -204,7 +198,6 @@
 }
 
 #holaf-manager-panel .holaf-manager-search {
-    flex-grow: 1;
     padding: 6px 10px;
     background-color: var(--manager-input-bg, #333);
     border: 1px solid var(--manager-border-color, #555);
@@ -215,13 +208,85 @@
 }
 
 #holaf-manager-panel .holaf-manager-search:focus {
-    border-color: #007acc;
+    border-color: #007acc; 
 }
 
+#holaf-manager-panel .holaf-manager-list-header {
+    display: flex;
+    align-items: center;
+    padding: 6px 15px; 
+    background-color: var(--manager-toolbar-bg, #2c2c2c); 
+    border-bottom: 1px solid var(--manager-border-color, #3a3a3a);
+    font-weight: bold;
+    font-size: 0.85em; 
+    color: var(--manager-sub-fg-color, #b0b0b0); 
+    user-select: none; 
+    flex-shrink: 0;
+}
+
+#holaf-manager-panel .holaf-manager-header-col {
+    cursor: pointer; 
+    padding: 0 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.15s;
+}
+
+#holaf-manager-panel .holaf-manager-header-col:hover {
+    color: var(--manager-fg-color, #e0e0e0);
+}
+
+#holaf-manager-panel .holaf-manager-header-col.sort-asc::after,
+#holaf-manager-panel .holaf-manager-header-col.sort-desc::after {
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+#holaf-manager-panel .holaf-manager-header-col.sort-asc::after {
+    border-bottom: 5px solid var(--manager-fg-color, #e0e0e0); 
+}
+#holaf-manager-panel .holaf-manager-header-col.sort-desc::after {
+    border-top: 5px solid var(--manager-fg-color, #e0e0e0);
+}
+
+/* Column Widths for Header */
+#holaf-manager-panel .holaf-header-checkbox {
+    flex: 0 0 30px; 
+    cursor: default; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#holaf-manager-panel .holaf-header-name {
+    flex: 1 1 25%; /* Adjusted for new column */
+}
+#holaf-manager-panel .holaf-header-path {
+    flex: 1 1 30%; /* Adjusted */
+}
+#holaf-manager-panel .holaf-header-type {
+    flex: 0 0 110px; /* Adjusted */
+    text-align: center;
+}
+#holaf-manager-panel .holaf-header-family { /* New Column */
+    flex: 0 0 110px; /* New Column width */
+    text-align: center;
+}
+#holaf-manager-panel .holaf-header-size {
+    flex: 0 0 80px; /* Adjusted */
+    text-align: right;
+}
+
+/* Model List Area */
 #holaf-manager-panel .holaf-manager-content {
     flex-grow: 1;
     overflow-y: auto;
-    padding: 12px;
+    padding: 8px 0px 8px 0px;
     background-color: var(--manager-content-bg, #1e1e1e);
     color: var(--manager-fg-color, #e0e0e0);
 }
@@ -230,7 +295,7 @@
     text-align: center;
     color: #999;
     font-style: italic;
-    padding-top: 20px;
+    padding: 20px 15px;
 }
 
 #holaf-manager-panel .holaf-manager-message.error {
@@ -241,19 +306,52 @@
 /* Individual Model Card */
 #holaf-manager-panel .holaf-model-card {
     background-color: var(--manager-card-bg, #2d2d2d);
-    border: 1px solid var(--manager-card-border, #484848);
-    border-radius: 4px;
-    padding: 10px 15px;
-    margin-bottom: 8px;
+    border-bottom: 1px solid var(--manager-card-border, #484848);
+    padding: 6px 15px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: background-color 0.15s, border-color 0.15s;
+    align-items: stretch;
+    transition: background-color 0.15s;
+    font-size: 0.9em;
+}
+#holaf-manager-panel .holaf-model-card:last-child {
+    border-bottom: none;
 }
 
 #holaf-manager-panel .holaf-model-card:hover {
     background-color: var(--manager-card-bg-hover, #353535);
-    border-color: var(--manager-card-border-hover, #666);
+}
+
+/* Columns within a model card */
+#holaf-manager-panel .holaf-model-col {
+    padding: 0 5px;
+    overflow: hidden; 
+    display: flex; 
+    align-items: center; 
+}
+
+/* Column Widths for Cards (should match header) */
+#holaf-manager-panel .holaf-col-checkbox {
+    flex: 0 0 30px;
+    justify-content: center;
+}
+#holaf-manager-panel .holaf-col-name {
+    flex: 1 1 25%; /* Adjusted */
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 36px;
+}
+#holaf-manager-panel .holaf-col-type {
+    flex: 0 0 110px; /* Adjusted */
+    justify-content: center;
+}
+#holaf-manager-panel .holaf-col-family { /* New Column */
+    flex: 0 0 110px; /* New Column width */
+    justify-content: center;
+}
+#holaf-manager-panel .holaf-col-size {
+    flex: 0 0 80px; /* Adjusted */
+    justify-content: flex-end;
 }
 
 #holaf-manager-panel .holaf-model-name {
@@ -261,34 +359,62 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-right: 15px;
-    flex-grow: 1;
+    display: block; 
+    width: 100%; 
 }
 
-#holaf-manager-panel .holaf-model-info {
-    color: var(--manager-sub-fg-color, #aaa);
-    font-size: 0.9em;
-    flex-shrink: 0;
-    display: flex;
-    gap: 15px;
-    align-items: center;
+#holaf-manager-panel .holaf-model-path {
+    font-size: 0.8em;
+    color: var(--manager-sub-fg-color, #888);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px; 
+    display: block; 
+    width: 100%; 
 }
 
-#holaf-manager-panel .holaf-model-type {
+/* Model Type Tag & Family Tag */
+#holaf-manager-panel .holaf-model-type-tag,
+#holaf-manager-panel .holaf-model-family-tag {
     background-color: var(--manager-tag-bg, #444);
-    padding: 2px 6px;
-    border-radius: 3px;
+    padding: 2px 6px; 
+    border-radius: 3px; 
     font-size: 0.85em;
     color: var(--manager-tag-fg, #ddd);
+    display: inline-block; 
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    line-height: 1.4; 
 }
+/* Optional: Different color for family tag */
+#holaf-manager-panel .holaf-model-family-tag {
+    background-color: var(--manager-family-tag-bg, #3a5375); /* Example: a blueish tint */
+    color: var(--manager-family-tag-fg, #e0e8f0);
+}
+
 
 #holaf-manager-panel .holaf-model-size {
-    min-width: 80px;
     text-align: right;
+    width: 100%;
+    font-size: 0.9em;
+    color: var(--manager-sub-fg-color, #aaa);
 }
 
+#holaf-manager-panel .holaf-model-checkbox,
+#holaf-manager-panel #holaf-manager-select-all-checkbox {
+    margin: 0;
+    cursor: pointer;
+    transform: scale(0.9);
+    accent-color: var(--comfy-button-bg, #4CAF50);
+    vertical-align: middle;
+}
+
+/* Status Bar */
 #holaf-manager-panel .holaf-manager-statusbar {
-    padding: 5px 12px;
+    padding: 6px 12px;
     background-color: var(--manager-statusbar-bg, #2a2a2a);
     border-top: 1px solid var(--manager-border-color, #444);
     font-size: 0.8em;
@@ -297,20 +423,22 @@
     flex-shrink: 0;
 }
 
-/* Custom scrollbar for manager content area */
+/* Custom scrollbar */
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar {
     width: 10px;
 }
-
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-track {
-    background: #2a2a2a;
+    background: var(--manager-content-bg, #1e1e1e);
 }
-
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb {
     background-color: #555;
     border-radius: 5px;
-    border: 2px solid #2a2a2a;
+    border: 2px solid var(--manager-content-bg, #1e1e1e);
 }
+#holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb:hover {
+    background-color: #777;
+}
+
 
 /* --- Model Manager Themes --- */
 #holaf-manager-panel.holaf-theme-dark {
@@ -321,11 +449,12 @@
     --manager-content-bg: #1e1e1e;
     --manager-sub-fg-color: #999;
     --manager-card-bg: #2d2d2d;
-    --manager-card-border: #484848;
+    --manager-card-border: #3f3f3f;
     --manager-card-bg-hover: #353535;
-    --manager-card-border-hover: #666;
-    --manager-tag-bg: #444;
-    --manager-tag-fg: #ddd;
+    --manager-tag-bg: #4f4f4f;
+    --manager-tag-fg: #dadada;
+    --manager-family-tag-bg: #334b6d; /* Darker blue for dark theme */
+    --manager-family-tag-fg: #c8d8e8;
     --manager-statusbar-bg: #2a2a2a;
 }
 
@@ -337,14 +466,14 @@
     --manager-content-bg: #fdfdfd;
     --manager-sub-fg-color: #666;
     --manager-card-bg: #ffffff;
-    --manager-card-border: #ddd;
+    --manager-card-border: #e0e0e0;
     --manager-card-bg-hover: #f5f5f5;
-    --manager-card-border-hover: #ccc;
     --manager-tag-bg: #e0e0e0;
     --manager-tag-fg: #555;
+    --manager-family-tag-bg: #cce0ff; /* Lighter blue for light theme */
+    --manager-family-tag-fg: #2c3e50;
     --manager-statusbar-bg: #e9e9e9;
 }
 
 /* --- TERMINAL SPECIFIC STYLES --- */
-/* Terminal styles are injected by holaf_terminal.js for internal views. */
-/* The panel itself uses the shared .holaf-utility-panel class. */
+/* (Styles existants pour le terminal, inchangés) */
