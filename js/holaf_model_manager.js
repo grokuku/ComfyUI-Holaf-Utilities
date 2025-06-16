@@ -16,12 +16,12 @@ import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
 const holafModelManager = {
     panelElements: null,
     isInitialized: false,
-    areSettingsLoaded: false, 
-    isLoading: false, 
-    isDeepScanning: false, 
+    areSettingsLoaded: false,
+    isLoading: false,
+    isDeepScanning: false,
     models: [],
-    modelTypesConfig: [], 
-    modelCountsPerDisplayType: {}, 
+    modelTypesConfig: [],
+    modelCountsPerDisplayType: {},
     selectedModelPaths: new Set(),
     settings: {
         theme: HOLAF_THEMES[0].name, // Default to the first theme in the shared list
@@ -33,10 +33,9 @@ const holafModelManager = {
         filter_search_text: "",
         sort_column: 'name',
         sort_order: 'asc',
-        zoom_level: 1.0, 
+        zoom_level: 1.0,
     },
-    currentSort: { column: 'name', order: 'asc' }, 
-    // themes array is now removed, using HOLAF_THEMES from panel_manager
+    currentSort: { column: 'name', order: 'asc' },
     saveSettingsTimeout: null,
     MIN_ZOOM: 0.7,
     MAX_ZOOM: 1.5,
@@ -48,7 +47,7 @@ const holafModelManager = {
                 const response = await fetch("/holaf/models/config");
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 this.modelTypesConfig = await response.json();
-                this.modelTypesConfig.sort((a, b) => a.type.localeCompare(b.type)); 
+                this.modelTypesConfig.sort((a, b) => a.type.localeCompare(b.type));
                 console.log("[Holaf ModelManager] Model config definitions loaded:", this.modelTypesConfig);
             } catch (e) {
                 console.error("[Holaf ModelManager] Could not load model type config:", e);
@@ -62,21 +61,20 @@ const holafModelManager = {
                 const allSettings = await response.json();
                 if (allSettings.ui_model_manager_settings) {
                     const fetchedMMSettings = allSettings.ui_model_manager_settings;
-                    
-                    // Ensure the theme from settings is valid, otherwise use default
+
                     const validTheme = HOLAF_THEMES.find(t => t.name === fetchedMMSettings.theme);
 
                     this.settings = {
-                        ...this.settings, 
+                        ...this.settings,
                         ...fetchedMMSettings,
-                        theme: validTheme ? fetchedMMSettings.theme : HOLAF_THEMES[0].name, // Use fetched theme if valid
+                        theme: validTheme ? fetchedMMSettings.theme : HOLAF_THEMES[0].name,
                         panel_x: fetchedMMSettings.panel_x !== null && !isNaN(parseInt(fetchedMMSettings.panel_x)) ? parseInt(fetchedMMSettings.panel_x) : null,
                         panel_y: fetchedMMSettings.panel_y !== null && !isNaN(parseInt(fetchedMMSettings.panel_y)) ? parseInt(fetchedMMSettings.panel_y) : null,
                         panel_width: parseInt(fetchedMMSettings.panel_width) || this.settings.panel_width,
                         panel_height: parseInt(fetchedMMSettings.panel_height) || this.settings.panel_height,
                         zoom_level: parseFloat(fetchedMMSettings.zoom_level) || this.settings.zoom_level,
                     };
-                    
+
                     this.settings.zoom_level = Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, this.settings.zoom_level));
 
                     this.currentSort.column = this.settings.sort_column || 'name';
@@ -89,12 +87,12 @@ const holafModelManager = {
             }
         }
     },
-    
+
     saveSettings() {
         clearTimeout(this.saveSettingsTimeout);
         this.saveSettingsTimeout = setTimeout(async () => {
             const settingsToSave = {
-                theme: this.settings.theme, // Already updated by setTheme
+                theme: this.settings.theme,
                 panel_x: this.settings.panel_x,
                 panel_y: this.settings.panel_y,
                 panel_width: this.settings.panel_width,
@@ -120,43 +118,58 @@ const holafModelManager = {
             } catch (e) {
                 console.error("[Holaf ModelManager] Exception during saveSettings fetch for Model Manager:", e);
             }
-        }, 1000); 
+        }, 1000);
     },
 
-    addMenuItem() {
-        console.log("[Holaf ModelManager] addMenuItem called.");
-        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
+    ensureMenuItemAdded() {
+        const menuId = "holaf-utilities-dropdown-menu";
+        let dropdownMenu = document.getElementById(menuId);
+
         if (!dropdownMenu) {
-            console.error("[Holaf ModelManager] CRITICAL: Could not find the main utilities dropdown menu. Check holaf_main.js.");
+            const mainButton = document.getElementById("holaf-utilities-menu-button");
+            if (mainButton && typeof window.HolafUtilitiesMenu !== 'undefined' && window.HolafUtilitiesMenu.dropdownMenuEl) {
+                dropdownMenu = window.HolafUtilitiesMenu.dropdownMenuEl;
+            } else {
+                console.warn("[Holaf ModelManager] Main utilities menu not found yet. Deferring menu item addition.");
+                setTimeout(() => this.ensureMenuItemAdded(), 200);
+                return;
+            }
+        }
+
+        const existingItem = Array.from(dropdownMenu.children).find(
+            li => li.textContent === "Model Manager"
+        );
+        if (existingItem) {
+            console.log("[Holaf ModelManager] Menu item already exists.");
             return;
         }
 
         const menuItem = document.createElement("li");
         menuItem.textContent = "Model Manager";
-        menuItem.style.cssText = `
+        menuItem.style.cssText = ` 
             padding: 8px 12px;
             cursor: pointer;
-            color: var(--fg-color, #ccc);
+            color: var(--fg-color, #ccc); 
         `;
 
         menuItem.onclick = async () => {
-            console.log("[Holaf ModelManager] Model Manager menu item clicked.");
             if (!this.areSettingsLoaded) {
-                 await this.loadModelConfigAndSettings(); 
+                await this.loadModelConfigAndSettings();
             }
             this.show();
-            if(dropdownMenu) dropdownMenu.style.display = "none";
+            if (dropdownMenu) dropdownMenu.style.display = "none";
         };
 
         dropdownMenu.appendChild(menuItem);
-        console.log("[Holaf ModelManager] Menu item added.");
+        console.log("[Holaf ModelManager] Menu item added to dropdown.");
     },
+
 
     createPanel() {
         console.log("[Holaf ModelManager] createPanel called.");
         if (this.panelElements && this.panelElements.panelEl) {
             console.log("[Holaf ModelManager] Panel already exists, applying current settings.");
-            this.applySettingsToPanel(); 
+            this.applySettingsToPanel();
             return;
         }
         console.log("[Holaf ModelManager] Panel does not exist, proceeding with creation.");
@@ -170,14 +183,14 @@ const holafModelManager = {
         themeButton.className = "holaf-header-button";
         themeButton.title = "Change Theme";
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
-        const themeMenu = this.createThemeMenu(); // Uses HOLAF_THEMES
+        const themeMenu = this.createThemeMenu();
         themeButton.onclick = (e) => {
             e.stopPropagation();
             themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
         };
-        document.addEventListener('click', () => { if(themeMenu) themeMenu.style.display = 'none' });
+        document.addEventListener('click', () => { if (themeMenu) themeMenu.style.display = 'none' });
         themeButtonContainer.append(themeButton, themeMenu);
-        
+
         const zoomOutButton = document.createElement("button");
         zoomOutButton.className = "holaf-header-button";
         zoomOutButton.title = "Zoom Out";
@@ -209,7 +222,7 @@ const holafModelManager = {
                     this.settings.panel_height = newState.height;
                     this.saveSettings();
                 },
-                onResize: () => {} 
+                onResize: () => { }
             });
             console.log("[Holaf ModelManager] PanelManager.createPanel call completed.");
         } catch (e) {
@@ -217,16 +230,16 @@ const holafModelManager = {
             alert("[Holaf ModelManager] Error creating panel. Check console.");
             return;
         }
-        
+
         this.populatePanelContent();
-        this.applySettingsToPanel(); 
+        this.applySettingsToPanel();
         console.log("[Holaf ModelManager] createPanel finished.");
     },
-    
+
     applySettingsToPanel() {
         if (this.panelElements && this.panelElements.panelEl) {
-            this.setTheme(this.settings.theme); 
-            this.applyZoom(); 
+            this.setTheme(this.settings.theme);
+            this.applyZoom();
 
             this.panelElements.panelEl.style.width = `${this.settings.panel_width}px`;
             this.panelElements.panelEl.style.height = `${this.settings.panel_height}px`;
@@ -240,10 +253,10 @@ const holafModelManager = {
                 this.panelElements.panelEl.style.top = `50%`;
                 this.panelElements.panelEl.style.transform = 'translate(-50%, -50%)';
             }
-            
+
             const typeSelect = document.getElementById("holaf-manager-type-select");
             if (typeSelect) typeSelect.value = this.settings.filter_type || "All";
-            
+
             const searchInput = document.getElementById("holaf-manager-search-input");
             if (searchInput) searchInput.value = this.settings.filter_search_text || "";
         }
@@ -252,12 +265,12 @@ const holafModelManager = {
     createThemeMenu() {
         const menu = document.createElement("ul");
         menu.className = "holaf-theme-menu";
-        HOLAF_THEMES.forEach(theme => { // Iterate over HOLAF_THEMES
+        HOLAF_THEMES.forEach(theme => {
             const item = document.createElement("li");
             item.textContent = theme.name;
             item.onclick = (e) => {
                 e.stopPropagation();
-                this.setTheme(theme.name); 
+                this.setTheme(theme.name);
                 menu.style.display = 'none';
             };
             menu.appendChild(item);
@@ -269,24 +282,22 @@ const holafModelManager = {
         const themeConfig = HOLAF_THEMES.find(t => t.name === themeName);
         if (!themeConfig) {
             console.warn(`[Holaf ModelManager] Theme '${themeName}' not found. Defaulting to ${HOLAF_THEMES[0].name}`);
-            this.setTheme(HOLAF_THEMES[0].name); // Recursive call with default
+            this.setTheme(HOLAF_THEMES[0].name);
             return;
         }
 
-        this.settings.theme = themeName; // Store the name of the theme
+        this.settings.theme = themeName;
 
         if (this.panelElements && this.panelElements.panelEl) {
-            // Remove all other theme classes from HOLAF_THEMES
             HOLAF_THEMES.forEach(t => {
                 if (this.panelElements.panelEl.classList.contains(t.className)) {
                     this.panelElements.panelEl.classList.remove(t.className);
                 }
             });
-            // Add the new theme class
             this.panelElements.panelEl.classList.add(themeConfig.className);
             console.log(`[Holaf ModelManager] Theme set to: ${themeName} (Class: ${themeConfig.className})`);
         }
-        this.saveSettings(); // Save settings, including the new theme name
+        this.saveSettings();
     },
 
     applyZoom() {
@@ -314,7 +325,7 @@ const holafModelManager = {
         }
     },
 
-    populatePanelContent() { 
+    populatePanelContent() {
         const contentEl = this.panelElements.contentEl;
         contentEl.innerHTML = `
             <div class="holaf-manager-toolbar" style="flex-wrap: wrap;">
@@ -324,6 +335,7 @@ const holafModelManager = {
                 </div>
                 <div id="holaf-manager-button-group" style="display: flex; gap: 4px; align-items: center;">
                     <button id="holaf-manager-deep-scan-button" class="comfy-button" title="Deep Scan selected .safetensors models for metadata and hash.">Deep Scan</button>
+                    <button id="holaf-manager-delete-button" class="comfy-button" title="Delete selected models from server." style="background-color: #D32F2F;">Delete</button>
                 </div>
             </div>
 
@@ -347,16 +359,17 @@ const holafModelManager = {
         `;
 
         document.getElementById("holaf-manager-type-select").onchange = (e) => {
-            this.settings.filter_type = e.target.value; 
+            this.settings.filter_type = e.target.value;
             this.filterModels();
-            this.saveSettings(); 
+            this.saveSettings();
         };
         document.getElementById("holaf-manager-search-input").oninput = (e) => {
-            this.settings.filter_search_text = e.target.value; 
+            this.settings.filter_search_text = e.target.value;
             this.filterModels();
-            this.saveSettings(); 
+            this.saveSettings();
         };
         document.getElementById("holaf-manager-deep-scan-button").onclick = () => this.performDeepScan();
+        document.getElementById("holaf-manager-delete-button").onclick = () => this.performDelete();
 
 
         contentEl.querySelectorAll(".holaf-manager-list-header .holaf-manager-header-col[data-sort-by]").forEach(headerCol => {
@@ -371,10 +384,10 @@ const holafModelManager = {
                 this.settings.sort_column = this.currentSort.column;
                 this.settings.sort_order = this.currentSort.order;
                 this.filterModels();
-                this.saveSettings(); 
+                this.saveSettings();
             };
         });
-        
+
         const selectAllCheckbox = contentEl.querySelector("#holaf-manager-select-all-checkbox");
         if (selectAllCheckbox) {
             selectAllCheckbox.onclick = (e) => {
@@ -389,20 +402,20 @@ const holafModelManager = {
                 if (modelsArea) {
                     modelsArea.querySelectorAll(".holaf-model-checkbox").forEach(cb => cb.checked = isChecked);
                 }
-                this.updateActionButtonsState(); 
+                this.updateActionButtonsState();
             };
         }
-        this.updateActionButtonsState(); 
+        this.updateActionButtonsState();
     },
 
-    populateModelTypes() { 
+    populateModelTypes() {
         const selectEl = document.getElementById("holaf-manager-type-select");
         if (!selectEl) {
             console.error("[Holaf ModelManager] Type select element not found in populateModelTypes.");
             return;
         }
 
-        selectEl.innerHTML = `<option value="All">All Model Types</option>`; 
+        selectEl.innerHTML = `<option value="All">All Model Types</option>`;
 
         const displayTypesFromModels = Object.keys(this.modelCountsPerDisplayType).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
         let hasOtherCategoryModels = false;
@@ -410,10 +423,10 @@ const holafModelManager = {
         displayTypesFromModels.forEach(displayType => {
             if (this.modelCountsPerDisplayType[displayType] > 0) {
                 if (displayType.startsWith("Autres (")) {
-                    hasOtherCategoryModels = true; 
+                    hasOtherCategoryModels = true;
                 } else {
                     const option = document.createElement("option");
-                    option.value = displayType; 
+                    option.value = displayType;
                     option.textContent = `${displayType} (${this.modelCountsPerDisplayType[displayType]})`;
                     selectEl.appendChild(option);
                 }
@@ -424,28 +437,28 @@ const holafModelManager = {
             const otherCount = Object.entries(this.modelCountsPerDisplayType)
                 .filter(([type, count]) => type.startsWith("Autres (") && count > 0)
                 .reduce((sum, [, count]) => sum + count, 0);
-            
+
             if (otherCount > 0) {
                 const option = document.createElement("option");
-                option.value = "Holaf--Category--Others"; 
+                option.value = "Holaf--Category--Others";
                 option.textContent = `Autres (${otherCount})`;
-                selectEl.appendChild(option); 
+                selectEl.appendChild(option);
             }
         }
         selectEl.value = this.settings.filter_type || "All";
     },
 
-    async loadModels() { 
+    async loadModels() {
         if (this.isLoading) return;
         this.isLoading = true;
-        this.updateActionButtonsState(); 
+        this.updateActionButtonsState();
         const modelsArea = document.getElementById("holaf-manager-models-area");
         const statusBar = document.getElementById("holaf-manager-statusbar");
 
         if (modelsArea) modelsArea.innerHTML = `<p class="holaf-manager-message">Loading models...</p>`;
         if (statusBar) statusBar.textContent = "Status: Loading...";
-        this.models = []; 
-        this.modelCountsPerDisplayType = {}; 
+        this.models = [];
+        this.modelCountsPerDisplayType = {};
 
         try {
             const response = await fetch("/holaf/models");
@@ -453,13 +466,13 @@ const holafModelManager = {
             this.models = await response.json();
 
             this.models.forEach(model => {
-                const dtype = model.display_type || "Undefined"; 
+                const dtype = model.display_type || "Undefined";
                 this.modelCountsPerDisplayType[dtype] = (this.modelCountsPerDisplayType[dtype] || 0) + 1;
             });
-            
-            this.populateModelTypes(); 
-            this.filterModels(); 
-            
+
+            this.populateModelTypes();
+            this.filterModels();
+
             if (statusBar) statusBar.textContent = `Status: ${this.models.length} models loaded.`;
         } catch (error) {
             console.error("[Holaf ModelManager] Error loading models:", error);
@@ -467,11 +480,11 @@ const holafModelManager = {
             if (statusBar) statusBar.textContent = "Status: Error loading models.";
         } finally {
             this.isLoading = false;
-            this.updateActionButtonsState(); 
+            this.updateActionButtonsState();
         }
     },
 
-    renderModels(modelsToRender) { 
+    renderModels(modelsToRender) {
         const modelsArea = document.getElementById("holaf-manager-models-area");
         if (!modelsArea) return;
         modelsArea.innerHTML = '';
@@ -511,7 +524,7 @@ const holafModelManager = {
                     <span class="holaf-model-size">${sizeMB} MB</span>
                 </div>
             `;
-            
+
             const checkbox = card.querySelector(".holaf-model-checkbox");
             checkbox.onchange = (e) => {
                 if (e.target.checked) {
@@ -527,7 +540,7 @@ const holafModelManager = {
         this.updateSelectAllCheckboxState();
     },
 
-    getCurrentlyFilteredModels() { 
+    getCurrentlyFilteredModels() {
         const selectedTypeFilterValue = this.settings.filter_type || "All";
         const searchText = (this.settings.filter_search_text || "").toLowerCase();
 
@@ -548,8 +561,8 @@ const holafModelManager = {
             return typeMatch && textMatch;
         });
     },
-    
-    sortAndRenderModels() { 
+
+    sortAndRenderModels() {
         let modelsToDisplay = this.getCurrentlyFilteredModels();
         const { column, order } = this.currentSort;
 
@@ -560,14 +573,14 @@ const holafModelManager = {
             if (column === 'size_bytes') {
                 valA = Number(valA) || 0;
                 valB = Number(valB) || 0;
-            } else { 
-                valA = String(valA || "").toLowerCase(); 
+            } else {
+                valA = String(valA || "").toLowerCase();
                 valB = String(valB || "").toLowerCase();
             }
 
             if (valA < valB) return order === 'asc' ? -1 : 1;
             if (valA > valB) return order === 'asc' ? 1 : -1;
-            
+
             if (column !== 'name') {
                 let nameA = String(a.name || "").toLowerCase();
                 let nameB = String(b.name || "").toLowerCase();
@@ -581,8 +594,8 @@ const holafModelManager = {
         this.updateSortIndicators();
     },
 
-    filterModels() { 
-        this.sortAndRenderModels(); 
+    filterModels() {
+        this.sortAndRenderModels();
         const statusBar = document.getElementById("holaf-manager-statusbar");
         if (statusBar) {
             const modelsToDisplay = this.getCurrentlyFilteredModels();
@@ -592,14 +605,14 @@ const holafModelManager = {
             const searchText = this.settings.filter_search_text || "";
 
             if (totalShown === totalAvailable && selectedTypeFilterValue === "All" && searchText === "") {
-                 statusBar.textContent = `Status: ${totalAvailable} models loaded.`;
+                statusBar.textContent = `Status: ${totalAvailable} models loaded.`;
             } else {
-                 statusBar.textContent = `Status: Displaying ${totalShown} of ${totalAvailable} models. Filtered by type: '${selectedTypeFilterValue}', search: '${searchText || 'none'}'.`;
+                statusBar.textContent = `Status: Displaying ${totalShown} of ${totalAvailable} models. Filtered by type: '${selectedTypeFilterValue}', search: '${searchText || 'none'}'.`;
             }
         }
     },
 
-    updateSortIndicators() { 
+    updateSortIndicators() {
         const headerCols = document.querySelectorAll(".holaf-manager-list-header .holaf-manager-header-col[data-sort-by]");
         headerCols.forEach(col => {
             col.classList.remove('sort-asc', 'sort-desc');
@@ -608,8 +621,8 @@ const holafModelManager = {
             }
         });
     },
-    
-    updateSelectAllCheckboxState() { 
+
+    updateSelectAllCheckboxState() {
         const selectAllCheckbox = document.getElementById("holaf-manager-select-all-checkbox");
         if (!selectAllCheckbox) return;
 
@@ -631,15 +644,16 @@ const holafModelManager = {
         selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
     },
 
-    updateActionButtonsState() { 
+    updateActionButtonsState() {
         const deepScanButton = document.getElementById("holaf-manager-deep-scan-button");
+        const deleteButton = document.getElementById("holaf-manager-delete-button");
         if (deepScanButton) {
-            const hasSafetensorsSelected = Array.from(this.selectedModelPaths).some(path => 
+            const hasSafetensorsSelected = Array.from(this.selectedModelPaths).some(path =>
                 typeof path === 'string' && path.toLowerCase().endsWith('.safetensors')
             );
-            
+
             const canScan = hasSafetensorsSelected && !this.isDeepScanning && !this.isLoading;
-            
+
             deepScanButton.disabled = !canScan;
             deepScanButton.style.opacity = canScan ? '1' : '0.5';
             deepScanButton.style.cursor = canScan ? 'pointer' : 'not-allowed';
@@ -650,18 +664,33 @@ const holafModelManager = {
                 deepScanButton.textContent = "Deep Scan";
             }
         }
+
+        if (deleteButton) {
+            const canDelete = this.selectedModelPaths.size > 0 && !this.isDeepScanning && !this.isLoading;
+            deleteButton.disabled = !canDelete;
+            deleteButton.style.opacity = canDelete ? '1' : '0.5';
+            deleteButton.style.cursor = canDelete ? 'pointer' : 'not-allowed';
+
+            if (this.isLoading) {
+                deleteButton.textContent = "Loading...";
+            } else if (this.isDeepScanning) {
+                deleteButton.textContent = "Scanning...";
+            } else {
+                deleteButton.textContent = `Delete (${this.selectedModelPaths.size})`;
+            }
+        }
     },
 
-    async performDeepScan() { 
+    async performDeepScan() {
         if (this.isDeepScanning || this.isLoading) {
             console.warn("[Holaf ModelManager] Deep scan or load already in progress.");
             return;
         }
 
-        const pathsToScan = Array.from(this.selectedModelPaths).filter(path => 
+        const pathsToScan = Array.from(this.selectedModelPaths).filter(path =>
             typeof path === 'string' && path.toLowerCase().endsWith('.safetensors')
         );
-        
+
         if (pathsToScan.length === 0) {
             alert("Please select at least one .safetensors model to deep scan.");
             this.updateActionButtonsState();
@@ -696,8 +725,8 @@ const holafModelManager = {
                 });
             }
             if (statusBar) statusBar.textContent = "Status: " + message;
-            
-            await this.loadModels(); 
+
+            await this.loadModels();
 
         } catch (error) {
             console.error("[Holaf ModelManager] Failed to perform deep scan:", error);
@@ -709,11 +738,68 @@ const holafModelManager = {
         }
     },
 
-    async show() { 
+    async performDelete() {
+        if (this.isLoading || this.isDeepScanning) {
+            console.warn("[Holaf ModelManager] Cannot delete while other operations are in progress.");
+            return;
+        }
+        const pathsToDelete = Array.from(this.selectedModelPaths);
+        if (pathsToDelete.length === 0) {
+            alert("Please select at least one model to delete.");
+            return;
+        }
+
+        const userConfirmed = confirm(`Are you sure you want to PERMANENTLY delete ${pathsToDelete.length} selected model(s) from the server? This action cannot be undone.`);
+        if (!userConfirmed) return;
+
+        this.isLoading = true;
+        this.updateActionButtonsState();
+        const statusBar = document.getElementById("holaf-manager-statusbar");
+        if (statusBar) statusBar.textContent = `Status: Deleting ${pathsToDelete.length} model(s)...`;
+
+        try {
+            const response = await fetch('/holaf/models/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: pathsToDelete })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || `HTTP error ${response.status}`);
+            }
+
+            let message = `${result.details?.deleted_count || 0} model(s) successfully deleted.`;
+            if (result.details?.errors && result.details.errors.length > 0) {
+                message += ` ${result.details.errors.length} error(s) occurred.`;
+                result.details.errors.forEach(err => {
+                    console.error(`[Holaf ModelManager] Delete Error for path '${err.path || 'N/A'}': ${err.message}`);
+                });
+                alert("Some models could not be deleted. Check console for details.");
+            } else {
+                alert("Selected models deleted successfully.");
+            }
+            if (statusBar) statusBar.textContent = "Status: " + message;
+
+            this.selectedModelPaths.clear();
+            await this.loadModels();
+
+        } catch (error) {
+            console.error("[Holaf ModelManager] Failed to perform delete:", error);
+            if (statusBar) statusBar.textContent = `Status: Delete error: ${error.message}`; // Corrected line
+            alert(`Delete operation failed: ${error.message}`);
+        } finally {
+            this.isLoading = false;
+            this.updateActionButtonsState();
+        }
+    },
+
+    async show() {
         console.log("[Holaf ModelManager] show called.");
         if (!this.panelElements || !this.panelElements.panelEl) {
             if (!this.areSettingsLoaded) {
-                 await this.loadModelConfigAndSettings(); 
+                await this.loadModelConfigAndSettings();
             }
             console.log("[Holaf ModelManager] Panel not created or panelEl missing. Calling createPanel().");
             this.createPanel();
@@ -722,7 +808,7 @@ const holafModelManager = {
                 return;
             }
         } else {
-             this.applySettingsToPanel(); 
+            this.applySettingsToPanel();
         }
 
         const panelIsVisible = this.panelElements.panelEl.style.display === "flex";
@@ -732,8 +818,8 @@ const holafModelManager = {
         } else {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
-            if (!this.isInitialized) { 
-                this.loadModels(); 
+            if (!this.isInitialized) {
+                this.loadModels();
                 this.isInitialized = true;
             } else {
                 this.filterModels();
@@ -744,22 +830,14 @@ const holafModelManager = {
     },
 };
 
-app.registerExtension({ 
+app.registerExtension({
     name: "Holaf.ModelManager.Panel",
     async setup() {
         console.log("[Holaf ModelManager] Extension setup() called.");
-        
-        // Load settings first, so theme is known before panel creation if shown quickly
-        await holafModelManager.loadModelConfigAndSettings(); 
 
-        const addMenuItemWhenReady = () => {
-            if (window.HolafUtilitiesMenuReady) {
-                holafModelManager.addMenuItem();
-            } else {
-                setTimeout(addMenuItemWhenReady, 100);
-            }
-        };
-        addMenuItemWhenReady();
+        holafModelManager.ensureMenuItemAdded();
+
+        await holafModelManager.loadModelConfigAndSettings();
     },
 });
 

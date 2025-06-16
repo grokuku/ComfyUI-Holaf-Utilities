@@ -405,35 +405,85 @@ def is_path_safe_for_deletion(path_from_client_canon, is_directory_model=False):
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
     
     # Reconstruct OS-specific absolute path from canonical client path
-    # A canonical relative path won't start with '/' or 'X:/'
     is_client_path_intended_as_absolute = path_from_client_canon.startswith('/') or \
                                           (os.name == 'nt' and len(path_from_client_canon) > 1 and path_from_client_canon[1] == ':' and path_from_client_canon[0].isalpha())
 
     if not is_client_path_intended_as_absolute:
-        # Convert canonical relative path (with '/') to OS-specific absolute path
         abs_path_to_delete_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_from_client_canon))
     else:
-        # Convert canonical absolute path (with '/') to OS-specific absolute path
         abs_path_to_delete_norm = os.path.normpath(path_from_client_canon)
 
-    all_comfy_model_roots = folder_paths.get_folder_paths(None) 
-    if not all_comfy_model_roots: 
-        all_comfy_model_roots = [os.path.normpath(folder_paths.models_dir)]
+    # Corrected way to get all unique root model directories
+    all_comfy_model_roots = set()
+    if hasattr(folder_paths, 'folder_names_and_paths'):
+        for folder_type_key in folder_paths.folder_names_and_paths:
+            # folder_paths.get_folder_paths(key) returns a list of paths for that key
+            # These paths are already base directories for the given model type.
+            type_specific_roots = folder_paths.get_folder_paths(folder_type_key)
+            if type_specific_roots:
+                for root_path in type_specific_roots:
+                    all_comfy_model_roots.add(os.path.normpath(root_path))
+    
+    # Fallback if the above yields nothing (should not happen in a normal ComfyUI setup)
+    if not all_comfy_model_roots and hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
+        all_comfy_model_roots.add(os.path.normpath(folder_paths.models_dir))
+    elif not all_comfy_model_roots:
+        # Absolute last resort, might not be accurate but better than crashing
+        print("🟡 [Holaf-ModelManager] Warning: Could not determine ComfyUI model roots comprehensively. Falling back to base_path/models.")
+        all_comfy_model_roots.add(os.path.normpath(os.path.join(folder_paths.base_path, "models")))
+
 
     is_safe = False
-    for root_model_dir in all_comfy_model_roots:
-        abs_root_model_dir_norm = os.path.abspath(os.path.normpath(root_model_dir))
+    for root_model_dir_norm in all_comfy_model_roots: # Iterate over the set of normalized root paths
+        abs_root_model_dir_norm = os.path.abspath(root_model_dir_norm) # Ensure it's absolute for commonpath
+        
         # Check if the path to delete is within or is one of the root model directories
+        # os.path.commonpath behavior:
+        # If abs_path_to_delete_norm is *inside* abs_root_model_dir_norm, commonpath is abs_root_model_dir_norm
+        # If abs_path_to_delete_norm *is* abs_root_model_dir_norm, commonpath is abs_root_model_dir_norm
         if os.path.commonpath([abs_path_to_delete_norm, abs_root_model_dir_norm]) == abs_root_model_dir_norm:
             target_exists_correctly = (is_directory_model and os.path.isdir(abs_path_to_delete_norm)) or \
                                       (not is_directory_model and os.path.isfile(abs_path_to_delete_norm))
-            # Prevent deleting the root model directory itself
-            if target_exists_correctly and abs_path_to_delete_norm != abs_root_model_dir_norm:
-                is_safe = True
-                break
-    
+            
+            # Prevent deleting the root model directory itself, unless it's a specific model file *at* that root
+            # This logic needs to be careful: if a root is 'models/loras' and the file is 'models/loras/a.safetensors', it's OK.
+            # If the file *is* 'models/loras' (and is_directory_model is true), that's not OK.
+            if target_exists_correctly:
+                if is_directory_model and abs_path_to_delete_norm == abs_root_model_dir_norm:
+                    # Trying to delete a root folder itself that is configured as a model type base.
+                    # This could be legitimate if extra_model_paths.yaml points directly to a single diffuser model dir.
+                    # However, for general safety, we might restrict this further or require specific confirmation.
+                    # For now, let's consider it potentially unsafe unless explicitly managed.
+                    # This check is more about preventing deletion of "loras", "checkpoints" folders if they are roots.
+                    # If `path_from_client_canon` corresponds to `checkpoints/mymodel.safetensors`,
+                    # then `abs_path_to_delete_norm` is `.../ComfyUI/models/checkpoints/mymodel.safetensors`.
+                    # `abs_root_model_dir_norm` could be `.../ComfyUI/models/checkpoints`.
+                    # In this case, `abs_path_to_delete_norm != abs_root_model_dir_norm` is TRUE.
+                    # If `path_from_client_canon` pointed to a diffuser model directory that *is* a root,
+                    # e.g., `extra_model_paths.yaml` has `diffusers: /path/to/my_diffuser_model/`
+                    # and we try to delete this directory, then `abs_path_to_delete_norm == abs_root_model_dir_norm`.
+                    # Deleting such a root directory directly is generally risky.
+                    # Let's refine: allow if path is not EQUAL to any of the *main* ComfyUI subfolder names ('checkpoints', etc.)
+                    # main_subfolders = set(m['folder_name'] for m in MODEL_TYPE_DEFINITIONS if 'folder_name' in m)
+                    # if os.path.basename(abs_path_to_delete_norm) in main_subfolders and abs_path_to_delete_norm == abs_root_model_dir_norm:
+                    #    print(f"Preventing deletion of main model category folder: {abs_path_to_delete_norm}")
+                    # else:
+                    #    is_safe = True
+                    #    break
+                    # Simpler: just prevent deleting a root if it's a directory.
+                    if abs_path_to_delete_norm == abs_root_model_dir_norm and os.path.isdir(abs_path_to_delete_norm):
+                         # This means we are trying to delete a root directory like 'ComfyUI/models/loras/'
+                         # This should generally be disallowed for safety.
+                         pass # is_safe remains False
+                    else:
+                        is_safe = True
+                        break
+                elif not is_directory_model: # It's a file
+                     is_safe = True
+                     break
+
     if not is_safe:
-        print(f"🔴 [Holaf-ModelManager] SECURITY: Attempt to access/delete item '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') outside of recognized ComfyUI model directories was blocked.")
+        print(f"🔴 [Holaf-ModelManager] SECURITY: Attempt to access/delete item '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') outside of recognized ComfyUI model directories, or it's a root directory, was blocked.")
     return is_safe
 
 
