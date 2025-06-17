@@ -228,7 +228,7 @@ export const HolafPanelManager = {
     bringToFront(panelEl) {
         if (!openPanels.has(panelEl)) {
             // console.warn(`[HolafPanelManager] Panel ${panelEl.id} not managed. Cannot bring to front.`);
-            return;
+            openPanels.add(panelEl);
         }
 
         // Find the current highest z-index among ALL open panels
@@ -270,7 +270,7 @@ export const HolafPanelManager = {
         handle.addEventListener("mousedown", (e) => {
             // Prevent drag if mousedown is on an interactive element within the handle (e.g. buttons in header)
             if (e.target.closest("button, input, select, textarea, a")) {
-                return;
+                openPanels.add(panelEl);
             }
             e.preventDefault(); // Prevent text selection during drag
 

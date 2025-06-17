@@ -213,7 +213,10 @@ const holafModelManager = {
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => {
-                    if (this.uploadDialog && this.uploadDialog.dialogEl) this.uploadDialog.dialogEl.style.display = 'none';
+                    if (this.uploadDialog && this.uploadDialog.dialogEl) {
+                        this.uploadDialog.dialogEl.style.display = 'none';
+                        this.setModal(false);
+                    }
                 },
                 onStateChange: (newState) => {
                     this.settings.panel_x = newState.x;
@@ -229,6 +232,15 @@ const holafModelManager = {
             alert("[Holaf ModelManager] Error creating panel. Check console.");
             return;
         }
+
+        const overlay = document.createElement("div");
+        overlay.style.cssText = `
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(20, 20, 20, 0.6); z-index: 100;
+            display: none; border-radius: 8px;
+        `;
+        this.panelElements.panelEl.appendChild(overlay);
+        this.panelElements.modalOverlayEl = overlay;
 
         this.populatePanelContent();
         this.createUploadDialog(); // Create the dialog structure (hidden by default)
@@ -843,6 +855,13 @@ const holafModelManager = {
         }
     },
 
+    setModal(isModal) {
+        const overlay = this.panelElements?.modalOverlayEl;
+        if (overlay) {
+            overlay.style.display = isModal ? 'block' : 'none';
+        }
+    },
+
     createUploadDialog() {
         if (this.uploadDialog && this.uploadDialog.dialogEl) {
             return; // Already created
@@ -867,7 +886,10 @@ const holafModelManager = {
         const header = document.createElement("div");
         header.className = "holaf-utility-header";
         header.innerHTML = `<span>Upload Model</span><button class="holaf-utility-close-button" style="margin-left:auto;">✖</button>`;
-        header.querySelector('.holaf-utility-close-button').onclick = () => dialogEl.style.display = 'none';
+        header.querySelector('.holaf-utility-close-button').onclick = () => {
+            dialogEl.style.display = 'none';
+            this.setModal(false);
+        };
         // Make dialog draggable by its header (simplified, no resize for dialog)
         HolafPanelManager.makeDraggable(dialogEl, header, () => { });
 
@@ -924,6 +946,7 @@ const holafModelManager = {
         }
         this.uploadDialog.dialogEl.style.display = 'flex';
         HolafPanelManager.bringToFront(this.uploadDialog.dialogEl); // Bring dialog to front
+        this.setModal(true);
         if (this.uploadDialog.fileInput) this.uploadDialog.fileInput.value = ""; // Clear previous file selection
         if (this.uploadDialog.statusMessage) this.uploadDialog.statusMessage.textContent = "";
     },
@@ -977,6 +1000,7 @@ const holafModelManager = {
 
             this.uploadDialog.fileInput.value = ""; // Clear file input
             this.uploadDialog.dialogEl.style.display = 'none'; // Close dialog on success
+            this.setModal(false); // Hide the overlay
 
             await this.loadModels(); // Refresh model list
 
@@ -1012,7 +1036,10 @@ const holafModelManager = {
 
         if (panelIsVisible) {
             this.panelElements.panelEl.style.display = "none";
-            if (this.uploadDialog && this.uploadDialog.dialogEl) this.uploadDialog.dialogEl.style.display = 'none'; // Hide upload dialog too
+            if (this.uploadDialog && this.uploadDialog.dialogEl) {
+                this.uploadDialog.dialogEl.style.display = 'none'; // Hide upload dialog too
+                this.setModal(false); // Ensure overlay is hidden
+            }
         } else {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
