@@ -19,13 +19,15 @@ const holafModelManager = {
     areSettingsLoaded: false,
     isLoading: false,
     isDeepScanning: false,
-    isDownloading: false, // New state for download
+    isDownloading: false,
+    isUploading: false, // New state for upload
     models: [],
     modelTypesConfig: [],
     modelCountsPerDisplayType: {},
     selectedModelPaths: new Set(),
+    uploadDialog: null, // To store the upload dialog elements
     settings: {
-        theme: HOLAF_THEMES[0].name, // Default to the first theme in the shared list
+        theme: HOLAF_THEMES[0].name,
         panel_x: null,
         panel_y: null,
         panel_width: 800,
@@ -45,7 +47,7 @@ const holafModelManager = {
     async loadModelConfigAndSettings() {
         if (this.modelTypesConfig.length === 0) {
             try {
-                const response = await fetch("/holaf/models/config");
+                const response = await fetch("/holaf/models/config"); // Already loads model types config
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 this.modelTypesConfig = await response.json();
                 this.modelTypesConfig.sort((a, b) => a.type.localeCompare(b.type));
@@ -164,11 +166,9 @@ const holafModelManager = {
         console.log("[Holaf ModelManager] Menu item added to dropdown.");
     },
 
-
     createPanel() {
         console.log("[Holaf ModelManager] createPanel called.");
         if (this.panelElements && this.panelElements.panelEl) {
-            console.log("[Holaf ModelManager] Panel already exists, applying current settings.");
             this.applySettingsToPanel();
             return;
         }
@@ -213,7 +213,7 @@ const holafModelManager = {
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => {
-                    console.log("[Holaf ModelManager] Panel close button clicked.");
+                    if (this.uploadDialog && this.uploadDialog.dialogEl) this.uploadDialog.dialogEl.style.display = 'none';
                 },
                 onStateChange: (newState) => {
                     this.settings.panel_x = newState.x;
@@ -224,7 +224,6 @@ const holafModelManager = {
                 },
                 onResize: () => { }
             });
-            console.log("[Holaf ModelManager] PanelManager.createPanel call completed.");
         } catch (e) {
             console.error("[Holaf ModelManager] Error during HolafPanelManager.createPanel:", e);
             alert("[Holaf ModelManager] Error creating panel. Check console.");
@@ -232,6 +231,7 @@ const holafModelManager = {
         }
 
         this.populatePanelContent();
+        this.createUploadDialog(); // Create the dialog structure (hidden by default)
         this.applySettingsToPanel();
         console.log("[Holaf ModelManager] createPanel finished.");
     },
@@ -285,9 +285,7 @@ const holafModelManager = {
             this.setTheme(HOLAF_THEMES[0].name);
             return;
         }
-
         this.settings.theme = themeName;
-
         if (this.panelElements && this.panelElements.panelEl) {
             HOLAF_THEMES.forEach(t => {
                 if (this.panelElements.panelEl.classList.contains(t.className)) {
@@ -295,6 +293,10 @@ const holafModelManager = {
                 }
             });
             this.panelElements.panelEl.classList.add(themeConfig.className);
+            if (this.uploadDialog && this.uploadDialog.dialogEl) { // Also apply to dialog
+                HOLAF_THEMES.forEach(t => this.uploadDialog.dialogEl.classList.remove(t.className));
+                this.uploadDialog.dialogEl.classList.add(themeConfig.className);
+            }
             console.log(`[Holaf ModelManager] Theme set to: ${themeName} (Class: ${themeConfig.className})`);
         }
         this.saveSettings();
@@ -303,6 +305,9 @@ const holafModelManager = {
     applyZoom() {
         if (this.panelElements && this.panelElements.panelEl) {
             this.panelElements.panelEl.style.setProperty('--holaf-mm-zoom-factor', this.settings.zoom_level);
+            if (this.uploadDialog && this.uploadDialog.dialogEl) {
+                this.uploadDialog.dialogEl.style.setProperty('--holaf-mm-zoom-factor', this.settings.zoom_level);
+            }
             console.log(`[Holaf ModelManager] Zoom level applied: ${this.settings.zoom_level}`);
         }
     },
@@ -333,7 +338,8 @@ const holafModelManager = {
                     <select id="holaf-manager-type-select" class="holaf-manager-search" style="flex-grow: 0.5;"></select>
                     <input type="text" id="holaf-manager-search-input" class="holaf-manager-search" placeholder="Search models (name, family, path)..." style="flex-grow: 1;">
                 </div>
-                <div id="holaf-manager-button-group" style="display: flex; gap: 4px; align-items: center;">
+                <div id="holaf-manager-button-group" style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                    <button id="holaf-manager-upload-button" class="comfy-button" title="Upload new models.">Upload</button>
                     <button id="holaf-manager-download-button" class="comfy-button" title="Download selected models.">Download</button>
                     <button id="holaf-manager-deep-scan-button" class="comfy-button" title="Deep Scan selected .safetensors models for metadata and hash.">Deep Scan</button>
                     <button id="holaf-manager-delete-button" class="comfy-button" title="Delete selected models from server." style="background-color: #D32F2F;">Delete</button>
@@ -369,10 +375,10 @@ const holafModelManager = {
             this.filterModels();
             this.saveSettings();
         };
+        document.getElementById("holaf-manager-upload-button").onclick = () => this.showUploadDialog();
         document.getElementById("holaf-manager-download-button").onclick = () => this.performDownloadSelectedModels();
         document.getElementById("holaf-manager-deep-scan-button").onclick = () => this.performDeepScan();
         document.getElementById("holaf-manager-delete-button").onclick = () => this.performDelete();
-
 
         contentEl.querySelectorAll(".holaf-manager-list-header .holaf-manager-header-col[data-sort-by]").forEach(headerCol => {
             headerCol.onclick = () => {
@@ -416,12 +422,9 @@ const holafModelManager = {
             console.error("[Holaf ModelManager] Type select element not found in populateModelTypes.");
             return;
         }
-
         selectEl.innerHTML = `<option value="All">All Model Types</option>`;
-
         const displayTypesFromModels = Object.keys(this.modelCountsPerDisplayType).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
         let hasOtherCategoryModels = false;
-
         displayTypesFromModels.forEach(displayType => {
             if (this.modelCountsPerDisplayType[displayType] > 0) {
                 if (displayType.startsWith("Autres (")) {
@@ -434,12 +437,10 @@ const holafModelManager = {
                 }
             }
         });
-
         if (hasOtherCategoryModels) {
             const otherCount = Object.entries(this.modelCountsPerDisplayType)
                 .filter(([type, count]) => type.startsWith("Autres (") && count > 0)
                 .reduce((sum, [, count]) => sum + count, 0);
-
             if (otherCount > 0) {
                 const option = document.createElement("option");
                 option.value = "Holaf--Category--Others";
@@ -448,6 +449,19 @@ const holafModelManager = {
             }
         }
         selectEl.value = this.settings.filter_type || "All";
+
+        // Populate upload dialog destination folder types if dialog exists
+        if (this.uploadDialog && this.uploadDialog.destTypeSelect) {
+            this.uploadDialog.destTypeSelect.innerHTML = ''; // Clear existing
+            this.modelTypesConfig
+                .filter(mt => !mt.storage_hint || mt.storage_hint !== 'directory') // Filter out "Diffusers" type for now
+                .forEach(mt => {
+                    const option = document.createElement("option");
+                    option.value = mt.folder_name; // Use folder_name as value
+                    option.textContent = mt.type; // Display user-friendly type
+                    this.uploadDialog.destTypeSelect.appendChild(option);
+                });
+        }
     },
 
     async loadModels() {
@@ -456,27 +470,21 @@ const holafModelManager = {
         this.updateActionButtonsState();
         const modelsArea = document.getElementById("holaf-manager-models-area");
         const statusBar = document.getElementById("holaf-manager-statusbar");
-
         if (modelsArea) modelsArea.innerHTML = `<p class="holaf-manager-message">Loading models...</p>`;
         if (statusBar) statusBar.textContent = "Status: Loading...";
-
         this.models = [];
         this.modelCountsPerDisplayType = {};
         if (modelsArea) modelsArea.innerHTML = '';
-
         try {
             const response = await fetch("/holaf/models", { cache: "no-store" });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             this.models = await response.json();
-
             this.models.forEach(model => {
                 const dtype = model.display_type || "Undefined";
                 this.modelCountsPerDisplayType[dtype] = (this.modelCountsPerDisplayType[dtype] || 0) + 1;
             });
-
             this.populateModelTypes();
             this.filterModels();
-
             if (statusBar) statusBar.textContent = `Status: ${this.models.length} models loaded.`;
         } catch (error) {
             console.error("[Holaf ModelManager] Error loading models:", error);
@@ -492,14 +500,12 @@ const holafModelManager = {
         const modelsArea = document.getElementById("holaf-manager-models-area");
         if (!modelsArea) return;
         modelsArea.innerHTML = '';
-
         if (modelsToRender.length === 0) {
             modelsArea.innerHTML = `<p class="holaf-manager-message">No models match your criteria.</p>`;
             const selectAllCheckbox = document.getElementById("holaf-manager-select-all-checkbox");
             if (selectAllCheckbox) selectAllCheckbox.checked = false;
             return;
         }
-
         modelsToRender.forEach(model => {
             const card = document.createElement("div");
             card.className = "holaf-model-card";
@@ -509,7 +515,6 @@ const holafModelManager = {
             const modelName = model.name || "N/A";
             const displayType = model.display_type || "N/A";
             const modelFamily = model.model_family || "N/A";
-
             card.innerHTML = `
                 <div class="holaf-model-col holaf-col-checkbox">
                     <input type="checkbox" class="holaf-model-checkbox" data-model-path="${modelPath}" ${this.selectedModelPaths.has(modelPath) ? 'checked' : ''}>
@@ -528,7 +533,6 @@ const holafModelManager = {
                     <span class="holaf-model-size">${sizeMB} MB</span>
                 </div>
             `;
-
             const checkbox = card.querySelector(".holaf-model-checkbox");
             checkbox.onchange = (e) => {
                 if (e.target.checked) {
@@ -547,7 +551,6 @@ const holafModelManager = {
     getCurrentlyFilteredModels() {
         const selectedTypeFilterValue = this.settings.filter_type || "All";
         const searchText = (this.settings.filter_search_text || "").toLowerCase();
-
         return this.models.filter(model => {
             let typeMatch = false;
             if (selectedTypeFilterValue === "All") {
@@ -569,11 +572,9 @@ const holafModelManager = {
     sortAndRenderModels() {
         let modelsToDisplay = this.getCurrentlyFilteredModels();
         const { column, order } = this.currentSort;
-
         modelsToDisplay.sort((a, b) => {
             let valA = a[column];
             let valB = b[column];
-
             if (column === 'size_bytes') {
                 valA = Number(valA) || 0;
                 valB = Number(valB) || 0;
@@ -581,10 +582,8 @@ const holafModelManager = {
                 valA = String(valA || "").toLowerCase();
                 valB = String(valB || "").toLowerCase();
             }
-
             if (valA < valB) return order === 'asc' ? -1 : 1;
             if (valA > valB) return order === 'asc' ? 1 : -1;
-
             if (column !== 'name') {
                 let nameA = String(a.name || "").toLowerCase();
                 let nameB = String(b.name || "").toLowerCase();
@@ -593,7 +592,6 @@ const holafModelManager = {
             }
             return 0;
         });
-
         this.renderModels(modelsToDisplay);
         this.updateSortIndicators();
     },
@@ -607,7 +605,6 @@ const holafModelManager = {
             const totalAvailable = this.models.length;
             const selectedTypeFilterValue = this.settings.filter_type || "All";
             const searchText = this.settings.filter_search_text || "";
-
             if (totalShown === totalAvailable && selectedTypeFilterValue === "All" && searchText === "") {
                 statusBar.textContent = `Status: ${totalAvailable} models loaded.`;
             } else {
@@ -629,114 +626,100 @@ const holafModelManager = {
     updateSelectAllCheckboxState() {
         const selectAllCheckbox = document.getElementById("holaf-manager-select-all-checkbox");
         if (!selectAllCheckbox) return;
-
         const visibleCheckboxes = document.querySelectorAll("#holaf-manager-models-area .holaf-model-checkbox");
         if (visibleCheckboxes.length === 0) {
             selectAllCheckbox.checked = false;
             selectAllCheckbox.indeterminate = false;
             return;
         }
-
         let allChecked = true;
         let noneChecked = true;
         for (const cb of visibleCheckboxes) {
             if (cb.checked) noneChecked = false;
             else allChecked = false;
         }
-
         selectAllCheckbox.checked = allChecked;
         selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
     },
 
     updateActionButtonsState() {
+        const uploadButton = document.getElementById("holaf-manager-upload-button");
         const downloadButton = document.getElementById("holaf-manager-download-button");
         const deepScanButton = document.getElementById("holaf-manager-deep-scan-button");
         const deleteButton = document.getElementById("holaf-manager-delete-button");
 
-        const canPerformActions = this.selectedModelPaths.size > 0 && !this.isLoading && !this.isDeepScanning && !this.isDownloading;
+        const canPerformSelectionActions = this.selectedModelPaths.size > 0 && !this.isLoading && !this.isDeepScanning && !this.isDownloading && !this.isUploading;
+        const canPerformGeneralActions = !this.isLoading && !this.isDeepScanning && !this.isDownloading && !this.isUploading;
+
+
+        if (uploadButton) {
+            uploadButton.disabled = !canPerformGeneralActions;
+            uploadButton.style.opacity = canPerformGeneralActions ? '1' : '0.5';
+            uploadButton.style.cursor = canPerformGeneralActions ? 'pointer' : 'not-allowed';
+            if (this.isUploading) uploadButton.textContent = "Uploading...";
+            else uploadButton.textContent = "Upload";
+        }
 
         if (downloadButton) {
-            downloadButton.disabled = !canPerformActions;
-            downloadButton.style.opacity = canPerformActions ? '1' : '0.5';
-            downloadButton.style.cursor = canPerformActions ? 'pointer' : 'not-allowed';
-            if (this.isDownloading) {
-                downloadButton.textContent = "Downloading...";
-            } else {
-                downloadButton.textContent = `Download (${this.selectedModelPaths.size})`;
-            }
+            downloadButton.disabled = !canPerformSelectionActions;
+            downloadButton.style.opacity = canPerformSelectionActions ? '1' : '0.5';
+            downloadButton.style.cursor = canPerformSelectionActions ? 'pointer' : 'not-allowed';
+            if (this.isDownloading) downloadButton.textContent = "Downloading...";
+            else downloadButton.textContent = `Download (${this.selectedModelPaths.size})`;
         }
 
         if (deepScanButton) {
             const hasSafetensorsSelected = Array.from(this.selectedModelPaths).some(path =>
                 typeof path === 'string' && path.toLowerCase().endsWith('.safetensors')
             );
-            const canScan = hasSafetensorsSelected && canPerformActions;
-
+            const canScan = hasSafetensorsSelected && canPerformSelectionActions;
             deepScanButton.disabled = !canScan;
             deepScanButton.style.opacity = canScan ? '1' : '0.5';
             deepScanButton.style.cursor = canScan ? 'pointer' : 'not-allowed';
-
-            if (this.isDeepScanning) {
-                deepScanButton.textContent = "Scanning...";
-            } else {
-                deepScanButton.textContent = "Deep Scan";
-            }
+            if (this.isDeepScanning) deepScanButton.textContent = "Scanning...";
+            else deepScanButton.textContent = "Deep Scan";
         }
 
         if (deleteButton) {
-            deleteButton.disabled = !canPerformActions;
-            deleteButton.style.opacity = canPerformActions ? '1' : '0.5';
-            deleteButton.style.cursor = canPerformActions ? 'pointer' : 'not-allowed';
-
-            if (this.isLoading) { // Generic loading state
-                deleteButton.textContent = "Loading...";
-            } else if (this.isDeepScanning) {
-                deleteButton.textContent = "Scanning...";
-            } else if (this.isDownloading) {
-                deleteButton.textContent = "Downloading...";
-            }
-            else {
-                deleteButton.textContent = `Delete (${this.selectedModelPaths.size})`;
-            }
+            deleteButton.disabled = !canPerformSelectionActions;
+            deleteButton.style.opacity = canPerformSelectionActions ? '1' : '0.5';
+            deleteButton.style.cursor = canPerformSelectionActions ? 'pointer' : 'not-allowed';
+            if (this.isLoading) deleteButton.textContent = "Loading...";
+            else if (this.isDeepScanning) deleteButton.textContent = "Scanning...";
+            else if (this.isDownloading) deleteButton.textContent = "Downloading...";
+            else if (this.isUploading) deleteButton.textContent = "Uploading...";
+            else deleteButton.textContent = `Delete (${this.selectedModelPaths.size})`;
         }
     },
 
     async performDeepScan() {
-        if (this.isDeepScanning || this.isLoading || this.isDownloading) {
+        if (this.isDeepScanning || this.isLoading || this.isDownloading || this.isUploading) {
             console.warn("[Holaf ModelManager] Operation already in progress.");
             return;
         }
-
         const pathsToScan = Array.from(this.selectedModelPaths).filter(path =>
             typeof path === 'string' && path.toLowerCase().endsWith('.safetensors')
         );
-
         if (pathsToScan.length === 0) {
             alert("Please select at least one .safetensors model to deep scan.");
             this.updateActionButtonsState();
             return;
         }
-
         this.isDeepScanning = true;
         this.updateActionButtonsState();
         const statusBar = document.getElementById("holaf-manager-statusbar");
-        if (statusBar) statusBar.textContent = `Status: Deep scanning ${pathsToScan.length} model(s)... (SHA256 & metadata)`;
-
+        if (statusBar) statusBar.textContent = `Status: Deep scanning ${pathsToScan.length} model(s)...`;
         try {
             const response = await fetch('/holaf/models/deep-scan-local', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths: pathsToScan })
             });
-
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ message: "Unknown server error during deep scan." }));
                 throw new Error(errorData.message || `HTTP error ${response.status}`);
             }
-
             const result = await response.json();
-            console.log("[Holaf ModelManager] Deep Scan Result:", result);
-
             let message = `Deep scan completed. ${result.details.updated_count || 0} model(s) updated in DB.`;
             if (result.details.errors && result.details.errors.length > 0) {
                 message += ` ${result.details.errors.length} error(s) occurred. Check console for details.`;
@@ -745,10 +728,8 @@ const holafModelManager = {
                 });
             }
             if (statusBar) statusBar.textContent = "Status: " + message;
-
             this.selectedModelPaths.clear();
             await this.loadModels();
-
         } catch (error) {
             console.error("[Holaf ModelManager] Failed to perform deep scan:", error);
             if (statusBar) statusBar.textContent = `Status: Deep scan error: ${error.message}`;
@@ -760,7 +741,7 @@ const holafModelManager = {
     },
 
     async performDelete() {
-        if (this.isLoading || this.isDeepScanning || this.isDownloading) {
+        if (this.isLoading || this.isDeepScanning || this.isDownloading || this.isUploading) {
             console.warn("[Holaf ModelManager] Cannot delete while other operations are in progress.");
             return;
         }
@@ -769,28 +750,22 @@ const holafModelManager = {
             alert("Please select at least one model to delete.");
             return;
         }
-
         const userConfirmed = confirm(`Are you sure you want to PERMANENTLY delete ${pathsToDelete.length} selected model(s) from the server? This action cannot be undone.`);
         if (!userConfirmed) return;
-
         this.isLoading = true;
         this.updateActionButtonsState();
         const statusBar = document.getElementById("holaf-manager-statusbar");
         if (statusBar) statusBar.textContent = `Status: Deleting ${pathsToDelete.length} model(s)...`;
-
         try {
             const response = await fetch('/holaf/models/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths: pathsToDelete })
             });
-
             const result = await response.json();
-
             if (!response.ok) {
                 throw new Error(result.message || `HTTP error ${response.status}`);
             }
-
             let message = `${result.details?.deleted_count || 0} model(s) successfully deleted.`;
             if (result.details?.errors && result.details.errors.length > 0) {
                 message += ` ${result.details.errors.length} error(s) occurred.`;
@@ -804,7 +779,6 @@ const holafModelManager = {
                 }
             }
             if (statusBar) statusBar.textContent = "Status: " + message;
-
         } catch (error) {
             console.error("[Holaf ModelManager] Failed to perform delete:", error);
             if (statusBar) statusBar.textContent = `Status: Delete error: ${error.message}`;
@@ -818,7 +792,7 @@ const holafModelManager = {
     },
 
     async performDownloadSelectedModels() {
-        if (this.isLoading || this.isDeepScanning || this.isDownloading) {
+        if (this.isLoading || this.isDeepScanning || this.isDownloading || this.isUploading) {
             console.warn("[Holaf ModelManager] Cannot download while other operations are in progress.");
             return;
         }
@@ -827,53 +801,34 @@ const holafModelManager = {
             alert("Please select at least one model to download.");
             return;
         }
-
         this.isDownloading = true;
         this.updateActionButtonsState();
         const statusBar = document.getElementById("holaf-manager-statusbar");
         if (statusBar) statusBar.textContent = `Status: Preparing to download ${pathsToDownload.length} model(s)...`;
-
         let successfulDownloads = 0;
         let failedDownloads = 0;
-
         for (const modelPath of pathsToDownload) {
-            // For file models, extract filename. For directory models, create a zip name.
-            // This is a simplified assumption; backend will provide the actual filename.
             let suggestedFilename = modelPath.substring(modelPath.lastIndexOf('/') + 1);
-            if (suggestedFilename === "" || suggestedFilename === ".") { // Should not happen with good paths
+            if (suggestedFilename === "" || suggestedFilename === ".") {
                 suggestedFilename = "model_download";
             }
-
             if (statusBar) statusBar.textContent = `Status: Downloading ${suggestedFilename}... (${successfulDownloads + failedDownloads + 1}/${pathsToDownload.length})`;
-
             try {
-                // Construct the download URL
                 const downloadUrl = `/holaf/models/download?path=${encodeURIComponent(modelPath)}`;
-
-                // Create a temporary anchor element to trigger the download
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                // a.download = ""; // Let server decide filename via Content-Disposition for now
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
-
-                // Note: True success/failure of download is hard to track client-side this way.
-                // We assume it will succeed if the link is clicked.
-                // A more robust solution might involve fetch + Blob, but can be complex with large files.
                 successfulDownloads++;
-
-                // Small delay between downloads to be slightly nicer to browser/server
                 if (pathsToDownload.length > 1) {
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
-
             } catch (error) {
                 console.error(`[Holaf ModelManager] Error initiating download for ${modelPath}:`, error);
                 failedDownloads++;
             }
         }
-
         this.isDownloading = false;
         this.updateActionButtonsState();
         if (statusBar) {
@@ -887,6 +842,155 @@ const holafModelManager = {
             alert("Some downloads could not be initiated. Please check the browser console for errors.");
         }
     },
+
+    createUploadDialog() {
+        if (this.uploadDialog && this.uploadDialog.dialogEl) {
+            return; // Already created
+        }
+
+        const dialogEl = document.createElement("div");
+        dialogEl.id = "holaf-manager-upload-dialog";
+        dialogEl.className = "holaf-utility-panel"; // Reuse panel styling
+        dialogEl.style.cssText = `
+            width: 500px; height: auto; max-height: 70vh; display: none; 
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 1005; /* Higher than main panel */
+            flex-direction: column;
+            font-size: calc(1em * var(--holaf-mm-zoom-factor)); /* Respect zoom */
+        `;
+        // Apply current theme and zoom
+        const currentThemeClass = HOLAF_THEMES.find(t => t.name === this.settings.theme)?.className || HOLAF_THEMES[0].className;
+        dialogEl.classList.add(currentThemeClass);
+        dialogEl.style.setProperty('--holaf-mm-zoom-factor', this.settings.zoom_level);
+
+
+        const header = document.createElement("div");
+        header.className = "holaf-utility-header";
+        header.innerHTML = `<span>Upload Model</span><button class="holaf-utility-close-button" style="margin-left:auto;">✖</button>`;
+        header.querySelector('.holaf-utility-close-button').onclick = () => dialogEl.style.display = 'none';
+        // Make dialog draggable by its header (simplified, no resize for dialog)
+        HolafPanelManager.makeDraggable(dialogEl, header, () => { });
+
+
+        const content = document.createElement("div");
+        content.style.padding = "15px";
+        content.style.overflowY = "auto";
+        content.style.flexGrow = "1";
+
+        content.innerHTML = `
+            <div style="margin-bottom: 15px;">
+                <label for="holaf-upload-dest-type" style="display:block; margin-bottom:5px;">Destination Type:</label>
+                <select id="holaf-upload-dest-type" class="holaf-manager-search"></select>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label for="holaf-upload-subfolder" style="display:block; margin-bottom:5px;">Subfolder (optional, e.g., 'characters/female'):</label>
+                <input type="text" id="holaf-upload-subfolder" class="holaf-manager-search" placeholder="Leave blank for root of type">
+            </div>
+            <hr style="border-color: var(--holaf-border-color); margin: 15px 0;">
+            <div style="margin-bottom: 15px;">
+                <h4 style="margin-top:0; margin-bottom:8px; color:var(--holaf-text-primary);">Upload from File:</h4>
+                <input type="file" id="holaf-upload-file-input" style="color:var(--holaf-text-secondary); width: 100%;">
+            </div>
+            <div style="text-align:center; margin-top:20px;">
+                <button id="holaf-upload-start-button" class="comfy-button">Start Upload</button>
+            </div>
+            <div id="holaf-upload-status" style="margin-top:15px; text-align:center; color:var(--holaf-text-secondary);"></div>
+        `;
+
+        dialogEl.append(header, content);
+        document.body.appendChild(dialogEl);
+
+        this.uploadDialog = {
+            dialogEl: dialogEl,
+            destTypeSelect: dialogEl.querySelector("#holaf-upload-dest-type"),
+            subfolderInput: dialogEl.querySelector("#holaf-upload-subfolder"),
+            fileInput: dialogEl.querySelector("#holaf-upload-file-input"),
+            startButton: dialogEl.querySelector("#holaf-upload-start-button"),
+            statusMessage: dialogEl.querySelector("#holaf-upload-status")
+        };
+
+        this.uploadDialog.startButton.onclick = () => this.performUpload();
+        this.populateModelTypes(); // Populate select now that it exists
+    },
+
+    showUploadDialog() {
+        if (!this.uploadDialog || !this.uploadDialog.dialogEl) {
+            console.error("[Holaf ModelManager] Upload dialog not created.");
+            return;
+        }
+        if (this.isUploading || this.isLoading || this.isDeepScanning || this.isDownloading) {
+            alert("Another operation is in progress. Please wait.");
+            return;
+        }
+        this.uploadDialog.dialogEl.style.display = 'flex';
+        HolafPanelManager.bringToFront(this.uploadDialog.dialogEl); // Bring dialog to front
+        if (this.uploadDialog.fileInput) this.uploadDialog.fileInput.value = ""; // Clear previous file selection
+        if (this.uploadDialog.statusMessage) this.uploadDialog.statusMessage.textContent = "";
+    },
+
+    async performUpload() {
+        if (!this.uploadDialog) return;
+        const file = this.uploadDialog.fileInput.files[0];
+        const destType = this.uploadDialog.destTypeSelect.value;
+        const subfolder = this.uploadDialog.subfolderInput.value.trim();
+
+        if (!file) {
+            this.uploadDialog.statusMessage.textContent = "Please select a file to upload.";
+            this.uploadDialog.statusMessage.style.color = "var(--holaf-accent-color)";
+            return;
+        }
+        if (!destType) {
+            this.uploadDialog.statusMessage.textContent = "Please select a destination type.";
+            this.uploadDialog.statusMessage.style.color = "var(--holaf-accent-color)";
+            return;
+        }
+
+        this.isUploading = true;
+        this.updateActionButtonsState();
+        this.uploadDialog.startButton.disabled = true;
+        this.uploadDialog.statusMessage.textContent = `Uploading ${file.name}...`;
+        this.uploadDialog.statusMessage.style.color = "var(--holaf-text-secondary)";
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("destination_type", destType);
+        formData.append("subfolder", subfolder);
+        // Could add original filename if needed by backend, but usually backend uses the uploaded file's name.
+        // formData.append("original_filename", file.name);
+
+
+        try {
+            const response = await fetch('/holaf/models/upload-file', {
+                method: 'POST',
+                body: formData,
+                // Headers for FormData are set automatically by the browser, including Content-Type: multipart/form-data
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || `Upload failed with status ${response.status}`);
+            }
+
+            this.uploadDialog.statusMessage.textContent = result.message || "Upload successful!";
+            this.uploadDialog.statusMessage.style.color = "var(--holaf-text-primary)"; // Or a success color
+
+            this.uploadDialog.fileInput.value = ""; // Clear file input
+            this.uploadDialog.dialogEl.style.display = 'none'; // Close dialog on success
+
+            await this.loadModels(); // Refresh model list
+
+        } catch (error) {
+            console.error("[Holaf ModelManager] Upload error:", error);
+            this.uploadDialog.statusMessage.textContent = `Error: ${error.message}`;
+            this.uploadDialog.statusMessage.style.color = "var(--holaf-accent-color)"; // Error color
+        } finally {
+            this.isUploading = false;
+            this.updateActionButtonsState();
+            this.uploadDialog.startButton.disabled = false;
+        }
+    },
+
 
     async show() {
         console.log("[Holaf ModelManager] show called.");
@@ -908,6 +1012,7 @@ const holafModelManager = {
 
         if (panelIsVisible) {
             this.panelElements.panelEl.style.display = "none";
+            if (this.uploadDialog && this.uploadDialog.dialogEl) this.uploadDialog.dialogEl.style.display = 'none'; // Hide upload dialog too
         } else {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);

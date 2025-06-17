@@ -19,6 +19,7 @@
 # MODIFIED: Added deep scan endpoint for Model Manager and startup scan logic.
 # MODIFIED: Added save/load settings endpoint and logic for Model Manager UI.
 # MODIFIED: Added zoom_level setting for Model Manager UI.
+# MODIFIED: Added debug prints to upload route.
 # === End Documentation ===
 
 import server
@@ -37,10 +38,9 @@ import shlex
 import importlib.util
 import traceback 
 import folder_paths 
-import shutil # Potentially for zipping later, not used for single file download yet
-# import aiofiles # Not strictly needed for FileResponse with sync files
-
-from urllib.parse import unquote # For decoding URL-encoded paths
+import shutil 
+from urllib.parse import unquote 
+import re # For sanitizing paths
 
 from aiohttp import web
 from .nodes import holaf_model_manager as model_manager_helper
@@ -425,6 +425,23 @@ async def holaf_terminal_websocket_handler(request: web.Request):
 # --- API Endpoints for Model Manager ---
 MODEL_TYPES_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'model_types.json')
 
+def sanitize_filename(filename):
+    if not filename: return "untitled"
+    filename = str(filename)
+    filename = filename.replace("..", "")
+    filename = filename.strip("/\\ ")
+    filename = re.sub(r'[<>:"|?*\x00-\x1f]', '', filename) 
+    if not filename: return "untitled" # If all chars were problematic
+    return filename
+
+def sanitize_directory_component(component):
+    if not component: return ""
+    component = str(component)
+    component = component.replace("..", "") 
+    component = component.strip("/\\ ")
+    component = re.sub(r'[<>:"|?*\x00-\x1f]', '', component) 
+    return component
+
 @server.PromptServer.instance.routes.post("/holaf/models/deep-scan-local")
 async def holaf_model_deep_scan_local_route(request: web.Request):
     try:
@@ -571,53 +588,145 @@ async def download_model_route(request: web.Request):
     path_param_encoded = request.query.get("path")
     if not path_param_encoded:
         return web.Response(status=400, text="Missing 'path' query parameter.")
-
     try:
-        # Decode the path parameter from URL encoding (e.g., %2F for /)
         path_canon = unquote(path_param_encoded)
     except Exception as e:
         return web.Response(status=400, text=f"Invalid 'path' parameter encoding: {e}")
 
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
     abs_model_path_norm = None
-
     is_client_path_intended_as_absolute = path_canon.startswith('/') or \
                                           (os.name == 'nt' and len(path_canon) > 1 and path_canon[1] == ':' and path_canon[0].isalpha())
-    
     if not is_client_path_intended_as_absolute:
         abs_model_path_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_canon))
     else:
         abs_model_path_norm = os.path.normpath(path_canon)
 
-    # For download, we primarily care if it's a file. Directory downloads would require zipping.
-    # The safety check is primarily for reading files.
-    # We pass is_directory_model=False because we expect to download a file.
-    # If the path points to a directory, os.path.isfile(abs_model_path_norm) will be false later.
-    if not model_manager_helper.is_path_safe_for_deletion(path_canon, is_directory_model=False): # Re-using for safety check
+    if not model_manager_helper.is_path_safe_for_deletion(path_canon, is_directory_model=False): 
         print(f"🔴 [Holaf-ModelManager] Download Sicherheitswarnung: Pfad '{path_canon}' nicht sicher oder nicht gefunden.")
         return web.Response(status=403, text="Access to the requested model path is forbidden or path is invalid.")
-
     if not os.path.exists(abs_model_path_norm):
         print(f"🔴 [Holaf-ModelManager] Download Fehler: Datei nicht gefunden unter '{abs_model_path_norm}' (von '{path_canon}')")
         return web.Response(status=404, text="Model file not found on server.")
-    
     if not os.path.isfile(abs_model_path_norm):
-        # For now, only file downloads are supported.
-        # Directory downloads would require creating a zip archive on the fly.
         print(f"🔴 [Holaf-ModelManager] Download Fehler: Pfad '{abs_model_path_norm}' ist ein Verzeichnis, Download nicht unterstützt.")
         return web.Response(status=400, text="Path is a directory, direct download not supported. Only individual files can be downloaded.")
-
     try:
         filename = os.path.basename(abs_model_path_norm)
-        headers = {
-            "Content-Disposition": f"attachment; filename=\"{filename}\""
-        }
+        headers = { "Content-Disposition": f"attachment; filename=\"{filename}\"" }
         print(f"🔵 [Holaf-ModelManager] Sende Datei zum Download: {abs_model_path_norm} als {filename}")
         return web.FileResponse(abs_model_path_norm, headers=headers)
     except Exception as e:
         print(f"🔴 [Holaf-ModelManager] Fehler beim Senden der Datei '{abs_model_path_norm}': {e}")
         traceback.print_exc()
         return web.Response(status=500, text=f"Server error while preparing file for download: {e}")
+
+
+@server.PromptServer.instance.routes.post("/holaf/models/upload-file")
+async def upload_model_file_route(request: web.Request):
+    try:
+        data = await request.post() 
+    except Exception as e:
+        # This might catch 'Request Entity Too Large' if it happens before field access
+        if '413' in str(e) or 'too large' in str(e).lower():
+             print(f"🔴 [Holaf-ModelManager] Upload error: Request entity too large: {e}")
+             return web.json_response({"status": "error", "message": f"File is too large. Server limit might be exceeded. Error: {e}"}, status=413)
+        return web.json_response({"status": "error", "message": f"Failed to read form data: {e}"}, status=400)
+
+    uploaded_file_field = data.get('file')
+    destination_type = data.get('destination_type')
+    subfolder = data.get('subfolder', '') 
+
+    print(f"🕵️ [Upload-Debug] Received destination_type: {destination_type}, subfolder: {subfolder}")
+
+    if not uploaded_file_field:
+        return web.json_response({"status": "error", "message": "No file part in the request."}, status=400)
+    if not destination_type:
+        return web.json_response({"status": "error", "message": "Missing 'destination_type' field."}, status=400)
+
+    filename_original = getattr(uploaded_file_field, 'filename', 'untitled')
+    filename = sanitize_filename(filename_original)
+    if not filename or filename == "untitled" and filename_original: # If sanitization made it empty but original wasn't
+        print(f"🟡 [Holaf-ModelManager] Filename '{filename_original}' became empty after sanitization. Using a default.")
+        # No good default here if original was all bad chars. Client should ideally prevent this.
+        # For now, this case is handled by the "Invalid or empty filename" check below.
+    if not filename: # Could be truly empty or all chars removed
+        return web.json_response({"status": "error", "message": "Invalid or empty filename after sanitization."}, status=400)
+    print(f"🕵️ [Upload-Debug] Original filename: '{filename_original}', Sanitized filename: '{filename}'")
+
+    try:
+        base_dest_paths = folder_paths.get_folder_paths(destination_type)
+        if not base_dest_paths:
+            raise ValueError(f"Destination type '{destination_type}' is not a recognized ComfyUI model type or has no associated paths.")
+        base_dest_path = os.path.normpath(base_dest_paths[0])
+        print(f"🕵️ [Upload-Debug] Base destination path for type '{destination_type}': {base_dest_path}")
+    except Exception as e:
+        print(f"🔴 [Holaf-ModelManager] Upload error: Invalid destination type '{destination_type}': {e}")
+        return web.json_response({"status": "error", "message": f"Invalid destination type '{destination_type}': {e}"}, status=400)
+
+    final_subfolder_parts = []
+    if subfolder:
+        parts = re.split(r'[/\\]', subfolder)
+        for part in parts:
+            sanitized_part = sanitize_directory_component(part)
+            if sanitized_part:
+                final_subfolder_parts.append(sanitized_part)
+    
+    full_destination_dir = base_dest_path
+    if final_subfolder_parts:
+        full_destination_dir = os.path.join(base_dest_path, *final_subfolder_parts)
+    print(f"🕵️ [Upload-Debug] Full destination directory: {full_destination_dir}")
+    
+    final_save_path = os.path.join(full_destination_dir, filename)
+    final_save_path_norm = os.path.normpath(final_save_path)
+    print(f"🕵️ [Upload-Debug] Final save path (normalized): {final_save_path_norm}")
+
+    comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
+    path_for_safety_check_canon = final_save_path_norm
+    if final_save_path_norm.startswith(comfyui_base_path_norm + os.sep):
+         path_for_safety_check_canon = os.path.relpath(final_save_path_norm, comfyui_base_path_norm)
+    path_for_safety_check_canon = path_for_safety_check_canon.replace(os.sep, '/')
+    print(f"🕵️ [Upload-Debug] Path for safety check (canonical): {path_for_safety_check_canon}")
+
+    if not model_manager_helper.is_path_safe_for_deletion(path_for_safety_check_canon, is_directory_model=False):
+        print(f"🔴 [Holaf-ModelManager] Upload Sicherheitswarnung: Generierter Pfad '{final_save_path_norm}' (von Typ '{destination_type}', Subordner '{subfolder}') NICHT SICHER laut is_path_safe_for_deletion.")
+        return web.json_response({"status": "error", "message": "Calculated save path is outside allowed model directories."}, status=403)
+    else:
+        print(f"✅ [Holaf-ModelManager] Upload Sicherheitscheck: Generierter Pfad '{final_save_path_norm}' (von Typ '{destination_type}', Subordner '{subfolder}') IST SICHER.")
+
+    try:
+        os.makedirs(full_destination_dir, exist_ok=True)
+        
+        # Prevent overwriting existing files by default
+        if os.path.exists(final_save_path_norm):
+            print(f"🟡 [Holaf-ModelManager] Upload warning: File '{final_save_path_norm}' already exists. Upload aborted to prevent overwrite.")
+            return web.json_response({"status": "error", "message": f"File '{filename}' already exists at the destination. Please rename or choose a different subfolder."}, status=409) # 409 Conflict
+
+        with open(final_save_path_norm, 'wb') as f_out:
+            file_content = uploaded_file_field.file # This is a file-like object
+            if hasattr(file_content, 'seek'):
+                 file_content.seek(0)
+            
+            while True:
+                chunk = file_content.read(8192) 
+                if not chunk:
+                    break
+                f_out.write(chunk)
+        
+        print(f"🔵 [Holaf-ModelManager] File uploaded successfully to: {final_save_path_norm}")
+        scan_thread_upload = threading.Timer(2.0, model_manager_helper.scan_and_update_db) # Shorter delay after upload
+        scan_thread_upload.daemon = True 
+        scan_thread_upload.start()
+        return web.json_response({"status": "ok", "message": f"File '{filename}' uploaded successfully to '{destination_type}{'/' + '/'.join(final_subfolder_parts) if final_subfolder_parts else ''}'. Rescanning models..."})
+
+    except Exception as e:
+        print(f"🔴 [Holaf-ModelManager] Error saving uploaded file '{filename}' to '{final_save_path_norm}': {e}")
+        traceback.print_exc()
+        # Attempt to clean up partially written file if error occurs during write
+        if os.path.exists(final_save_path_norm):
+            try: os.remove(final_save_path_norm)
+            except Exception as e_clean: print(f"🔴 [Holaf-ModelManager] Error cleaning up partial file '{final_save_path_norm}': {e_clean}")
+        return web.json_response({"status": "error", "message": f"Error saving file: {e}"}, status=500)
 
 
 # --- Dynamic Node and API Loading ---
@@ -644,9 +753,9 @@ WEB_DIRECTORY = "js"
 # Perform model scan on startup
 print("🔵 [Holaf-ModelManager] Scheduling model database scan on startup via __init__.py...")
 if 'model_manager_helper' in globals() and hasattr(model_manager_helper, 'scan_and_update_db'):
-    scan_thread = threading.Timer(5.0, model_manager_helper.scan_and_update_db)
-    scan_thread.daemon = True 
-    scan_thread.start()
+    scan_thread_init = threading.Timer(5.0, model_manager_helper.scan_and_update_db)
+    scan_thread_init.daemon = True 
+    scan_thread_init.start()
 else:
     print("🔴 [Holaf-ModelManager] ERROR: model_manager_helper or scan_and_update_db not found for scheduled scan.")
 
