@@ -9,6 +9,8 @@
 # MODIFIED: Added initial deep scan functionality (SHA256, safetensors metadata).
 # MODIFIED: Initial scan logic at module load time removed, now handled by __init__.py.
 # MODIFIED: Path normalization for DB storage and retrieval to fix deep scan "model not found" issues.
+# MODIFIED: Added debug prints to is_path_safe_for_deletion.
+# MODIFIED: Ensured folder_paths.models_dir is included in safe roots.
 # === End Documentation ===
 
 import os
@@ -180,7 +182,7 @@ def get_folder_size(folder_path):
     return total_size
 
 
-def _get_base_model_roots(): # Version avant mes "optimisations" non demandées
+def _get_base_model_roots(): 
     roots = set()
     if hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
         roots.add(os.path.normpath(folder_paths.models_dir))
@@ -222,14 +224,13 @@ def _detect_model_family(filename: str, model_type_key: str) -> str:
 
 
 def _process_model_item(conn, cursor, item_name, abs_fs_path, model_type_key, display_type, storage_hint, allowed_formats, current_time, found_on_disk_paths_canon, db_models_dict_canon_key):
-    original_abs_path_norm = os.path.normpath(abs_fs_path) # Path for FS operations
+    original_abs_path_norm = os.path.normpath(abs_fs_path) 
 
-    # Determine path for DB (canonical form: relative with '/' or absolute with '/')
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
     path_for_db = original_abs_path_norm
     if original_abs_path_norm.startswith(comfyui_base_path_norm + os.sep):
         path_for_db = os.path.relpath(original_abs_path_norm, comfyui_base_path_norm)
-    path_for_db = path_for_db.replace(os.sep, '/') # Ensure slashes
+    path_for_db = path_for_db.replace(os.sep, '/') 
 
     if path_for_db in found_on_disk_paths_canon: return 
     
@@ -289,12 +290,11 @@ def scan_and_update_db():
     print("🔵 [Holaf-ModelManager] Starting database scan and update (via scan_and_update_db)...")
     conn = None
     current_time = time.time()
-    found_on_disk_paths_canon = set() # Stores paths in canonical form (slashes, relative if possible)
+    found_on_disk_paths_canon = set() 
 
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        # Paths in DB are already canonical (slashes, relative if possible) due to previous _process_model_item runs
         cursor.execute("SELECT id, path, name, size_bytes, is_directory, model_type_key, display_type, model_family FROM models")
         db_models_dict_canon_key = {row['path']: dict(row) for row in cursor.fetchall()}
         
@@ -315,7 +315,7 @@ def scan_and_update_db():
                 continue
 
             for item_name in items_in_type_folder: 
-                abs_fs_path = folder_paths.get_full_path(model_type_key, item_name) # This is an OS-specific absolute path
+                abs_fs_path = folder_paths.get_full_path(model_type_key, item_name) 
                 if not abs_fs_path or not os.path.exists(abs_fs_path): 
                     continue
                 _process_model_item(conn, cursor, os.path.basename(item_name), abs_fs_path, model_type_key, display_name, storage_hint, allowed_formats, current_time, found_on_disk_paths_canon, db_models_dict_canon_key)
@@ -340,7 +340,7 @@ def scan_and_update_db():
                         for fname in filenames:
                             file_ext = os.path.splitext(fname)[1].lower()
                             if file_ext in KNOWN_MODEL_EXTENSIONS: 
-                                model_abs_fs_path = os.path.join(dirpath, fname) # OS-specific absolute path
+                                model_abs_fs_path = os.path.join(dirpath, fname) 
                                 _process_model_item(conn, cursor, fname, model_abs_fs_path, model_type_key_for_unknown_dir_files, display_type_for_unknown_dir_files, "file", {file_ext}, current_time, found_on_disk_paths_canon, db_models_dict_canon_key)
         
         conn.commit()
@@ -384,8 +384,6 @@ def get_all_models_from_db():
         models_data = []
         for row in cursor.fetchall():
             model_dict = dict(row)
-            # Path from DB is already canonical (slashes, relative if possible)
-            # Ensure it's sent with slashes (should be already, but as a safeguard)
             model_dict["path"] = model_dict["path"].replace(os.sep, '/') 
             
             if model_dict["extracted_metadata_json"] == "": 
@@ -401,10 +399,9 @@ def get_all_models_from_db():
         if conn: conn.close()
 
 def is_path_safe_for_deletion(path_from_client_canon, is_directory_model=False):
-    # path_from_client_canon is expected to be in canonical form (slashes, relative or absolute)
+    print(f"🕵️ [Holaf-Debug] is_path_safe_for_deletion called for: {path_from_client_canon}")
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
     
-    # Reconstruct OS-specific absolute path from canonical client path
     is_client_path_intended_as_absolute = path_from_client_canon.startswith('/') or \
                                           (os.name == 'nt' and len(path_from_client_canon) > 1 and path_from_client_canon[1] == ':' and path_from_client_canon[0].isalpha())
 
@@ -412,83 +409,69 @@ def is_path_safe_for_deletion(path_from_client_canon, is_directory_model=False):
         abs_path_to_delete_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_from_client_canon))
     else:
         abs_path_to_delete_norm = os.path.normpath(path_from_client_canon)
+    print(f"🕵️ [Holaf-Debug] Absolute path to delete (normalized): {abs_path_to_delete_norm}")
 
-    # Corrected way to get all unique root model directories
     all_comfy_model_roots = set()
+    # 1. Add all type-specific roots
     if hasattr(folder_paths, 'folder_names_and_paths'):
         for folder_type_key in folder_paths.folder_names_and_paths:
-            # folder_paths.get_folder_paths(key) returns a list of paths for that key
-            # These paths are already base directories for the given model type.
             type_specific_roots = folder_paths.get_folder_paths(folder_type_key)
             if type_specific_roots:
                 for root_path in type_specific_roots:
                     all_comfy_model_roots.add(os.path.normpath(root_path))
     
-    # Fallback if the above yields nothing (should not happen in a normal ComfyUI setup)
-    if not all_comfy_model_roots and hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
+    # 2. Explicitly add the main models_dir (often ComfyUI/models)
+    if hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
         all_comfy_model_roots.add(os.path.normpath(folder_paths.models_dir))
-    elif not all_comfy_model_roots:
-        # Absolute last resort, might not be accurate but better than crashing
-        print("🟡 [Holaf-ModelManager] Warning: Could not determine ComfyUI model roots comprehensively. Falling back to base_path/models.")
+    
+    # 3. Fallback if still no roots found (should be rare)
+    if not all_comfy_model_roots:
+        print("🟡 [Holaf-ModelManager] Warning: Could not determine ComfyUI model roots comprehensively using standard methods. Falling back to base_path/models.")
         all_comfy_model_roots.add(os.path.normpath(os.path.join(folder_paths.base_path, "models")))
-
+    
+    print(f"🕵️ [Holaf-Debug] Collected ComfyUI model roots:")
+    for r_idx, r_path in enumerate(list(all_comfy_model_roots)): # Convert set to list for indexed printing
+        print(f"  Root {r_idx}: {r_path}")
 
     is_safe = False
-    for root_model_dir_norm in all_comfy_model_roots: # Iterate over the set of normalized root paths
-        abs_root_model_dir_norm = os.path.abspath(root_model_dir_norm) # Ensure it's absolute for commonpath
+    normcased_abs_path_to_delete = os.path.normcase(abs_path_to_delete_norm)
+    print(f"🕵️ [Holaf-Debug] Normcased path to delete: {normcased_abs_path_to_delete}")
+
+    for root_model_dir_norm_loop in all_comfy_model_roots:
+        abs_root_model_dir_norm = os.path.abspath(root_model_dir_norm_loop) # Ensure it's absolute
+        normcased_abs_root_model_dir = os.path.normcase(abs_root_model_dir_norm)
+
+        print(f"🕵️ [Holaf-Debug] Comparing with normcased root: '{normcased_abs_root_model_dir}'")
         
-        # Check if the path to delete is within or is one of the root model directories
-        # os.path.commonpath behavior:
-        # If abs_path_to_delete_norm is *inside* abs_root_model_dir_norm, commonpath is abs_root_model_dir_norm
-        # If abs_path_to_delete_norm *is* abs_root_model_dir_norm, commonpath is abs_root_model_dir_norm
-        if os.path.commonpath([abs_path_to_delete_norm, abs_root_model_dir_norm]) == abs_root_model_dir_norm:
+        if normcased_abs_path_to_delete == normcased_abs_root_model_dir or \
+           normcased_abs_path_to_delete.startswith(normcased_abs_root_model_dir + os.sep):
+            
+            print(f"🕵️ [Holaf-Debug] Path is within or equals root: {abs_root_model_dir_norm}")
             target_exists_correctly = (is_directory_model and os.path.isdir(abs_path_to_delete_norm)) or \
                                       (not is_directory_model and os.path.isfile(abs_path_to_delete_norm))
             
-            # Prevent deleting the root model directory itself, unless it's a specific model file *at* that root
-            # This logic needs to be careful: if a root is 'models/loras' and the file is 'models/loras/a.safetensors', it's OK.
-            # If the file *is* 'models/loras' (and is_directory_model is true), that's not OK.
             if target_exists_correctly:
-                if is_directory_model and abs_path_to_delete_norm == abs_root_model_dir_norm:
-                    # Trying to delete a root folder itself that is configured as a model type base.
-                    # This could be legitimate if extra_model_paths.yaml points directly to a single diffuser model dir.
-                    # However, for general safety, we might restrict this further or require specific confirmation.
-                    # For now, let's consider it potentially unsafe unless explicitly managed.
-                    # This check is more about preventing deletion of "loras", "checkpoints" folders if they are roots.
-                    # If `path_from_client_canon` corresponds to `checkpoints/mymodel.safetensors`,
-                    # then `abs_path_to_delete_norm` is `.../ComfyUI/models/checkpoints/mymodel.safetensors`.
-                    # `abs_root_model_dir_norm` could be `.../ComfyUI/models/checkpoints`.
-                    # In this case, `abs_path_to_delete_norm != abs_root_model_dir_norm` is TRUE.
-                    # If `path_from_client_canon` pointed to a diffuser model directory that *is* a root,
-                    # e.g., `extra_model_paths.yaml` has `diffusers: /path/to/my_diffuser_model/`
-                    # and we try to delete this directory, then `abs_path_to_delete_norm == abs_root_model_dir_norm`.
-                    # Deleting such a root directory directly is generally risky.
-                    # Let's refine: allow if path is not EQUAL to any of the *main* ComfyUI subfolder names ('checkpoints', etc.)
-                    # main_subfolders = set(m['folder_name'] for m in MODEL_TYPE_DEFINITIONS if 'folder_name' in m)
-                    # if os.path.basename(abs_path_to_delete_norm) in main_subfolders and abs_path_to_delete_norm == abs_root_model_dir_norm:
-                    #    print(f"Preventing deletion of main model category folder: {abs_path_to_delete_norm}")
-                    # else:
-                    #    is_safe = True
-                    #    break
-                    # Simpler: just prevent deleting a root if it's a directory.
-                    if abs_path_to_delete_norm == abs_root_model_dir_norm and os.path.isdir(abs_path_to_delete_norm):
-                         # This means we are trying to delete a root directory like 'ComfyUI/models/loras/'
-                         # This should generally be disallowed for safety.
-                         pass # is_safe remains False
-                    else:
-                        is_safe = True
-                        break
-                elif not is_directory_model: # It's a file
-                     is_safe = True
-                     break
+                print(f"🕵️ [Holaf-Debug] Target exists correctly. is_directory_model: {is_directory_model}")
+                if normcased_abs_path_to_delete == normcased_abs_root_model_dir and is_directory_model:
+                    print(f"🕵️ [Holaf-Debug] Attempt to delete a root directory ({abs_path_to_delete_norm}) which is a directory model. Blocking for this root.")
+                else:
+                    print(f"🕵️ [Holaf-Debug] Path deemed safe with root: {abs_root_model_dir_norm}")
+                    is_safe = True
+                    break 
+            else:
+                print(f"🕵️ [Holaf-Debug] Target does not exist correctly (or type mismatch). Path: {abs_path_to_delete_norm}, is_directory_model: {is_directory_model}")
+        else:
+            print(f"🕵️ [Holaf-Debug] Path NOT within root: {abs_root_model_dir_norm}")
 
     if not is_safe:
-        print(f"🔴 [Holaf-ModelManager] SECURITY: Attempt to access/delete item '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') outside of recognized ComfyUI model directories, or it's a root directory, was blocked.")
+        print(f"🔴 [Holaf-ModelManager] SECURITY: Attempt to access/delete item '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') outside of recognized ComfyUI model directories, or it's a root directory that is a directory model, was blocked.")
+    else:
+        print(f"✅ [Holaf-ModelManager] Path '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') deemed SAFE for deletion.")
     return is_safe
 
 
 # --- Deep Scan Functionality ---
-def _perform_local_deep_scan_for_model(model_abs_fs_path: str) -> dict: # Takes OS-specific absolute path
+def _perform_local_deep_scan_for_model(model_abs_fs_path: str) -> dict: 
     scan_results = {
         "sha256_hash": None, "extracted_metadata_json": None, "parsed_tags": None,
         "parsed_trigger_words": None, "parsed_base_model": None, "parsed_resolution": None,
@@ -528,7 +511,7 @@ def _perform_local_deep_scan_for_model(model_abs_fs_path: str) -> dict: # Takes 
             print(f"🟡 [Holaf-ModelManager] Deep Scan: Metadata failed for {model_abs_fs_path}: {e}")
     return scan_results
 
-def process_deep_scan_request(model_paths_from_client_canon: list): # Expects list of canonical paths
+def process_deep_scan_request(model_paths_from_client_canon: list): 
     conn = None
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
     results = {"updated_count": 0, "errors": []}
@@ -538,9 +521,7 @@ def process_deep_scan_request(model_paths_from_client_canon: list): # Expects li
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        for client_path_canon in model_paths_from_client_canon: # This is the canonical path from JS
-            
-            # Reconstruct OS-specific absolute path from canonical client path
+        for client_path_canon in model_paths_from_client_canon: 
             is_client_path_intended_as_absolute = client_path_canon.startswith('/') or \
                                                   (os.name == 'nt' and len(client_path_canon) > 1 and client_path_canon[1] == ':' and client_path_canon[0].isalpha())
 
@@ -553,7 +534,6 @@ def process_deep_scan_request(model_paths_from_client_canon: list): # Expects li
                 results["errors"].append({"path": client_path_canon, "message": "File not found on server."})
                 continue
             
-            # Use client_path_canon (which is already canonical) for DB lookup
             cursor.execute("SELECT id, name FROM models WHERE path = ?", (client_path_canon,))
             model_record = cursor.fetchone()
             if not model_record:
@@ -561,7 +541,7 @@ def process_deep_scan_request(model_paths_from_client_canon: list): # Expects li
                 continue
 
             print(f"🔵 [Holaf-ModelManager] Deep scanning: {model_record['name']} ({client_path_canon})")
-            scan_data = _perform_local_deep_scan_for_model(abs_model_fs_path) # Pass OS-specific path here
+            scan_data = _perform_local_deep_scan_for_model(abs_model_fs_path) 
             if scan_data.get("error"):
                 results["errors"].append({"path": client_path_canon, "name": model_record['name'], "message": scan_data["error"]})
             
@@ -571,10 +551,10 @@ def process_deep_scan_request(model_paths_from_client_canon: list): # Expects li
                 "parsed_base_model": scan_data["parsed_base_model"], "parsed_resolution": scan_data["parsed_resolution"],
                 "last_deep_scanned_at": time.time()
             }
-            update_values = {k: v for k, v in update_fields.items() if v is not None} # Only update fields that have a new value
-            if update_values: # Only update if there's something to update
+            update_values = {k: v for k, v in update_fields.items() if v is not None} 
+            if update_values: 
                 set_clause = ", ".join([f"{key} = ?" for key in update_values.keys()])
-                params = list(update_values.values()) + [client_path_canon] # Use canonical path for WHERE clause
+                params = list(update_values.values()) + [client_path_canon] 
                 try:
                     cursor.execute(f"UPDATE models SET {set_clause} WHERE path = ?", params)
                     conn.commit()

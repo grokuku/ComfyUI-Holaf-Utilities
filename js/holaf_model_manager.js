@@ -19,6 +19,7 @@ const holafModelManager = {
     areSettingsLoaded: false,
     isLoading: false,
     isDeepScanning: false,
+    isDownloading: false, // New state for download
     models: [],
     modelTypesConfig: [],
     modelCountsPerDisplayType: {},
@@ -140,7 +141,6 @@ const holafModelManager = {
             li => li.textContent === "Model Manager"
         );
         if (existingItem) {
-            console.log("[Holaf ModelManager] Menu item already exists.");
             return;
         }
 
@@ -334,6 +334,7 @@ const holafModelManager = {
                     <input type="text" id="holaf-manager-search-input" class="holaf-manager-search" placeholder="Search models (name, family, path)..." style="flex-grow: 1;">
                 </div>
                 <div id="holaf-manager-button-group" style="display: flex; gap: 4px; align-items: center;">
+                    <button id="holaf-manager-download-button" class="comfy-button" title="Download selected models.">Download</button>
                     <button id="holaf-manager-deep-scan-button" class="comfy-button" title="Deep Scan selected .safetensors models for metadata and hash.">Deep Scan</button>
                     <button id="holaf-manager-delete-button" class="comfy-button" title="Delete selected models from server." style="background-color: #D32F2F;">Delete</button>
                 </div>
@@ -368,6 +369,7 @@ const holafModelManager = {
             this.filterModels();
             this.saveSettings();
         };
+        document.getElementById("holaf-manager-download-button").onclick = () => this.performDownloadSelectedModels();
         document.getElementById("holaf-manager-deep-scan-button").onclick = () => this.performDeepScan();
         document.getElementById("holaf-manager-delete-button").onclick = () => this.performDelete();
 
@@ -457,11 +459,13 @@ const holafModelManager = {
 
         if (modelsArea) modelsArea.innerHTML = `<p class="holaf-manager-message">Loading models...</p>`;
         if (statusBar) statusBar.textContent = "Status: Loading...";
+
         this.models = [];
         this.modelCountsPerDisplayType = {};
+        if (modelsArea) modelsArea.innerHTML = '';
 
         try {
-            const response = await fetch("/holaf/models");
+            const response = await fetch("/holaf/models", { cache: "no-store" });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             this.models = await response.json();
 
@@ -645,14 +649,28 @@ const holafModelManager = {
     },
 
     updateActionButtonsState() {
+        const downloadButton = document.getElementById("holaf-manager-download-button");
         const deepScanButton = document.getElementById("holaf-manager-deep-scan-button");
         const deleteButton = document.getElementById("holaf-manager-delete-button");
+
+        const canPerformActions = this.selectedModelPaths.size > 0 && !this.isLoading && !this.isDeepScanning && !this.isDownloading;
+
+        if (downloadButton) {
+            downloadButton.disabled = !canPerformActions;
+            downloadButton.style.opacity = canPerformActions ? '1' : '0.5';
+            downloadButton.style.cursor = canPerformActions ? 'pointer' : 'not-allowed';
+            if (this.isDownloading) {
+                downloadButton.textContent = "Downloading...";
+            } else {
+                downloadButton.textContent = `Download (${this.selectedModelPaths.size})`;
+            }
+        }
+
         if (deepScanButton) {
             const hasSafetensorsSelected = Array.from(this.selectedModelPaths).some(path =>
                 typeof path === 'string' && path.toLowerCase().endsWith('.safetensors')
             );
-
-            const canScan = hasSafetensorsSelected && !this.isDeepScanning && !this.isLoading;
+            const canScan = hasSafetensorsSelected && canPerformActions;
 
             deepScanButton.disabled = !canScan;
             deepScanButton.style.opacity = canScan ? '1' : '0.5';
@@ -666,24 +684,26 @@ const holafModelManager = {
         }
 
         if (deleteButton) {
-            const canDelete = this.selectedModelPaths.size > 0 && !this.isDeepScanning && !this.isLoading;
-            deleteButton.disabled = !canDelete;
-            deleteButton.style.opacity = canDelete ? '1' : '0.5';
-            deleteButton.style.cursor = canDelete ? 'pointer' : 'not-allowed';
+            deleteButton.disabled = !canPerformActions;
+            deleteButton.style.opacity = canPerformActions ? '1' : '0.5';
+            deleteButton.style.cursor = canPerformActions ? 'pointer' : 'not-allowed';
 
-            if (this.isLoading) {
+            if (this.isLoading) { // Generic loading state
                 deleteButton.textContent = "Loading...";
             } else if (this.isDeepScanning) {
                 deleteButton.textContent = "Scanning...";
-            } else {
+            } else if (this.isDownloading) {
+                deleteButton.textContent = "Downloading...";
+            }
+            else {
                 deleteButton.textContent = `Delete (${this.selectedModelPaths.size})`;
             }
         }
     },
 
     async performDeepScan() {
-        if (this.isDeepScanning || this.isLoading) {
-            console.warn("[Holaf ModelManager] Deep scan or load already in progress.");
+        if (this.isDeepScanning || this.isLoading || this.isDownloading) {
+            console.warn("[Holaf ModelManager] Operation already in progress.");
             return;
         }
 
@@ -726,6 +746,7 @@ const holafModelManager = {
             }
             if (statusBar) statusBar.textContent = "Status: " + message;
 
+            this.selectedModelPaths.clear();
             await this.loadModels();
 
         } catch (error) {
@@ -739,7 +760,7 @@ const holafModelManager = {
     },
 
     async performDelete() {
-        if (this.isLoading || this.isDeepScanning) {
+        if (this.isLoading || this.isDeepScanning || this.isDownloading) {
             console.warn("[Holaf ModelManager] Cannot delete while other operations are in progress.");
             return;
         }
@@ -778,20 +799,92 @@ const holafModelManager = {
                 });
                 alert("Some models could not be deleted. Check console for details.");
             } else {
-                alert("Selected models deleted successfully.");
+                if (!result.details?.errors || result.details.errors.length === 0) {
+                    alert("Selected models deleted successfully.");
+                }
             }
             if (statusBar) statusBar.textContent = "Status: " + message;
 
-            this.selectedModelPaths.clear();
-            await this.loadModels();
-
         } catch (error) {
             console.error("[Holaf ModelManager] Failed to perform delete:", error);
-            if (statusBar) statusBar.textContent = `Status: Delete error: ${error.message}`; // Corrected line
+            if (statusBar) statusBar.textContent = `Status: Delete error: ${error.message}`;
             alert(`Delete operation failed: ${error.message}`);
         } finally {
             this.isLoading = false;
+            this.selectedModelPaths.clear();
+            await this.loadModels();
             this.updateActionButtonsState();
+        }
+    },
+
+    async performDownloadSelectedModels() {
+        if (this.isLoading || this.isDeepScanning || this.isDownloading) {
+            console.warn("[Holaf ModelManager] Cannot download while other operations are in progress.");
+            return;
+        }
+        const pathsToDownload = Array.from(this.selectedModelPaths);
+        if (pathsToDownload.length === 0) {
+            alert("Please select at least one model to download.");
+            return;
+        }
+
+        this.isDownloading = true;
+        this.updateActionButtonsState();
+        const statusBar = document.getElementById("holaf-manager-statusbar");
+        if (statusBar) statusBar.textContent = `Status: Preparing to download ${pathsToDownload.length} model(s)...`;
+
+        let successfulDownloads = 0;
+        let failedDownloads = 0;
+
+        for (const modelPath of pathsToDownload) {
+            // For file models, extract filename. For directory models, create a zip name.
+            // This is a simplified assumption; backend will provide the actual filename.
+            let suggestedFilename = modelPath.substring(modelPath.lastIndexOf('/') + 1);
+            if (suggestedFilename === "" || suggestedFilename === ".") { // Should not happen with good paths
+                suggestedFilename = "model_download";
+            }
+
+            if (statusBar) statusBar.textContent = `Status: Downloading ${suggestedFilename}... (${successfulDownloads + failedDownloads + 1}/${pathsToDownload.length})`;
+
+            try {
+                // Construct the download URL
+                const downloadUrl = `/holaf/models/download?path=${encodeURIComponent(modelPath)}`;
+
+                // Create a temporary anchor element to trigger the download
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                // a.download = ""; // Let server decide filename via Content-Disposition for now
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                // Note: True success/failure of download is hard to track client-side this way.
+                // We assume it will succeed if the link is clicked.
+                // A more robust solution might involve fetch + Blob, but can be complex with large files.
+                successfulDownloads++;
+
+                // Small delay between downloads to be slightly nicer to browser/server
+                if (pathsToDownload.length > 1) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+
+            } catch (error) {
+                console.error(`[Holaf ModelManager] Error initiating download for ${modelPath}:`, error);
+                failedDownloads++;
+            }
+        }
+
+        this.isDownloading = false;
+        this.updateActionButtonsState();
+        if (statusBar) {
+            let finalMessage = `Download process initiated for ${successfulDownloads} model(s).`;
+            if (failedDownloads > 0) {
+                finalMessage += ` ${failedDownloads} download(s) could not be initiated (check console).`;
+            }
+            statusBar.textContent = "Status: " + finalMessage;
+        }
+        if (failedDownloads > 0) {
+            alert("Some downloads could not be initiated. Please check the browser console for errors.");
         }
     },
 
@@ -818,7 +911,7 @@ const holafModelManager = {
         } else {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
-            if (!this.isInitialized) {
+            if (!this.isInitialized || this.models.length === 0) {
                 this.loadModels();
                 this.isInitialized = true;
             } else {

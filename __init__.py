@@ -36,7 +36,11 @@ import threading
 import shlex
 import importlib.util
 import traceback 
-import folder_paths # Added for access to folder_paths.base_path in delete
+import folder_paths 
+import shutil # Potentially for zipping later, not used for single file download yet
+# import aiofiles # Not strictly needed for FileResponse with sync files
+
+from urllib.parse import unquote # For decoding URL-encoded paths
 
 from aiohttp import web
 from .nodes import holaf_model_manager as model_manager_helper
@@ -220,7 +224,7 @@ async def holaf_model_manager_save_settings(request: web.Request):
                 'panel_height': (int, 'panel_height'), 'filter_type': (str, 'filter_type'),
                 'filter_search_text': (str, 'filter_search_text'),
                 'sort_column': (str, 'sort_column'), 'sort_order': (str, 'sort_order'),
-                'zoom_level': (float, 'zoom_level') # Added zoom_level
+                'zoom_level': (float, 'zoom_level') 
             }
 
             for key_in_data, (type_converter, key_in_config) in settings_map.items():
@@ -433,10 +437,7 @@ async def holaf_model_deep_scan_local_route(request: web.Request):
         results = await loop.run_in_executor(None, model_manager_helper.process_deep_scan_request, model_paths)
         
         status_code = 200
-        # If all scans resulted in errors for all provided paths (and paths were provided)
         if results.get("updated_count", 0) == 0 and len(results.get("errors", [])) == len(model_paths) and len(model_paths) > 0:
-             # Potentially set a different status code if all fail, e.g. 207 Multi-Status, or keep 200 with detailed error body.
-             # For now, keeping 200 as the operation itself completed.
             pass 
         return web.json_response({"status": "ok", "details": results}, status=status_code)
     except json.JSONDecodeError:
@@ -474,7 +475,7 @@ async def delete_model_route(request: web.Request):
     
     try:
         data = await request.json()
-        model_paths_from_client_canon = data.get("paths") # Expect a list of paths
+        model_paths_from_client_canon = data.get("paths") 
 
         if not model_paths_from_client_canon or not isinstance(model_paths_from_client_canon, list):
             return web.json_response({"status": "error", "message": "'paths' list is required."}, status=400)
@@ -487,9 +488,8 @@ async def delete_model_route(request: web.Request):
             cursor_del = conn_del.cursor()
 
             for path_canon in model_paths_from_client_canon:
-                abs_model_path_norm = None # Initialize for this iteration
+                abs_model_path_norm = None 
                 try:
-                    # Determine if path is absolute or relative from its canonical form
                     is_client_path_intended_as_absolute = path_canon.startswith('/') or \
                                                          (os.name == 'nt' and len(path_canon) > 1 and path_canon[1] == ':' and path_canon[0].isalpha())
                     
@@ -498,12 +498,11 @@ async def delete_model_route(request: web.Request):
                     else:
                         abs_model_path_norm = os.path.normpath(path_canon)
 
-                    # Fetch model info to check if it's a directory (future use, not fully supported for deletion yet)
                     cursor_del.execute("SELECT is_directory, name FROM models WHERE path = ?", (path_canon,))
                     model_record = cursor_del.fetchone()
                     
-                    is_directory_model = False # Default to file
-                    model_name_for_log = path_canon # Fallback name for logging
+                    is_directory_model = False 
+                    model_name_for_log = path_canon 
                     if model_record:
                         is_directory_model = bool(model_record["is_directory"])
                         model_name_for_log = model_record["name"]
@@ -516,24 +515,17 @@ async def delete_model_route(request: web.Request):
                         os.remove(abs_model_path_norm)
                         print(f"🔵 [Holaf-ModelManager] Deleted model file: {abs_model_path_norm}")
                     elif os.path.isdir(abs_model_path_norm):
-                        # For now, strictly prevent directory deletion until fully implemented and tested
                         errors.append({"path": path_canon, "message": "Directory deletion is not currently supported via this endpoint for safety."})
                         continue
-                        # If you want to enable directory deletion (USE WITH EXTREME CAUTION):
-                        # import shutil
-                        # shutil.rmtree(abs_model_path_norm)
-                        # print(f"🔵 [Holaf-ModelManager] Deleted model directory: {abs_model_path_norm}")
                     else:
                         errors.append({"path": path_canon, "message": "File/directory not found on server."})
-                        continue # Skip DB removal if file not found
+                        continue 
 
-                    # If deletion successful, remove from DB
                     cursor_del.execute("DELETE FROM models WHERE path = ?", (path_canon,))
                     deleted_count += 1
                 
                 except FileNotFoundError:
                     errors.append({"path": path_canon, "message": "File not found for deletion (during OS operation)."})
-                    # If file not found, still try to remove its DB record if it exists
                     cursor_del.execute("DELETE FROM models WHERE path = ?", (path_canon,))
 
                 except Exception as e_item:
@@ -552,10 +544,10 @@ async def delete_model_route(request: web.Request):
             
         response_status = "ok" if not errors or deleted_count > 0 else "error"
         http_status_code = 200
-        if not errors and deleted_count == 0 and len(model_paths_from_client_canon) > 0 : # No errors but nothing deleted (e.g. all paths invalid)
-             response_status = "no_action" # Or some other indicator
-        elif errors and deleted_count == 0: # All attempts failed
-             http_status_code = 400 # Or 500 if server-side issues dominated
+        if not errors and deleted_count == 0 and len(model_paths_from_client_canon) > 0 : 
+             response_status = "no_action" 
+        elif errors and deleted_count == 0: 
+             http_status_code = 400 
 
         return web.json_response({
             "status": response_status,
@@ -572,6 +564,60 @@ async def delete_model_route(request: web.Request):
         print(f"🔴 [Holaf-ModelManager] General error in delete_model_route: {e}")
         traceback.print_exc()
         return web.json_response({"status": "error", "message": str(e), "details": {"errors": [{"path": "General", "message": str(e)}]}}, status=500)
+
+
+@server.PromptServer.instance.routes.get("/holaf/models/download")
+async def download_model_route(request: web.Request):
+    path_param_encoded = request.query.get("path")
+    if not path_param_encoded:
+        return web.Response(status=400, text="Missing 'path' query parameter.")
+
+    try:
+        # Decode the path parameter from URL encoding (e.g., %2F for /)
+        path_canon = unquote(path_param_encoded)
+    except Exception as e:
+        return web.Response(status=400, text=f"Invalid 'path' parameter encoding: {e}")
+
+    comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
+    abs_model_path_norm = None
+
+    is_client_path_intended_as_absolute = path_canon.startswith('/') or \
+                                          (os.name == 'nt' and len(path_canon) > 1 and path_canon[1] == ':' and path_canon[0].isalpha())
+    
+    if not is_client_path_intended_as_absolute:
+        abs_model_path_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_canon))
+    else:
+        abs_model_path_norm = os.path.normpath(path_canon)
+
+    # For download, we primarily care if it's a file. Directory downloads would require zipping.
+    # The safety check is primarily for reading files.
+    # We pass is_directory_model=False because we expect to download a file.
+    # If the path points to a directory, os.path.isfile(abs_model_path_norm) will be false later.
+    if not model_manager_helper.is_path_safe_for_deletion(path_canon, is_directory_model=False): # Re-using for safety check
+        print(f"🔴 [Holaf-ModelManager] Download Sicherheitswarnung: Pfad '{path_canon}' nicht sicher oder nicht gefunden.")
+        return web.Response(status=403, text="Access to the requested model path is forbidden or path is invalid.")
+
+    if not os.path.exists(abs_model_path_norm):
+        print(f"🔴 [Holaf-ModelManager] Download Fehler: Datei nicht gefunden unter '{abs_model_path_norm}' (von '{path_canon}')")
+        return web.Response(status=404, text="Model file not found on server.")
+    
+    if not os.path.isfile(abs_model_path_norm):
+        # For now, only file downloads are supported.
+        # Directory downloads would require creating a zip archive on the fly.
+        print(f"🔴 [Holaf-ModelManager] Download Fehler: Pfad '{abs_model_path_norm}' ist ein Verzeichnis, Download nicht unterstützt.")
+        return web.Response(status=400, text="Path is a directory, direct download not supported. Only individual files can be downloaded.")
+
+    try:
+        filename = os.path.basename(abs_model_path_norm)
+        headers = {
+            "Content-Disposition": f"attachment; filename=\"{filename}\""
+        }
+        print(f"🔵 [Holaf-ModelManager] Sende Datei zum Download: {abs_model_path_norm} als {filename}")
+        return web.FileResponse(abs_model_path_norm, headers=headers)
+    except Exception as e:
+        print(f"🔴 [Holaf-ModelManager] Fehler beim Senden der Datei '{abs_model_path_norm}': {e}")
+        traceback.print_exc()
+        return web.Response(status=500, text=f"Server error while preparing file for download: {e}")
 
 
 # --- Dynamic Node and API Loading ---
