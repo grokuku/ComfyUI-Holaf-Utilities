@@ -47,6 +47,7 @@ password_hash =
 # font_size: The font size for the terminal text in pixels.
 # panel_x, panel_y: The top-left position of the panel. (Leave blank for default center)
 # panel_width, panel_height: The size of the panel in pixels.
+# panel_is_fullscreen: Whether the panel was last in fullscreen mode (True/False).
 #
 # theme = Graphite Orange
 # font_size = 14
@@ -54,6 +55,7 @@ password_hash =
 # panel_y = 150
 # panel_width = 700
 # panel_height = 500
+# panel_is_fullscreen = False
 
 [ModelManagerUI]
 # theme: The name of the color theme.
@@ -65,6 +67,7 @@ password_hash =
 # sort_column: The column by which the model list was last sorted.
 # sort_order: The sort order ('asc' or 'desc').
 # zoom_level: The zoom level for the Model Manager UI (e.g., 0.8, 1.0, 1.2).
+# panel_is_fullscreen: Whether the panel was last in fullscreen mode (True/False).
 #
 # theme = Graphite Orange
 # panel_x = 300
@@ -76,3 +79,4 @@ password_hash =
 # sort_column = name
 # sort_order = asc
 # zoom_level = 1.0
+# panel_is_fullscreen = False

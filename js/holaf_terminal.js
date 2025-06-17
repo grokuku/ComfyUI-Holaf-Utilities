@@ -4,6 +4,7 @@
  *
  * MODIFIED: Added delayed fitTerminal on initial socket open for better initial sizing.
  * MODIFIED: Unified theme management using HOLAF_THEMES from holaf_panel_manager.
+ * MODIFIED: Added fullscreen state management (double-click on header).
  * === End Documentation ===
  */
 import { app } from "../../../scripts/app.js";
@@ -75,6 +76,7 @@ const holafTerminal = {
         panel_y: null,
         panel_width: 600,
         panel_height: 400,
+        panel_is_fullscreen: false,
     },
     // themes array is now removed, using HOLAF_THEMES from panel_manager
     saveTimeout: null,
@@ -109,6 +111,9 @@ const holafTerminal = {
              }, 100);
             return;
         }
+        
+        const existingItem = Array.from(dropdownMenu.children).find(li => li.textContent === "Terminal");
+        if (existingItem) return;
 
         const terminalMenuItem = document.createElement("li");
         terminalMenuItem.textContent = "Terminal";
@@ -169,12 +174,23 @@ const holafTerminal = {
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => {},
                 onStateChange: (newState) => {
-                    this.saveSettings({
-                        panel_x: newState.x, panel_y: newState.y,
-                        panel_width: newState.width, panel_height: newState.height,
-                    });
+                    // Only save if not in fullscreen mode to preserve normal state
+                    if (!this.settings.panel_is_fullscreen) {
+                        this.saveSettings({
+                            panel_x: newState.x, panel_y: newState.y,
+                            panel_width: newState.width, panel_height: newState.height,
+                        });
+                    }
                 },
-                onResize: () => { this.fitTerminal(); }
+                onResize: () => { 
+                    this.fitTerminal();
+                },
+                onFullscreenToggle: (isFullscreen) => {
+                    this.settings.panel_is_fullscreen = isFullscreen;
+                    this.saveSettings({ panel_is_fullscreen: isFullscreen });
+                    // Fit terminal on entering/exiting fullscreen
+                    setTimeout(() => this.fitTerminal(), 210); // After CSS transition
+                }
             });
         } catch (e) {
             console.error("[Holaf Terminal] Error during HolafPanelManager.createPanel:", e);
@@ -253,9 +269,6 @@ const holafTerminal = {
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
         }
         
-        // Settings are applied by checkServerStatus or applySettings called from it
-        // await this.applySettings(); // No longer needed here as checkServerStatus will call it or setTheme
-
         const scriptsReady = await this.ensureScriptsLoaded();
         if (!scriptsReady) {
             this.showView('loading'); 
@@ -264,7 +277,7 @@ const holafTerminal = {
         }
 
         if (!this.isInitialized || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-            this.checkServerStatus(); // This will load settings and then apply theme
+            this.checkServerStatus();
             this.isInitialized = true;
         } else if (this.terminal) { 
             this.showView('terminal'); 
@@ -275,8 +288,21 @@ const holafTerminal = {
     },
     applySettings(themeJustSet = false) { 
         if (this.panelElements && this.panelElements.panelEl) {
+            
+            // Apply fullscreen class if needed
+            if (this.settings.panel_is_fullscreen) {
+                if (!this.panelElements.panelEl.classList.contains("holaf-panel-fullscreen")) {
+                    this.panelElements.panelEl.classList.add("holaf-panel-fullscreen");
+                }
+            } else {
+                if (this.panelElements.panelEl.classList.contains("holaf-panel-fullscreen")) {
+                    this.panelElements.panelEl.classList.remove("holaf-panel-fullscreen");
+                }
+            }
+            
             this.panelElements.panelEl.style.width = `${this.settings.panel_width}px`;
             this.panelElements.panelEl.style.height = `${this.settings.panel_height}px`;
+
             if (this.settings.panel_x !== null && this.settings.panel_y !== null) {
                 this.panelElements.panelEl.style.left = `${this.settings.panel_x}px`;
                 this.panelElements.panelEl.style.top = `${this.settings.panel_y}px`;
@@ -287,8 +313,8 @@ const holafTerminal = {
                 this.panelElements.panelEl.style.transform = 'translate(-50%, -50%)';
             }
         }
-        if (!themeJustSet) { // Avoid re-applying if setTheme just called this
-            this.setTheme(this.settings.theme, false); // Apply current theme, don't re-save
+        if (!themeJustSet) {
+            this.setTheme(this.settings.theme, false);
         }
         if (this.terminal) {
             this.terminal.options.fontSize = this.settings.fontSize;
@@ -303,10 +329,11 @@ const holafTerminal = {
         this.saveTimeout = setTimeout(async () => {
             try {
                 const settingsToSave = {
-                    theme: this.settings.theme, // Theme name is already updated
+                    theme: this.settings.theme,
                     font_size: this.settings.fontSize,
                     panel_x: this.settings.panel_x, panel_y: this.settings.panel_y,
                     panel_width: this.settings.panel_width, panel_height: this.settings.panel_height,
+                    panel_is_fullscreen: this.settings.panel_is_fullscreen
                 };
                 const response = await fetch('/holaf/terminal/save-settings', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -401,7 +428,6 @@ const holafTerminal = {
             const r = await fetch("/holaf/utilities/settings");
             const d = await r.json();
             if (d.ui_terminal_settings) {
-                // Ensure the theme from settings is valid, otherwise use default
                 const validTheme = HOLAF_THEMES.find(t => t.name === d.ui_terminal_settings.theme);
                 this.settings.theme = validTheme ? d.ui_terminal_settings.theme : HOLAF_THEMES[0].name;
                 
@@ -410,8 +436,9 @@ const holafTerminal = {
                 this.settings.panel_y = d.ui_terminal_settings.panel_y; 
                 this.settings.panel_width = d.ui_terminal_settings.panel_width || this.settings.panel_width;
                 this.settings.panel_height = d.ui_terminal_settings.panel_height || this.settings.panel_height;
+                this.settings.panel_is_fullscreen = !!d.ui_terminal_settings.panel_is_fullscreen;
                 
-                this.applySettings(); // Apply all loaded settings, including theme
+                this.applySettings();
             }
             d.password_is_set ? this.showView('login') : this.showView('setup');
         } catch (e) {
@@ -472,7 +499,6 @@ const holafTerminal = {
         
         try {
             if (!this.terminal) {
-                // Find the current theme config from HOLAF_THEMES
                 const currentThemeConfig = HOLAF_THEMES.find(t => t.name === this.settings.theme) || HOLAF_THEMES[0];
 
                 if (!window.Terminal || !window.FitAddon) {
@@ -482,7 +508,7 @@ const holafTerminal = {
                 }
                 this.terminal = new window.Terminal({
                     cursorBlink: true, fontSize: this.settings.fontSize,
-                    theme: { // Apply colors directly from HOLAF_THEMES
+                    theme: {
                         background: currentThemeConfig.colors.backgroundPrimary,
                         foreground: currentThemeConfig.colors.textPrimary,
                         cursor: currentThemeConfig.colors.cursor,
@@ -502,8 +528,7 @@ const holafTerminal = {
                 this.terminal.onData(data => { if (this.socket && this.socket.readyState === WebSocket.OPEN) this.socket.send(data); });
                 this.terminal.attachCustomKeyEventHandler(e => { if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && e.type === 'keydown') { if (this.terminal.hasSelection()) { try { navigator.clipboard.writeText(this.terminal.getSelection()); } catch(err){} return false; } } if (e.ctrlKey && (e.key === 'v' || e.key === 'V') && e.type === 'keydown') { try { navigator.clipboard.readText().then(text => { if (text && this.terminal) this.terminal.paste(text); });} catch(err){} return false; } return true; });
             } else {
-                // If terminal exists, ensure its theme and font size are up-to-date
-                this.setTheme(this.settings.theme, false); // Update xterm theme options
+                this.setTheme(this.settings.theme, false);
                 this.terminal.options.fontSize = this.settings.fontSize;
             }
         } catch (e) {
@@ -558,19 +583,8 @@ const holafTerminal = {
             this._xterm_container && this._xterm_container.offsetWidth > 10 && this._xterm_container.offsetHeight > 10 &&
             this._xterm_container.isConnected) { 
             try {
-                // console.log(`[Holaf Terminal FIT] Before fit. Container W: ${this._xterm_container.offsetWidth}, H: ${this._xterm_container.offsetHeight}`);
-                // const termRect = this.terminal.element ? this.terminal.element.getBoundingClientRect() : {width:0, height:0};
-                // console.log(`[Holaf Terminal FIT] Before fit. XTerm Element W: ${termRect.width}, H: ${termRect.height}`);
-
                 this.fitAddon.fit();
                 const dims = this.fitAddon.proposeDimensions();
-
-                // if (dims) {
-                //     console.log(`[Holaf Terminal FIT] Proposed Dims - Cols: ${dims.cols}, Rows: ${dims.rows}. Sent to PTY.`);
-                // } else {
-                //     console.log("[Holaf Terminal FIT] proposeDimensions() returned undefined.");
-                // }
-
                 if (dims && this.socket && this.socket.readyState === WebSocket.OPEN) {
                     this.socket.send(JSON.stringify({ resize: [dims.rows, dims.cols] }));
                 }
@@ -583,11 +597,11 @@ const holafTerminal = {
         const themeConfig = HOLAF_THEMES.find(t => t.name === themeName);
         if (!themeConfig) {
             console.warn(`[Holaf Terminal] Theme '${themeName}' not found. Defaulting to ${HOLAF_THEMES[0].name}`);
-            this.setTheme(HOLAF_THEMES[0].name, doSave); // Recursive call with default
+            this.setTheme(HOLAF_THEMES[0].name, doSave);
             return;
         }
 
-        this.settings.theme = themeName; // Store the name of the theme
+        this.settings.theme = themeName;
 
         if (this.terminal) {
             this.terminal.options.theme = {
@@ -595,29 +609,20 @@ const holafTerminal = {
                 foreground: themeConfig.colors.textPrimary,
                 cursor: themeConfig.colors.cursor,
                 selectionBackground: themeConfig.colors.selectionBackground,
-                // Optionally add more colors if xterm.js theme object supports them
-                // and if they are defined in HOLAF_THEMES (e.g., black, red, green, etc.)
             };
         }
 
         if (this.panelElements && this.panelElements.panelEl) {
-            // Remove all other theme classes from HOLAF_THEMES
             HOLAF_THEMES.forEach(t => {
                 if (this.panelElements.panelEl.classList.contains(t.className)) {
                     this.panelElements.panelEl.classList.remove(t.className);
                 }
             });
-            // Add the new theme class
             this.panelElements.panelEl.classList.add(themeConfig.className);
             console.log(`[Holaf Terminal] Theme set to: ${themeName} (Class: ${themeConfig.className})`);
         }
         
         if (doSave) this.saveSettings({ theme: themeName });
-        // Call applySettings with themeJustSet=true to avoid re-applying xterm options if not needed
-        // but still ensure panel dimensions etc. are correct.
-        // However, applySettings itself calls setTheme(..., false), so this might be redundant or cause a loop.
-        // Let's rely on the natural flow: setTheme updates, saveSettings saves.
-        // applySettings (called by checkServerStatus) will correctly apply the loaded theme initially.
     },
     increaseFontSize() { 
         if (this.settings.fontSize < 30) {
@@ -640,8 +645,6 @@ const holafTerminal = {
 app.registerExtension({
     name: "Holaf.Terminal.Panel",
     async setup() { 
-        // Load settings first, so theme is known before panel creation
-        // This is handled by checkServerStatus when the panel is first shown.
         const addMenuItemWhenReady = () => {
             if (window.HolafUtilitiesMenuReady) {
                 holafTerminal.addMenuItem();

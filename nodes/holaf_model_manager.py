@@ -9,8 +9,8 @@
 # MODIFIED: Added initial deep scan functionality (SHA256, safetensors metadata).
 # MODIFIED: Initial scan logic at module load time removed, now handled by __init__.py.
 # MODIFIED: Path normalization for DB storage and retrieval to fix deep scan "model not found" issues.
-# MODIFIED: Added debug prints to is_path_safe_for_deletion.
-# MODIFIED: Ensured folder_paths.models_dir is included in safe roots.
+# MODIFIED: Refactored `is_path_safe_for_deletion` into a more generic `is_path_safe`
+#           that only checks path boundaries, fixing both upload and delete operations.
 # === End Documentation ===
 
 import os
@@ -398,21 +398,29 @@ def get_all_models_from_db():
     finally:
         if conn: conn.close()
 
-def is_path_safe_for_deletion(path_from_client_canon, is_directory_model=False):
-    print(f"🕵️ [Holaf-Debug] is_path_safe_for_deletion called for: {path_from_client_canon}")
+def is_path_safe(path_from_client_canon: str, is_directory_model: bool = False) -> bool:
+    """
+    Validates that a given canonical path resolves to a location inside one of the
+    configured ComfyUI model directories. This is a security function to prevent
+    path traversal attacks. It does NOT check for the existence of the file/path.
+    """
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
     
+    # Reconstruct the absolute path from the canonical path provided by the client
     is_client_path_intended_as_absolute = path_from_client_canon.startswith('/') or \
                                           (os.name == 'nt' and len(path_from_client_canon) > 1 and path_from_client_canon[1] == ':' and path_from_client_canon[0].isalpha())
 
     if not is_client_path_intended_as_absolute:
-        abs_path_to_delete_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_from_client_canon))
+        abs_path_to_check_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_from_client_canon))
     else:
-        abs_path_to_delete_norm = os.path.normpath(path_from_client_canon)
-    print(f"🕵️ [Holaf-Debug] Absolute path to delete (normalized): {abs_path_to_delete_norm}")
-
+        # If the client sends an absolute path, we still normalize it for safety.
+        abs_path_to_check_norm = os.path.normpath(path_from_client_canon)
+    
+    # Gather all known safe root directories for models
     all_comfy_model_roots = set()
-    # 1. Add all type-specific roots
+    if hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
+        all_comfy_model_roots.add(os.path.normpath(folder_paths.models_dir))
+    
     if hasattr(folder_paths, 'folder_names_and_paths'):
         for folder_type_key in folder_paths.folder_names_and_paths:
             type_specific_roots = folder_paths.get_folder_paths(folder_type_key)
@@ -420,54 +428,29 @@ def is_path_safe_for_deletion(path_from_client_canon, is_directory_model=False):
                 for root_path in type_specific_roots:
                     all_comfy_model_roots.add(os.path.normpath(root_path))
     
-    # 2. Explicitly add the main models_dir (often ComfyUI/models)
-    if hasattr(folder_paths, 'models_dir') and folder_paths.models_dir:
-        all_comfy_model_roots.add(os.path.normpath(folder_paths.models_dir))
-    
-    # 3. Fallback if still no roots found (should be rare)
     if not all_comfy_model_roots:
-        print("🟡 [Holaf-ModelManager] Warning: Could not determine ComfyUI model roots comprehensively using standard methods. Falling back to base_path/models.")
         all_comfy_model_roots.add(os.path.normpath(os.path.join(folder_paths.base_path, "models")))
-    
-    print(f"🕵️ [Holaf-Debug] Collected ComfyUI model roots:")
-    for r_idx, r_path in enumerate(list(all_comfy_model_roots)): # Convert set to list for indexed printing
-        print(f"  Root {r_idx}: {r_path}")
 
+    # Check if the path to check is within any of the safe roots.
     is_safe = False
-    normcased_abs_path_to_delete = os.path.normcase(abs_path_to_delete_norm)
-    print(f"🕵️ [Holaf-Debug] Normcased path to delete: {normcased_abs_path_to_delete}")
-
-    for root_model_dir_norm_loop in all_comfy_model_roots:
-        abs_root_model_dir_norm = os.path.abspath(root_model_dir_norm_loop) # Ensure it's absolute
+    normcased_abs_path_to_check = os.path.normcase(abs_path_to_check_norm)
+    
+    for root_model_dir_norm in all_comfy_model_roots:
+        # We must use absolute paths for the check to be reliable
+        abs_root_model_dir_norm = os.path.abspath(root_model_dir_norm)
         normcased_abs_root_model_dir = os.path.normcase(abs_root_model_dir_norm)
-
-        print(f"🕵️ [Holaf-Debug] Comparing with normcased root: '{normcased_abs_root_model_dir}'")
         
-        if normcased_abs_path_to_delete == normcased_abs_root_model_dir or \
-           normcased_abs_path_to_delete.startswith(normcased_abs_root_model_dir + os.sep):
+        # A path is safe if it is equal to a root, or starts with a root + separator.
+        if normcased_abs_path_to_check == normcased_abs_root_model_dir or \
+           normcased_abs_path_to_check.startswith(normcased_abs_root_model_dir + os.sep):
+            is_safe = True
+            break
             
-            print(f"🕵️ [Holaf-Debug] Path is within or equals root: {abs_root_model_dir_norm}")
-            target_exists_correctly = (is_directory_model and os.path.isdir(abs_path_to_delete_norm)) or \
-                                      (not is_directory_model and os.path.isfile(abs_path_to_delete_norm))
-            
-            if target_exists_correctly:
-                print(f"🕵️ [Holaf-Debug] Target exists correctly. is_directory_model: {is_directory_model}")
-                if normcased_abs_path_to_delete == normcased_abs_root_model_dir and is_directory_model:
-                    print(f"🕵️ [Holaf-Debug] Attempt to delete a root directory ({abs_path_to_delete_norm}) which is a directory model. Blocking for this root.")
-                else:
-                    print(f"🕵️ [Holaf-Debug] Path deemed safe with root: {abs_root_model_dir_norm}")
-                    is_safe = True
-                    break 
-            else:
-                print(f"🕵️ [Holaf-Debug] Target does not exist correctly (or type mismatch). Path: {abs_path_to_delete_norm}, is_directory_model: {is_directory_model}")
-        else:
-            print(f"🕵️ [Holaf-Debug] Path NOT within root: {abs_root_model_dir_norm}")
-
     if not is_safe:
-        print(f"🔴 [Holaf-ModelManager] SECURITY: Attempt to access/delete item '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') outside of recognized ComfyUI model directories, or it's a root directory that is a directory model, was blocked.")
-    else:
-        print(f"✅ [Holaf-ModelManager] Path '{abs_path_to_delete_norm}' (from client path '{path_from_client_canon}') deemed SAFE for deletion.")
+        print(f"🔴 [Holaf-ModelManager] SECURITY: Path '{abs_path_to_check_norm}' (from client path '{path_from_client_canon}') was blocked as it is outside all recognized model directories.")
+    
     return is_safe
+
 
 
 # --- Deep Scan Functionality ---

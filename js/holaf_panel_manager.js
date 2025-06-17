@@ -5,6 +5,9 @@
  * This script provides a generic manager for creating, dragging,
  * and resizing floating panels within the ComfyUI interface.
  * MODIFIED: Added HOLAF_THEMES constant for shared theme definitions.
+ * MODIFIED: Added a generic, promise-based `createDialog` function for custom modals.
+ * MODIFIED: Added `bringToFront` on any panel mousedown, not just header.
+ * MODIFIED: Added fullscreen toggling on header double-click.
  */
 
 export const HOLAF_THEMES = [
@@ -110,8 +113,8 @@ export const HOLAF_THEMES = [
     }
 ];
 
-const BASE_Z_INDEX = 1000; // Base for panels
-let currentMaxZIndex = BASE_Z_INDEX; // Tracks the highest z-index currently assigned to a panel
+const BASE_Z_INDEX = 1000;
+let currentMaxZIndex = BASE_Z_INDEX;
 const openPanels = new Set();
 
 export const HolafPanelManager = {
@@ -137,27 +140,21 @@ export const HolafPanelManager = {
 
         openPanels.add(panel);
 
-        // --- Header ---
         const header = document.createElement("div");
         header.className = "holaf-utility-header";
 
         const title = document.createElement("span");
-        title.innerHTML = options.title; // title can now contain HTML
-        title.style.flexGrow = "1"; // Allow title to take space
+        title.innerHTML = options.title;
+        title.style.flexGrow = "1";
         title.style.overflow = "hidden";
         title.style.textOverflow = "ellipsis";
         title.style.whiteSpace = "nowrap";
-
         header.appendChild(title);
 
-
         if (options.headerContent) {
-            // Header content (like buttons) should be wrapped to control its flex behavior
             const headerControlsWrapper = document.createElement("div");
             headerControlsWrapper.style.display = "flex";
             headerControlsWrapper.style.alignItems = "center";
-            // The order of elements in header (title, headerContent, closeButton) is now more explicit
-            // headerContent itself can define its order via `order` CSS property if needed by the specific utility
             headerControlsWrapper.appendChild(options.headerContent);
             header.appendChild(headerControlsWrapper);
         }
@@ -165,96 +162,74 @@ export const HolafPanelManager = {
         const closeButton = document.createElement("button");
         closeButton.className = "holaf-utility-close-button";
         closeButton.textContent = "✖";
-        closeButton.style.marginLeft = "auto"; // Push close button to the far right if no other controls
+        closeButton.style.marginLeft = "auto";
         if (options.headerContent) {
-             closeButton.style.marginLeft = "10px"; // Add some space if there are other header controls
+             closeButton.style.marginLeft = "10px";
         }
 
         closeButton.onclick = (e) => {
             e.stopPropagation();
             panel.style.display = "none";
             openPanels.delete(panel);
-            // Recalculate currentMaxZIndex if the closed panel was the top one
             if (parseInt(panel.style.zIndex) === currentMaxZIndex && openPanels.size > 0) {
-                currentMaxZIndex = BASE_Z_INDEX; // Reset
+                currentMaxZIndex = BASE_Z_INDEX;
                 openPanels.forEach(p => {
                     const pZIndex = parseInt(p.style.zIndex);
-                    if (pZIndex > currentMaxZIndex) {
-                        currentMaxZIndex = pZIndex;
-                    }
+                    if (pZIndex > currentMaxZIndex) currentMaxZIndex = pZIndex;
                 });
             } else if (openPanels.size === 0) {
-                currentMaxZIndex = BASE_Z_INDEX; // Reset if no panels are open
+                currentMaxZIndex = BASE_Z_INDEX;
             }
-
-            if (options.onClose) {
-                options.onClose();
-            }
+            if (options.onClose) options.onClose();
         };
         header.appendChild(closeButton);
 
-
-        // --- Content ---
         const content = document.createElement("div");
         content.style.flexGrow = "1";
         content.style.display = "flex";
         content.style.flexDirection = "column";
         content.style.overflow = "hidden";
-        content.style.position = "relative"; // Needed for some internal absolute positioning like resize handle
+        content.style.position = "relative";
 
-        // --- Resize Handle ---
         const resizeHandle = document.createElement("div");
         resizeHandle.className = "holaf-utility-resize-handle";
 
         panel.append(header, content, resizeHandle);
         document.body.appendChild(panel);
 
-        panel.addEventListener("mousedown", (e) => { // Capture phase not strictly necessary but fine
-            // Only bring to front if the mousedown is on the panel itself or its header, not interactive elements inside content
-            if (e.target === panel || header.contains(e.target)) {
-                 this.bringToFront(panel);
-            }
+        panel.addEventListener("mousedown", () => {
+             this.bringToFront(panel);
         }, true);
-
 
         this.makeDraggable(panel, header, options.onStateChange);
         this.makeResizable(panel, resizeHandle, options.onStateChange, options.onResize);
+        this.setupFullscreenToggle(panel, header, options.onFullscreenToggle);
         
-        this.bringToFront(panel); // Bring to front on creation
+        this.bringToFront(panel);
 
-        return { panelEl: panel, contentEl: content, headerEl: header }; // Return headerEl for direct manipulation
+        return { panelEl: panel, contentEl: content, headerEl: header };
     },
 
     bringToFront(panelEl) {
         if (!openPanels.has(panelEl)) {
-            // console.warn(`[HolafPanelManager] Panel ${panelEl.id} not managed. Cannot bring to front.`);
             openPanels.add(panelEl);
         }
 
-        // Find the current highest z-index among ALL open panels
         let maxZ = BASE_Z_INDEX;
         openPanels.forEach(p => {
             const pZIndex = parseInt(p.style.zIndex);
-            if (!isNaN(pZIndex) && pZIndex > maxZ) {
-                maxZ = pZIndex;
-            }
+            if (!isNaN(pZIndex) && pZIndex > maxZ) maxZ = pZIndex;
         });
-        currentMaxZIndex = maxZ; // Update global tracker
+        currentMaxZIndex = maxZ;
 
         const panelZIndex = parseInt(panelEl.style.zIndex);
-
-        // If the panel is not already the one with the highest z-index, bring it up
         if (isNaN(panelZIndex) || panelZIndex < currentMaxZIndex || openPanels.size === 1) {
             currentMaxZIndex++;
             panelEl.style.zIndex = currentMaxZIndex;
-            // console.log(`[HolafPanelManager] Brought panel ${panelEl.id} to front with z-index: ${currentMaxZIndex}`);
         } else if (panelEl.style.zIndex !== String(currentMaxZIndex) && panelZIndex === currentMaxZIndex) {
-            // This can happen if multiple panels were at maxZ, and one was clicked.
-            // The one clicked should get a new higher z-index.
             currentMaxZIndex++;
             panelEl.style.zIndex = currentMaxZIndex;
         }
-        // If panelZIndex is already currentMaxZIndex, it's considered on top (or was just set).
     },
 
     _bakePosition(panel) {
@@ -268,13 +243,12 @@ export const HolafPanelManager = {
 
     makeDraggable(panel, handle, onStateChange) {
         handle.addEventListener("mousedown", (e) => {
-            // Prevent drag if mousedown is on an interactive element within the handle (e.g. buttons in header)
-            if (e.target.closest("button, input, select, textarea, a")) {
-                openPanels.add(panelEl);
+            if (panel.classList.contains("holaf-panel-fullscreen") || e.target.closest("button, input, select, textarea, a")) {
+                return;
             }
-            e.preventDefault(); // Prevent text selection during drag
+            e.preventDefault();
 
-            this.bringToFront(panel); // Bring to front on drag start
+            this.bringToFront(panel);
             this._bakePosition(panel);
 
             const offsetX = e.clientX - panel.offsetLeft;
@@ -283,16 +257,13 @@ export const HolafPanelManager = {
             const onMouseMove = (moveEvent) => {
                 let newLeft = moveEvent.clientX - offsetX;
                 let newTop = moveEvent.clientY - offsetY;
-
-                // Basic boundary collision with viewport
-                const panelRect = panel.getBoundingClientRect(); // Get current dimensions
-                const margin = 10; // Small margin from edge
+                const margin = 10;
+                const panelRect = panel.getBoundingClientRect();
 
                 if (newTop < margin) newTop = margin;
                 if (newLeft < margin) newLeft = margin;
                 if (newLeft + panelRect.width > window.innerWidth - margin) newLeft = window.innerWidth - panelRect.width - margin;
                 if (newTop + panelRect.height > window.innerHeight - margin) newTop = window.innerHeight - panelRect.height - margin;
-
 
                 panel.style.left = `${newLeft}px`;
                 panel.style.top = `${newTop}px`;
@@ -301,14 +272,8 @@ export const HolafPanelManager = {
             const onMouseUp = () => {
                 document.removeEventListener("mousemove", onMouseMove);
                 document.removeEventListener("mouseup", onMouseUp);
-
                 if (onStateChange) {
-                    onStateChange({
-                        x: panel.offsetLeft,
-                        y: panel.offsetTop,
-                        width: panel.offsetWidth,
-                        height: panel.offsetHeight,
-                    });
+                    onStateChange({ x: panel.offsetLeft, y: panel.offsetTop, width: panel.offsetWidth, height: panel.offsetHeight });
                 }
             };
 
@@ -320,61 +285,125 @@ export const HolafPanelManager = {
     makeResizable(panel, handle, onStateChange, onResize) {
         handle.addEventListener("mousedown", (e) => {
             e.preventDefault();
-            e.stopPropagation(); // Prevent drag from starting if resize handle is on header edge
+            e.stopPropagation();
 
-            this.bringToFront(panel); // Bring to front on resize start
+            this.bringToFront(panel);
             this._bakePosition(panel);
 
             const initialX = e.clientX;
             const initialY = e.clientY;
             const initialWidth = panel.offsetWidth;
             const initialHeight = panel.offsetHeight;
-
-            // Get min dimensions from CSS or set defaults
             const minWidth = parseInt(getComputedStyle(panel).minWidth) || 100;
             const minHeight = parseInt(getComputedStyle(panel).minHeight) || 50;
-
 
             const onResizeMove = (moveEvent) => {
                 const deltaX = moveEvent.clientX - initialX;
                 const deltaY = moveEvent.clientY - initialY;
-                
-                let newWidth = initialWidth + deltaX;
-                let newHeight = initialHeight + deltaY;
-
-                // Enforce minimum dimensions
-                if (newWidth < minWidth) newWidth = minWidth;
-                if (newHeight < minHeight) newHeight = minHeight;
-
-                // Optional: Max dimensions (e.g., viewport based)
-                // const maxWidth = window.innerWidth - panel.offsetLeft - 10;
-                // if (newWidth > maxWidth) newWidth = maxWidth;
-                // const maxHeight = window.innerHeight - panel.offsetTop - 10;
-                // if (newHeight > maxHeight) newHeight = maxHeight;
-
+                let newWidth = Math.max(minWidth, initialWidth + deltaX);
+                let newHeight = Math.max(minHeight, initialHeight + deltaY);
                 panel.style.width = `${newWidth}px`;
                 panel.style.height = `${newHeight}px`;
-                if (onResize) {
-                    onResize(); // Callback for things like xterm.fit()
-                }
+                if (onResize) onResize();
             };
 
             const onResizeUp = () => {
                 document.removeEventListener("mousemove", onResizeMove);
                 document.removeEventListener("mouseup", onResizeUp);
-
                 if (onStateChange) {
-                    onStateChange({
-                        x: panel.offsetLeft,
-                        y: panel.offsetTop,
-                        width: panel.offsetWidth,
-                        height: panel.offsetHeight,
-                    });
+                    onStateChange({ x: panel.offsetLeft, y: panel.offsetTop, width: panel.offsetWidth, height: panel.offsetHeight });
                 }
             };
 
             document.addEventListener("mousemove", onResizeMove);
             document.addEventListener("mouseup", onResizeUp);
+        });
+    },
+    
+    setupFullscreenToggle(panel, handle, onFullscreenToggle) {
+        handle.addEventListener("dblclick", (e) => {
+            if (e.target.closest("button, input, select, textarea, a")) return;
+            this.toggleFullscreen(panel, onFullscreenToggle);
+        });
+    },
+
+    toggleFullscreen(panel, onFullscreenToggle) {
+        const isFullscreen = panel.classList.toggle("holaf-panel-fullscreen");
+        if (onFullscreenToggle) {
+            onFullscreenToggle(isFullscreen);
+        }
+    },
+
+    createDialog(options) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement("div");
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0, 0, 0, 0.6); z-index: ${currentMaxZIndex + 100};
+                display: flex; align-items: center; justify-content: center;
+            `;
+            
+            const dialog = document.createElement("div");
+            dialog.className = "holaf-utility-panel";
+            dialog.style.position = "relative";
+            dialog.style.transform = "none";
+            dialog.style.width = "auto";
+            dialog.style.minWidth = "300px";
+            dialog.style.maxWidth = "500px";
+            dialog.style.height = "auto";
+            dialog.style.top = "auto";
+            dialog.style.left = "auto";
+            
+            const anyPanel = document.querySelector('.holaf-utility-panel');
+            let themeClass = 'holaf-theme-graphite-orange';
+            if(anyPanel) {
+                for (const theme of HOLAF_THEMES) {
+                    if (anyPanel.classList.contains(theme.className)) {
+                        themeClass = theme.className;
+                        break;
+                    }
+                }
+            }
+            dialog.classList.add(themeClass);
+
+            const header = document.createElement("div");
+            header.className = "holaf-utility-header";
+            header.innerHTML = `<span>${options.title || "Confirmation"}</span>`;
+            
+            const content = document.createElement("div");
+            content.innerHTML = `<p style="padding: 15px 20px; color: var(--holaf-text-primary); white-space: pre-wrap;">${options.message}</p>`;
+
+            const footer = document.createElement("div");
+            footer.style.cssText = `
+                padding: 10px 20px; display: flex; justify-content: flex-end;
+                gap: 10px; background-color: var(--holaf-background-secondary);
+                border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
+            `;
+
+            const closeDialog = (value) => {
+                document.body.removeChild(overlay);
+                resolve(value);
+            };
+
+            (options.buttons || [{ text: "OK", value: true, type: "confirm" }]).forEach(btnInfo => {
+                const button = document.createElement("button");
+                button.textContent = btnInfo.text;
+                button.className = "comfy-button";
+                if(btnInfo.type === 'cancel') {
+                    button.style.backgroundColor = 'var(--holaf-tag-background)';
+                } else if(btnInfo.type === 'danger') {
+                    button.style.backgroundColor = '#c44';
+                }
+                button.onclick = () => {
+                    if (btnInfo.onClick) btnInfo.onClick();
+                    closeDialog(btnInfo.value);
+                };
+                footer.appendChild(button);
+            });
+
+            dialog.append(header, content, footer);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
         });
     }
 };
