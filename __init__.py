@@ -25,6 +25,7 @@
 # MODIFIED: Made finalize_upload asynchronous to prevent blocking the server event loop.
 # MODIFIED: Added cleanup for temp_uploads directory on startup.
 # MODIFIED: Added `panel_is_fullscreen` setting for persistent fullscreen state.
+# MODIFIED: Replaced monolithic file download with a chunk-based system for parallel, non-blocking downloads.
 # === End Documentation ===
 
 import server
@@ -46,6 +47,8 @@ import folder_paths
 import shutil 
 from urllib.parse import unquote 
 import re # For sanitizing paths
+import time # Added for timestamped logging
+import aiofiles
 
 from aiohttp import web
 from .nodes import holaf_model_manager as model_manager_helper
@@ -594,43 +597,50 @@ async def delete_model_route(request: web.Request):
     }, status=http_code)
 
 
-@server.PromptServer.instance.routes.get("/holaf/models/download")
-async def download_model_route(request: web.Request):
-    path_param_encoded = request.query.get("path")
-    if not path_param_encoded:
-        return web.Response(status=400, text="Missing 'path' query parameter.")
+async def _read_file_chunk(path, offset, size):
+    """Asynchronously reads a chunk from a file."""
     try:
-        path_canon = unquote(path_param_encoded)
+        async with aiofiles.open(path, 'rb') as f:
+            await f.seek(offset)
+            return await f.read(size)
     except Exception as e:
-        return web.Response(status=400, text=f"Invalid 'path' parameter encoding: {e}")
+        print(f"🔴 [Holaf-ModelManager] Error reading chunk for {path}: {e}")
+        return None
+
+@server.PromptServer.instance.routes.post("/holaf/models/download-chunk")
+async def download_model_chunk_route(request: web.Request):
+    try:
+        data = await request.json()
+        path_canon = data.get("path")
+        chunk_index = int(data.get("chunk_index"))
+        chunk_size = int(data.get("chunk_size"))
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        return web.Response(status=400, text=f"Invalid request data: {e}")
+
+    if not all([path_canon, isinstance(chunk_index, int) and chunk_index >= 0, isinstance(chunk_size, int) and chunk_size > 0]):
+        return web.Response(status=400, text="Missing or invalid parameters.")
+    
+    if not model_manager_helper.is_path_safe(path_canon, is_directory_model=False):
+        return web.Response(status=403, text="Access to the requested model path is forbidden.")
 
     comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
-    abs_model_path_norm = None
-    is_client_path_intended_as_absolute = path_canon.startswith('/') or \
-                                          (os.name == 'nt' and len(path_canon) > 1 and path_canon[1] == ':' and path_canon[0].isalpha())
-    if not is_client_path_intended_as_absolute:
-        abs_model_path_norm = os.path.normpath(os.path.join(comfyui_base_path_norm, path_canon))
-    else:
-        abs_model_path_norm = os.path.normpath(path_canon)
+    is_abs = path_canon.startswith('/') or (os.name == 'nt' and len(path_canon) > 1 and path_canon[1] == ':')
+    abs_model_path_norm = os.path.normpath(path_canon if is_abs else os.path.join(comfyui_base_path_norm, path_canon))
 
-    if not model_manager_helper.is_path_safe(path_canon, is_directory_model=False): 
-        print(f"🔴 [Holaf-ModelManager] Download Sicherheitswarnung: Pfad '{path_canon}' nicht sicher oder nicht gefunden.")
-        return web.Response(status=403, text="Access to the requested model path is forbidden or path is invalid.")
-    if not os.path.exists(abs_model_path_norm):
-        print(f"🔴 [Holaf-ModelManager] Download Fehler: Datei nicht gefunden unter '{abs_model_path_norm}' (von '{path_canon}')")
-        return web.Response(status=404, text="Model file not found on server.")
     if not os.path.isfile(abs_model_path_norm):
-        print(f"🔴 [Holaf-ModelManager] Download Fehler: Pfad '{abs_model_path_norm}' ist ein Verzeichnis, Download nicht unterstützt.")
-        return web.Response(status=400, text="Path is a directory, direct download not supported. Only individual files can be downloaded.")
+        return web.Response(status=404, text="Model file not found on server.")
+    
+    offset = chunk_index * chunk_size
+    
     try:
-        filename = os.path.basename(abs_model_path_norm)
-        headers = { "Content-Disposition": f"attachment; filename=\"{filename}\"" }
-        print(f"🔵 [Holaf-ModelManager] Sende Datei zum Download: {abs_model_path_norm} als {filename}")
-        return web.FileResponse(abs_model_path_norm, headers=headers)
+        chunk_data = await _read_file_chunk(abs_model_path_norm, offset, chunk_size)
+        if chunk_data is None:
+            raise IOError("File could not be read.")
+
+        return web.Response(body=chunk_data, content_type='application/octet-stream')
     except Exception as e:
-        print(f"🔴 [Holaf-ModelManager] Fehler beim Senden der Datei '{abs_model_path_norm}': {e}")
-        traceback.print_exc()
-        return web.Response(status=500, text=f"Server error while preparing file for download: {e}")
+        print(f"🔴 [Holaf-ModelManager] Error processing download chunk for '{path_canon}': {e}")
+        return web.Response(status=500, text=f"Server error during chunk read: {e}")
 
 
 @server.PromptServer.instance.routes.post("/holaf/models/upload-chunk")
