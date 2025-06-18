@@ -23,7 +23,7 @@
     --holaf-input-background: #252525;
     --holaf-tag-background: #4F4F4F;
     --holaf-tag-text: #DADADA;
-    --holaf-family-tag-background: #5A3E1E; 
+    --holaf-family-tag-background: #5A3E1E;
     --holaf-family-tag-text: #E8D8C8;
     --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
     --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
@@ -46,7 +46,7 @@
     --holaf-input-background: #242438;
     --holaf-tag-background: #4A3A5E;
     --holaf-tag-text: #E0D8F0;
-    --holaf-family-tag-background: #4A2A60; 
+    --holaf-family-tag-background: #4A2A60;
     --holaf-family-tag-text: #E8D8F8;
     --holaf-header-button-bg: rgba(224, 216, 240, 0.08);
     --holaf-header-button-hover-bg: rgba(224, 216, 240, 0.15);
@@ -69,7 +69,7 @@
     --holaf-input-background: #223022;
     --holaf-tag-background: #3A5E3A;
     --holaf-tag-text: #D0E0D0;
-    --holaf-family-tag-background: #2A4A2A; 
+    --holaf-family-tag-background: #2A4A2A;
     --holaf-family-tag-text: #D8E8D8;
     --holaf-header-button-bg: rgba(208, 224, 208, 0.08);
     --holaf-header-button-hover-bg: rgba(208, 224, 208, 0.15);
@@ -92,7 +92,7 @@
     --holaf-input-background: #24282D;
     --holaf-tag-background: #3A4E5E;
     --holaf-tag-text: #D0D8E0;
-    --holaf-family-tag-background: #304050; 
+    --holaf-family-tag-background: #304050;
     --holaf-family-tag-text: #D8E0E8;
     --holaf-header-button-bg: rgba(208, 216, 224, 0.08);
     --holaf-header-button-hover-bg: rgba(208, 216, 224, 0.15);
@@ -109,13 +109,13 @@
     --holaf-background-secondary: #F0F0F0;
     --holaf-text-primary: #263238;
     --holaf-text-secondary: #546E7A;
-    --holaf-border-color: #DCDCDC; 
+    --holaf-border-color: #DCDCDC;
     --holaf-button-background: #607D8B;
     --holaf-button-text: #FFFFFF;
     --holaf-input-background: #FFFFFF;
     --holaf-tag-background: #E0E0E0;
     --holaf-tag-text: #37474F;
-    --holaf-family-tag-background: #CFD8DC; 
+    --holaf-family-tag-background: #CFD8DC;
     --holaf-family-tag-text: #37474F;
     --holaf-header-button-bg: rgba(0, 0, 0, 0.05);
     --holaf-header-button-hover-bg: rgba(0, 0, 0, 0.1);
@@ -130,47 +130,54 @@
 
 /* Base style for the main "Holaf's Utilities" button */
 #holaf-utilities-menu-button {
-    background-color: #D8700D; /* Graphite Orange Accent */
-    color: white; 
+    background-color: #D8700D;
+    /* Graphite Orange Accent */
+    color: white;
     font-size: 14px;
     padding: 10px;
     cursor: pointer;
-    border: 1px solid #A9560A; /* Darker Graphite Orange Accent */
+    border: 1px solid #A9560A;
+    /* Darker Graphite Orange Accent */
     border-radius: 8px;
     margin: 0 4px;
     transition: background-color 0.2s, border-color 0.2s;
 }
 
 #holaf-utilities-menu-button:hover {
-    background-color: #E77D1E; /* Lighter Graphite Orange Accent for hover */
-    border-color: #BF6A0B; 
+    background-color: #E77D1E;
+    /* Lighter Graphite Orange Accent for hover */
+    border-color: #BF6A0B;
 }
 
 /* Dropdown menu for Holaf's Utilities */
 #holaf-utilities-dropdown-menu {
-    display: none; 
-    position: fixed; 
-    background-color: #2B2B2B; /* Graphite Orange Secondary BG */
-    border: 1px solid #3F3F3F; /* Graphite Orange Border */
+    display: none;
+    position: fixed;
+    background-color: #2B2B2B;
+    /* Graphite Orange Secondary BG */
+    border: 1px solid #3F3F3F;
+    /* Graphite Orange Border */
     border-radius: 4px;
     list-style: none;
     padding: 5px 0;
-    margin: 0; 
-    z-index: 100000; 
+    margin: 0;
+    z-index: 100000;
     min-width: 150px;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
 }
 
 #holaf-utilities-dropdown-menu li {
     padding: 8px 12px;
     cursor: pointer;
-    color: #E0E0E0; /* Graphite Orange Primary Text */
+    color: #E0E0E0;
+    /* Graphite Orange Primary Text */
     transition: background-color 0.15s, color 0.15s;
 }
 
 #holaf-utilities-dropdown-menu li:hover {
-    background-color: #D8700D; /* Graphite Orange Accent */
-    color: white; 
+    background-color: #D8700D;
+    /* Graphite Orange Accent */
+    color: white;
 }
 
 
@@ -178,13 +185,13 @@
 .holaf-header-button-group {
     display: flex !important;
     gap: 4px !important;
-    margin-left: 10px !important; 
+    margin-left: 10px !important;
     align-items: center !important;
 }
 
 .holaf-header-button {
     background: var(--holaf-header-button-bg) !important;
-    border: 1px solid var(--holaf-border-color) !important; 
+    border: 1px solid var(--holaf-border-color) !important;
     color: var(--holaf-header-button-text) !important;
     border-radius: 4px !important;
     cursor: pointer !important;
@@ -200,7 +207,7 @@
 .holaf-header-button:hover {
     background: var(--holaf-header-button-hover-bg) !important;
     color: var(--holaf-header-button-hover-text) !important;
-    border-color: var(--holaf-accent-color) !important; 
+    border-color: var(--holaf-accent-color) !important;
 }
 
 /* Theme selection dropdown menu INSIDE panels */
@@ -208,28 +215,28 @@
     position: absolute !important;
     top: 100% !important;
     left: 0 !important;
-    background-color: var(--holaf-background-secondary) !important; 
-    border: 1px solid var(--holaf-border-color) !important; 
+    background-color: var(--holaf-background-secondary) !important;
+    border: 1px solid var(--holaf-border-color) !important;
     border-radius: 4px !important;
-    z-index: 1002 !important; 
-    display: none; 
+    z-index: 1002 !important;
+    display: none;
     list-style: none !important;
     padding: 5px !important;
     margin: 2px 0 0 !important;
-    min-width: 150px !important; 
+    min-width: 150px !important;
 }
 
 .holaf-theme-menu li {
-    color: var(--holaf-text-secondary); 
-    padding: 6px 10px; 
+    color: var(--holaf-text-secondary);
+    padding: 6px 10px;
     cursor: pointer;
     border-radius: 3px;
     transition: background-color 0.15s, color 0.15s;
 }
 
 .holaf-theme-menu li:hover {
-    background-color: var(--holaf-accent-color) !important; 
-    color: var(--holaf-button-text) !important; 
+    background-color: var(--holaf-accent-color) !important;
+    color: var(--holaf-button-text) !important;
 }
 
 
@@ -241,41 +248,41 @@
     transform: translate(-50%, -50%);
     min-width: 300px !important;
     min-height: 200px !important;
-    width: 700px; 
+    width: 700px;
     height: 550px;
     max-width: 90vw !important;
     max-height: 90vh !important;
-    background-color: var(--holaf-background-primary) !important; 
-    border: 1px solid var(--holaf-border-color) !important; 
+    background-color: var(--holaf-background-primary) !important;
+    border: 1px solid var(--holaf-border-color) !important;
     border-radius: 8px !important;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6) !important;
-    z-index: 1001; 
+    z-index: 1001;
     display: flex;
     flex-direction: column !important;
     font-family: sans-serif !important;
     overflow: hidden !important;
-    color: var(--holaf-text-primary) !important; 
-    --holaf-mm-zoom-factor: 1.0; 
+    color: var(--holaf-text-primary) !important;
+    --holaf-mm-zoom-factor: 1.0;
 }
 
 /* Header for dragging, title, and buttons */
 .holaf-utility-header {
-    background-color: var(--holaf-background-secondary) !important; 
-    color: var(--holaf-text-primary) !important; 
+    background-color: var(--holaf-background-secondary) !important;
+    color: var(--holaf-text-primary) !important;
     padding: 8px 12px !important;
     cursor: move !important;
     user-select: none !important;
-    border-bottom: 1px solid var(--holaf-border-color) !important; 
+    border-bottom: 1px solid var(--holaf-border-color) !important;
     border-top-left-radius: 8px !important;
     border-top-right-radius: 8px !important;
     display: flex !important;
-    align-items: center !important; 
+    align-items: center !important;
     font-weight: bold !important;
     flex-shrink: 0 !important;
-    gap: 8px; 
+    gap: 8px;
 }
 
-.holaf-utility-header > span:first-of-type { 
+.holaf-utility-header>span:first-of-type {
     flex-grow: 1;
     white-space: nowrap;
     overflow: hidden;
@@ -284,7 +291,7 @@
 
 .holaf-utility-close-button {
     background: none !important;
-    color: var(--holaf-text-secondary) !important; 
+    color: var(--holaf-text-secondary) !important;
     border: none !important;
     border-radius: 50% !important;
     width: 24px !important;
@@ -295,12 +302,12 @@
     font-size: 16px !important;
     font-weight: bold !important;
     transition: background-color 0.2s, color 0.2s !important;
-    margin-left: auto !important; 
-    flex-shrink: 0; 
+    margin-left: auto !important;
+    flex-shrink: 0;
 }
 
 .holaf-utility-close-button:hover {
-    background-color: #c44 !important; 
+    background-color: #c44 !important;
     color: white !important;
 }
 
@@ -311,27 +318,27 @@
     width: 16px !important;
     height: 16px !important;
     cursor: se-resize !important;
-    background-image: linear-gradient(135deg, transparent 0%, transparent 50%, var(--holaf-text-secondary, #888) 50%, var(--holaf-text-secondary, #888) 75%, transparent 75%, transparent 100%) !important; 
+    background-image: linear-gradient(135deg, transparent 0%, transparent 50%, var(--holaf-text-secondary, #888) 50%, var(--holaf-text-secondary, #888) 75%, transparent 75%, transparent 100%) !important;
     z-index: 2 !important;
 }
 
 /* Common button style for inside panels (ComfyUI like) */
 .holaf-utility-panel .comfy-button {
-    background-color: var(--holaf-button-background) !important; 
-    color: var(--holaf-button-text) !important; 
-    border: 1px solid transparent !important; 
+    background-color: var(--holaf-button-background) !important;
+    color: var(--holaf-button-text) !important;
+    border: 1px solid transparent !important;
     padding: 6px 12px !important;
     text-align: center !important;
     text-decoration: none !important;
     display: inline-block !important;
-    font-size: 14px !important; 
+    font-size: 14px !important;
     border-radius: 4px !important;
     cursor: pointer !important;
-    transition: opacity 0.2s !important; 
+    transition: opacity 0.2s !important;
 }
 
 .holaf-utility-panel .comfy-button:hover {
-    opacity: 0.85; 
+    opacity: 0.85;
 }
 
 .holaf-utility-panel .comfy-button:active {
@@ -350,54 +357,54 @@
 
 #holaf-manager-panel .holaf-manager-toolbar {
     font-size: calc(1em * var(--holaf-mm-zoom-factor));
-    background-color: var(--holaf-background-secondary); 
-    border-bottom: 1px solid var(--holaf-border-color); 
-    padding: calc(0.5em * var(--holaf-mm-zoom-factor)) calc(0.8em * var(--holaf-mm-zoom-factor)); 
+    background-color: var(--holaf-background-secondary);
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding: calc(0.5em * var(--holaf-mm-zoom-factor)) calc(0.8em * var(--holaf-mm-zoom-factor));
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: calc(0.5em * var(--holaf-mm-zoom-factor)); 
+    gap: calc(0.5em * var(--holaf-mm-zoom-factor));
 }
 
 #holaf-manager-panel .holaf-manager-search {
-    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.6em * var(--holaf-mm-zoom-factor)); 
-    background-color: var(--holaf-input-background); 
-    border: 1px solid var(--holaf-border-color); 
+    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.6em * var(--holaf-mm-zoom-factor));
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
     border-radius: 4px;
-    color: var(--holaf-text-primary); 
-    font-size: calc(13px * var(--holaf-mm-zoom-factor)); 
+    color: var(--holaf-text-primary);
+    font-size: calc(13px * var(--holaf-mm-zoom-factor));
     outline: none;
 }
 
 #holaf-manager-panel .holaf-manager-search:focus {
-    border-color: var(--holaf-accent-color); 
+    border-color: var(--holaf-accent-color);
 }
 
 #holaf-manager-panel .holaf-manager-list-header {
     display: flex;
     align-items: center;
     padding: calc(0.3em * var(--holaf-mm-zoom-factor)) calc(15px * var(--holaf-mm-zoom-factor));
-    background-color: var(--holaf-background-secondary); 
-    border-bottom: 1px solid var(--holaf-border-color); 
+    background-color: var(--holaf-background-secondary);
+    border-bottom: 1px solid var(--holaf-border-color);
     font-weight: bold;
-    font-size: calc(0.8em * var(--holaf-mm-zoom-factor)); 
-    color: var(--holaf-text-secondary); 
-    user-select: none; 
+    font-size: calc(0.8em * var(--holaf-mm-zoom-factor));
+    color: var(--holaf-text-secondary);
+    user-select: none;
     flex-shrink: 0;
 }
 
 #holaf-manager-panel .holaf-manager-header-col {
-    cursor: pointer; 
-    padding: 0 calc(5px * var(--holaf-mm-zoom-factor)); 
+    cursor: pointer;
+    padding: 0 calc(5px * var(--holaf-mm-zoom-factor));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     transition: color 0.15s;
-    line-height: 1.3; 
+    line-height: 1.3;
 }
 
 #holaf-manager-panel .holaf-manager-header-col:hover {
-    color: var(--holaf-text-primary); 
+    color: var(--holaf-text-primary);
 }
 
 #holaf-manager-panel .holaf-manager-header-col.sort-asc::after,
@@ -411,187 +418,233 @@
     margin-left: calc(6px * var(--holaf-mm-zoom-factor));
     vertical-align: middle;
 }
+
 #holaf-manager-panel .holaf-manager-header-col.sort-asc::after {
-    border-bottom: calc(5px * var(--holaf-mm-zoom-factor)) solid var(--holaf-text-primary); 
+    border-bottom: calc(5px * var(--holaf-mm-zoom-factor)) solid var(--holaf-text-primary);
 }
+
 #holaf-manager-panel .holaf-manager-header-col.sort-desc::after {
-    border-top: calc(5px * var(--holaf-mm-zoom-factor)) solid var(--holaf-text-primary); 
+    border-top: calc(5px * var(--holaf-mm-zoom-factor)) solid var(--holaf-text-primary);
 }
 
 /* Column Widths for Header */
 #holaf-manager-panel .holaf-header-checkbox {
-    flex: 0 0 calc(30px * var(--holaf-mm-zoom-factor)); 
-    cursor: default; 
+    flex: 0 0 calc(30px * var(--holaf-mm-zoom-factor));
+    cursor: default;
     display: flex;
     align-items: center;
     justify-content: center;
 }
-#holaf-manager-panel .holaf-header-name { flex: 1 1 25%; }
-#holaf-manager-panel .holaf-header-path { flex: 1 1 30%; }
-#holaf-manager-panel .holaf-header-type { flex: 0 0 calc(110px * var(--holaf-mm-zoom-factor)); text-align: center; }
-#holaf-manager-panel .holaf-header-family { flex: 0 0 calc(110px * var(--holaf-mm-zoom-factor)); text-align: center; }
-#holaf-manager-panel .holaf-header-size { flex: 0 0 calc(80px * var(--holaf-mm-zoom-factor)); text-align: left;
- white-space: nowrap;
- overflow: hidden;
- text-overflow: ellipsis; }
+
+#holaf-manager-panel .holaf-header-name {
+    flex: 1 1 25%;
+}
+
+#holaf-manager-panel .holaf-header-path {
+    flex: 1 1 30%;
+}
+
+#holaf-manager-panel .holaf-header-type {
+    flex: 0 0 calc(110px * var(--holaf-mm-zoom-factor));
+    text-align: center;
+}
+
+#holaf-manager-panel .holaf-header-family {
+    flex: 0 0 calc(110px * var(--holaf-mm-zoom-factor));
+    text-align: center;
+}
+
+#holaf-manager-panel .holaf-header-size {
+    flex: 0 0 calc(80px * var(--holaf-mm-zoom-factor));
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* Model List Area */
 #holaf-manager-panel .holaf-manager-content {
     flex-grow: 1;
     overflow-y: auto;
-    font-size: calc(1em * var(--holaf-mm-zoom-factor)); 
-    padding: calc(0.2em * var(--holaf-mm-zoom-factor)) 0px; 
-    background-color: var(--holaf-background-primary); 
-    color: var(--holaf-text-primary); 
+    font-size: calc(1em * var(--holaf-mm-zoom-factor));
+    padding: calc(0.2em * var(--holaf-mm-zoom-factor)) 0px;
+    background-color: var(--holaf-background-primary);
+    color: var(--holaf-text-primary);
 }
 
 #holaf-manager-panel .holaf-manager-message {
     text-align: center;
-    color: var(--holaf-text-secondary); 
+    color: var(--holaf-text-secondary);
     font-style: italic;
-    padding: 20px 15px; 
+    padding: 20px 15px;
 }
 
 #holaf-manager-panel .holaf-manager-message.error {
-    color: #ff8a8a; 
+    color: #ff8a8a;
     font-weight: bold;
 }
 
 /* Individual Model Card */
 #holaf-manager-panel .holaf-model-card {
-    background-color: var(--holaf-background-secondary); 
-    border-bottom: 1px solid var(--holaf-border-color); 
-    padding: 0.25em 10px; 
+    background-color: var(--holaf-background-secondary);
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding: 0.25em 10px;
     display: flex;
-    align-items: center; 
+    align-items: center;
     transition: background-color 0.15s;
-    font-size: 0.85em; 
-    min-height: 0; 
+    font-size: 0.85em;
+    min-height: 0;
 }
+
 #holaf-manager-panel .holaf-model-card:last-child {
     border-bottom: none;
 }
 
 #holaf-manager-panel .holaf-model-card:hover {
-    background-color: color-mix(in srgb, var(--holaf-background-secondary) 80%, var(--holaf-accent-color) 20%); 
+    background-color: color-mix(in srgb, var(--holaf-background-secondary) 80%, var(--holaf-accent-color) 20%);
 }
 
 /* Columns within a model card */
 #holaf-manager-panel .holaf-model-col {
-    padding: 0 5px; 
-    overflow: hidden; 
-    display: flex; 
-    align-items: center; 
+    padding: 0 5px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
 }
 
-#holaf-manager-panel .holaf-col-checkbox { flex: 0 0 calc(30px * var(--holaf-mm-zoom-factor)); justify-content: center; }
-#holaf-manager-panel .holaf-col-name { flex: 1 1 25%; flex-direction: column; align-items: flex-start; justify-content: center; padding: 0.1em 0; }
-#holaf-manager-panel .holaf-col-type { flex: 0 0 calc(100px * var(--holaf-mm-zoom-factor)); justify-content: center; }
-#holaf-manager-panel .holaf-col-family {  flex: 0 0 calc(100px * var(--holaf-mm-zoom-factor)); justify-content: center; }
-#holaf-manager-panel .holaf-col-size { flex: 0 0 calc(70px * var(--holaf-mm-zoom-factor)); justify-content: flex-end; }
+#holaf-manager-panel .holaf-col-checkbox {
+    flex: 0 0 calc(30px * var(--holaf-mm-zoom-factor));
+    justify-content: center;
+}
+
+#holaf-manager-panel .holaf-col-name {
+    flex: 1 1 25%;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0.1em 0;
+}
+
+#holaf-manager-panel .holaf-col-type {
+    flex: 0 0 calc(100px * var(--holaf-mm-zoom-factor));
+    justify-content: center;
+}
+
+#holaf-manager-panel .holaf-col-family {
+    flex: 0 0 calc(100px * var(--holaf-mm-zoom-factor));
+    justify-content: center;
+}
+
+#holaf-manager-panel .holaf-col-size {
+    flex: 0 0 calc(70px * var(--holaf-mm-zoom-factor));
+    justify-content: flex-end;
+}
 
 #holaf-manager-panel .holaf-model-name,
 #holaf-manager-panel .holaf-model-path {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: block; 
-    width: 100%; 
-    line-height: 1.2; 
+    display: block;
+    width: 100%;
+    line-height: 1.2;
 }
 
 #holaf-manager-panel .holaf-model-name {
     font-weight: bold;
-    color: var(--holaf-text-primary); 
+    color: var(--holaf-text-primary);
 }
 
 #holaf-manager-panel .holaf-model-path {
-    font-size: 0.85em; 
-    color: var(--holaf-text-secondary); 
-    margin-top: 0; 
+    font-size: 0.85em;
+    color: var(--holaf-text-secondary);
+    margin-top: 0;
 }
 
 /* Model Type Tag & Family Tag */
 #holaf-manager-panel .holaf-model-type-tag {
-    background-color: var(--holaf-tag-background); 
-    padding: calc(0.15em * var(--holaf-mm-zoom-factor)) calc(0.4em * var(--holaf-mm-zoom-factor)); 
-    border-radius: 3px; 
-    font-size: 0.8em; 
-    color: var(--holaf-tag-text); 
-    display: inline-block; 
+    background-color: var(--holaf-tag-background);
+    padding: calc(0.15em * var(--holaf-mm-zoom-factor)) calc(0.4em * var(--holaf-mm-zoom-factor));
+    border-radius: 3px;
+    font-size: 0.8em;
+    color: var(--holaf-tag-text);
+    display: inline-block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
-    line-height: 1.3; 
+    line-height: 1.3;
 }
+
 #holaf-manager-panel .holaf-model-family-tag {
-    background-color: var(--holaf-family-tag-background); 
-    color: var(--holaf-family-tag-text); 
-    padding: calc(0.15em * var(--holaf-mm-zoom-factor)) calc(0.4em * var(--holaf-mm-zoom-factor)); 
-    border-radius: 3px; 
-    font-size: 0.8em; 
-    display: inline-block; 
+    background-color: var(--holaf-family-tag-background);
+    color: var(--holaf-family-tag-text);
+    padding: calc(0.15em * var(--holaf-mm-zoom-factor)) calc(0.4em * var(--holaf-mm-zoom-factor));
+    border-radius: 3px;
+    font-size: 0.8em;
+    display: inline-block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
-    line-height: 1.3; 
+    line-height: 1.3;
 }
 
 #holaf-manager-panel .holaf-model-size {
     text-align: left;
- white-space: nowrap;
- overflow: hidden;
- text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     width: 100%;
-    font-size: 0.9em; 
-    color: var(--holaf-text-secondary); 
-    line-height: 1.2; 
+    font-size: 0.9em;
+    color: var(--holaf-text-secondary);
+    line-height: 1.2;
 }
 
 #holaf-manager-panel .holaf-model-checkbox,
 #holaf-manager-panel #holaf-manager-select-all-checkbox {
     margin: 0;
     cursor: pointer;
-    transform: scale(0.85); 
-    accent-color: var(--holaf-accent-color); 
+    transform: scale(0.85);
+    accent-color: var(--holaf-accent-color);
     vertical-align: middle;
 }
 
 /* Status Bar */
 #holaf-manager-panel .holaf-manager-statusbar {
-    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.8em * var(--holaf-mm-zoom-factor)); 
-    background-color: var(--holaf-background-secondary); 
-    border-top: 1px solid var(--holaf-border-color); 
+    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.8em * var(--holaf-mm-zoom-factor));
+    background-color: var(--holaf-background-secondary);
+    border-top: 1px solid var(--holaf-border-color);
     font-size: calc(0.75em * var(--holaf-mm-zoom-factor));
-    color: var(--holaf-text-secondary); 
+    color: var(--holaf-text-secondary);
     text-align: left;
- white-space: nowrap;
- overflow: hidden;
- text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     flex-shrink: 0;
 }
 
 /* Custom scrollbar */
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar,
-.holaf-utility-panel .holaf-terminal-view-wrapper::-webkit-scrollbar 
- {
-    width: calc(10px * var(--holaf-mm-zoom-factor, 1)); 
+.holaf-utility-panel .holaf-terminal-view-wrapper::-webkit-scrollbar {
+    width: calc(10px * var(--holaf-mm-zoom-factor, 1));
 }
+
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-track,
 .holaf-utility-panel .holaf-terminal-view-wrapper::-webkit-scrollbar-track {
-    background: var(--holaf-scrollbar-track); 
+    background: var(--holaf-scrollbar-track);
 }
+
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb,
 .holaf-utility-panel .holaf-terminal-view-wrapper::-webkit-scrollbar-thumb {
-    background-color: var(--holaf-scrollbar-thumb); 
+    background-color: var(--holaf-scrollbar-thumb);
     border-radius: calc(5px * var(--holaf-mm-zoom-factor, 1));
-    border: calc(2px * var(--holaf-mm-zoom-factor, 1)) solid var(--holaf-scrollbar-track); 
+    border: calc(2px * var(--holaf-mm-zoom-factor, 1)) solid var(--holaf-scrollbar-track);
 }
+
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb:hover,
 .holaf-utility-panel .holaf-terminal-view-wrapper::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%); 
+    background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
 }
 
 
@@ -603,10 +656,11 @@
     border: 1px solid var(--holaf-border-color) !important;
     padding: 8px;
     border-radius: 3px;
-    width: 220px; 
+    width: 220px;
     max-width: 80%;
     margin-bottom: 10px;
 }
+
 #holaf-terminal-panel .holaf-terminal-non-terminal-view input[type="password"]:focus,
 #holaf-terminal-panel .holaf-terminal-non-terminal-view input[type="text"]:focus {
     border-color: var(--holaf-accent-color) !important;
@@ -615,13 +669,14 @@
 #holaf-terminal-panel .holaf-terminal-non-terminal-view p {
     color: var(--holaf-text-secondary);
 }
+
 #holaf-terminal-panel .holaf-terminal-non-terminal-view h3,
 #holaf-terminal-panel .holaf-terminal-non-terminal-view h4 {
     color: var(--holaf-text-primary);
 }
 
-#holaf-terminal-panel .holaf-terminal-view-wrapper > div.terminal { 
-    padding: 0 !important; 
+#holaf-terminal-panel .holaf-terminal-view-wrapper>div.terminal {
+    padding: 0 !important;
 }
 
 /* --- Fullscreen Panel Style --- */
@@ -644,4 +699,10 @@
 .holaf-panel-fullscreen .holaf-utility-header {
     border-top-left-radius: 0 !important;
     border-top-right-radius: 0 !important;
+}
+
+/* --- IMAGE VIEWER SPECIFIC STYLES (WIP) --- */
+/* Placeholder for future styles */
+#holaf-viewer-panel .holaf-viewer-content {
+    /* e.g., styles for image grid, thumbnails, etc. */
 }

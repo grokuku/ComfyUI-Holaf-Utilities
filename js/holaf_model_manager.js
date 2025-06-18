@@ -239,7 +239,7 @@ const holafModelManager = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-manager-panel",
-                title: "Holaf Model Manager",
+                title: "Holaf Model Manager (WIP)",
                 headerContent: managerHeaderControls,
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
