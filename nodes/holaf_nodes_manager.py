@@ -18,7 +18,8 @@
 # MODIFIED: Added stubs for action functions (update, delete, install_req).
 # MODIFIED: Enabled real commands for node actions (git pull, rmtree, pip install).
 # MODIFIED: Changed update logic to use 'git fetch' and 'git reset --hard FETCH_HEAD' for existing git repos.
-#           Added placeholder for updating non-git repos (manual installs with found URL).
+# MODIFIED: Implemented update strategy for non-Git nodes: backup, clone, restore missing files.
+# MODIFIED: update_node_from_git now returns new_status (is_git_repo, repo_url) on successful clone.
 # === End Documentation ===
 
 import os
@@ -28,6 +29,7 @@ import subprocess
 import aiohttp
 import shutil
 import sys # For sys.executable
+import time # Added for unique backup folder names
 
 def _sanitize_node_name(node_name_from_client: str) -> str | None:
     """
@@ -56,18 +58,44 @@ def _get_git_remote_url(repo_path):
     if not os.path.isdir(git_dir):
         return None
     try:
+        # Try to get the URL of the 'origin' remote
+        # This command is more robust if multiple remotes exist or if the default branch isn't 'master' or 'main'
         result = subprocess.run(
             ['git', 'config', '--get', 'remote.origin.url'],
-            capture_output=True, text=True, check=True, encoding='utf-8', cwd=repo_path
+            capture_output=True, text=True, check=True, encoding='utf-8', cwd=repo_path,
+            # Add a timeout to prevent hanging if git command has issues
+            timeout=10 
         )
         url = result.stdout.strip()
-        if url.startswith('git@'):
+        if url.startswith('git@'): # Convert SSH URL to HTTPS
             url = url.replace(':', '/').replace('git@', 'https://')
-        if url.endswith('.git'):
+        if url.endswith('.git'): # Remove .git suffix for cleaner URL
             url = url[:-4]
         return url
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired)  as e:
+        # print(f"🟡 [Holaf-NodesManager] Could not get remote.origin.url for {repo_path}: {e}")
+        # Fallback: try to get any remote URL (less specific but might work if 'origin' isn't set up as expected)
+        try:
+            result_fallback = subprocess.run(
+                ['git', 'remote', '-v'],
+                capture_output=True, text=True, check=True, encoding='utf-8', cwd=repo_path, timeout=10
+            )
+            remotes = result_fallback.stdout.strip().splitlines()
+            if remotes:
+                # Get the first fetch URL
+                first_remote_line = next((line for line in remotes if "(fetch)" in line), None)
+                if first_remote_line:
+                    url = first_remote_line.split()[1] # Get the URL part
+                    if url.startswith('git@'):
+                        url = url.replace(':', '/').replace('git@', 'https://')
+                    if url.endswith('.git'):
+                        url = url[:-4]
+                    return url
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e_fallback:
+            # print(f"🟡 [Holaf-NodesManager] Fallback git remote -v also failed for {repo_path}: {e_fallback}")
+            pass # Silently fail if fallback also doesn't work
+    return None
+
 
 def scan_custom_nodes():
     nodes_list = []
@@ -77,7 +105,7 @@ def scan_custom_nodes():
         return []
 
     for item_name in sorted(os.listdir(custom_nodes_dir), key=str.lower):
-        if item_name.startswith('.') or item_name.startswith('__'): 
+        if item_name.startswith('.') or item_name.startswith('__') or item_name.endswith('_old_'): 
             continue
         
         if _sanitize_node_name(item_name) != item_name:
@@ -86,28 +114,26 @@ def scan_custom_nodes():
 
         item_path = os.path.join(custom_nodes_dir, item_name)
         if os.path.isdir(item_path): 
-            repo_url = _get_git_remote_url(item_path)
-            has_req_txt = os.path.isfile(os.path.join(item_path, 'requirements.txt'))
             is_git_repo = os.path.isdir(os.path.join(item_path, '.git'))
+            repo_url = _get_git_remote_url(item_path) if is_git_repo else None # Only get URL if it's a git repo
+            has_req_txt = os.path.isfile(os.path.join(item_path, 'requirements.txt'))
+            
             nodes_list.append({
                 "name": item_name,
-                "repo_url": repo_url, # This is the remote URL if .git exists and remote is configured
+                "repo_url": repo_url, 
                 "has_requirements_txt": has_req_txt,
-                "is_git_repo": is_git_repo # True if .git folder exists
+                "is_git_repo": is_git_repo 
             })
     return nodes_list
 
 def get_local_readme_content(node_name_from_client: str):
     sanitized_name = _sanitize_node_name(node_name_from_client)
     if not sanitized_name:
-        # print(f"🔴 [Holaf-NodesManager] get_local_readme_content: Invalid node name '{node_name_from_client}' received.")
         return "Error: Invalid node name provided."
     
     node_path = os.path.join(folder_paths.base_path, 'custom_nodes', sanitized_name)
-    # print(f"🔵 [Holaf-NodesManager] get_local_readme_content: Searching for README in node path: {node_path}") 
 
     if not os.path.isdir(node_path): 
-        # print(f"🔴 [Holaf-NodesManager] get_local_readme_content: Node directory not found at: {node_path}")
         return f"Error: Node directory '{sanitized_name}' not found."
         
     readme_path_found = None
@@ -141,18 +167,13 @@ async def search_github_for_repo(repo_name_from_client: str):
 
     search_url = f"https://api.github.com/search/repositories?q={search_term}+in:name&sort=stars&order=desc"
     headers = {"Accept": "application/vnd.github.v3+json"}
-    # print(f"🔵 [Holaf-NodesManager] Searching GitHub: {search_url}")
     async with aiohttp.ClientSession(headers=headers) as session:
         try:
             async with session.get(search_url) as response:
-                # print(f"🔵 [Holaf-NodesManager] GitHub search response status: {response.status}")
                 if response.status == 200:
                     data = await response.json()
                     if data.get('items'):
-                        # print(f"🟢 [Holaf-NodesManager] GitHub search found: {data['items'][0].get('html_url')}")
                         return data['items'][0].get('html_url')
-                # else:
-                    # print(f"🟡 [Holaf-NodesManager] GitHub search non-200 response: {await response.text()}")
         except Exception as e:
             print(f"🔴 [Holaf-NodesManager] Error searching GitHub for '{search_term}': {e}")
     return None
@@ -198,73 +219,154 @@ def _get_node_path_if_safe(node_name_from_client: str) -> str | None:
     if node_dir_path == custom_nodes_base_dir:
         print(f"🔴 [Holaf-NodesManager] SECURITY ALERT: Action rejected for '{sanitized_name}'. Attempt to target base custom_nodes directory.")
         return None
-
-    # For update/delete, the directory should exist. For other actions, it might not.
-    # This function is now generic; existence check should be in the calling action function if needed.
     return node_dir_path
 
 
-def update_node_from_git(node_name: str) -> dict:
+def update_node_from_git(node_name: str, repo_url_override: str = None) -> dict:
     node_path = _get_node_path_if_safe(node_name)
-    if not node_path or not os.path.isdir(node_path):
+    if not node_path or not os.path.isdir(node_path): 
         return {"status": "error", "message": f"Node directory '{node_name}' not found or path is invalid."}
 
     is_git_repo = os.path.isdir(os.path.join(node_path, '.git'))
+    output_log = ""
 
     if is_git_repo:
         try:
             print(f"🔵 [Holaf-NodesManager] Updating existing Git repo '{node_name}' in {node_path}...")
             
-            # 1. Fetch from remote
             fetch_cmd = ['git', 'fetch', 'origin']
-            print(f"  Executing: {' '.join(fetch_cmd)}")
+            output_log += f"Executing: {' '.join(fetch_cmd)}\n"
             result_fetch = subprocess.run(
                 fetch_cmd, capture_output=True, text=True, check=True, 
                 cwd=node_path, timeout=120, encoding='utf-8', errors='replace'
             )
-            output = "Fetch output:\n" + result_fetch.stdout.strip() + \
-                     ("\n" + result_fetch.stderr.strip() if result_fetch.stderr.strip() else "") + "\n\n"
+            output_log += "Fetch output:\n" + result_fetch.stdout.strip() + \
+                         ("\n" + result_fetch.stderr.strip() if result_fetch.stderr.strip() else "") + "\n\n"
 
-            # 2. Determine the current branch
-            #    We will reset to FETCH_HEAD which refers to the tip of the last fetched branch,
-            #    this is often simpler than trying to determine the exact remote default branch name.
-            #    However, if a specific branch like 'main' or 'master' is desired, that logic would go here.
-            #    For now, FETCH_HEAD is a good general approach for "latest from remote".
-            
-            # 3. Reset hard to FETCH_HEAD (overwrite local changes on tracked files)
-            #    If you wanted to reset to a specific default branch like origin/main:
-            #    reset_cmd = ['git', 'reset', '--hard', 'origin/main'] # or origin/master
             reset_cmd = ['git', 'reset', '--hard', 'FETCH_HEAD']
-            print(f"  Executing: {' '.join(reset_cmd)}")
+            output_log += f"Executing: {' '.join(reset_cmd)}\n"
             result_reset = subprocess.run(
                 reset_cmd, capture_output=True, text=True, check=True, 
                 cwd=node_path, timeout=60, encoding='utf-8', errors='replace'
             )
-            output += "Reset output:\n" + result_reset.stdout.strip() + \
-                      ("\n" + result_reset.stderr.strip() if result_reset.stderr.strip() else "")
+            output_log += "Reset output:\n" + result_reset.stdout.strip() + \
+                          ("\n" + result_reset.stderr.strip() if result_reset.stderr.strip() else "")
 
-            # Files not tracked by Git will remain.
-            print(f"🟢 [Holaf-NodesManager] Forced update for '{node_name}' completed. Output: {output[:400]}")
-            return {"status": "success", "message": f"Forced update successful for Git repo {node_name}.", "output": output}
+            # Get current status after update
+            current_repo_url = _get_git_remote_url(node_path)
+            new_node_status = { "is_git_repo": True, "repo_url": current_repo_url }
+
+            print(f"🟢 [Holaf-NodesManager] Forced update for '{node_name}' completed.")
+            return {"status": "success", "message": f"Forced update successful for Git repo {node_name}.", "output": output_log, "new_status": new_node_status}
 
         except subprocess.CalledProcessError as e:
-            error_output = e.stdout.strip() + ("\n" + e.stderr.strip() if e.stderr.strip() else "")
-            print(f"🔴 [Holaf-NodesManager] Force update failed for '{node_name}': {error_output}")
-            return {"status": "error", "message": f"Force update failed for {node_name}.", "output": error_output}
+            error_details = e.stdout.strip() + ("\n" + e.stderr.strip() if e.stderr.strip() else "")
+            output_log += f"Error: {error_details}\n"
+            print(f"🔴 [Holaf-NodesManager] Force update failed for '{node_name}': {error_details}")
+            return {"status": "error", "message": f"Force update failed for {node_name}.", "output": output_log}
         except subprocess.TimeoutExpired as e:
             timeout_msg = f"Git command '{' '.join(e.cmd)}' timed out for '{node_name}'."
+            output_log += f"Error: {timeout_msg}\n"
             print(f"🔴 [Holaf-NodesManager] {timeout_msg}")
-            return {"status": "error", "message": timeout_msg}
+            return {"status": "error", "message": timeout_msg, "output": output_log}
         except Exception as e:
+            output_log += f"Unexpected Error: {str(e)}\n"
             print(f"🔴 [Holaf-NodesManager] Unexpected error during force update for '{node_name}': {e}")
-            return {"status": "error", "message": f"Unexpected error updating {node_name}: {e}"}
-    else:
-        # This is a manually installed node, URL might have been found via GitHub search
-        # Implementing a safe "download ZIP and overwrite" is complex and requires more tools (zipfile, requests/aiohttp for download)
-        # For now, we'll just indicate it's not a Git repo locally.
-        print(f"🟡 [Holaf-NodesManager] Node '{node_name}' at {node_path} is not a Git repository. 'Update' action via ZIP download is not yet implemented.")
-        return {"status": "info", "message": f"Node '{node_name}' is not a local Git repository. Update via ZIP download is not yet implemented. Please re-clone or update manually."}
+            return {"status": "error", "message": f"Unexpected error updating {node_name}: {e}", "output": output_log}
+    else: 
+        repo_url_to_clone = repo_url_override
+        if not repo_url_to_clone:
+            msg = f"Node '{node_name}' is not a local Git repository and no remote URL was provided for re-cloning. Cannot update."
+            print(f"🟡 [Holaf-NodesManager] {msg}")
+            return {"status": "info", "message": msg}
 
+        parent_dir = os.path.dirname(node_path)
+        backup_node_path = f"{node_path}_old_{str(int(time.time()))}"
+        cloned_successfully = False
+
+        try:
+            print(f"🔵 [Holaf-NodesManager] Renaming '{node_path}' to '{backup_node_path}' for backup.")
+            output_log += f"Renaming '{os.path.basename(node_path)}' to '{os.path.basename(backup_node_path)}'.\n"
+            shutil.move(node_path, backup_node_path) 
+
+            print(f"🔵 [Holaf-NodesManager] Cloning '{repo_url_to_clone}' into '{node_path}'.")
+            output_log += f"Cloning '{repo_url_to_clone}' into '{os.path.basename(node_path)}'.\n"
+            clone_cmd = ['git', 'clone', '--depth', '1', repo_url_to_clone, node_name] 
+            
+            result_clone = subprocess.run(
+                clone_cmd, capture_output=True, text=True, check=True, 
+                cwd=parent_dir, 
+                timeout=300, encoding='utf-8', errors='replace'
+            )
+            output_log += "Clone output:\n" + result_clone.stdout.strip() + \
+                         ("\n" + result_clone.stderr.strip() if result_clone.stderr.strip() else "") + "\n\n"
+            cloned_successfully = True # node_path now exists and is a git repo
+
+            print(f"🔵 [Holaf-NodesManager] Restoring specific files from '{backup_node_path}' to '{node_path}'.")
+            output_log += f"Attempting to restore files from backup to new clone.\n"
+            restored_files_count = 0
+            skipped_files_count = 0
+            
+            for root_old, _, files_old in os.walk(backup_node_path):
+                for file_name_old in files_old:
+                    old_file_full_path = os.path.join(root_old, file_name_old)
+                    relative_file_path = os.path.relpath(old_file_full_path, backup_node_path)
+                    new_file_full_path = os.path.join(node_path, relative_file_path)
+                    
+                    os.makedirs(os.path.dirname(new_file_full_path), exist_ok=True)
+
+                    if not os.path.exists(new_file_full_path):
+                        shutil.copy2(old_file_full_path, new_file_full_path)
+                        output_log += f"Restored: {relative_file_path}\n"
+                        restored_files_count += 1
+                    else:
+                        skipped_files_count +=1
+            
+            output_log += f"Restored {restored_files_count} missing files. Skipped {skipped_files_count} files that already existed in the new clone.\n"
+
+            print(f"🔵 [Holaf-NodesManager] Removing backup directory '{backup_node_path}'.")
+            shutil.rmtree(backup_node_path)
+            output_log += f"Removed backup directory '{os.path.basename(backup_node_path)}'.\n"
+            
+            # After successful clone, node_path is now a git repo
+            # Its repo_url should be repo_url_to_clone (or what git configured, ideally the same)
+            # We explicitly pass back the URL used for cloning as the new repo_url.
+            # _get_git_remote_url(node_path) could also be used here for verification.
+            new_node_status = {
+                "is_git_repo": True,
+                "repo_url": repo_url_to_clone # The URL we just cloned from
+            }
+
+            final_message = f"Update by re-cloning '{node_name}' successful."
+            print(f"🟢 [Holaf-NodesManager] {final_message}")
+            return {"status": "success", "message": final_message, "output": output_log, "new_status": new_node_status}
+
+        except subprocess.CalledProcessError as e:
+            error_details = e.stdout.strip() + ("\n" + e.stderr.strip() if e.stderr.strip() else "")
+            output_log += f"Clone Error: {error_details}\n"
+            print(f"🔴 [Holaf-NodesManager] Re-clone update failed for '{node_name}': {error_details}")
+            if os.path.exists(backup_node_path) and not os.path.exists(node_path):
+                try: shutil.move(backup_node_path, node_path); output_log += "Attempted to restore original folder from backup.\n"
+                except Exception as restore_e: output_log += f"Failed to restore original folder from backup: {restore_e}\n"
+            return {"status": "error", "message": f"Re-clone update failed for {node_name}.", "output": output_log}
+        except subprocess.TimeoutExpired as e:
+            timeout_msg = f"Git clone command '{' '.join(e.cmd)}' timed out for '{node_name}'."
+            output_log += f"Error: {timeout_msg}\n"
+            print(f"🔴 [Holaf-NodesManager] {timeout_msg}")
+            if os.path.exists(backup_node_path) and not os.path.exists(node_path):
+                 try: shutil.move(backup_node_path, node_path); output_log += "Attempted to restore original folder from backup.\n"
+                 except Exception as restore_e: output_log += f"Failed to restore original folder from backup: {restore_e}\n"
+            return {"status": "error", "message": timeout_msg, "output": output_log}
+        except Exception as e:
+            err_msg = f"Unexpected error updating {node_name} via re-clone: {str(e)}"
+            output_log += f"Unexpected Error: {str(e)}\n"
+            print(f"🔴 [Holaf-NodesManager] {err_msg}")
+            if cloned_successfully and os.path.exists(node_path) and os.path.exists(backup_node_path):
+                 output_log += "Clone was successful but a later step (file restoration or backup cleanup) failed. Backup folder may still exist.\n"
+            elif os.path.exists(backup_node_path) and not os.path.exists(node_path): 
+                 try: shutil.move(backup_node_path, node_path); output_log += "Attempted to restore original folder from backup.\n"
+                 except Exception as restore_e: output_log += f"Failed to restore original folder from backup: {restore_e}\n"
+            return {"status": "error", "message": err_msg, "output": output_log}
 
 def delete_node_folder(node_name: str) -> dict:
     node_path = _get_node_path_if_safe(node_name)
@@ -293,24 +395,31 @@ def install_node_requirements(node_name: str) -> dict:
     req_file_path = os.path.join(node_path, 'requirements.txt')
     if not os.path.isfile(req_file_path):
         return {"status": "info", "message": f"No requirements.txt found for node '{node_name}'. Nothing to install."}
-
+    
+    output_log = ""
     try:
         pip_command = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
+        output_log += f"Executing: {' '.join(pip_command)}\n"
         print(f"🔵 [Holaf-NodesManager] Attempting to install requirements for '{node_name}' from {req_file_path} using command: {' '.join(pip_command)}")
         result = subprocess.run(
             pip_command, 
             capture_output=True, text=True, check=True, cwd=node_path, timeout=600, encoding='utf-8', errors='replace'
         )
-        output = result.stdout.strip() + ("\n" + result.stderr.strip() if result.stderr.strip() else "")
-        print(f"🟢 [Holaf-NodesManager] Requirement installation for '{node_name}' completed. Output: {output[:400]}")
-        return {"status": "success", "message": f"Requirement installation for {node_name} successful.", "output": output}
+        output_log += "Install output:\n" + result.stdout.strip() + ("\n" + result.stderr.strip() if result.stderr.strip() else "")
+        print(f"🟢 [Holaf-NodesManager] Requirement installation for '{node_name}' completed.")
+        return {"status": "success", "message": f"Requirement installation for {node_name} successful.", "output": output_log}
     except subprocess.CalledProcessError as e:
-        error_output = e.stdout.strip() + ("\n" + e.stderr.strip() if e.stderr.strip() else "")
-        print(f"🔴 [Holaf-NodesManager] Requirement installation failed for '{node_name}': {error_output}")
-        return {"status": "error", "message": f"Installation failed for {node_name}.", "output": error_output}
+        error_details = e.stdout.strip() + ("\n" + e.stderr.strip() if e.stderr.strip() else "")
+        output_log += f"Error: {error_details}\n"
+        print(f"🔴 [Holaf-NodesManager] Requirement installation failed for '{node_name}': {error_details}")
+        return {"status": "error", "message": f"Installation failed for {node_name}.", "output": output_log}
     except subprocess.TimeoutExpired:
-        print(f"🔴 [Holaf-NodesManager] Requirement installation timed out for '{node_name}'.")
-        return {"status": "error", "message": f"Installation timed out for {node_name}."}
+        timeout_msg = f"Requirement installation timed out for '{node_name}'."
+        output_log += f"Error: {timeout_msg}\n"
+        print(f"🔴 [Holaf-NodesManager] {timeout_msg}")
+        return {"status": "error", "message": timeout_msg, "output": output_log}
     except Exception as e:
-        print(f"🔴 [Holaf-NodesManager] Unexpected error during requirement installation for '{node_name}': {e}")
-        return {"status": "error", "message": f"Unexpected error installing requirements for {node_name}: {e}"}
+        err_msg = f"Unexpected error installing requirements for {node_name}: {str(e)}"
+        output_log += f"Unexpected Error: {str(e)}\n"
+        print(f"🔴 [Holaf-NodesManager] {err_msg}")
+        return {"status": "error", "message": err_msg, "output": output_log}
