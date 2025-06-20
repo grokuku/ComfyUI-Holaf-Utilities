@@ -27,6 +27,7 @@
 # MODIFIED: Added `panel_is_fullscreen` setting for persistent fullscreen state.
 # MODIFIED: Replaced monolithic file download with a chunk-based system for parallel, non-blocking downloads.
 # CORRECTION: Fixed blocking I/O in Nodes Manager API routes by using run_in_executor.
+# MODIFIED: Added API endpoints for Nodes Manager actions (update, delete, install_req).
 # === End Documentation ===
 
 import server
@@ -782,7 +783,7 @@ async def holaf_get_node_github_readme(request: web.Request):
             return web.Response(text="Error: 'owner' and 'repo' are required.", status=400)
         
         content = await nodes_manager_helper.get_github_readme_content(owner, repo)
-        return web.Response(text=content, content_type='text/plain; charset=utf-8')
+        return web.Response(text=content, content_type='text/plain', charset='utf-8') # Keep charset here as it's for external content
     except json.JSONDecodeError:
         return web.Response(text="Error: Invalid JSON payload.", status=400)
     except Exception as e:
@@ -805,6 +806,56 @@ async def holaf_search_github_repo(request: web.Request):
         node_name_for_log = locals().get('node_name', '[unknown]')
         print(f"🔴 [Holaf-NodesManager] Error searching GitHub for repo '{node_name_for_log}': {e}")
         return web.json_response({"error": f"Server error during GitHub search: {e}"}, status=500)
+
+async def _handle_node_action_batch(request: web.Request, action_func):
+    """Generic handler for batch node actions."""
+    try:
+        data = await request.json()
+        node_names = data.get("node_names", [])
+        if not isinstance(node_names, list) or not node_names:
+            return web.json_response({"status": "error", "message": "'node_names' list is required."}, status=400)
+
+        results = []
+        loop = asyncio.get_event_loop()
+        for node_name in node_names:
+            # Run blocking action in executor
+            result = await loop.run_in_executor(None, action_func, node_name)
+            results.append({"node_name": node_name, **result})
+        
+        # Determine overall status
+        all_successful = all(r['status'] == 'success' for r in results)
+        any_successful = any(r['status'] == 'success' for r in results)
+
+        if all_successful:
+            http_status = 200
+            overall_status = "ok"
+        elif any_successful:
+            http_status = 207 # Multi-Status
+            overall_status = "partial_success"
+        else:
+            http_status = 400 # Or 500 if server-side issues dominated
+            overall_status = "error"
+            
+        return web.json_response({"status": overall_status, "details": results}, status=http_status)
+
+    except json.JSONDecodeError:
+        return web.json_response({"status": "error", "message": "Invalid JSON payload."}, status=400)
+    except Exception as e:
+        print(f"🔴 [Holaf-NodesManager] Error during batch node action: {e}")
+        traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/holaf/nodes/update")
+async def holaf_update_nodes(request: web.Request):
+    return await _handle_node_action_batch(request, nodes_manager_helper.update_node_from_git)
+
+@server.PromptServer.instance.routes.post("/holaf/nodes/delete")
+async def holaf_delete_nodes(request: web.Request):
+    return await _handle_node_action_batch(request, nodes_manager_helper.delete_node_folder)
+
+@server.PromptServer.instance.routes.post("/holaf/nodes/install-requirements")
+async def holaf_install_nodes_requirements(request: web.Request):
+    return await _handle_node_action_batch(request, nodes_manager_helper.install_node_requirements)
 
 
 # --- Dynamic Node and API Loading ---
