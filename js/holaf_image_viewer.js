@@ -3,6 +3,7 @@
  * Holaf Utilities - Image Viewer UI (Work in Progress)
  *
  * This script provides the client-side logic for the Holaf Image Viewer.
+ * CORRECTION: Replaced setTimeout polling with a "holaf-menu-ready" event listener for robust initialization.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -13,22 +14,17 @@ const holafImageViewer = {
     panelElements: null,
     isInitialized: false,
 
-    ensureMenuItemAdded() {
-        const menuId = "holaf-utilities-dropdown-menu";
-        let dropdownMenu = document.getElementById(menuId);
-
+    addMenuItem() {
+        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
         if (!dropdownMenu) {
-            console.warn("[Holaf ImageViewer] Main utilities menu not found yet. Deferring menu item addition.");
-            setTimeout(() => this.ensureMenuItemAdded(), 250); // Slightly delayed
+            console.error("[Holaf ImageViewer] Cannot add menu item: Dropdown menu not found.");
             return;
         }
 
         const existingItem = Array.from(dropdownMenu.children).find(
             li => li.textContent === "Image Viewer (WIP)"
         );
-        if (existingItem) {
-            return;
-        }
+        if (existingItem) return;
 
         const menuItem = document.createElement("li");
         menuItem.textContent = "Image Viewer (WIP)";
@@ -38,6 +34,13 @@ const holafImageViewer = {
         };
         dropdownMenu.appendChild(menuItem);
         console.log("[Holaf ImageViewer] Menu item added to dropdown.");
+    },
+
+    init() {
+        // Wait for the main menu to signal it's ready.
+        document.addEventListener("holaf-menu-ready", () => {
+            this.addMenuItem();
+        });
     },
 
     createPanel() {
@@ -112,11 +115,7 @@ const holafImageViewer = {
 app.registerExtension({
     name: "Holaf.ImageViewer.Panel",
     async setup() {
-        // We wait for the main menu to be ready before adding our item.
-        // A simple timeout is sufficient here as the main menu initializes very early.
-        setTimeout(() => {
-            holafImageViewer.ensureMenuItemAdded();
-        }, 100);
+        holafImageViewer.init();
     },
 });
 

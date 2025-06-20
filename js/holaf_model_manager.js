@@ -13,6 +13,7 @@
  * MODIFIED: Replaced single-file sequential download with a parallel, chunk-based queueing system.
  * MODIFIED: Made download process non-blocking for the UI and removed the final completion dialog.
  * MODIFIED: Unlocked UI to allow concurrent uploads, downloads, and scans, with an improved status bar.
+ * CORRECTION: Replaced setTimeout polling with a "holaf-menu-ready" event listener for robust initialization.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -157,36 +158,20 @@ const holafModelManager = {
         }, 1000);
     },
 
-    ensureMenuItemAdded() {
-        const menuId = "holaf-utilities-dropdown-menu";
-        let dropdownMenu = document.getElementById(menuId);
-
+    addMenuItem() {
+        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
         if (!dropdownMenu) {
-            const mainButton = document.getElementById("holaf-utilities-menu-button");
-            if (mainButton && typeof window.HolafUtilitiesMenu !== 'undefined' && window.HolafUtilitiesMenu.dropdownMenuEl) {
-                dropdownMenu = window.HolafUtilitiesMenu.dropdownMenuEl;
-            } else {
-                console.warn("[Holaf ModelManager] Main utilities menu not found yet. Deferring menu item addition.");
-                setTimeout(() => this.ensureMenuItemAdded(), 200);
-                return;
-            }
-        }
-
-        const existingItem = Array.from(dropdownMenu.children).find(
-            li => li.textContent === "Model Manager"
-        );
-        if (existingItem) {
+            console.error("[Holaf ModelManager] Cannot add menu item: Dropdown menu not found.");
             return;
         }
 
-        const menuItem = document.createElement("li");
-        menuItem.textContent = "Model Manager";
-        menuItem.style.cssText = ` 
-            padding: 8px 12px;
-            cursor: pointer;
-            color: var(--fg-color, #ccc); 
-        `;
+        const existingItem = Array.from(dropdownMenu.children).find(
+            li => li.textContent === "Model Manager (WIP)"
+        );
+        if (existingItem) return;
 
+        const menuItem = document.createElement("li");
+        menuItem.textContent = "Model Manager (WIP)";
         menuItem.onclick = async () => {
             if (!this.areSettingsLoaded) {
                 await this.loadModelConfigAndSettings();
@@ -197,6 +182,14 @@ const holafModelManager = {
 
         dropdownMenu.appendChild(menuItem);
         console.log("[Holaf ModelManager] Menu item added to dropdown.");
+    },
+
+    init() {
+        // Wait for the main menu to signal it's ready.
+        document.addEventListener("holaf-menu-ready", () => {
+            this.addMenuItem();
+        });
+        this.loadModelConfigAndSettings();
     },
 
     createPanel() {
@@ -1391,8 +1384,7 @@ const holafModelManager = {
 app.registerExtension({
     name: "Holaf.ModelManager.Panel",
     async setup() {
-        holafModelManager.ensureMenuItemAdded();
-        await holafModelManager.loadModelConfigAndSettings();
+        holafModelManager.init();
     },
 });
 

@@ -1,5 +1,5 @@
 # === Documentation ===
-# Author: Holaf, with assistance from Cline (AI Assistant)
+# Developer: Gemini (AI Assistant), under the direction of Holaf
 # Date: 2025-05-24
 #
 # Purpose:
@@ -37,7 +37,7 @@ NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
 EXTENSION_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HOLAF_MODELS_DB_PATH = os.path.join(EXTENSION_BASE_DIR, '..', 'holaf_models.sqlite3')
+HOLAF_MODELS_DB_PATH = os.path.join(EXTENSION_BASE_DIR, '..', 'holaf_utilities.sqlite3')
 MODEL_TYPES_CONFIG_PATH = os.path.join(EXTENSION_BASE_DIR, '..', 'model_types.json')
 
 MODEL_TYPE_DEFINITIONS = []

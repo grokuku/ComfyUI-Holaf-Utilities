@@ -706,3 +706,108 @@
 #holaf-viewer-panel .holaf-viewer-content {
     /* e.g., styles for image grid, thumbnails, etc. */
 }
+
+
+/* --- NODES MANAGER SPECIFIC STYLES --- */
+#holaf-nodes-manager-panel .holaf-nodes-manager-manual-icon {
+    color: var(--holaf-text-secondary);
+    flex-shrink: 0;
+    margin-left: 8px;
+    opacity: 0.7;
+}
+
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-left-pane {
+    flex: 0 0 300px;
+    /* Fixed width for the node list */
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-secondary);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-right-pane {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--holaf-background-primary);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-toolbar {
+    padding: 8px;
+    border-bottom: 1px solid var(--holaf-border-color);
+    flex-shrink: 0;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    color: var(--holaf-text-primary);
+    transition: background-color 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item:hover {
+    background-color: var(--holaf-header-button-hover-bg);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item.selected {
+    background-color: var(--holaf-accent-color);
+    color: var(--holaf-button-text);
+    font-weight: bold;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content {
+    flex-grow: 1;
+    overflow: auto;
+    padding: 15px 20px;
+    color: var(--holaf-text-primary);
+    white-space: pre-wrap;
+    /* To respect newlines and spaces */
+    word-wrap: break-word;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* Scrollbar for Nodes Manager */
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-track,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-track {
+    background: var(--holaf-scrollbar-track);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-thumb,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-thumb {
+    background-color: var(--holaf-scrollbar-thumb);
+    border-radius: 5px;
+    border: 2px solid var(--holaf-scrollbar-track);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-thumb:hover,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
+}

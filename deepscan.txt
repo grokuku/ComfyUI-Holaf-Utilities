@@ -42,7 +42,7 @@ Phase 1 : Deep Scan Local (Implémentée et Corrigée)
 
         Stockage en Base de Données :
 
-            Les informations collectées (SHA256, JSON des métadonnées, champs parsés) sont stockées dans la base de données SQLite (holaf_models.sqlite3) dans des colonnes dédiées de la table models. La clé de recherche et de stockage pour le chemin du modèle est sa forme canonique.
+            Les informations collectées (SHA256, JSON des métadonnées, champs parsés) sont stockées dans la base de données SQLite (holaf_utilities.sqlite3) dans des colonnes dédiées de la table models. La clé de recherche et de stockage pour le chemin du modèle est sa forme canonique.
 
             Un timestamp last_deep_scanned_at est également enregistré.
 

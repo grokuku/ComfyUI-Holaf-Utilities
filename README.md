@@ -84,4 +84,4 @@ If you forget your password, you must manually edit or delete the `password_hash
 
 ---
 
-*This extension was developed with AI assistance.*
+*This extension was developed by Gemini (AI Assistant), under the direction of Holaf.*

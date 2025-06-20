@@ -766,7 +766,7 @@ async def holaf_get_node_local_readme(request: web.Request):
         node_name = request.match_info.get('node_name', "")
         loop = asyncio.get_event_loop()
         content = await loop.run_in_executor(None, nodes_manager_helper.get_local_readme_content, node_name)
-        return web.Response(text=content, content_type='text/plain', charset='utf-8')
+        return web.Response(text=content, content_type='text/plain; charset=utf-8')
     except Exception as e:
         print(f"🔴 [Holaf-NodesManager] Error getting local README for {node_name}: {e}")
         traceback.print_exc()

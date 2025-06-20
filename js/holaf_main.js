@@ -102,6 +102,7 @@ const HolafUtilitiesMenu = {
         
         window.HolafUtilitiesMenuReady = true;
         console.log("[Holaf Utilities] Menu initialized. Button ready. Dropdown ready in body.");
+document.dispatchEvent(new CustomEvent("holaf-menu-ready"));
     },
 
     showDropdown(buttonElement) {
