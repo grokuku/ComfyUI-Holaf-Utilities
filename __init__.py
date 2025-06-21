@@ -29,6 +29,13 @@
 # CORRECTION: Fixed blocking I/O in Nodes Manager API routes by using run_in_executor.
 # MODIFIED: Added API endpoints for Nodes Manager actions (update, delete, install_req).
 # MODIFIED: Enhanced /holaf/nodes/update to accept repo_url_override for non-Git nodes.
+# MODIFIED: Added API endpoint for Image Viewer to list output images.
+# MODIFIED: Enhanced Image Viewer API to extract metadata (dimensions, size, workflow, prompt).
+# CORRECTION: Simplified Image Viewer API to be non-blocking and fast, deferring metadata extraction.
+# MODIFIED: Added thumbnail generation endpoint with caching and background processing for Image Viewer.
+# MODIFIED: Centralized all database initialization logic into `_init_shared_database`.
+# MODIFIED: Added a database-backed system for the Image Viewer, with background sync.
+# MODIFIED: Reworked metadata extraction to prioritize external .txt/.json files and indicate data source.
 # === End Documentation ===
 
 import server
@@ -48,10 +55,13 @@ import importlib.util
 import traceback 
 import folder_paths 
 import shutil 
-from urllib.parse import unquote 
+import sqlite3
+from urllib.parse import unquote, quote
 import re # For sanitizing paths
 import time # Added for timestamped logging
 import aiofiles
+from PIL import Image, ImageOps
+from PIL.PngImagePlugin import PngInfo
 
 from aiohttp import web
 from .nodes import holaf_model_manager as model_manager_helper
@@ -77,6 +87,11 @@ CONFIG_LOCK = asyncio.Lock()
 SESSION_TOKENS = set()
 TEMP_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'temp_uploads')
 os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
+THUMBNAIL_CACHE_DIR = os.path.join(os.path.dirname(__file__), '.cache', 'thumbnails')
+os.makedirs(THUMBNAIL_CACHE_DIR, exist_ok=True)
+THUMBNAIL_SIZE = (200, 200)
+
+SHARED_DB_PATH = os.path.join(os.path.dirname(__file__), 'holaf_utilities.sqlite3')
 
 # --- Cleanup dangling chunks from previous runs ---
 try:
@@ -88,6 +103,98 @@ try:
                 print(f'🔴 [Holaf-Utilities] Could not remove temp chunk {item}: {e}')
 except Exception as e:
     print(f'🔴 [Holaf-Utilities] Could not perform startup cleanup of temp_uploads: {e}')
+
+
+def _get_shared_db_connection():
+    """Returns a connection to the shared SQLite database."""
+    conn = sqlite3.connect(SHARED_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def _init_shared_database():
+    """Centralized function to initialize all tables for all utilities."""
+    conn = None
+    try:
+        conn = _get_shared_db_connection()
+        cursor = conn.cursor()
+
+        # Table for Model Manager
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL UNIQUE,
+            model_type_key TEXT NOT NULL,
+            display_type TEXT,
+            model_family TEXT,
+            size_bytes INTEGER,
+            is_directory BOOLEAN DEFAULT 0,
+            discovered_at REAL DEFAULT (STRFTIME('%s', 'now')),
+            last_scanned_at REAL,
+            sha256_hash TEXT,
+            extracted_metadata_json TEXT,
+            parsed_tags TEXT,
+            parsed_trigger_words TEXT,
+            parsed_base_model TEXT,
+            parsed_resolution TEXT,
+            last_deep_scanned_at REAL,
+            CONSTRAINT uq_path UNIQUE (path)
+        )
+        ''')
+        
+        # Table for Image Viewer
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            subfolder TEXT,
+            path_canon TEXT NOT NULL UNIQUE,
+            format TEXT NOT NULL,
+            mtime REAL NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            last_synced_at REAL
+        )
+        ''')
+        
+        conn.commit()
+
+        # --- Migrations for 'models' table ---
+        cursor.execute("PRAGMA table_info(models)")
+        model_columns = {info[1] for info in cursor.fetchall()}
+        
+        def add_column_if_not_exists(table, col_name, col_type):
+            cursor.execute(f"PRAGMA table_info({table})")
+            columns = {info[1] for info in cursor.fetchall()}
+            if col_name not in columns:
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                    conn.commit()
+                    print(f"  [Holaf-DB] Added '{col_name}' column to '{table}' table.")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        print(f"  [Holaf-DB] Column '{col_name}' already exists in '{table}'.")
+                    else:
+                        raise e
+        
+        add_column_if_not_exists('models', 'model_family', 'TEXT')
+        add_column_if_not_exists('models', 'sha256_hash', 'TEXT')
+        add_column_if_not_exists('models', 'extracted_metadata_json', 'TEXT')
+        add_column_if_not_exists('models', 'parsed_tags', 'TEXT')
+        add_column_if_not_exists('models', 'parsed_trigger_words', 'TEXT')
+        add_column_if_not_exists('models', 'parsed_base_model', 'TEXT')
+        add_column_if_not_exists('models', 'parsed_resolution', 'TEXT')
+        add_column_if_not_exists('models', 'last_deep_scanned_at', 'REAL')
+        
+        print("✅ [Holaf-DB] Shared database initialized/verified successfully.")
+
+    except sqlite3.Error as e:
+        print(f"🔴 [Holaf-Utilities] CRITICAL: Shared database initialization error: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+# Initialize the database as soon as the module is loaded
+_init_shared_database()
 
 
 # --- Configuration Loading ---
@@ -813,22 +920,18 @@ async def _handle_node_action_batch(request: web.Request, action_func, action_na
     try:
         data = await request.json()
         
-        # 'node_payloads' will be a list of dicts, each like {"name": "node_A", "repo_url_override": "url_if_any"}
-        # or just a list of names if 'node_names' is used by older client.
-        # We prioritize 'node_payloads' if it exists.
-        
         items_to_process = []
         if "node_payloads" in data and isinstance(data["node_payloads"], list):
             for payload_item in data["node_payloads"]:
                 if isinstance(payload_item, dict) and "name" in payload_item:
                     items_to_process.append({
                         "name": payload_item["name"],
-                        "repo_url_override": payload_item.get("repo_url_override") # Will be None if not present
+                        "repo_url_override": payload_item.get("repo_url_override")
                     })
-                elif isinstance(payload_item, str): # Fallback for old format if mixed
+                elif isinstance(payload_item, str):
                     items_to_process.append({"name": payload_item, "repo_url_override": None})
 
-        elif "node_names" in data and isinstance(data["node_names"], list): # Fallback to old format
+        elif "node_names" in data and isinstance(data["node_names"], list):
              for node_name_str in data["node_names"]:
                  if isinstance(node_name_str, str):
                     items_to_process.append({"name": node_name_str, "repo_url_override": None})
@@ -842,8 +945,7 @@ async def _handle_node_action_batch(request: web.Request, action_func, action_na
             node_name = item_data["name"]
             repo_url_override = item_data["repo_url_override"]
             
-            # Run blocking action in executor
-            if action_name == "update": # Only 'update' action uses repo_url_override
+            if action_name == "update":
                 result = await loop.run_in_executor(None, action_func, node_name, repo_url_override)
             else:
                 result = await loop.run_in_executor(None, action_func, node_name)
@@ -883,6 +985,279 @@ async def holaf_delete_nodes(request: web.Request):
 async def holaf_install_nodes_requirements(request: web.Request):
     return await _handle_node_action_batch(request, nodes_manager_helper.install_node_requirements, "install_requirements")
 
+# --- API Endpoints for Image Viewer ---
+def _sync_image_database_blocking():
+    """
+    Scans the output directory and synchronizes its content with the 'images' table.
+    This is a blocking function intended for a background thread.
+    """
+    print("🔵 [Holaf-ImageViewer] Starting image database synchronization...")
+    output_dir = folder_paths.get_output_directory()
+    supported_formats = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+    current_time = time.time()
+    conn = None
+
+    try:
+        conn = _get_shared_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Get all current records from the database
+        cursor.execute("SELECT id, path_canon, mtime, size_bytes FROM images")
+        db_images = {row['path_canon']: dict(row) for row in cursor.fetchall()}
+        
+        # 2. Walk the output directory
+        disk_images_canons = set()
+        if not os.path.isdir(output_dir):
+            print(f"🟡 [Holaf-ImageViewer] Output directory not found: {output_dir}")
+        else:
+            for root, _, files in os.walk(output_dir):
+                for filename in files:
+                    file_ext = os.path.splitext(filename)[1].lower()
+                    if file_ext not in supported_formats:
+                        continue
+
+                    try:
+                        full_path = os.path.join(root, filename)
+                        file_stat = os.stat(full_path)
+                        
+                        subfolder = os.path.relpath(root, output_dir)
+                        if subfolder == '.': subfolder = ''
+                        
+                        path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
+                        disk_images_canons.add(path_canon)
+
+                        existing_record = db_images.get(path_canon)
+
+                        if existing_record:
+                            # Update if mtime or size changed
+                            if existing_record['mtime'] != file_stat.st_mtime or existing_record['size_bytes'] != file_stat.st_size:
+                                cursor.execute("""
+                                    UPDATE images SET mtime = ?, size_bytes = ?, last_synced_at = ?
+                                    WHERE id = ?
+                                """, (file_stat.st_mtime, file_stat.st_size, current_time, existing_record['id']))
+                        else:
+                            # Insert new record
+                            cursor.execute("""
+                                INSERT INTO images (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(), file_stat.st_mtime, file_stat.st_size, current_time))
+                    
+                    except Exception as e:
+                        print(f"🔴 [Holaf-ImageViewer] Error processing file {filename}: {e}")
+        
+        # 3. Commit all inserts/updates
+        conn.commit()
+
+        # 4. Remove records from DB that no longer exist on disk and clean up their thumbnails
+        stale_canons = set(db_images.keys()) - disk_images_canons
+        if stale_canons:
+            print(f"🔵 [Holaf-ImageViewer] Found {len(stale_canons)} stale image entries to remove.")
+            for path_canon in stale_canons:
+                cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_canon,))
+                
+                # Clean up thumbnail
+                try:
+                    path_hash = hashlib.sha1(path_canon.encode('utf-8')).hexdigest()
+                    thumb_filename = f"{path_hash}.jpg"
+                    thumb_path = os.path.join(THUMBNAIL_CACHE_DIR, thumb_filename)
+                    if os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                        # print(f"  > Removed stale thumbnail: {thumb_filename}")
+                except Exception as e_thumb:
+                    print(f"🔴 [Holaf-ImageViewer] Error removing thumbnail for {path_canon}: {e_thumb}")
+            conn.commit()
+
+        print("✅ [Holaf-ImageViewer] Image database synchronization complete.")
+    
+    except sqlite3.Error as e:
+        print(f"🔴 [Holaf-ImageViewer] SQLite error during sync: {e}")
+        if conn: conn.rollback()
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] General error during sync: {e}")
+        traceback.print_exc()
+        if conn: conn.rollback()
+    finally:
+        if conn: conn.close()
+
+
+def _get_images_from_db_blocking():
+    """Blocking function to get all images from the DB."""
+    conn = None
+    try:
+        conn = _get_shared_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT filename, subfolder, format, mtime, size_bytes FROM images ORDER BY mtime DESC")
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Failed to get images from DB: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+@server.PromptServer.instance.routes.get("/holaf/images/list")
+async def holaf_get_output_images(request: web.Request):
+    try:
+        loop = asyncio.get_event_loop()
+        image_list = await loop.run_in_executor(None, _get_images_from_db_blocking)
+        return web.json_response(image_list)
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error listing output images from DB: {e}")
+        traceback.print_exc()
+        return web.json_response({"error": str(e)}, status=500)
+
+def _create_thumbnail_blocking(original_path, thumb_path):
+    """Creates a thumbnail for an image. This is a blocking I/O function."""
+    try:
+        with Image.open(original_path) as img:
+            img = ImageOps.fit(img, THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+            img.convert("RGB").save(thumb_path, "JPEG", quality=85, optimize=True)
+        print(f"🔵 [Holaf-ImageViewer] Created thumbnail: {os.path.basename(thumb_path)}")
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Failed to create thumbnail for {os.path.basename(original_path)}: {e}")
+        if os.path.exists(thumb_path):
+            os.remove(thumb_path)
+
+
+@server.PromptServer.instance.routes.get("/holaf/images/thumbnail")
+async def holaf_get_thumbnail(request: web.Request):
+    filename = request.query.get("filename")
+    subfolder = request.query.get("subfolder", "")
+    if not filename:
+        return web.Response(status=400, text="Filename is required")
+
+    try:
+        output_dir = folder_paths.get_output_directory()
+        
+        # Sanitize paths to prevent directory traversal
+        safe_filename = sanitize_filename(filename)
+        safe_subfolder_parts = [sanitize_directory_component(p) for p in subfolder.split('/') if p]
+        
+        original_rel_path = os.path.join(*safe_subfolder_parts, safe_filename)
+        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+
+        # Security check: ensure the final path is still within the output directory
+        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+            return web.Response(status=403, text="Forbidden path")
+
+        if not os.path.isfile(original_abs_path):
+            return web.Response(status=404, text="Original image not found")
+
+        # Create a unique, safe cache filename based on the relative path
+        path_hash = hashlib.sha1(original_rel_path.encode('utf-8')).hexdigest()
+        thumb_filename = f"{path_hash}.jpg"
+        thumb_path = os.path.join(THUMBNAIL_CACHE_DIR, thumb_filename)
+
+        if os.path.exists(thumb_path):
+            return web.FileResponse(thumb_path)
+        else:
+            # Generate thumbnail in a background thread to not block the server
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, _create_thumbnail_blocking, original_abs_path, thumb_path)
+            # Immediately return a 202 Accepted status, client will show a placeholder
+            return web.Response(status=202, text="Thumbnail generation started")
+
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error in thumbnail endpoint for {filename}: {e}")
+        traceback.print_exc()
+        return web.Response(status=500, text=f"Server error: {e}")
+
+
+def _extract_image_metadata_blocking(image_path):
+    """
+    Extracts metadata, prioritizing external files (.txt, .json) over internal PNG data.
+    This is a blocking I/O function.
+    """
+    base_path, _ = os.path.splitext(image_path)
+    prompt_txt_path = base_path + ".txt"
+    workflow_json_path = base_path + ".json"
+    
+    result = {
+        "prompt": None,
+        "prompt_source": "none",
+        "workflow": None,
+        "workflow_source": "none"
+    }
+
+    # 1. Check for external prompt file
+    if os.path.isfile(prompt_txt_path):
+        try:
+            with open(prompt_txt_path, 'r', encoding='utf-8') as f:
+                result["prompt"] = f.read()
+            result["prompt_source"] = "external_txt"
+        except Exception as e:
+            result["prompt"] = f"Error reading .txt file: {e}"
+            result["prompt_source"] = "error"
+
+    # 2. Check for external workflow file
+    if os.path.isfile(workflow_json_path):
+        try:
+            with open(workflow_json_path, 'r', encoding='utf-8') as f:
+                result["workflow"] = json.load(f)
+            result["workflow_source"] = "external_json"
+        except json.JSONDecodeError:
+            result["workflow"] = {"error": "Malformed external .json file"}
+            result["workflow_source"] = "error"
+        except Exception as e:
+            result["workflow"] = {"error": f"Error reading .json file: {e}"}
+            result["workflow_source"] = "error"
+
+    # 3. Fallback to internal PNG metadata if needed
+    try:
+        with Image.open(image_path) as img:
+            if hasattr(img, 'info') and isinstance(img.info, dict):
+                # Fallback for workflow ONLY if not found externally
+                if result["workflow_source"] == "none":
+                    workflow_text = img.info.get('workflow')
+                    if workflow_text:
+                        try:
+                            result["workflow"] = json.loads(workflow_text)
+                            result["workflow_source"] = "internal_png"
+                        except (json.JSONDecodeError, TypeError):
+                            result["workflow"] = {"error": "Malformed workflow data in PNG"}
+                            result["workflow_source"] = "error"
+    except FileNotFoundError:
+        return {"error": "Image file not found on server."}
+    except Exception as e:
+         # This might happen for non-PNGs or corrupted files.
+         # We just log it and return what we've found so far.
+        print(f"🔵 [Holaf-ImageViewer] Note: Could not read internal metadata for {os.path.basename(image_path)}. Reason: {e}")
+        
+    return result
+
+
+@server.PromptServer.instance.routes.get("/holaf/images/metadata")
+async def holaf_get_image_metadata(request: web.Request):
+    filename = request.query.get("filename")
+    subfolder = request.query.get("subfolder", "")
+    if not filename:
+        return web.json_response({"error": "Filename is required"}, status=400)
+
+    try:
+        output_dir = folder_paths.get_output_directory()
+        safe_filename = sanitize_filename(filename)
+        safe_subfolder_parts = [sanitize_directory_component(p) for p in subfolder.split('/') if p]
+        original_rel_path = os.path.join(*safe_subfolder_parts, safe_filename)
+        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+
+        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+            return web.json_response({"error": "Forbidden path"}, status=403)
+        
+        if not os.path.isfile(original_abs_path):
+            return web.json_response({"error": "Image not found"}, status=404)
+
+        loop = asyncio.get_event_loop()
+        metadata = await loop.run_in_executor(None, _extract_image_metadata_blocking, original_abs_path)
+
+        if "error" in metadata and metadata["error"]:
+            return web.json_response(metadata, status=422)
+        
+        return web.json_response(metadata)
+    
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error in metadata endpoint for {filename}: {e}")
+        traceback.print_exc()
+        return web.json_response({"error": f"Server error: {e}"}, status=500)
+
 
 # --- Dynamic Node and API Loading ---
 base_dir = os.path.dirname(os.path.abspath(__file__)); nodes_dir = os.path.join(base_dir, "nodes")
@@ -905,14 +1280,20 @@ else: print("🟡 [Holaf-Utilities] 'nodes' directory not found. No custom nodes
 # --- Extension Registration ---
 WEB_DIRECTORY = "js"
 
-# Perform model scan on startup
-print("🔵 [Holaf-ModelManager] Scheduling model database scan on startup via __init__.py...")
+# Perform scans on startup in background threads
+print("🔵 [Holaf-Utilities] Scheduling startup background scans...")
+# 1. Model Manager Scan
 if 'model_manager_helper' in globals() and hasattr(model_manager_helper, 'scan_and_update_db'):
     scan_thread_init = threading.Timer(5.0, model_manager_helper.scan_and_update_db)
     scan_thread_init.daemon = True 
     scan_thread_init.start()
 else:
-    print("🔴 [Holaf-ModelManager] ERROR: model_manager_helper or scan_and_update_db not found for scheduled scan.")
+    print("🔴 [Holaf-ModelManager] ERROR: scan_and_update_db not found for scheduled scan.")
+
+# 2. Image Viewer Scan
+image_sync_thread = threading.Timer(10.0, _sync_image_database_blocking)
+image_sync_thread.daemon = True
+image_sync_thread.start()
 
 
 print("\n" + "="*50)

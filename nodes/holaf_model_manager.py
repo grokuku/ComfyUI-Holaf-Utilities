@@ -11,6 +11,7 @@
 # MODIFIED: Path normalization for DB storage and retrieval to fix deep scan "model not found" issues.
 # MODIFIED: Refactored `is_path_safe_for_deletion` into a more generic `is_path_safe`
 #           that only checks path boundaries, fixing both upload and delete operations.
+# MODIFIED: Database initialization logic (init_db) has been removed and centralized in __init__.py.
 # === End Documentation ===
 
 import os
@@ -91,66 +92,6 @@ def _get_db_connection():
     conn = sqlite3.connect(HOLAF_MODELS_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
-def init_db():
-    conn = None
-    try:
-        conn = _get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS models (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            path TEXT NOT NULL UNIQUE,
-            model_type_key TEXT NOT NULL,
-            display_type TEXT,
-            model_family TEXT,
-            size_bytes INTEGER,
-            is_directory BOOLEAN DEFAULT 0,
-            discovered_at REAL DEFAULT (STRFTIME('%s', 'now')),
-            last_scanned_at REAL,
-            -- Columns for deep scan
-            sha256_hash TEXT,
-            extracted_metadata_json TEXT,
-            parsed_tags TEXT,
-            parsed_trigger_words TEXT,
-            parsed_base_model TEXT,
-            parsed_resolution TEXT,
-            last_deep_scanned_at REAL, -- Timestamp for last deep scan
-            CONSTRAINT uq_path UNIQUE (path)
-        )
-        ''')
-        conn.commit()
-
-        cursor.execute("PRAGMA table_info(models)")
-        columns = [info[1] for info in cursor.fetchall()]
-        
-        def add_column_if_not_exists(col_name, col_type):
-            if col_name not in columns:
-                try:
-                    cursor.execute(f"ALTER TABLE models ADD COLUMN {col_name} {col_type}")
-                    conn.commit()
-                    print(f"  [Holaf-ModelManager] Added '{col_name}' column to 'models' table.")
-                except sqlite3.OperationalError as e: 
-                    if "duplicate column name" in str(e).lower():
-                        print(f"  [Holaf-ModelManager] Column '{col_name}' already exists.")
-                    else:
-                        raise e
-
-        add_column_if_not_exists('model_family', 'TEXT')
-        add_column_if_not_exists('sha256_hash', 'TEXT')
-        add_column_if_not_exists('extracted_metadata_json', 'TEXT')
-        add_column_if_not_exists('parsed_tags', 'TEXT')
-        add_column_if_not_exists('parsed_trigger_words', 'TEXT')
-        add_column_if_not_exists('parsed_base_model', 'TEXT')
-        add_column_if_not_exists('parsed_resolution', 'TEXT')
-        add_column_if_not_exists('last_deep_scanned_at', 'REAL')
-
-    except sqlite3.Error as e:
-        print(f"🔴 [Holaf-ModelManager] CRITICAL: Database initialization/upgrade error: {e}")
-    finally:
-        if conn:
-            conn.close()
 
 
 def load_model_type_definitions():
@@ -559,6 +500,5 @@ def process_deep_scan_request(model_paths_from_client_canon: list):
 
 # --- Initialization ---
 load_model_type_definitions()
-init_db() 
 
-print("  > [Holaf-ModelManager] Helper module loaded. DB Initialized (with deep scan columns). Scan is scheduled from __init__.py.")
+print("  > [Holaf-ModelManager] Helper module loaded. DB Initialization is now handled by __init__.py.")

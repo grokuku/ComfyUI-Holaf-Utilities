@@ -1,0 +1,343 @@
+/*
+ * Copyright (C) 2025 Holaf
+ * Holaf Utilities - Image Viewer Stylesheet
+ * MODIFICATION: Remplacement de CSS Grid par Flexbox pour la galerie afin de corriger un bug de rendu persistant.
+ */
+
+#holaf-viewer-panel .holaf-viewer-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    color: var(--holaf-text-primary);
+    background-color: var(--holaf-background-primary);
+}
+
+#holaf-viewer-panel .holaf-viewer-pane {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Left Pane - Filters */
+#holaf-viewer-left-pane {
+    flex: 0 0 220px;
+    padding: 10px;
+    border-right: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-secondary);
+    overflow-y: auto;
+}
+
+.holaf-viewer-filter-group {
+    margin-bottom: 20px;
+}
+.holaf-viewer-filter-group h4 {
+    margin: 0 0 10px 0;
+    color: var(--holaf-text-primary);
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding-bottom: 5px;
+    font-size: 14px;
+}
+.holaf-viewer-filter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.holaf-viewer-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+}
+.holaf-viewer-filter-item input[type="checkbox"] {
+    accent-color: var(--holaf-accent-color);
+    cursor: pointer;
+}
+
+
+/* Center Pane - Gallery */
+#holaf-viewer-center-pane {
+    flex: 1 1 auto;
+    padding: 10px;
+    position: relative; /* Important pour le positionnement de la vue zoom */
+}
+
+#holaf-viewer-toolbar {
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--holaf-border-color);
+    margin-bottom: 10px;
+    flex-shrink: 0;
+}
+
+#holaf-viewer-gallery {
+    flex-grow: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 10px;
+}
+
+.holaf-viewer-message {
+    width: 100%;
+    text-align: center;
+    color: var(--holaf-text-secondary);
+    font-style: italic;
+    padding: 20px;
+}
+
+/* Placeholder & Thumbnail Styling */
+.holaf-viewer-thumbnail-placeholder {
+    flex: 1 1 150px;
+    max-width: 250px;
+    position: relative;
+    aspect-ratio: 1 / 1;
+    cursor: pointer;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
+    background-color: var(--holaf-input-background);
+}
+.holaf-viewer-thumbnail-placeholder:hover {
+    border-color: var(--holaf-accent-color);
+}
+.holaf-viewer-thumbnail-placeholder.active {
+    border-color: var(--holaf-accent-color);
+    box-shadow: 0 0 8px var(--holaf-accent-color);
+}
+.holaf-viewer-thumbnail-placeholder.error {
+    background-color: #5a2d2d;
+    color: #ff8f8f;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.holaf-viewer-thumbnail-placeholder img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* --- Fullscreen Icon on Hover --- */
+.holaf-viewer-fullscreen-icon {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    width: 26px;
+    height: 26px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    z-index: 5;
+}
+.holaf-viewer-thumbnail-placeholder:hover .holaf-viewer-fullscreen-icon {
+    opacity: 1;
+}
+
+/* --- Zoom-in View (within center pane) --- */
+#holaf-viewer-zoom-view {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--holaf-background-primary);
+    z-index: 10;
+    padding: 10px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden; /* CRUCIAL for panning */
+}
+#holaf-viewer-zoom-view img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    cursor: zoom-out;
+    transition: transform 0.2s ease-out; /* Smooth initial zoom/reset */
+}
+.holaf-viewer-zoom-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 30px;
+    height: 30px;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: 1px solid white;
+    border-radius: 50%;
+    font-size: 20px;
+    line-height: 28px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 12;
+}
+.holaf-viewer-zoom-fullscreen-icon {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 32px;
+    height: 32px;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: 1px solid white;
+    border-radius: 4px;
+    font-size: 22px;
+    line-height: 30px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 12;
+    transition: background-color 0.2s;
+}
+.holaf-viewer-zoom-fullscreen-icon:hover {
+    background-color: rgba(30, 30, 30, 0.8);
+}
+
+
+/* Right Pane - Info */
+#holaf-viewer-right-pane {
+    flex: 0 0 300px;
+    padding: 10px;
+    border-left: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-secondary);
+    overflow-y: auto;
+}
+#holaf-viewer-right-pane h4 {
+    margin: 0 0 10px 0;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--holaf-border-color);
+}
+#holaf-viewer-info-content p {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: var(--holaf-text-secondary);
+    word-break: break-all;
+}
+#holaf-viewer-info-content p strong { color: var(--holaf-text-primary); } 
+.holaf-viewer-metadata-label { font-weight: bold; color: var(--holaf-text-primary); } 
+.holaf-viewer-metadata-source { font-size: 0.85em; font-style: italic; color: var(--holaf-text-secondary); margin-left: 5px; }
+
+#holaf-viewer-info-content hr {
+    border-color: var(--holaf-border-color);
+    opacity: 0.5;
+    margin: 15px 0;
+}
+.holaf-viewer-metadata-box {
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 250px;
+    overflow-y: auto;
+    color: var(--holaf-text-primary);
+}
+
+/* --- Fullscreen Overlay (reusable) --- */
+#holaf-viewer-fullscreen-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 11000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden; /* CRUCIAL for panning */
+}
+#holaf-viewer-fullscreen-overlay img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    transition: transform 0.2s ease-out; /* Smooth initial zoom/reset */
+}
+.holaf-viewer-fs-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: rgba(30, 30, 30, 0.7);
+    color: white;
+    border: 1px solid #555;
+    border-radius: 50%;
+    font-size: 24px;
+    line-height: 38px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.holaf-viewer-fs-close:hover {
+    transform: scale(1.1);
+}
+.holaf-viewer-fs-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 50px;
+    height: 80px;
+    background: rgba(30, 30, 30, 0.5);
+    color: white;
+    border: none;
+    font-size: 40px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    user-select: none;
+}
+.holaf-viewer-fs-nav:hover {
+    background: rgba(50, 50, 50, 0.8);
+}
+#holaf-viewer-fs-prev {
+    left: 15px;
+    border-radius: 0 10px 10px 0;
+}
+#holaf-viewer-fs-next {
+    right: 15px;
+    border-radius: 10px 0 0 10px;
+}
+
+
+/* Scrollbars */
+#holaf-viewer-left-pane::-webkit-scrollbar,
+#holaf-viewer-gallery::-webkit-scrollbar,
+#holaf-viewer-right-pane::-webkit-scrollbar,
+.holaf-viewer-metadata-box::-webkit-scrollbar {
+    width: 8px;
+}
+#holaf-viewer-left-pane::-webkit-scrollbar-track,
+#holaf-viewer-gallery::-webkit-scrollbar-track,
+#holaf-viewer-right-pane::-webkit-scrollbar-track,
+.holaf-viewer-metadata-box::-webkit-scrollbar-track {
+    background: var(--holaf-scrollbar-track);
+}
+#holaf-viewer-left-pane::-webkit-scrollbar-thumb,
+#holaf-viewer-gallery::-webkit-scrollbar-thumb,
+#holaf-viewer-right-pane::-webkit-scrollbar-thumb,
+.holaf-viewer-metadata-box::-webkit-scrollbar-thumb {
+    background-color: var(--holaf-scrollbar-thumb);
+    border-radius: 4px;
+    border: 2px solid var(--holaf-scrollbar-track);
+}
