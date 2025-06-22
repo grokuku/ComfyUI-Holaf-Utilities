@@ -280,37 +280,6 @@
     opacity: 0.5;
     margin: 15px 0;
 }
-.holaf-viewer-info-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 5px; /* Space between label and buttons */
-    margin-bottom: 10px; /* Space before the box */
-}
-
-.holaf-viewer-info-button {
-    flex: 1;
-    background-color: var(--holaf-input-background);
-    border: 1px solid var(--holaf-border-color);
-    color: var(--holaf-text-secondary);
-    border-radius: 3px;
-    padding: 4px 8px;
-    font-size: 11px;
-    cursor: pointer;
-    text-align: center;
-    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
-}
-
-.holaf-viewer-info-button:hover:not(:disabled) {
-    background-color: var(--holaf-accent-color);
-    border-color: var(--holaf-accent-color);
-    color: var(--holaf-button-text);
-}
-
-.holaf-viewer-info-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
 .holaf-viewer-metadata-box {
     background-color: var(--holaf-input-background);
     border: 1px solid var(--holaf-border-color);
@@ -335,7 +304,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden; /* CRUCIAL for panning */
-    padding: 0;
+    padding: 5vh 5vw;
     box-sizing: border-box;
 }
 #holaf-viewer-fullscreen-overlay img {
@@ -356,7 +325,7 @@
     border: 1px solid #555;
     border-radius: 50%;
     font-size: 24px;
-    line-height: 38px; z-index: 10;
+    line-height: 38px;
     text-align: center;
     cursor: pointer;
     transition: transform 0.2s;
@@ -369,7 +338,7 @@
     top: 50%;
     transform: translateY(-50%);
     width: 50px;
-    height: 80px; z-index: 10;
+    height: 80px;
     background: rgba(30, 30, 30, 0.5);
     color: white;
     border: none;

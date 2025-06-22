@@ -36,6 +36,9 @@
 # MODIFIED: Centralized all database initialization logic into `_init_shared_database`.
 # MODIFIED: Added a database-backed system for the Image Viewer, with background sync.
 # MODIFIED: Reworked metadata extraction to prioritize external .txt/.json files and indicate data source.
+# CORRECTION: Replaced on-demand image DB sync with a periodic background thread for performance.
+# CORRECTION: Made metadata extraction ultra-robust with manual path parsing and detailed logging to fix a critical bug.
+# CORRECTION: Fixed workflow loading for JSON files containing invalid 'NaN' values by sanitizing them to 'null'.
 # === End Documentation ===
 
 import server
@@ -56,6 +59,7 @@ import traceback
 import folder_paths 
 import shutil 
 import sqlite3
+import math # Added for NaN check
 from urllib.parse import unquote, quote
 import re # For sanitizing paths
 import time # Added for timestamped logging
@@ -251,12 +255,32 @@ def get_config():
     else:
         ui_settings_model_manager['panel_y'] = None
 
+    ui_settings_image_viewer = {
+        'theme': config.get('ImageViewerUI', 'theme', fallback='Dark'),
+        'panel_x': config.get('ImageViewerUI', 'panel_x', fallback=None),
+        'panel_y': config.get('ImageViewerUI', 'panel_y', fallback=None),
+        'panel_width': config.getint('ImageViewerUI', 'panel_width', fallback=1200),
+        'panel_height': config.getint('ImageViewerUI', 'panel_height', fallback=800),
+        'panel_is_fullscreen': config.getboolean('ImageViewerUI', 'panel_is_fullscreen', fallback=False),
+        'folder_filters': [f.strip() for f in config.get('ImageViewerUI', 'folder_filters', fallback='').split('","') if f.strip()],
+        'format_filters': [f.strip() for f in config.get('ImageViewerUI', 'format_filters', fallback='').split('","') if f.strip()],
+    }
+    if ui_settings_image_viewer['panel_x'] and ui_settings_image_viewer['panel_x'].isdigit():
+        ui_settings_image_viewer['panel_x'] = int(ui_settings_image_viewer['panel_x'])
+    else:
+        ui_settings_image_viewer['panel_x'] = None
+    if ui_settings_image_viewer['panel_y'] and ui_settings_image_viewer['panel_y'].isdigit():
+        ui_settings_image_viewer['panel_y'] = int(ui_settings_image_viewer['panel_y'])
+    else:
+        ui_settings_image_viewer['panel_y'] = None
+
 
     return {
         'shell_command': shell_cmd,
         'password_hash': password_hash,
         'ui_terminal': ui_settings_terminal,
-        'ui_model_manager': ui_settings_model_manager
+        'ui_model_manager': ui_settings_model_manager,
+        'ui_image_viewer': ui_settings_image_viewer
     }
 
 CONFIG = get_config()
@@ -288,7 +312,8 @@ async def holaf_get_all_settings(request: web.Request):
     return web.json_response({
         "password_is_set": password_is_set, 
         "ui_terminal_settings": current_config.get('ui_terminal'),
-        "ui_model_manager_settings": current_config.get('ui_model_manager')
+        "ui_model_manager_settings": current_config.get('ui_model_manager'),
+        "ui_image_viewer_settings": current_config.get('ui_image_viewer')
     })
 
 @server.PromptServer.instance.routes.post("/holaf/terminal/save-settings")
@@ -985,6 +1010,51 @@ async def holaf_delete_nodes(request: web.Request):
 async def holaf_install_nodes_requirements(request: web.Request):
     return await _handle_node_action_batch(request, nodes_manager_helper.install_node_requirements, "install_requirements")
 
+
+@server.PromptServer.instance.routes.post("/holaf/image-viewer/save-settings")
+async def holaf_image_viewer_save_settings(request: web.Request):
+    async with CONFIG_LOCK:
+        try:
+            data = await request.json()
+            config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+            config_parser_obj = configparser.ConfigParser()
+            config_parser_obj.read(config_path)
+
+            section_name = 'ImageViewerUI'
+            if not config_parser_obj.has_section(section_name):
+                config_parser_obj.add_section(section_name)
+
+            # Panel state
+            if 'panel_x' in data:
+                if data['panel_x'] is not None: config_parser_obj.set(section_name, 'panel_x', str(data['panel_x']))
+                else: 
+                    if config_parser_obj.has_option(section_name, 'panel_x'): config_parser_obj.remove_option(section_name, 'panel_x')
+            if 'panel_y' in data:
+                if data['panel_y'] is not None: config_parser_obj.set(section_name, 'panel_y', str(data['panel_y']))
+                else: 
+                    if config_parser_obj.has_option(section_name, 'panel_y'): config_parser_obj.remove_option(section_name, 'panel_y')
+            if 'panel_width' in data: config_parser_obj.set(section_name, 'panel_width', str(data['panel_width']))
+            if 'panel_height' in data: config_parser_obj.set(section_name, 'panel_height', str(data['panel_height']))
+            if 'panel_is_fullscreen' in data: config_parser_obj.set(section_name, 'panel_is_fullscreen', str(data['panel_is_fullscreen']))
+            
+            # Filter state
+            if 'folder_filters' in data and isinstance(data['folder_filters'], list):
+                config_parser_obj.set(section_name, 'folder_filters', '","'.join(data['folder_filters']))
+            if 'format_filters' in data and isinstance(data['format_filters'], list):
+                config_parser_obj.set(section_name, 'format_filters', '","'.join(data['format_filters']))
+
+            with open(config_path, 'w') as configfile: config_parser_obj.write(configfile)
+            
+            # Update global config immediately
+            global CONFIG
+            CONFIG = get_config()
+            
+            return web.json_response({"status": "ok", "message": "Image Viewer settings saved."})
+        except Exception as e:
+            print(f"🔴 [Holaf-Utilities] Error saving Image Viewer settings: {e}")
+            traceback.print_exc()
+            return web.json_response({"status": "error", "message": str(e)}, status=500) 
+
 # --- API Endpoints for Image Viewer ---
 def _sync_image_database_blocking():
     """
@@ -1097,6 +1167,8 @@ def _get_images_from_db_blocking():
 @server.PromptServer.instance.routes.get("/holaf/images/list")
 async def holaf_get_output_images(request: web.Request):
     try:
+        # CORRECTION: The on-demand sync was removed from here to prevent blocking.
+        # It is now handled by a periodic background thread.
         loop = asyncio.get_event_loop()
         image_list = await loop.run_in_executor(None, _get_images_from_db_blocking)
         return web.json_response(image_list)
@@ -1106,22 +1178,29 @@ async def holaf_get_output_images(request: web.Request):
         return web.json_response({"error": str(e)}, status=500)
 
 def _create_thumbnail_blocking(original_path, thumb_path):
-    """Creates a thumbnail for an image. This is a blocking I/O function."""
+    """Creates a thumbnail for an image. This is a blocking I/O function.
+       RAISES an exception on failure instead of just printing.
+    """
     try:
         with Image.open(original_path) as img:
             img = ImageOps.fit(img, THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
             img.convert("RGB").save(thumb_path, "JPEG", quality=85, optimize=True)
         print(f"🔵 [Holaf-ImageViewer] Created thumbnail: {os.path.basename(thumb_path)}")
     except Exception as e:
-        print(f"🔴 [Holaf-ImageViewer] Failed to create thumbnail for {os.path.basename(original_path)}: {e}")
+        # Clean up failed attempt before re-raising
         if os.path.exists(thumb_path):
-            os.remove(thumb_path)
+            try:
+                os.remove(thumb_path)
+            except Exception as e_clean:
+                print(f"🔴 [Holaf-ImageViewer] Could not clean up failed thumbnail {thumb_path}: {e_clean}")
+        raise e # Re-raise the exception to be caught by the endpoint
 
 
 @server.PromptServer.instance.routes.get("/holaf/images/thumbnail")
 async def holaf_get_thumbnail(request: web.Request):
     filename = request.query.get("filename")
     subfolder = request.query.get("subfolder", "")
+    force_regen = request.query.get("force_regen") == "true"
     if not filename:
         return web.Response(status=400, text="Filename is required")
 
@@ -1147,14 +1226,26 @@ async def holaf_get_thumbnail(request: web.Request):
         thumb_filename = f"{path_hash}.jpg"
         thumb_path = os.path.join(THUMBNAIL_CACHE_DIR, thumb_filename)
 
+        if force_regen and os.path.exists(thumb_path):
+            try:
+                os.remove(thumb_path)
+                print(f"🔵 [Holaf-ImageViewer] Removed existing thumbnail for forced regeneration: {thumb_filename}")
+            except Exception as e_remove:
+                print(f"🔴 [Holaf-ImageViewer] Error removing thumbnail for regeneration {thumb_path}: {e_remove}")
+
         if os.path.exists(thumb_path):
             return web.FileResponse(thumb_path)
-        else:
-            # Generate thumbnail in a background thread to not block the server
-            loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, _create_thumbnail_blocking, original_abs_path, thumb_path)
-            # Immediately return a 202 Accepted status, client will show a placeholder
-            return web.Response(status=202, text="Thumbnail generation started")
+        
+        loop = asyncio.get_event_loop()
+        try:
+            # Generate thumbnail in a background thread to not block the server, but wait for it.
+            await loop.run_in_executor(None, _create_thumbnail_blocking, original_abs_path, thumb_path)
+            # If successful, serve the newly created file.
+            return web.FileResponse(thumb_path)
+        except Exception as e:
+            err_msg = f"Thumbnail creation failed: {str(e)}"
+            print(f"🔴 [Holaf-ImageViewer] {err_msg} for {original_rel_path}")
+            return web.Response(status=500, text=err_msg)
 
     except Exception as e:
         print(f"🔴 [Holaf-ImageViewer] Error in thumbnail endpoint for {filename}: {e}")
@@ -1162,67 +1253,118 @@ async def holaf_get_thumbnail(request: web.Request):
         return web.Response(status=500, text=f"Server error: {e}")
 
 
+def _sanitize_json_nan(obj):
+    """
+    Recursively walk a dict/list and convert any NaN float values to None.
+    This is necessary because `NaN` is not a valid JSON token.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize_json_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_sanitize_json_nan(i) for i in obj]
+    elif isinstance(obj, float) and math.isnan(obj):
+        return None
+    return obj
+
 def _extract_image_metadata_blocking(image_path):
     """
     Extracts metadata, prioritizing external files (.txt, .json) over internal PNG data.
-    This is a blocking I/O function.
+    This is a blocking I/O function, made robust with detailed logging and manual path parsing.
     """
-    base_path, _ = os.path.splitext(image_path)
-    prompt_txt_path = base_path + ".txt"
-    workflow_json_path = base_path + ".json"
-    
-    result = {
-        "prompt": None,
-        "prompt_source": "none",
-        "workflow": None,
-        "workflow_source": "none"
-    }
-
-    # 1. Check for external prompt file
-    if os.path.isfile(prompt_txt_path):
-        try:
-            with open(prompt_txt_path, 'r', encoding='utf-8') as f:
-                result["prompt"] = f.read()
-            result["prompt_source"] = "external_txt"
-        except Exception as e:
-            result["prompt"] = f"Error reading .txt file: {e}"
-            result["prompt_source"] = "error"
-
-    # 2. Check for external workflow file
-    if os.path.isfile(workflow_json_path):
-        try:
-            with open(workflow_json_path, 'r', encoding='utf-8') as f:
-                result["workflow"] = json.load(f)
-            result["workflow_source"] = "external_json"
-        except json.JSONDecodeError:
-            result["workflow"] = {"error": "Malformed external .json file"}
-            result["workflow_source"] = "error"
-        except Exception as e:
-            result["workflow"] = {"error": f"Error reading .json file: {e}"}
-            result["workflow_source"] = "error"
-
-    # 3. Fallback to internal PNG metadata if needed
+    print(f"🔵 [Holaf-ImageViewer-Debug] Starting metadata extraction for: {image_path}")
     try:
-        with Image.open(image_path) as img:
-            if hasattr(img, 'info') and isinstance(img.info, dict):
-                # Fallback for workflow ONLY if not found externally
-                if result["workflow_source"] == "none":
-                    workflow_text = img.info.get('workflow')
-                    if workflow_text:
-                        try:
-                            result["workflow"] = json.loads(workflow_text)
-                            result["workflow_source"] = "internal_png"
-                        except (json.JSONDecodeError, TypeError):
-                            result["workflow"] = {"error": "Malformed workflow data in PNG"}
-                            result["workflow_source"] = "error"
-    except FileNotFoundError:
-        return {"error": "Image file not found on server."}
-    except Exception as e:
-         # This might happen for non-PNGs or corrupted files.
-         # We just log it and return what we've found so far.
-        print(f"🔵 [Holaf-ImageViewer] Note: Could not read internal metadata for {os.path.basename(image_path)}. Reason: {e}")
+        directory, filename = os.path.split(image_path)
         
-    return result
+        # Robustly get base filename by finding the last dot
+        last_dot_index = filename.rfind('.')
+        if last_dot_index == -1: # No extension
+            base_filename = filename
+        else:
+            base_filename = filename[:last_dot_index]
+        
+        print(f"  [Debug] Dir: '{directory}', File: '{filename}', Base: '{base_filename}'")
+        
+        prompt_txt_path = os.path.join(directory, base_filename + ".txt")
+        workflow_json_path = os.path.join(directory, base_filename + ".json")
+        
+        print(f"  [Debug] Checking for .txt at: {prompt_txt_path}")
+        print(f"  [Debug] Checking for .json at: {workflow_json_path}")
+
+        result = {
+            "prompt": None,
+            "prompt_source": "none",
+            "workflow": None,
+            "workflow_source": "none"
+        }
+
+        # 1. Check for external prompt file
+        if os.path.isfile(prompt_txt_path):
+            print("  [Debug] Found .txt file. Reading...")
+            try:
+                with open(prompt_txt_path, 'r', encoding='utf-8') as f:
+                    result["prompt"] = f.read()
+                result["prompt_source"] = "external_txt"
+            except (IOError, PermissionError) as e:
+                result["prompt"] = f"Error reading .txt file: {e}"
+                result["prompt_source"] = "error"
+                print(f"  [Debug] 🔴 Error reading .txt file: {e}")
+        else:
+            print("  [Debug] .txt file not found.")
+
+        # 2. Check for external workflow file
+        if os.path.isfile(workflow_json_path):
+            print("  [Debug] Found .json file. Reading...")
+            try:
+                with open(workflow_json_path, 'r', encoding='utf-8') as f:
+                    loaded_json = json.load(f)
+                # Sanitize the loaded JSON to remove any NaN values.
+                result["workflow"] = _sanitize_json_nan(loaded_json)
+                result["workflow_source"] = "external_json"
+            except json.JSONDecodeError as e:
+                result["workflow"] = {"error": f"Malformed external .json file: {e}"}
+                result["workflow_source"] = "error"
+                print(f"  [Debug] 🔴 Malformed .json file: {e}")
+            except (IOError, PermissionError) as e:
+                result["workflow"] = {"error": f"Error reading .json file: {e}"}
+                result["workflow_source"] = "error"
+                print(f"  [Debug] 🔴 Error reading .json file: {e}")
+        else:
+            print("  [Debug] .json file not found.")
+
+        # 3. Fallback to internal PNG metadata if needed
+        print("  [Debug] Checking for internal PNG metadata...")
+        try:
+            with Image.open(image_path) as img:
+                if hasattr(img, 'info') and isinstance(img.info, dict):
+                    # Fallback for workflow ONLY if not found externally
+                    if result["workflow_source"] == "none":
+                        workflow_text = img.info.get('workflow')
+                        if workflow_text:
+                            print("  [Debug] Found internal PNG workflow.")
+                            try:
+                                loaded_json = json.loads(workflow_text)
+                                # Also sanitize internal workflow data
+                                result["workflow"] = _sanitize_json_nan(loaded_json)
+                                result["workflow_source"] = "internal_png"
+                            except (json.JSONDecodeError, TypeError):
+                                result["workflow"] = {"error": "Malformed workflow data in PNG"}
+                                result["workflow_source"] = "error"
+                        else:
+                            print("  [Debug] No internal PNG workflow found.")
+                else:
+                    print("  [Debug] No 'info' attribute on PIL image object.")
+        except FileNotFoundError:
+             print(f"  [Debug] 🔴 Image file not found for internal metadata read: {image_path}")
+             return {"error": "Image file not found on server during internal metadata read."}
+        except Exception as e:
+            print(f"  [Debug] 🟡 Note: Could not read internal metadata for {os.path.basename(image_path)}. Reason: {e}")
+            
+        print(f"✅ [Holaf-ImageViewer-Debug] Finished metadata extraction for: {os.path.basename(image_path)}")
+        return result
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] CRITICAL UNHANDLED error in _extract_image_metadata_blocking for {image_path}: {e}")
+        traceback.print_exc()
+        return {"error": f"Internal server error during metadata extraction: {e}"}
 
 
 @server.PromptServer.instance.routes.get("/holaf/images/metadata")
@@ -1249,7 +1391,7 @@ async def holaf_get_image_metadata(request: web.Request):
         metadata = await loop.run_in_executor(None, _extract_image_metadata_blocking, original_abs_path)
 
         if "error" in metadata and metadata["error"]:
-            return web.json_response(metadata, status=422)
+            return web.json_response(metadata, status=422) # Unprocessable Entity is a good code here
         
         return web.json_response(metadata)
     
@@ -1280,9 +1422,27 @@ else: print("🟡 [Holaf-Utilities] 'nodes' directory not found. No custom nodes
 # --- Extension Registration ---
 WEB_DIRECTORY = "js"
 
-# Perform scans on startup in background threads
-print("🔵 [Holaf-Utilities] Scheduling startup background scans...")
-# 1. Model Manager Scan
+# --- Background Threads for Periodic Tasks ---
+stop_event = threading.Event()
+
+def _periodic_task_wrapper(interval, task_func, *args, **kwargs):
+    """A wrapper for running a task periodically in a daemon thread."""
+    def task_loop():
+        while not stop_event.is_set():
+            try:
+                task_func(*args, **kwargs)
+            except Exception as e:
+                print(f"🔴 [Holaf-Utilities] Error in periodic task '{task_func.__name__}': {e}")
+                traceback.print_exc()
+            stop_event.wait(interval)
+    
+    thread = threading.Thread(target=task_loop, daemon=True)
+    thread.start()
+    return thread
+
+print("🔵 [Holaf-Utilities] Scheduling startup and periodic background scans...")
+
+# 1. Model Manager Scan (runs once at startup)
 if 'model_manager_helper' in globals() and hasattr(model_manager_helper, 'scan_and_update_db'):
     scan_thread_init = threading.Timer(5.0, model_manager_helper.scan_and_update_db)
     scan_thread_init.daemon = True 
@@ -1290,10 +1450,13 @@ if 'model_manager_helper' in globals() and hasattr(model_manager_helper, 'scan_a
 else:
     print("🔴 [Holaf-ModelManager] ERROR: scan_and_update_db not found for scheduled scan.")
 
-# 2. Image Viewer Scan
-image_sync_thread = threading.Timer(10.0, _sync_image_database_blocking)
-image_sync_thread.daemon = True
-image_sync_thread.start()
+# 2. Image Viewer Sync (runs at startup, then periodically)
+# Run once at startup after a delay
+image_sync_startup_thread = threading.Timer(10.0, _sync_image_database_blocking)
+image_sync_startup_thread.daemon = True
+image_sync_startup_thread.start()
+# Run periodically every 60 seconds after the initial one
+_periodic_task_wrapper(60.0, _sync_image_database_blocking)
 
 
 print("\n" + "="*50)

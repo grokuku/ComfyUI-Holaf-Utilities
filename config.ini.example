@@ -80,3 +80,20 @@ password_hash =
 # sort_order = asc
 # zoom_level = 1.0
 # panel_is_fullscreen = False
+
+[ImageViewerUI]
+# theme: The name of the color theme (currently shares the Model Manager's theme).
+# panel_x, panel_y: The top-left position of the panel.
+# panel_width, panel_height: The size of the panel in pixels.
+# panel_is_fullscreen: Whether the panel was last in fullscreen mode (True/False).
+# folder_filters: A comma-separated list of the last selected folder filters.
+# format_filters: A comma-separated list of the last selected format filters.
+#
+# theme = Graphite Orange
+# panel_x = 100
+# panel_y = 100
+# panel_width = 1200
+# panel_height = 800
+# panel_is_fullscreen = False
+# folder_filters = root,temp,loras
+# format_filters = PNG,JPEG
