@@ -49,6 +49,7 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 3.  **Frontend - Panneau Droit (Métadonnées Complètes) :**
     *   [COMPLETED] L'API et le frontend chargent et affichent les métadonnées (prompt/workflow) depuis des fichiers externes (.txt, .json) ou internes (PNG), en indiquant la source. Le bug critique de récupération des métadonnées (dû aux valeurs `NaN` dans les JSON) a été corrigé.
     *   [COMPLETED] Le style CSS des labels de métadonnées ("Prompt:", "Workflow:") et de leur source a été corrigé.
+    *   [COMPLETED] Affichage de la résolution (ex: 1024x1024) et du ratio d'aspect le plus proche (ex: 16:9) dans le panneau d'informations.
 
 ---
 
@@ -104,6 +105,9 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
     *   [COMPLETED] La logique de copie est robuste et fonctionne même dans les contextes non-sécurisés (HTTP sur IP locale).
     *   [COMPLETED] Le message de confirmation du chargement de workflow a été mis à jour pour refléter le système d'onglets de ComfyUI.
 
-2.  **Fonctionnalités à Définir :**
+2.  **Fonctionnalité - Retour Visuel :**
+    *   [COMPLETED] Ajout d'une barre de statut affichant le nombre d'images filtrées par rapport au total.
+
+3.  **Fonctionnalités à Définir :**
     *   **"Edit" :** Laisser un bouton réservé.
     *   **"Diaporama" :** Laisser un bouton réservé.

@@ -393,6 +393,16 @@
     border-radius: 10px 0 0 10px;
 }
 
+/* --- Status Bar --- */
+#holaf-viewer-statusbar {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    border-top: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-primary);
+    font-size: 12px;
+    color: var(--holaf-text-secondary);
+    text-align: right;
+}
 
 /* Scrollbars */
 #holaf-viewer-left-pane::-webkit-scrollbar,

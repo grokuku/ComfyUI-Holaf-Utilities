@@ -179,8 +179,11 @@ const holafImageViewer = {
 
     populatePanelContent() {
         const contentEl = this.panelElements.contentEl;
+        // The main container is now a flex-column to accommodate the status bar
+        contentEl.style.display = 'flex';
+        contentEl.style.flexDirection = 'column';
         contentEl.innerHTML = `
-            <div class="holaf-viewer-container">
+            <div class="holaf-viewer-container" style="flex-grow: 1;">
                 <div id="holaf-viewer-left-pane" class="holaf-viewer-pane">
                     <div class="holaf-viewer-filter-group">
                         <h4>Folders</h4>
@@ -211,6 +214,7 @@ const holafImageViewer = {
                     </div>
                 </div>
             </div>
+            <div id="holaf-viewer-statusbar"></div>
         `;
         
         const zoomView = contentEl.querySelector('#holaf-viewer-zoom-view');
@@ -376,6 +380,11 @@ const holafImageViewer = {
             const formatMatch = selectedFormats.includes(img.format);
             return folderMatch && formatMatch;
         });
+
+        const statusBar = document.getElementById('holaf-viewer-statusbar');
+        if (statusBar) {
+            statusBar.textContent = `Displaying ${this.filteredImages.length} of ${this.images.length} images.`;
+        }
 
         this.renderGallery(this.filteredImages);
 
@@ -606,6 +615,7 @@ const holafImageViewer = {
             <p><strong>Size:</strong> ${sizeInMB} MB</p>
             <p><strong>Format:</strong> ${image.format}</p>
             <p><strong>Modified:</strong><br>${new Date(image.mtime * 1000).toLocaleString()}</p>
+            <div id="holaf-resolution-container"></div>
             <hr>
             <div id="holaf-metadata-container">
                 <p class="holaf-viewer-message"><em>Loading metadata...</em></p>
@@ -631,6 +641,19 @@ const holafImageViewer = {
             }
             
             const data = await response.json();
+
+            // Populate resolution info
+            const resolutionContainer = document.getElementById('holaf-resolution-container');
+            if(resolutionContainer) {
+                let resolutionHTML = '';
+                if(data.width && data.height) {
+                    resolutionHTML += `<p><strong>Resolution:</strong> ${data.width} x ${data.height} px</p>`;
+                }
+                if(data.ratio) {
+                    resolutionHTML += `<p><strong>Ratio:</strong> ${data.ratio}</p>`;
+                }
+                resolutionContainer.innerHTML = resolutionHTML;
+            }
             
             const getSourceLabel = (source) => {
                 switch(source) {

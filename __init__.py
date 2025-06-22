@@ -59,7 +59,7 @@ import traceback
 import folder_paths 
 import shutil 
 import sqlite3
-import math # Added for NaN check
+import math # Added for NaN check and GCD
 from urllib.parse import unquote, quote
 import re # For sanitizing paths
 import time # Added for timestamped logging
@@ -1266,6 +1266,40 @@ def _sanitize_json_nan(obj):
         return None
     return obj
 
+STANDARD_RATIOS = [
+    {"name": "1:1", "value": 1.0},
+    {"name": "4:3", "value": 4/3}, {"name": "3:4", "value": 3/4},
+    {"name": "3:2", "value": 3/2}, {"name": "2:3", "value": 2/3},
+    {"name": "16:9", "value": 16/9}, {"name": "9:16", "value": 9/16},
+    {"name": "16:10", "value": 16/10}, {"name": "10:16", "value": 10/16},
+    {"name": "5:4", "value": 5/4}, {"name": "4:5", "value": 4/5},
+    {"name": "21:9", "value": 21/9}, {"name": "9:21", "value": 9/21},
+]
+RATIO_THRESHOLD = 0.02 # 2% tolerance
+
+def _get_best_ratio_string(width, height):
+    if height == 0:
+        return None
+
+    actual_ratio = width / height
+    min_diff = float('inf')
+    best_match = None
+
+    for r in STANDARD_RATIOS:
+        diff = abs(actual_ratio - r["value"])
+        if diff < min_diff:
+            min_diff = diff
+            best_match = r["name"]
+
+    # If the closest standard ratio is within the tolerance threshold, use it
+    if min_diff / actual_ratio < RATIO_THRESHOLD:
+        return best_match
+    
+    # Otherwise, fall back to the exact simplified ratio
+    common_divisor = math.gcd(width, height)
+    return f"{width // common_divisor}:{height // common_divisor}"
+
+
 def _extract_image_metadata_blocking(image_path):
     """
     Extracts metadata, prioritizing external files (.txt, .json) over internal PNG data.
@@ -1282,24 +1316,17 @@ def _extract_image_metadata_blocking(image_path):
         else:
             base_filename = filename[:last_dot_index]
         
-        print(f"  [Debug] Dir: '{directory}', File: '{filename}', Base: '{base_filename}'")
-        
         prompt_txt_path = os.path.join(directory, base_filename + ".txt")
         workflow_json_path = os.path.join(directory, base_filename + ".json")
         
-        print(f"  [Debug] Checking for .txt at: {prompt_txt_path}")
-        print(f"  [Debug] Checking for .json at: {workflow_json_path}")
-
         result = {
-            "prompt": None,
-            "prompt_source": "none",
-            "workflow": None,
-            "workflow_source": "none"
+            "prompt": None, "prompt_source": "none",
+            "workflow": None, "workflow_source": "none",
+            "width": None, "height": None, "ratio": None
         }
 
         # 1. Check for external prompt file
         if os.path.isfile(prompt_txt_path):
-            print("  [Debug] Found .txt file. Reading...")
             try:
                 with open(prompt_txt_path, 'r', encoding='utf-8') as f:
                     result["prompt"] = f.read()
@@ -1307,57 +1334,44 @@ def _extract_image_metadata_blocking(image_path):
             except (IOError, PermissionError) as e:
                 result["prompt"] = f"Error reading .txt file: {e}"
                 result["prompt_source"] = "error"
-                print(f"  [Debug] 🔴 Error reading .txt file: {e}")
-        else:
-            print("  [Debug] .txt file not found.")
-
+        
         # 2. Check for external workflow file
         if os.path.isfile(workflow_json_path):
-            print("  [Debug] Found .json file. Reading...")
             try:
                 with open(workflow_json_path, 'r', encoding='utf-8') as f:
                     loaded_json = json.load(f)
-                # Sanitize the loaded JSON to remove any NaN values.
                 result["workflow"] = _sanitize_json_nan(loaded_json)
                 result["workflow_source"] = "external_json"
             except json.JSONDecodeError as e:
                 result["workflow"] = {"error": f"Malformed external .json file: {e}"}
                 result["workflow_source"] = "error"
-                print(f"  [Debug] 🔴 Malformed .json file: {e}")
             except (IOError, PermissionError) as e:
                 result["workflow"] = {"error": f"Error reading .json file: {e}"}
                 result["workflow_source"] = "error"
-                print(f"  [Debug] 🔴 Error reading .json file: {e}")
-        else:
-            print("  [Debug] .json file not found.")
 
-        # 3. Fallback to internal PNG metadata if needed
-        print("  [Debug] Checking for internal PNG metadata...")
+        # 3. Read image for dimensions and internal PNG metadata
         try:
             with Image.open(image_path) as img:
+                width, height = img.size
+                result["width"] = width
+                result["height"] = height
+                result["ratio"] = _get_best_ratio_string(width, height)
+
                 if hasattr(img, 'info') and isinstance(img.info, dict):
-                    # Fallback for workflow ONLY if not found externally
                     if result["workflow_source"] == "none":
                         workflow_text = img.info.get('workflow')
                         if workflow_text:
-                            print("  [Debug] Found internal PNG workflow.")
                             try:
                                 loaded_json = json.loads(workflow_text)
-                                # Also sanitize internal workflow data
                                 result["workflow"] = _sanitize_json_nan(loaded_json)
                                 result["workflow_source"] = "internal_png"
                             except (json.JSONDecodeError, TypeError):
                                 result["workflow"] = {"error": "Malformed workflow data in PNG"}
                                 result["workflow_source"] = "error"
-                        else:
-                            print("  [Debug] No internal PNG workflow found.")
-                else:
-                    print("  [Debug] No 'info' attribute on PIL image object.")
         except FileNotFoundError:
-             print(f"  [Debug] 🔴 Image file not found for internal metadata read: {image_path}")
              return {"error": "Image file not found on server during internal metadata read."}
         except Exception as e:
-            print(f"  [Debug] 🟡 Note: Could not read internal metadata for {os.path.basename(image_path)}. Reason: {e}")
+            print(f"  [Debug] 🟡 Note: Could not read image data for {os.path.basename(image_path)}. Reason: {e}")
             
         print(f"✅ [Holaf-ImageViewer-Debug] Finished metadata extraction for: {os.path.basename(image_path)}")
         return result
