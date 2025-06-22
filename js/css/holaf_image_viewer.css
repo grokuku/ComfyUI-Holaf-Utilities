@@ -212,7 +212,7 @@
     object-fit: contain;
     cursor: grab;
     transition: transform 0.2s ease-out; /* Smooth initial zoom/reset */
-    transform-origin: center;
+    transform-origin: top left;
 }
 .holaf-viewer-zoom-close {
     position: absolute;
@@ -343,7 +343,7 @@
     height: 100%;
     object-fit: contain;
     transition: transform 0.2s ease-out; /* Smooth initial zoom/reset */
-    transform-origin: center;
+    transform-origin: top left;
 }
 .holaf-viewer-fs-close {
     position: absolute;

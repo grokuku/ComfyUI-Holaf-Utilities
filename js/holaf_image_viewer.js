@@ -929,17 +929,24 @@ const holafImageViewer = {
             const zoomFactor = 1.1;
             
             const newScale = e.deltaY < 0 ? oldScale * zoomFactor : oldScale / zoomFactor;
-            state.scale = Math.max(1, Math.min(newScale, 20));
+            
+            // Clamp the scale to a reasonable range
+            state.scale = Math.max(1, Math.min(newScale, 30));
+
+            // If the scale didn't change (e.g., at min/max), do nothing
+            if (state.scale === oldScale) return;
 
             const rect = container.getBoundingClientRect();
-            const x = e.clientX - rect.left - state.tx;
-            const y = e.clientY - rect.top - state.ty;
-            
-            const scaleChange = state.scale / oldScale;
-            state.tx -= x * (scaleChange - 1);
-            state.ty -= y * (scaleChange - 1);
-            
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // The translation needs to be adjusted to keep the point under the mouse stationary
+            // The formula is: new_translate = mouse_pos - (mouse_pos - old_translate) * (new_scale / old_scale)
+            state.tx = mouseX - (mouseX - state.tx) * (state.scale / oldScale);
+            state.ty = mouseY - (mouseY - state.ty) * (state.scale / oldScale);
+
             if (state.scale <= 1) {
+                // If scale is back to 1 or less, reset everything for a clean, centered state
                 this._resetTransform(state, imageEl, container);
             } else {
                 imageEl.style.cursor = 'grab';

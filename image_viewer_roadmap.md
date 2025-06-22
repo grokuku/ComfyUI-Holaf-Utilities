@@ -31,7 +31,7 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 
 ### Phase 2 : Interactivité Avancée et Filtres
 
-**Statut : 🟡 Partiellement complétée - BUG EN COURS.**
+**Statut : ✅ Complétée et Stabilisée.**
 
 1.  **Frontend - Panneau Gauche (Filtres) :**
     *   [COMPLETED] Les listes de dossiers sont générées dynamiquement, en groupant les sous-dossiers sous leur parent de premier niveau.
@@ -42,13 +42,12 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 2.  **Frontend - Panneau Central (Vue Agrandie & Navigation) :**
     *   [COMPLETED] Double-clic sur une vignette pour l'afficher en **vue agrandie** dans le panneau central.
     *   [COMPLETED] Les images (petites ou grandes) s'adaptent désormais pour remplir tout l'espace de la vue agrandie.
-    *   [COMPLETED] Le zoom (molette) se centre maintenant correctement sur la position du curseur.
+    *   [COMPLETED] Le zoom (molette) se centre désormais de manière fiable sur la position du curseur.
     *   [COMPLETED] Le curseur de la souris est une main (`grab`/`grabbing`) et le comportement de "drag" natif du navigateur est désactivé.
-    *   [PENDING] Navigation au clavier (flèches) dans la galerie.
+    *   [COMPLETED] Navigation au clavier (flèches haut/bas/gauche/droite) dans la galerie.
 
 3.  **Frontend - Panneau Droit (Métadonnées Complètes) :**
-    *   [PARTIALLY COMPLETED - BUG] L'API et le frontend chargent et affichent les métadonnées (prompt/workflow) depuis des fichiers externes (.txt, .json) ou internes (PNG), en indiquant la source.
-    *   **🔴 BUG :** Un bug critique empêche la récupération des métadonnées pour certains fichiers, même lorsque les fichiers `.txt`/`.json` correspondants existent. La cause exacte reste à déterminer.
+    *   [COMPLETED] L'API et le frontend chargent et affichent les métadonnées (prompt/workflow) depuis des fichiers externes (.txt, .json) ou internes (PNG), en indiquant la source. Le bug critique de récupération des métadonnées (dû aux valeurs `NaN` dans les JSON) a été corrigé.
     *   [COMPLETED] Le style CSS des labels de métadonnées ("Prompt:", "Workflow:") et de leur source a été corrigé.
 
 ---
@@ -89,7 +88,9 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
     *   [COMPLETED] Gérer l'affichage plein écran (overlay) via l'icône.
     *   [COMPLETED] Les images (petites ou grandes) s'adaptent désormais pour remplir l'espace de la vue plein écran.
     *   [COMPLETED] Navigation au clavier (flèches) entre les images dans les vues agrandie et plein écran.
-    *   [COMPLETED] Le zoom/panoramique en plein écran est fonctionnel et se centre correctement sur le curseur.
+    *   [COMPLETED] Le zoom/panoramique en plein écran est fonctionnel et se centre désormais de manière fiable sur le curseur.
+    *   [COMPLETED] Ajout de raccourcis clavier avancés : Entrée/Shift+Entrée pour naviguer entre les vues, Échap contextuel pour revenir en arrière.
+    *   [COMPLETED] La vue plein écran est désormais sans bordure et les boutons de contrôle sont toujours cliquables (correction du z-index).
 
 ---
 
