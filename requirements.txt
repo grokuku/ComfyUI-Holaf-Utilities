@@ -8,3 +8,4 @@
 # functionality (resizing, colors, echo) by using the ConPTY API.
 # It is only used on Windows.
 pywinpty; sys_platform == 'win32'
+aiofiles
