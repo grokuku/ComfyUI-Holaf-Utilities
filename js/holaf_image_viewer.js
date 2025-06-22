@@ -15,6 +15,8 @@
  * CORRECTION: Enabled arrow key navigation in the main gallery view and made the logic robust across all views.
  * CORRECTION: Added Up/Down arrow key navigation for the gallery view.
  * MODIFIED: Added advanced keyboard shortcuts (Enter, Shift+Enter, Escape) for streamlined navigation between views.
+ * MODIFIED: Added preloading for the next image in enlarged and fullscreen views for faster navigation.
+ * CORRECTION: Prevented flash of previous image during navigation by preloading before display.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -756,6 +758,18 @@ const holafImageViewer = {
         imageEl.style.cursor = 'grab';
     },
 
+    _preloadNextImage(currentIndex) {
+        if (currentIndex < 0 || (currentIndex + 1) >= this.filteredImages.length) {
+            return; // No next image to preload
+        }
+        const nextImage = this.filteredImages[currentIndex + 1];
+        if (nextImage) {
+            const imageUrl = this._getFullImageUrl(nextImage);
+            const preloader = new Image();
+            preloader.src = imageUrl;
+        }
+    },
+
     _showZoomedView(image) {
         this.currentNavIndex = this._findImageIndexInFilteredList(image);
         if (this.currentNavIndex === -1) return;
@@ -764,15 +778,25 @@ const holafImageViewer = {
 
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const zoomImage = zoomView.querySelector('img');
+        const imageUrl = this._getFullImageUrl(image);
         
-        this._resetTransform(this.zoomViewState, zoomImage, zoomView);
-        zoomImage.src = this._getFullImageUrl(image);
-        
-        zoomView.style.display = 'flex';
-        document.getElementById('holaf-viewer-gallery').style.display = 'none';
+        // Use a preloader to prevent flash of old content
+        const loader = new Image();
+        loader.onload = () => {
+            this._resetTransform(this.zoomViewState, zoomImage, zoomView);
+            zoomImage.src = imageUrl;
+            zoomView.style.display = 'flex';
+            document.getElementById('holaf-viewer-gallery').style.display = 'none';
+        };
+        loader.onerror = () => {
+            console.error(`[Holaf ImageViewer] Failed to load enlarged image: ${imageUrl}`);
+            // Optionally, show an error in the zoom view
+        };
+        loader.src = imageUrl;
         
         this.updateInfoPane(image);
         this._updateActiveThumbnail(this.currentNavIndex);
+        this._preloadNextImage(this.currentNavIndex);
     },
 
     _hideZoomedView() {
@@ -793,14 +817,23 @@ const holafImageViewer = {
         
         const fsImg = this.fullscreenElements.img;
         const fsOverlay = this.fullscreenElements.overlay;
-        
-        this._resetTransform(this.fullscreenViewState, fsImg, fsOverlay);
-        fsImg.src = this._getFullImageUrl(image);
+        const imageUrl = this._getFullImageUrl(image);
 
-        fsOverlay.style.display = 'flex';
+        // Use a preloader to prevent flash of old content
+        const loader = new Image();
+        loader.onload = () => {
+            this._resetTransform(this.fullscreenViewState, fsImg, fsOverlay);
+            fsImg.src = imageUrl;
+            fsOverlay.style.display = 'flex';
+        };
+        loader.onerror = () => {
+             console.error(`[Holaf ImageViewer] Failed to load fullscreen image: ${imageUrl}`);
+        };
+        loader.src = imageUrl;
         
         this.updateInfoPane(image);
         this._updateActiveThumbnail(this.currentNavIndex);
+        this._preloadNextImage(this.currentNavIndex);
     },
     
     _hideFullscreenView() {
@@ -830,21 +863,35 @@ const holafImageViewer = {
         const newImage = this.filteredImages[this.currentNavIndex];
         this.activeImage = newImage;
         
+        // Immediate UI updates for responsiveness
         this._updateActiveThumbnail(this.currentNavIndex);
         this.updateInfoPane(newImage);
+        this._preloadNextImage(this.currentNavIndex);
 
-        const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-        const isFullscreen = this.fullscreenElements.overlay.style.display === 'flex';
+        // Preload the image before showing it
+        const newImageUrl = this._getFullImageUrl(newImage);
+        const loader = new Image();
+        
+        loader.onload = () => {
+            const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
+            const isFullscreen = this.fullscreenElements.overlay.style.display === 'flex';
 
-        if (isZoomed) {
-            const zoomImage = document.querySelector('#holaf-viewer-zoom-view img');
-            this._resetTransform(this.zoomViewState, zoomImage, zoomImage.parentElement);
-            zoomImage.src = this._getFullImageUrl(newImage);
-        } else if (isFullscreen) {
-            const fsImg = this.fullscreenElements.img;
-            this._resetTransform(this.fullscreenViewState, fsImg, fsImg.parentElement);
-            fsImg.src = this._getFullImageUrl(newImage);
-        }
+            if (isZoomed) {
+                const zoomImage = document.querySelector('#holaf-viewer-zoom-view img');
+                this._resetTransform(this.zoomViewState, zoomImage, zoomImage.parentElement);
+                zoomImage.src = newImageUrl;
+            } else if (isFullscreen) {
+                const fsImg = this.fullscreenElements.img;
+                this._resetTransform(this.fullscreenViewState, fsImg, fsImg.parentElement);
+                fsImg.src = newImageUrl;
+            }
+        };
+        
+        loader.onerror = () => { 
+            console.error(`[Holaf ImageViewer] Failed to preload image for navigation: ${newImageUrl}`);
+        };
+        
+        loader.src = newImageUrl;
     },
 
     _navigateGrid(direction) { // +1 for down, -1 for up
