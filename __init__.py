@@ -264,6 +264,8 @@ def get_config():
         'panel_is_fullscreen': config.getboolean('ImageViewerUI', 'panel_is_fullscreen', fallback=False),
         'folder_filters': [f.strip() for f in config.get('ImageViewerUI', 'folder_filters', fallback='').split('","') if f.strip()],
         'format_filters': [f.strip() for f in config.get('ImageViewerUI', 'format_filters', fallback='').split('","') if f.strip()],
+        'thumbnail_fit': config.get('ImageViewerUI', 'thumbnail_fit', fallback='cover'),
+        'thumbnail_size': config.getint('ImageViewerUI', 'thumbnail_size', fallback=150),
     }
     if ui_settings_image_viewer['panel_x'] and ui_settings_image_viewer['panel_x'].isdigit():
         ui_settings_image_viewer['panel_x'] = int(ui_settings_image_viewer['panel_x'])
@@ -1024,26 +1026,49 @@ async def holaf_image_viewer_save_settings(request: web.Request):
             if not config_parser_obj.has_section(section_name):
                 config_parser_obj.add_section(section_name)
 
-            # Panel state
-            if 'panel_x' in data:
-                if data['panel_x'] is not None: config_parser_obj.set(section_name, 'panel_x', str(data['panel_x']))
+            # --- Start of Correction ---
+            # Panel state - Accept 'x' and 'y' from panel manager, as well as 'panel_x'/'panel_y'
+            pos_x = data.get('panel_x') or data.get('x')
+            pos_y = data.get('panel_y') or data.get('y')
+
+            if 'panel_x' in data or 'x' in data:
+                if pos_x is not None:
+                    config_parser_obj.set(section_name, 'panel_x', str(pos_x))
                 else: 
-                    if config_parser_obj.has_option(section_name, 'panel_x'): config_parser_obj.remove_option(section_name, 'panel_x')
-            if 'panel_y' in data:
-                if data['panel_y'] is not None: config_parser_obj.set(section_name, 'panel_y', str(data['panel_y']))
+                    if config_parser_obj.has_option(section_name, 'panel_x'):
+                        config_parser_obj.remove_option(section_name, 'panel_x')
+            
+            if 'panel_y' in data or 'y' in data:
+                if pos_y is not None:
+                    config_parser_obj.set(section_name, 'panel_y', str(pos_y))
                 else: 
-                    if config_parser_obj.has_option(section_name, 'panel_y'): config_parser_obj.remove_option(section_name, 'panel_y')
-            if 'panel_width' in data: config_parser_obj.set(section_name, 'panel_width', str(data['panel_width']))
-            if 'panel_height' in data: config_parser_obj.set(section_name, 'panel_height', str(data['panel_height']))
-            if 'panel_is_fullscreen' in data: config_parser_obj.set(section_name, 'panel_is_fullscreen', str(data['panel_is_fullscreen']))
+                    if config_parser_obj.has_option(section_name, 'panel_y'):
+                        config_parser_obj.remove_option(section_name, 'panel_y')
+            
+            width = data.get('panel_width') or data.get('width')
+            height = data.get('panel_height') or data.get('height')
+            
+            if 'panel_width' in data or 'width' in data:
+                config_parser_obj.set(section_name, 'panel_width', str(width))
+            if 'panel_height' in data or 'height' in data:
+                config_parser_obj.set(section_name, 'panel_height', str(height))
+            
+            if 'panel_is_fullscreen' in data:
+                config_parser_obj.set(section_name, 'panel_is_fullscreen', str(data['panel_is_fullscreen']))
             
             # Filter state
             if 'folder_filters' in data and isinstance(data['folder_filters'], list):
                 config_parser_obj.set(section_name, 'folder_filters', '","'.join(data['folder_filters']))
             if 'format_filters' in data and isinstance(data['format_filters'], list):
                 config_parser_obj.set(section_name, 'format_filters', '","'.join(data['format_filters']))
+            if 'thumbnail_fit' in data:
+                config_parser_obj.set(section_name, 'thumbnail_fit', str(data['thumbnail_fit']))
+            if 'thumbnail_size' in data:
+                config_parser_obj.set(section_name, 'thumbnail_size', str(data['thumbnail_size']))
+            # --- End of Correction ---
 
-            with open(config_path, 'w') as configfile: config_parser_obj.write(configfile)
+            with open(config_path, 'w') as configfile:
+                config_parser_obj.write(configfile)
             
             # Update global config immediately
             global CONFIG

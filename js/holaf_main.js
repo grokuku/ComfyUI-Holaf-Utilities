@@ -4,11 +4,21 @@
  *
  * This script is responsible for creating the main "Utilities" button and dropdown menu.
  * It also ensures that shared CSS for utility panels is loaded.
- * Other utility scripts will then add their own items to this menu.
- * MODIFIED: Dropdown menu is attached to document.body immediately on init (hidden).
+ * MODIFIED: Replaced dynamic/event-based menu with a static, hardcoded menu for stability.
+ *           This file now defines all menu items directly.
+ * CORRECTION: Replaced unreliable handler lookup with a direct lookup on the app object.
  */
 
 import { app } from "../../../scripts/app.js";
+
+// We can't import the other modules here without creating circular dependencies or race conditions.
+// We rely on the fact that ComfyUI loads all JS files, making the handler objects available globally.
+// We will add checks to ensure the handlers exist before calling them.
+import "./holaf_terminal.js";
+import "./holaf_model_manager.js";
+import "./holaf_nodes_manager.js";
+import "./holaf_image_viewer.js";
+
 
 const HolafUtilitiesMenu = {
     dropdownMenuEl: null, // Référence au menu déroulant
@@ -18,18 +28,7 @@ const HolafUtilitiesMenu = {
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
         if (menuContainer) {
-            if (!window.HolafUtilitiesMenuReady) {
-                 window.HolafUtilitiesMenuReady = true;
-            }
-            // S'assurer que le dropdownMenuEl est référencé si le menu existait déjà
-            // et qu'il est bien sur le body (au cas où un HMR aurait foiré)
-            this.dropdownMenuEl = document.getElementById("holaf-utilities-dropdown-menu");
-            if (this.dropdownMenuEl && this.dropdownMenuEl.parentElement !== document.body) {
-                console.warn("[Holaf Utilities] Dropdown existed but was not on body. Re-attaching.");
-                document.body.appendChild(this.dropdownMenuEl);
-                this.dropdownMenuEl.style.display = 'none'; // Ensure hidden
-            }
-            return;
+            return; // Already initialized
         }
 
         menuContainer = document.createElement("div");
@@ -42,26 +41,40 @@ const HolafUtilitiesMenu = {
         mainButton.id = "holaf-utilities-menu-button";
         mainButton.textContent = "Holaf's Utilities";
 
-        // Créer le menu déroulant une seule fois et l'attacher au body (caché)
-        if (!this.dropdownMenuEl) {
-            this.dropdownMenuEl = document.createElement("ul");
-            this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
-            this.dropdownMenuEl.style.cssText = `
-                display: none; /* Caché par défaut */
-                position: fixed; 
-                background-color: var(--comfy-menu-bg, #2a2a2a);
-                border: 1px solid var(--border-color, #444);
-                border-radius: 4px;
-                list-style: none;
-                padding: 5px 0;
-                margin: 0; 
-                z-index: 100000; 
-                min-width: 140px;
-                box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-            `;
-            document.body.appendChild(this.dropdownMenuEl);
-            console.log("[Holaf Utilities] Dropdown menu element created and attached to body (hidden).");
-        }
+        // --- Create the static, full dropdown menu from the start ---
+        this.dropdownMenuEl = document.createElement("ul");
+        this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
+        this.dropdownMenuEl.style.display = 'none'; // Hidden by default
+
+        // Define all menu items statically
+        const menuItems = [
+            { label: "Terminal", handlerName: "holafTerminal" },
+            { label: "Model Manager", handlerName: "holafModelManager" },
+            { label: "Custom Nodes Manager", handlerName: "holafNodesManager" },
+            { label: "Image Viewer", handlerName: "holafImageViewer" }
+        ];
+
+        menuItems.forEach(itemInfo => {
+            const menuItem = document.createElement("li");
+            menuItem.textContent = itemInfo.label;
+
+            // The onclick handler finds the tool's object when clicked.
+            // This relies on each tool's script attaching its main object to `app`.
+            menuItem.onclick = () => {
+                const handler = app[itemInfo.handlerName];
+                
+                if (handler && typeof handler.show === 'function') {
+                    handler.show();
+                } else {
+                    console.error(`[Holaf Utilities] Handler for "${itemInfo.label}" (app.${itemInfo.handlerName}) is not available or has no .show() method.`);
+                    alert(`Could not open "${itemInfo.label}". See browser console for details.`);
+                }
+                this.hideDropdown();
+            };
+            this.dropdownMenuEl.appendChild(menuItem);
+        });
+
+        document.body.appendChild(this.dropdownMenuEl);
         
         mainButton.onclick = (e) => {
             e.stopPropagation();
@@ -80,10 +93,6 @@ const HolafUtilitiesMenu = {
             }
         });
         
-        if (this.dropdownMenuEl) { // S'assurer qu'il existe avant d'ajouter le listener
-            this.dropdownMenuEl.addEventListener('click', (e) => e.stopPropagation());
-        }
-
         menuContainer.appendChild(mainButton);
 
         const settingsButton = app.menu.settingsGroup.element;
@@ -95,14 +104,11 @@ const HolafUtilitiesMenu = {
             if (comfyMenu) {
                 comfyMenu.append(menuContainer);
             } else {
-                console.error("[Holaf Utilities] Could not find .comfy-menu. Appending to body as last resort.");
-                document.body.prepend(menuContainer); // Prepend to try to keep it visible
+                document.body.prepend(menuContainer);
             }
         }
         
-        window.HolafUtilitiesMenuReady = true;
-        console.log("[Holaf Utilities] Menu initialized. Button ready. Dropdown ready in body.");
-document.dispatchEvent(new CustomEvent("holaf-menu-ready"));
+        console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
     showDropdown(buttonElement) {
@@ -110,21 +116,18 @@ document.dispatchEvent(new CustomEvent("holaf-menu-ready"));
             console.error("[Holaf Utilities] showDropdown: dropdownMenuEl is null!");
             return;
         }
-        // S'assurer qu'il est sur le body (au cas où il aurait été retiré par un autre script ou bug)
         if (this.dropdownMenuEl.parentElement !== document.body) {
-            console.warn("[Holaf Utilities] Dropdown was not on body in showDropdown. Re-attaching.");
             document.body.appendChild(this.dropdownMenuEl);
         }
 
         const rect = buttonElement.getBoundingClientRect();
         this.dropdownMenuEl.style.top = `${rect.bottom + 2}px`;
         
-        // Utiliser min-width du CSS comme fallback si offsetWidth est 0 (parce que display:none)
         const computedStyle = getComputedStyle(this.dropdownMenuEl);
         const dropdownWidth = this.dropdownMenuEl.offsetWidth || parseFloat(computedStyle.minWidth) || 140;
         
         let leftPosition = rect.right - dropdownWidth;
-        if (leftPosition < 5) leftPosition = 5; // Empêcher de sortir à gauche de l'écran
+        if (leftPosition < 5) leftPosition = 5; 
 
         this.dropdownMenuEl.style.left = `${leftPosition}px`;
         this.dropdownMenuEl.style.display = "block";
@@ -151,6 +154,7 @@ document.dispatchEvent(new CustomEvent("holaf-menu-ready"));
 app.registerExtension({
     name: "Holaf.Utilities.Menu",
     async setup() {
-        HolafUtilitiesMenu.init();
+        // We delay init slightly to ensure other scripts have a chance to register their exports.
+        setTimeout(() => HolafUtilitiesMenu.init(), 10);
     }
 });

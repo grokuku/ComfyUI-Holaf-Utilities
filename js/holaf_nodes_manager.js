@@ -17,7 +17,7 @@
  * CORRECTION: Trigger GitHub URL search for manual nodes upon selection to correctly update button states.
  * CORRECTION: Ensure "In Progress" dialog is removed before showing results/error dialog.
  * MODIFIED: Use `new_status` from backend to update node state locally before full refresh.
- * CORRECTION: Fixed issue where node names disappeared after icon update.
+ * CORRECTION: Removed dynamic menu registration. Menu is now built statically by holaf_main.js.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -49,6 +49,11 @@ const holafNodesManager = {
     selectedNodes: new Set(), // For actions like update/delete
     isActionInProgress: false, // To disable buttons during an action
 
+    init() {
+        // The menu item is now added statically in holaf_main.js.
+        // This function is kept for consistency and future initializations.
+    },
+
     async ensureScriptsLoaded() {
         if (this.scriptsLoaded) return true;
         try {
@@ -62,30 +67,7 @@ const holafNodesManager = {
         }
     },
 
-    ensureMenuItemAdded() {
-        const menuId = "holaf-utilities-dropdown-menu";
-        let dropdownMenu = document.getElementById(menuId);
-
-        if (!dropdownMenu) {
-            setTimeout(() => this.ensureMenuItemAdded(), 250);
-            return;
-        }
-
-        const existingItem = Array.from(dropdownMenu.children).find(
-            li => li.textContent === "Custom Nodes Manager (WIP)"
-        );
-        if (existingItem) return;
-
-        const menuItem = document.createElement("li");
-        menuItem.textContent = "Custom Nodes Manager (WIP)";
-        menuItem.onclick = async () => {
-            await this.ensureScriptsLoaded();
-            this.show();
-            if (dropdownMenu) dropdownMenu.style.display = "none";
-        };
-        dropdownMenu.appendChild(menuItem);
-        console.log("[Holaf NodesManager] Menu item added to dropdown.");
-    },
+    // The menu item is now added statically in holaf_main.js
 
     createPanel() {
         if (this.panelElements && this.panelElements.panelEl) return;
@@ -93,7 +75,7 @@ const holafNodesManager = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-nodes-manager-panel",
-                title: "Holaf Custom Nodes Manager (WIP)",
+                title: "Holaf Custom Nodes Manager",
                 defaultSize: { width: 900, height: 600 },
                 onClose: () => this.hide(),
             });
@@ -798,10 +780,12 @@ const holafNodesManager = {
     }
 };
 
+app.holafNodesManager = holafNodesManager;
+
 app.registerExtension({
     name: "Holaf.NodesManager.Panel",
     async setup() {
-        setTimeout(() => holafNodesManager.ensureMenuItemAdded(), 150);
+        holafNodesManager.init();
     },
 });
 

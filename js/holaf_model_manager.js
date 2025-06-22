@@ -13,7 +13,7 @@
  * MODIFIED: Replaced single-file sequential download with a parallel, chunk-based queueing system.
  * MODIFIED: Made download process non-blocking for the UI and removed the final completion dialog.
  * MODIFIED: Unlocked UI to allow concurrent uploads, downloads, and scans, with an improved status bar.
- * CORRECTION: Replaced setTimeout polling with a "holaf-menu-ready" event listener for robust initialization.
+ * CORRECTION: Removed dynamic menu registration. Menu is now built statically by holaf_main.js.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -158,37 +158,8 @@ const holafModelManager = {
         }, 1000);
     },
 
-    addMenuItem() {
-        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
-        if (!dropdownMenu) {
-            console.error("[Holaf ModelManager] Cannot add menu item: Dropdown menu not found.");
-            return;
-        }
-
-        const existingItem = Array.from(dropdownMenu.children).find(
-            li => li.textContent === "Model Manager (WIP)"
-        );
-        if (existingItem) return;
-
-        const menuItem = document.createElement("li");
-        menuItem.textContent = "Model Manager (WIP)";
-        menuItem.onclick = async () => {
-            if (!this.areSettingsLoaded) {
-                await this.loadModelConfigAndSettings();
-            }
-            this.show();
-            if (dropdownMenu) dropdownMenu.style.display = "none";
-        };
-
-        dropdownMenu.appendChild(menuItem);
-        console.log("[Holaf ModelManager] Menu item added to dropdown.");
-    },
-
     init() {
-        // Wait for the main menu to signal it's ready.
-        document.addEventListener("holaf-menu-ready", () => {
-            this.addMenuItem();
-        });
+        // The menu item is now added statically in holaf_main.js
         this.loadModelConfigAndSettings();
     },
 
@@ -232,7 +203,7 @@ const holafModelManager = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-manager-panel",
-                title: "Holaf Model Manager (WIP)",
+                title: "Holaf Model Manager",
                 headerContent: managerHeaderControls,
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
@@ -399,11 +370,11 @@ const holafModelManager = {
                 <div class="holaf-manager-header-col holaf-header-checkbox">
                     <input type="checkbox" id="holaf-manager-select-all-checkbox" title="Select/Deselect All">
                 </div>
-                <div class="holaf-manager-header-col holaf-header-name" data-sort-by="name">Nom</div>
-                <div class="holaf-manager-header-col holaf-header-path" data-sort-by="path">Chemin</div>
+                <div class="holaf-manager-header-col holaf-header-name" data-sort-by="name">Name</div>
+                <div class="holaf-manager-header-col holaf-header-path" data-sort-by="path">Path</div>
                 <div class="holaf-manager-header-col holaf-header-type" data-sort-by="display_type">Type</div>
-                <div class="holaf-manager-header-col holaf-header-family" data-sort-by="model_family">Famille</div>
-                <div class="holaf-manager-header-col holaf-header-size" data-sort-by="size_bytes">Taille</div>
+                <div class="holaf-manager-header-col holaf-header-family" data-sort-by="model_family">Family</div>
+                <div class="holaf-manager-header-col holaf-header-size" data-sort-by="size_bytes">Size</div>
             </div>
 
             <div id="holaf-manager-models-area" class="holaf-manager-content">
@@ -492,7 +463,7 @@ const holafModelManager = {
             if (otherCount > 0) {
                 const option = document.createElement("option");
                 option.value = "Holaf--Category--Others";
-                option.textContent = `Autres (${otherCount})`;
+                option.textContent = `Others (${otherCount})`;
                 selectEl.appendChild(option);
             }
         }
@@ -602,7 +573,7 @@ const holafModelManager = {
             if (selectedTypeFilterValue === "All") {
                 typeMatch = true;
             } else if (selectedTypeFilterValue === "Holaf--Category--Others") {
-                typeMatch = model.display_type && model.display_type.startsWith("Autres (");
+                typeMatch = model.display_type && model.display_type.startsWith("Others (");
             } else {
                 typeMatch = (model.display_type === selectedTypeFilterValue);
             }
@@ -1260,8 +1231,8 @@ const holafModelManager = {
 
             const url = window.URL.createObjectURL(finalBlob);
             const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
+a.style.display = 'none';
+a.href = url;
             a.download = job.model.name;
             document.body.appendChild(a);
             a.click();
@@ -1380,6 +1351,8 @@ const holafModelManager = {
         }
     },
 };
+
+app.holafModelManager = holafModelManager;
 
 app.registerExtension({
     name: "Holaf.ModelManager.Panel",

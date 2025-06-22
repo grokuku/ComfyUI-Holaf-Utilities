@@ -3,9 +3,14 @@
  * Holaf Utilities - Image Viewer Stylesheet
  * MODIFICATION: Remplacement de CSS Grid par Flexbox pour la galerie afin de corriger un bug de rendu persistant.
  * CORRECTION: Padding déplacé du conteneur central vers la galerie pour permettre à la vue agrandie de remplir l'espace.
+ * MODIFICATION: Added styles for Display Options panel and thumbnail fit toggle.
+ * CORRECTION: Fixed a CSS syntax error that was preventing the thumbnail fit toggle from working.
+ * MODIFICATION: Added styles for thumbnail size slider and used CSS variable for dynamic sizing.
  */
 
 #holaf-viewer-panel .holaf-viewer-container {
+    /* --holaf-thumbnail-size is set by JS */
+    --holaf-thumbnail-size: 150px;
     display: flex;
     flex-direction: row;
     width: 100%;
@@ -59,6 +64,35 @@
     cursor: pointer;
 }
 
+/* --- New Display Options Panel --- */
+.holaf-viewer-display-options {
+    margin-top: auto; /* Pushes this to the bottom */
+    padding-top: 20px;
+    border-top: 1px solid var(--holaf-border-color);
+}
+.holaf-viewer-display-options h4 {
+    margin: 0 0 10px 0;
+    color: var(--holaf-text-primary);
+    font-size: 14px;
+}
+.holaf-viewer-slider-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    margin-top: 10px;
+}
+.holaf-viewer-slider-container input[type="range"] {
+    flex-grow: 1;
+    accent-color: var(--holaf-accent-color);
+}
+.holaf-viewer-slider-container span {
+    min-width: 40px; /* Prevents layout shift */
+    text-align: right;
+    font-family: monospace;
+    color: var(--holaf-text-secondary);
+}
+
 
 /* Center Pane - Gallery */
 #holaf-viewer-center-pane {
@@ -95,8 +129,9 @@
 
 /* Placeholder & Thumbnail Styling */
 .holaf-viewer-thumbnail-placeholder {
-    flex: 1 1 150px;
-    max-width: 250px;
+    flex-basis: var(--holaf-thumbnail-size);
+    flex-grow: 1;
+    max-width: calc(var(--holaf-thumbnail-size) * 1.8); /* Prevent extreme stretching on last row */
     position: relative;
     aspect-ratio: 1 / 1;
     cursor: pointer;
@@ -150,22 +185,22 @@
 .holaf-viewer-retry-button:hover {
     background-color: #ffffff;
 }
-    background-color: #5a2d2d;
-    color: #ff8f8f;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
+
 .holaf-viewer-thumbnail-placeholder img {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: cover; /* Default: Cropped */
     display: block;
 }
+
+/* Thumbnail Fit Toggle */
+#holaf-viewer-gallery.contain-thumbnails .holaf-viewer-thumbnail-placeholder img {
+    object-fit: contain; /* Toggled: No crop */
+}
+
 
 /* --- Fullscreen Icon on Hover --- */
 .holaf-viewer-fullscreen-icon {

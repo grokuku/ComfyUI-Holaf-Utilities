@@ -1,3 +1,29 @@
+# Holaf Utilities - Feuille de Route Générale
+
+## Objectif Principal
+
+Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, centralisés sous un menu unique, offrant des fonctionnalités avancées de gestion de l'environnement, des modèles, des nœuds et des images.
+
+---
+
+### Tâches Générales et Bugs
+
+**Statut : 🔴 Non commencées / 🟡 En cours.**
+
+1.  **Correction de Bugs :**
+    *   [À FAIRE] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" ne fonctionne pas.
+    *   [À FAIRE] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée mais n'a pas d'effet visuel sur les vignettes.
+
+2.  **Panneau de Configuration Centralisé :**
+    *   [À FAIRE] Ajouter une entrée "Options" dans le menu principal (sous un séparateur).
+    *   [À FAIRE] Créer un nouveau panneau "Options" qui permet de modifier graphiquement les paramètres de `config.ini` pour tous les outils (Terminal, Model Manager, etc.).
+
+3.  **Fonctionnalité de Redémarrage :**
+    *   [À FAIRE] Ajouter une entrée "Restart ComfyUI" en bas du menu principal (sous un séparateur).
+    *   [À FAIRE] Implémenter la logique pour déclencher un redémarrage du serveur, similaire à celle utilisée par le "ComfyUI-Manager".
+
+---
+
 # Holaf Image Viewer - Feuille de Route de Développement
 
 ## Objectif Principal
@@ -92,6 +118,7 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
     *   [COMPLETED] Le zoom/panoramique en plein écran est fonctionnel et se centre désormais de manière fiable sur le curseur.
     *   [COMPLETED] Ajout de raccourcis clavier avancés : Entrée/Shift+Entrée pour naviguer entre les vues, Échap contextuel pour revenir en arrière.
     *   [COMPLETED] La vue plein écran est désormais sans bordure et les boutons de contrôle sont toujours cliquables (correction du z-index).
+    *   [COMPLETED] **Navigation Fluide (Préchargement) :** L'image suivante est préchargée en arrière-plan lors de la navigation en vue agrandie/plein écran, et l'affichage n'est mis à jour qu'une fois l'image prête, éliminant tout scintillement.
 
 ---
 
@@ -107,6 +134,8 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 
 2.  **Fonctionnalité - Retour Visuel :**
     *   [COMPLETED] Ajout d'une barre de statut affichant le nombre d'images filtrées par rapport au total.
+    *   [COMPLETED] **Option d'affichage des vignettes :** Ajout d'un panneau "Options d'Affichage" avec une case à cocher pour basculer entre les modes "Cover" (rognées) et "Contain" (entières). Ce paramètre est sauvegardé dans la configuration.
+    *   [COMPLETED] **Taille des vignettes réglable :** Ajout d'un slider pour contrôler la taille des vignettes, avec sauvegarde du paramètre.
 
 3.  **Fonctionnalités à Définir :**
     *   **"Edit" :** Laisser un bouton réservé.

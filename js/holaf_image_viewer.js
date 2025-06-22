@@ -5,7 +5,7 @@
  * This script provides the client-side logic for the Holaf Image Viewer.
  * MODIFIED: Implemented gallery virtualization with IntersectionObserver.
  * MODIFIED: Added folder and format filters.
- * CORRECTION: Final version restoring all initialization and menu logic.
+ * CORRECTION: Removed dynamic menu registration. Menu is now built statically by holaf_main.js.
  * CORRECTION: Reverted thumbnail loading to use <img> tags to work with a new CSS fix for the rendering bug.
  * MODIFIED: updateInfoPane now fetches and displays full image metadata, prioritizing external files and showing data source.
  * CORRECTION: Reworked info pane HTML generation for more reliable styling of metadata labels and sources.
@@ -17,6 +17,8 @@
  * MODIFIED: Added advanced keyboard shortcuts (Enter, Shift+Enter, Escape) for streamlined navigation between views.
  * MODIFIED: Added preloading for the next image in enlarged and fullscreen views for faster navigation.
  * CORRECTION: Prevented flash of previous image during navigation by preloading before display.
+ * MODIFIED: Added a "Display Options" panel with a toggle for thumbnail fit (Cover/Contain).
+ * MODIFIED: Added a slider to control thumbnail size.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -45,39 +47,17 @@ const holafImageViewer = {
         panel_is_fullscreen: false,
         folder_filters: [],
         format_filters: [],
+        thumbnail_fit: 'cover', // 'cover' (cropped) or 'contain' (no crop)
+        thumbnail_size: 150, // Default thumbnail size in pixels
     },
     
     // State for zoom/pan
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
 
-    addMenuItem() {
-        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
-        if (!dropdownMenu) {
-            console.error("[Holaf ImageViewer] Cannot add menu item: Dropdown menu not found.");
-            return;
-        }
-
-        const existingItem = Array.from(dropdownMenu.children).find(
-            li => li.textContent.includes("Image Viewer")
-        );
-        if (existingItem) {
-            existingItem.textContent = "Image Viewer";
-            return;
-        }
-
-        const menuItem = document.createElement("li");
-        menuItem.textContent = "Image Viewer";
-        menuItem.onclick = () => {
-            this.show();
-            if (dropdownMenu) dropdownMenu.style.display = "none";
-        };
-        dropdownMenu.appendChild(menuItem);
-        console.log("[Holaf ImageViewer] Menu item added to dropdown.");
-    },
+    // The menu item is now added statically in holaf_main.js
 
     init() {
-        document.addEventListener("holaf-menu-ready", () => this.addMenuItem());
         document.addEventListener("keydown", (e) => this._handleKeyDown(e));
 
         const cssId = "holaf-image-viewer-css";
@@ -196,6 +176,20 @@ const holafImageViewer = {
                         <h4>Formats</h4>
                         <div id="holaf-viewer-formats-filter" class="holaf-viewer-filter-list"></div>
                     </div>
+                    <div class="holaf-viewer-display-options">
+                        <h4>Display Options</h4>
+                        <div class="holaf-viewer-filter-list">
+                           <div class="holaf-viewer-filter-item">
+                                <input type="checkbox" id="holaf-viewer-thumb-fit-toggle">
+                                <label for="holaf-viewer-thumb-fit-toggle">Contained (no crop)</label>
+                           </div>
+                           <div class="holaf-viewer-slider-container">
+                               <label for="holaf-viewer-thumb-size-slider">Size</label>
+                               <input type="range" id="holaf-viewer-thumb-size-slider" min="80" max="300" step="10">
+                               <span id="holaf-viewer-thumb-size-value">150px</span>
+                           </div>
+                        </div>
+                    </div>
                 </div>
                 <div id="holaf-viewer-center-pane" class="holaf-viewer-pane">
                     <div id="holaf-viewer-toolbar">
@@ -219,6 +213,32 @@ const holafImageViewer = {
             <div id="holaf-viewer-statusbar"></div>
         `;
         
+        // --- Setup Display Options ---
+        // Thumbnail Fit Toggle
+        const thumbFitToggle = contentEl.querySelector('#holaf-viewer-thumb-fit-toggle');
+        thumbFitToggle.checked = this.settings.thumbnail_fit === 'contain';
+        thumbFitToggle.onchange = (e) => {
+            const newFitMode = e.target.checked ? 'contain' : 'cover';
+            this.saveSettings({ thumbnail_fit: newFitMode });
+            this._applyThumbnailFit();
+        };
+        this._applyThumbnailFit();
+
+        // Thumbnail Size Slider
+        const thumbSizeSlider = contentEl.querySelector('#holaf-viewer-thumb-size-slider');
+        const thumbSizeValue = contentEl.querySelector('#holaf-viewer-thumb-size-value');
+        thumbSizeSlider.value = this.settings.thumbnail_size;
+        thumbSizeValue.textContent = `${this.settings.thumbnail_size}px`;
+        thumbSizeSlider.oninput = (e) => {
+            const newSize = parseInt(e.target.value);
+            thumbSizeValue.textContent = `${newSize}px`;
+            this.saveSettings({ thumbnail_size: newSize });
+            this._applyThumbnailSize();
+        };
+        this._applyThumbnailSize();
+
+
+        // Setup other elements
         const zoomView = contentEl.querySelector('#holaf-viewer-zoom-view');
         const zoomCloseBtn = contentEl.querySelector('.holaf-viewer-zoom-close');
         const zoomImage = zoomView.querySelector('img');
@@ -235,6 +255,20 @@ const holafImageViewer = {
         };
 
         this._setupZoomAndPan(this.zoomViewState, zoomView, zoomImage);
+    },
+
+    _applyThumbnailFit() {
+        const galleryEl = document.getElementById("holaf-viewer-gallery");
+        if (galleryEl) {
+            galleryEl.classList.toggle('contain-thumbnails', this.settings.thumbnail_fit === 'contain');
+        }
+    },
+
+    _applyThumbnailSize() {
+        const galleryEl = document.getElementById("holaf-viewer-gallery");
+        if(galleryEl) {
+            galleryEl.style.setProperty('--holaf-thumbnail-size', `${this.settings.thumbnail_size}px`);
+        }
     },
 
     async loadImages() {
@@ -1074,6 +1108,10 @@ const holafImageViewer = {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
 
+            // Apply settings on show
+            this._applyThumbnailFit();
+            this._applyThumbnailSize();
+
             this.loadImages();
             if (this.refreshIntervalId) clearInterval(this.refreshIntervalId);
             this.refreshIntervalId = setInterval(() => this.loadImages(), 15000);
@@ -1093,6 +1131,8 @@ const holafImageViewer = {
         }
     }
 };
+
+app.holafImageViewer = holafImageViewer;
 
 app.registerExtension({
     name: "Holaf.ImageViewer.Panel",

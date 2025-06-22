@@ -5,8 +5,7 @@
  * MODIFIED: Added delayed fitTerminal on initial socket open for better initial sizing.
  * MODIFIED: Unified theme management using HOLAF_THEMES from holaf_panel_manager.
  * MODIFIED: Added fullscreen state management (double-click on header).
- * CORRECTION: Replaced setTimeout polling with a "holaf-menu-ready" event listener for robust initialization.
- * CORRECTION: Replaced event listener with a more robust polling mechanism (setTimeout) to prevent race conditions during menu initialization.
+ * CORRECTION: Removed dynamic menu registration. Added object to `app` for static menu access.
  * === End Documentation ===
  */
 import { app } from "../../../scripts/app.js";
@@ -105,30 +104,8 @@ const holafTerminal = {
         }
     },
 
-    ensureMenuItemAdded() {
-        const dropdownMenu = document.getElementById("holaf-utilities-dropdown-menu");
-        if (!dropdownMenu) {
-            setTimeout(() => this.ensureMenuItemAdded(), 250);
-            return;
-        }
-
-        const existingItem = Array.from(dropdownMenu.children).find(li => li.textContent === "Terminal");
-        if (existingItem) return;
-
-        const terminalMenuItem = document.createElement("li");
-        terminalMenuItem.textContent = "Terminal";
-
-        terminalMenuItem.onclick = () => {
-            this.show();
-            if (dropdownMenu) dropdownMenu.style.display = "none";
-        };
-        dropdownMenu.prepend(terminalMenuItem);
-        console.log("[Holaf Terminal] Menu item added to dropdown.");
-    },
-
     init() {
-        // Use a polling mechanism to ensure the menu is ready
-        this.ensureMenuItemAdded();
+        // Initialization is minimal as the menu is handled centrally.
     },
 
     createPanel() {
@@ -176,7 +153,6 @@ const holafTerminal = {
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => { },
                 onStateChange: (newState) => {
-                    // Only save if not in fullscreen mode to preserve normal state
                     if (!this.settings.panel_is_fullscreen) {
                         this.saveSettings({
                             panel_x: newState.x, panel_y: newState.y,
@@ -190,8 +166,7 @@ const holafTerminal = {
                 onFullscreenToggle: (isFullscreen) => {
                     this.settings.panel_is_fullscreen = isFullscreen;
                     this.saveSettings({ panel_is_fullscreen: isFullscreen });
-                    // Fit terminal on entering/exiting fullscreen
-                    setTimeout(() => this.fitTerminal(), 210); // After CSS transition
+                    setTimeout(() => this.fitTerminal(), 210);
                 }
             });
         } catch (e) {
@@ -216,7 +191,7 @@ const holafTerminal = {
                     flex-grow: 1; padding: 0 5px 5px 10px; overflow: hidden; width: 100%; 
                     display: flex; flex-direction: column; 
                 }
-                #holaf-terminal-panel .holaf-terminal-view-wrapper > div { /* Target xterm_container */
+                #holaf-terminal-panel .holaf-terminal-view-wrapper > div {
                     flex-grow: 1; width: 100% !important; display: flex; flex-direction: column; 
                     overflow: hidden; 
                 }
@@ -239,7 +214,7 @@ const holafTerminal = {
     createThemeMenu() {
         const menu = document.createElement("ul");
         menu.className = "holaf-theme-menu";
-        HOLAF_THEMES.forEach(theme => { // Iterate over HOLAF_THEMES
+        HOLAF_THEMES.forEach(theme => {
             const item = document.createElement("li");
             item.textContent = theme.name;
             item.onclick = (e) => {
@@ -267,9 +242,7 @@ const holafTerminal = {
         }
 
         this.panelElements.panelEl.style.display = "flex";
-        if (HolafPanelManager && typeof HolafPanelManager.bringToFront === 'function') {
-            HolafPanelManager.bringToFront(this.panelElements.panelEl);
-        }
+        HolafPanelManager.bringToFront(this.panelElements.panelEl);
 
         const scriptsReady = await this.ensureScriptsLoaded();
         if (!scriptsReady) {
@@ -290,8 +263,6 @@ const holafTerminal = {
     },
     applySettings(themeJustSet = false) {
         if (this.panelElements && this.panelElements.panelEl) {
-
-            // Apply fullscreen class if needed
             if (this.settings.panel_is_fullscreen) {
                 if (!this.panelElements.panelEl.classList.contains("holaf-panel-fullscreen")) {
                     this.panelElements.panelEl.classList.add("holaf-panel-fullscreen");
@@ -643,6 +614,9 @@ const holafTerminal = {
         }
     },
 };
+
+// Expose the object on the app for the static menu to find
+app.holafTerminal = holafTerminal;
 
 app.registerExtension({
     name: "Holaf.Terminal.Panel",
