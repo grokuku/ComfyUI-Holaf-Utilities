@@ -40,6 +40,7 @@
 # CORRECTION: Made metadata extraction ultra-robust with manual path parsing and detailed logging to fix a critical bug.
 # CORRECTION: Fixed workflow loading for JSON files containing invalid 'NaN' values by sanitizing them to 'null'.
 # MODIFICATION: Implemented a robust server restart mechanism using os.execv, inspired by ComfyUI-Manager.
+# MODIFICATION: Added settings section for Nodes Manager UI.
 # === End Documentation ===
 
 import server
@@ -277,13 +278,32 @@ def get_config():
     else:
         ui_settings_image_viewer['panel_y'] = None
 
+    ui_settings_nodes_manager = {
+        'theme': config.get('NodesManagerUI', 'theme', fallback='Dark'),
+        'panel_x': config.get('NodesManagerUI', 'panel_x', fallback=None),
+        'panel_y': config.get('NodesManagerUI', 'panel_y', fallback=None),
+        'panel_width': config.getint('NodesManagerUI', 'panel_width', fallback=900),
+        'panel_height': config.getint('NodesManagerUI', 'panel_height', fallback=600),
+        'panel_is_fullscreen': config.getboolean('NodesManagerUI', 'panel_is_fullscreen', fallback=False),
+        'filter_text': config.get('NodesManagerUI', 'filter_text', fallback=''),
+        'zoom_level': config.getfloat('NodesManagerUI', 'zoom_level', fallback=1.0),
+    }
+    if ui_settings_nodes_manager['panel_x'] and ui_settings_nodes_manager['panel_x'].isdigit():
+        ui_settings_nodes_manager['panel_x'] = int(ui_settings_nodes_manager['panel_x'])
+    else:
+        ui_settings_nodes_manager['panel_x'] = None
+    if ui_settings_nodes_manager['panel_y'] and ui_settings_nodes_manager['panel_y'].isdigit():
+        ui_settings_nodes_manager['panel_y'] = int(ui_settings_nodes_manager['panel_y'])
+    else:
+        ui_settings_nodes_manager['panel_y'] = None
 
     return {
         'shell_command': shell_cmd,
         'password_hash': password_hash,
         'ui_terminal': ui_settings_terminal,
         'ui_model_manager': ui_settings_model_manager,
-        'ui_image_viewer': ui_settings_image_viewer
+        'ui_image_viewer': ui_settings_image_viewer,
+        'ui_nodes_manager': ui_settings_nodes_manager
     }
 
 CONFIG = get_config()
@@ -331,7 +351,8 @@ async def holaf_get_all_settings(request: web.Request):
         "Terminal": {"shell_command": current_config.get('shell_command')},
         "TerminalUI": current_config.get('ui_terminal'),
         "ModelManagerUI": current_config.get('ui_model_manager'),
-        "ImageViewerUI": current_config.get('ui_image_viewer')
+        "ImageViewerUI": current_config.get('ui_image_viewer'),
+        "NodesManagerUI": current_config.get('ui_nodes_manager')
     }
     
     return web.json_response(response_data)
@@ -1132,6 +1153,10 @@ async def holaf_image_viewer_save_settings(request: web.Request):
                 config_parser_obj.set(section_name, 'thumbnail_fit', str(data['thumbnail_fit']))
             if 'thumbnail_size' in data:
                 config_parser_obj.set(section_name, 'thumbnail_size', str(data['thumbnail_size']))
+            
+            # This is new for independent theming
+            if 'theme' in data:
+                config_parser_obj.set(section_name, 'theme', str(data['theme']))
             # --- End of Correction ---
 
             with open(config_path, 'w') as configfile:
@@ -1224,7 +1249,6 @@ def _sync_image_database_blocking():
                     thumb_path = os.path.join(THUMBNAIL_CACHE_DIR, thumb_filename)
                     if os.path.exists(thumb_path):
                         os.remove(thumb_path)
-                        # print(f"  > Removed stale thumbnail: {thumb_filename}")
                 except Exception as e_thumb:
                     print(f"🔴 [Holaf-ImageViewer] Error removing thumbnail for {path_canon}: {e_thumb}")
             conn.commit()
@@ -1259,8 +1283,6 @@ def _get_images_from_db_blocking():
 @server.PromptServer.instance.routes.get("/holaf/images/list")
 async def holaf_get_output_images(request: web.Request):
     try:
-        # CORRECTION: The on-demand sync was removed from here to prevent blocking.
-        # It is now handled by a periodic background thread.
         loop = asyncio.get_event_loop()
         image_list = await loop.run_in_executor(None, _get_images_from_db_blocking)
         return web.json_response(image_list)
@@ -1279,13 +1301,12 @@ def _create_thumbnail_blocking(original_path, thumb_path):
             img.convert("RGB").save(thumb_path, "JPEG", quality=85, optimize=True)
         print(f"🔵 [Holaf-ImageViewer] Created thumbnail: {os.path.basename(thumb_path)}")
     except Exception as e:
-        # Clean up failed attempt before re-raising
         if os.path.exists(thumb_path):
             try:
                 os.remove(thumb_path)
             except Exception as e_clean:
                 print(f"🔴 [Holaf-ImageViewer] Could not clean up failed thumbnail {thumb_path}: {e_clean}")
-        raise e # Re-raise the exception to be caught by the endpoint
+        raise e 
 
 
 @server.PromptServer.instance.routes.get("/holaf/images/thumbnail")
@@ -1299,21 +1320,18 @@ async def holaf_get_thumbnail(request: web.Request):
     try:
         output_dir = folder_paths.get_output_directory()
         
-        # Sanitize paths to prevent directory traversal
         safe_filename = sanitize_filename(filename)
         safe_subfolder_parts = [sanitize_directory_component(p) for p in subfolder.split('/') if p]
         
         original_rel_path = os.path.join(*safe_subfolder_parts, safe_filename)
         original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
 
-        # Security check: ensure the final path is still within the output directory
         if not original_abs_path.startswith(os.path.normpath(output_dir)):
             return web.Response(status=403, text="Forbidden path")
 
         if not os.path.isfile(original_abs_path):
             return web.Response(status=404, text="Original image not found")
 
-        # Create a unique, safe cache filename based on the relative path
         path_hash = hashlib.sha1(original_rel_path.encode('utf-8')).hexdigest()
         thumb_filename = f"{path_hash}.jpg"
         thumb_path = os.path.join(THUMBNAIL_CACHE_DIR, thumb_filename)
@@ -1330,9 +1348,7 @@ async def holaf_get_thumbnail(request: web.Request):
         
         loop = asyncio.get_event_loop()
         try:
-            # Generate thumbnail in a background thread to not block the server, but wait for it.
             await loop.run_in_executor(None, _create_thumbnail_blocking, original_abs_path, thumb_path)
-            # If successful, serve the newly created file.
             return web.FileResponse(thumb_path)
         except Exception as e:
             err_msg = f"Thumbnail creation failed: {str(e)}"
@@ -1383,11 +1399,9 @@ def _get_best_ratio_string(width, height):
             min_diff = diff
             best_match = r["name"]
 
-    # If the closest standard ratio is within the tolerance threshold, use it
     if min_diff / actual_ratio < RATIO_THRESHOLD:
         return best_match
     
-    # Otherwise, fall back to the exact simplified ratio
     common_divisor = math.gcd(width, height)
     return f"{width // common_divisor}:{height // common_divisor}"
 
@@ -1401,9 +1415,8 @@ def _extract_image_metadata_blocking(image_path):
     try:
         directory, filename = os.path.split(image_path)
         
-        # Robustly get base filename by finding the last dot
         last_dot_index = filename.rfind('.')
-        if last_dot_index == -1: # No extension
+        if last_dot_index == -1: 
             base_filename = filename
         else:
             base_filename = filename[:last_dot_index]
@@ -1497,7 +1510,7 @@ async def holaf_get_image_metadata(request: web.Request):
         metadata = await loop.run_in_executor(None, _extract_image_metadata_blocking, original_abs_path)
 
         if "error" in metadata and metadata["error"]:
-            return web.json_response(metadata, status=422) # Unprocessable Entity is a good code here
+            return web.json_response(metadata, status=422) 
         
         return web.json_response(metadata)
     
@@ -1557,11 +1570,9 @@ else:
     print("🔴 [Holaf-ModelManager] ERROR: scan_and_update_db not found for scheduled scan.")
 
 # 2. Image Viewer Sync (runs at startup, then periodically)
-# Run once at startup after a delay
 image_sync_startup_thread = threading.Timer(10.0, _sync_image_database_blocking)
 image_sync_startup_thread.daemon = True
 image_sync_startup_thread.start()
-# Run periodically every 60 seconds after the initial one
 _periodic_task_wrapper(60.0, _sync_image_database_blocking)
 
 

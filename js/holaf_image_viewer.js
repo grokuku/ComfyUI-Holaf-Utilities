@@ -19,11 +19,13 @@
  * CORRECTION: Prevented flash of previous image during navigation by preloading before display.
  * MODIFIED: Added a "Display Options" panel with a toggle for thumbnail fit (Cover/Contain).
  * MODIFIED: Added a slider to control thumbnail size.
+ * MODIFIED: Added unified header controls (theme, zoom) for UI consistency.
+ * MODIFICATION: Made theme setting independent for this panel.
  */
 
 import { app } from "../../../scripts/app.js";
 import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
-import holafModelManager from "./holaf_model_manager.js";
+import holafModelManager from "./holaf_model_manager.js"; // Only used for default theme, not for control
 
 const holafImageViewer = {
     panelElements: null,
@@ -50,12 +52,10 @@ const holafImageViewer = {
         thumbnail_fit: 'cover', // 'cover' (cropped) or 'contain' (no crop)
         thumbnail_size: 150, // Default thumbnail size in pixels
     },
-    
+
     // State for zoom/pan
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
-
-    // The menu item is now added statically in holaf_main.js
 
     init() {
         document.addEventListener("keydown", (e) => this._handleKeyDown(e));
@@ -69,18 +69,21 @@ const holafImageViewer = {
             link.href = "extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css";
             document.head.appendChild(link);
         }
-        
-        // Fetch initial settings from the server
+
         this.loadSettings();
     },
-    
+
     async loadSettings() {
         try {
             const response = await fetch('/holaf/utilities/settings');
             const allSettings = await response.json();
-            if (allSettings.ui_image_viewer_settings) {
-                // Merge loaded settings with defaults
-                Object.assign(this.settings, allSettings.ui_image_viewer_settings);
+            if (allSettings.ImageViewerUI) {
+                const fetchedSettings = allSettings.ImageViewerUI;
+                const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
+                this.settings = { ...this.settings, ...fetchedSettings };
+                if (!validTheme) {
+                    this.settings.theme = HOLAF_THEMES[0].name;
+                }
                 console.log("[Holaf ImageViewer] Settings loaded:", this.settings);
             }
         } catch (e) {
@@ -91,6 +94,7 @@ const holafImageViewer = {
     async saveSettings(newSettings) {
         Object.assign(this.settings, newSettings);
         try {
+            // Send the entire settings object for this UI
             await fetch("/holaf/image-viewer/save-settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -100,7 +104,26 @@ const holafImageViewer = {
             console.error("[Holaf ImageViewer] Error saving settings:", error);
         }
     },
-    
+
+    setTheme(themeName, doSave = true) {
+        const themeConfig = HOLAF_THEMES.find(t => t.name === themeName);
+        if (!themeConfig) {
+            console.warn(`[Holaf ImageViewer] Theme '${themeName}' not found.`);
+            return;
+        }
+
+        this.settings.theme = themeName;
+
+        if (this.panelElements && this.panelElements.panelEl) {
+            HOLAF_THEMES.forEach(t => {
+                this.panelElements.panelEl.classList.remove(t.className);
+            });
+            this.panelElements.panelEl.classList.add(themeConfig.className);
+        }
+
+        if (doSave) this.saveSettings({ theme: themeName });
+    },
+
     _createFullscreenOverlay() {
         if (document.getElementById('holaf-viewer-fullscreen-overlay')) return;
 
@@ -115,7 +138,7 @@ const holafImageViewer = {
             <button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>
         `;
         document.body.appendChild(overlay);
-        
+
         this.fullscreenElements = {
             overlay: overlay,
             img: overlay.querySelector('img'),
@@ -127,28 +150,78 @@ const holafImageViewer = {
         this.fullscreenElements.closeBtn.onclick = () => this._handleEscape();
         this.fullscreenElements.prevBtn.onclick = () => this._navigate(-1);
         this.fullscreenElements.nextBtn.onclick = () => this._navigate(1);
-        
+
         this._setupZoomAndPan(this.fullscreenViewState, overlay, this.fullscreenElements.img);
+    },
+
+    createThemeMenu() {
+        const menu = document.createElement("ul");
+        menu.className = "holaf-theme-menu";
+        HOLAF_THEMES.forEach(theme => {
+            const item = document.createElement("li");
+            item.textContent = theme.name;
+            item.onclick = (e) => {
+                e.stopPropagation();
+                this.setTheme(theme.name);
+                menu.style.display = 'none';
+            };
+            menu.appendChild(item);
+        });
+        return menu;
     },
 
     createPanel() {
         if (this.panelElements && this.panelElements.panelEl) return;
 
+        const headerControls = document.createElement("div");
+        headerControls.className = "holaf-header-button-group";
+
+        const themeButtonContainer = document.createElement("div");
+        themeButtonContainer.style.position = 'relative';
+        const themeButton = document.createElement("button");
+        themeButton.className = "holaf-header-button";
+        themeButton.title = "Change Theme";
+        themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
+        const themeMenu = this.createThemeMenu();
+        themeButton.onclick = (e) => {
+            e.stopPropagation();
+            themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
+        };
+        document.addEventListener('click', () => { if (themeMenu) themeMenu.style.display = 'none' });
+        themeButtonContainer.append(themeButton, themeMenu);
+
+        const zoomOutButton = document.createElement("button");
+        zoomOutButton.className = "holaf-header-button";
+        zoomOutButton.title = "UI Zoom not applicable for this panel";
+        zoomOutButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+        zoomOutButton.disabled = true;
+
+        const zoomInButton = document.createElement("button");
+        zoomInButton.className = "holaf-header-button";
+        zoomInButton.title = "UI Zoom not applicable for this panel";
+        zoomInButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+        zoomInButton.disabled = true;
+
+        headerControls.append(themeButtonContainer, zoomOutButton, zoomInButton);
+
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-viewer-panel",
                 title: "Holaf Image Viewer",
+                headerContent: headerControls,
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => this.hide(),
-                onStateChange: (newState) => this.saveSettings(newState),
+                onStateChange: (newState) => {
+                    this.saveSettings(newState)
+                },
                 onFullscreenToggle: (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }),
             });
 
             this.populatePanelContent();
             this.applyCurrentTheme();
             this._createFullscreenOverlay();
-            
+
             if (this.settings.panel_is_fullscreen) {
                 HolafPanelManager.toggleFullscreen(this.panelElements.panelEl, (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }));
             }
@@ -161,7 +234,6 @@ const holafImageViewer = {
 
     populatePanelContent() {
         const contentEl = this.panelElements.contentEl;
-        // The main container is now a flex-column to accommodate the status bar
         contentEl.style.display = 'flex';
         contentEl.style.flexDirection = 'column';
         contentEl.innerHTML = `
@@ -212,9 +284,7 @@ const holafImageViewer = {
             </div>
             <div id="holaf-viewer-statusbar"></div>
         `;
-        
-        // --- Setup Display Options ---
-        // Thumbnail Fit Toggle
+
         const thumbFitToggle = contentEl.querySelector('#holaf-viewer-thumb-fit-toggle');
         thumbFitToggle.checked = this.settings.thumbnail_fit === 'contain';
         thumbFitToggle.onchange = (e) => {
@@ -224,7 +294,6 @@ const holafImageViewer = {
         };
         this._applyThumbnailFit();
 
-        // Thumbnail Size Slider
         const thumbSizeSlider = contentEl.querySelector('#holaf-viewer-thumb-size-slider');
         const thumbSizeValue = contentEl.querySelector('#holaf-viewer-thumb-size-value');
         thumbSizeSlider.value = this.settings.thumbnail_size;
@@ -237,8 +306,6 @@ const holafImageViewer = {
         };
         this._applyThumbnailSize();
 
-
-        // Setup other elements
         const zoomView = contentEl.querySelector('#holaf-viewer-zoom-view');
         const zoomCloseBtn = contentEl.querySelector('.holaf-viewer-zoom-close');
         const zoomImage = zoomView.querySelector('img');
@@ -247,7 +314,7 @@ const holafImageViewer = {
         zoomCloseBtn.onclick = () => this._hideZoomedView();
         zoomImage.ondblclick = () => this._hideZoomedView();
         zoomImage.onclick = (e) => e.stopPropagation();
-        
+
         zoomFullscreenBtn.onclick = () => {
             if (this.activeImage) {
                 this._showFullscreenView(this.activeImage);
@@ -266,7 +333,7 @@ const holafImageViewer = {
 
     _applyThumbnailSize() {
         const galleryEl = document.getElementById("holaf-viewer-gallery");
-        if(galleryEl) {
+        if (galleryEl) {
             galleryEl.style.setProperty('--holaf-thumbnail-size', `${this.settings.thumbnail_size}px`);
         }
     },
@@ -335,7 +402,7 @@ const holafImageViewer = {
             selectAllItem.style.marginBottom = '5px';
             foldersEl.appendChild(selectAllItem);
         }
-        
+
         const updateSelectAllState = () => {
             const selectAllCb = foldersEl.querySelector('#folder-filter-select-all');
             if (!selectAllCb) return;
@@ -389,7 +456,7 @@ const holafImageViewer = {
         const wasInEnlargedView = isZoomed || isFullscreen;
         const previousActiveImage = this.activeImage;
         const previousNavIndex = this.currentNavIndex;
-        
+
         const selectedFolders = [];
         document.querySelectorAll('#holaf-viewer-folders-filter input:checked:not(#folder-filter-select-all)').forEach(cb => {
             const folderName = cb.id.replace('folder-filter-', '');
@@ -400,7 +467,7 @@ const holafImageViewer = {
         document.querySelectorAll('#holaf-viewer-formats-filter input:checked').forEach(cb => {
             selectedFormats.push(cb.id.replace('format-filter-', ''));
         });
-        
+
         // Save the current filter state
         const folderLabels = selectedFolders.map(f => f === '' ? 'root' : f);
         this.saveSettings({ folder_filters: folderLabels, format_filters: selectedFormats });
@@ -408,7 +475,7 @@ const holafImageViewer = {
         this.filteredImages = this.images.filter(img => {
             const imgSubfolder = img.subfolder || '';
             const folderMatch = selectedFolders.some(selectedFolder => {
-                if (selectedFolder === '') { 
+                if (selectedFolder === '') {
                     return imgSubfolder === '';
                 }
                 return imgSubfolder === selectedFolder || imgSubfolder.startsWith(selectedFolder + '/');
@@ -435,16 +502,16 @@ const holafImageViewer = {
                     if (isFullscreen) this._hideFullscreenView();
                     return;
                 }
-                
+
                 newNavIndex = Math.min(previousNavIndex, this.filteredImages.length - 1);
-                
+
                 this.activeImage = this.filteredImages[newNavIndex];
                 this.currentNavIndex = newNavIndex;
-                
+
                 const newImageUrl = this._getFullImageUrl(this.activeImage);
                 if (isZoomed) document.querySelector('#holaf-viewer-zoom-view img').src = newImageUrl;
                 if (isFullscreen) this.fullscreenElements.img.src = newImageUrl;
-                
+
                 this.updateInfoPane(this.activeImage);
                 this._updateActiveThumbnail(this.currentNavIndex);
             }
@@ -470,7 +537,7 @@ const holafImageViewer = {
                     const imageIndex = placeholder.dataset.index;
                     const image = this.images[imageIndex];
                     if (!image) return;
-                    
+
                     observer.unobserve(placeholder);
                     this.loadSpecificThumbnail(placeholder, image, false);
                 }
@@ -488,7 +555,7 @@ const holafImageViewer = {
         });
         galleryEl.appendChild(fragment);
     },
-    
+
     _getFullImageUrl(image) {
         const url = new URL(window.location.origin);
         url.pathname = '/view';
@@ -499,23 +566,23 @@ const holafImageViewer = {
         });
         return url.href;
     },
-    
+
     _findImageIndexInFilteredList(imageToFind) {
         if (!imageToFind) return -1;
         return this.filteredImages.findIndex(img => img.filename === imageToFind.filename && img.subfolder === imageToFind.subfolder);
     },
-    
+
     _updateActiveThumbnail(navIndex) {
         const currentActive = document.querySelector('.holaf-viewer-thumbnail-placeholder.active');
         if (currentActive) currentActive.classList.remove('active');
-        
-        if(navIndex < 0 || navIndex >= this.filteredImages.length) return;
+
+        if (navIndex < 0 || navIndex >= this.filteredImages.length) return;
 
         const image = this.filteredImages[navIndex];
         const masterIndex = this.images.findIndex(img => img.filename === image.filename && img.subfolder === image.subfolder);
-        
+
         const newActiveThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${masterIndex}"]`);
-        if(newActiveThumbnail) {
+        if (newActiveThumbnail) {
             newActiveThumbnail.classList.add('active');
             newActiveThumbnail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
@@ -553,7 +620,7 @@ const holafImageViewer = {
             placeholder.appendChild(fsIcon);
             placeholder.prepend(img);
         };
-        
+
         img.onerror = async () => {
             placeholder.classList.add('error');
             const response = await fetch(imageUrl.href, { cache: 'no-store' }).catch(() => null);
@@ -594,7 +661,7 @@ const holafImageViewer = {
         });
 
         placeholder.addEventListener('dblclick', () => this._showZoomedView(image));
-        
+
         const fullscreenIcon = document.createElement('div');
         fullscreenIcon.className = 'holaf-viewer-fullscreen-icon';
         fullscreenIcon.innerHTML = '⛶';
@@ -639,7 +706,7 @@ const holafImageViewer = {
     async updateInfoPane(image) {
         const infoContentEl = document.getElementById('holaf-viewer-info-content');
         if (!infoContentEl || !image) return;
-        
+
         if (this.metadataAbortController) this.metadataAbortController.abort();
         this.metadataAbortController = new AbortController();
         const signal = this.metadataAbortController.signal;
@@ -657,7 +724,7 @@ const holafImageViewer = {
                 <p class="holaf-viewer-message"><em>Loading metadata...</em></p>
             </div>
         `;
-        
+
         try {
             const metadataUrl = new URL(window.location.origin);
             metadataUrl.pathname = '/holaf/images/metadata';
@@ -675,31 +742,31 @@ const holafImageViewer = {
                 metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> ${errorData.error || 'Unknown error'}</p>`;
                 return;
             }
-            
+
             const data = await response.json();
 
             // Populate resolution info
             const resolutionContainer = document.getElementById('holaf-resolution-container');
-            if(resolutionContainer) {
+            if (resolutionContainer) {
                 let resolutionHTML = '';
-                if(data.width && data.height) {
+                if (data.width && data.height) {
                     resolutionHTML += `<p><strong>Resolution:</strong> ${data.width} x ${data.height} px</p>`;
                 }
-                if(data.ratio) {
+                if (data.ratio) {
                     resolutionHTML += `<p><strong>Ratio:</strong> ${data.ratio}</p>`;
                 }
                 resolutionContainer.innerHTML = resolutionHTML;
             }
-            
+
             const getSourceLabel = (source) => {
-                switch(source) {
+                switch (source) {
                     case "external_txt": return "(from .txt file)";
                     case "external_json": return "(from .json file)";
                     case "internal_png": return "(from PNG metadata)";
                     default: return "";
                 }
             };
-            
+
             metadataContainer.innerHTML = ''; // Clear loading message
 
             const createButton = (text, onClick, disabled = false) => {
@@ -716,7 +783,7 @@ const holafImageViewer = {
             // --- Prompt Section ---
             const promptSourceLabel = getSourceLabel(data.prompt_source);
             metadataContainer.innerHTML += `<p><span class="holaf-viewer-metadata-label">Prompt:</span> <span class="holaf-viewer-metadata-source">${promptSourceLabel}</span></p>`;
-            
+
             const promptActions = document.createElement('div');
             promptActions.className = 'holaf-viewer-info-actions';
             const copyPromptBtn = createButton('📋 Copy Prompt', (e) => {
@@ -744,7 +811,7 @@ const holafImageViewer = {
             // --- Workflow Section ---
             const workflowSourceLabel = getSourceLabel(data.workflow_source);
             metadataContainer.innerHTML += `<p style="margin-top: 15px;"><span class="holaf-viewer-metadata-label">Workflow:</span> <span class="holaf-viewer-metadata-source">${workflowSourceLabel}</span></p>`;
-            
+
             const workflowActions = document.createElement('div');
             workflowActions.className = 'holaf-viewer-info-actions';
             const loadWorkflowBtn = createButton('⚡ Load Workflow', async () => {
@@ -778,15 +845,15 @@ const holafImageViewer = {
             const metadataContainer = document.getElementById('holaf-metadata-container');
             if (err.name === 'AbortError') return;
             console.error("[Holaf ImageViewer] Error fetching metadata:", err);
-            if(metadataContainer) metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> Failed to fetch metadata.</p>`;
+            if (metadataContainer) metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> Failed to fetch metadata.</p>`;
         } finally {
             this.metadataAbortController = null;
         }
     },
-    
+
     _resetTransform(state, imageEl, containerEl) {
         state.scale = 1;
-        state.tx = 0; 
+        state.tx = 0;
         state.ty = 0;
         imageEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
         imageEl.style.cursor = 'grab';
@@ -807,14 +874,13 @@ const holafImageViewer = {
     _showZoomedView(image) {
         this.currentNavIndex = this._findImageIndexInFilteredList(image);
         if (this.currentNavIndex === -1) return;
-        
+
         this.activeImage = image;
 
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const zoomImage = zoomView.querySelector('img');
         const imageUrl = this._getFullImageUrl(image);
-        
-        // Use a preloader to prevent flash of old content
+
         const loader = new Image();
         loader.onload = () => {
             this._resetTransform(this.zoomViewState, zoomImage, zoomView);
@@ -824,10 +890,9 @@ const holafImageViewer = {
         };
         loader.onerror = () => {
             console.error(`[Holaf ImageViewer] Failed to load enlarged image: ${imageUrl}`);
-            // Optionally, show an error in the zoom view
         };
         loader.src = imageUrl;
-        
+
         this.updateInfoPane(image);
         this._updateActiveThumbnail(this.currentNavIndex);
         this._preloadNextImage(this.currentNavIndex);
@@ -847,13 +912,12 @@ const holafImageViewer = {
         const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
         this._fullscreenSourceView = isZoomed ? 'zoomed' : 'gallery';
 
-        if(isZoomed) this._hideZoomedView();
-        
+        if (isZoomed) this._hideZoomedView();
+
         const fsImg = this.fullscreenElements.img;
         const fsOverlay = this.fullscreenElements.overlay;
         const imageUrl = this._getFullImageUrl(image);
 
-        // Use a preloader to prevent flash of old content
         const loader = new Image();
         loader.onload = () => {
             this._resetTransform(this.fullscreenViewState, fsImg, fsOverlay);
@@ -861,22 +925,22 @@ const holafImageViewer = {
             fsOverlay.style.display = 'flex';
         };
         loader.onerror = () => {
-             console.error(`[Holaf ImageViewer] Failed to load fullscreen image: ${imageUrl}`);
+            console.error(`[Holaf ImageViewer] Failed to load fullscreen image: ${imageUrl}`);
         };
         loader.src = imageUrl;
-        
+
         this.updateInfoPane(image);
         this._updateActiveThumbnail(this.currentNavIndex);
         this._preloadNextImage(this.currentNavIndex);
     },
-    
+
     _hideFullscreenView() {
         this.fullscreenElements.overlay.style.display = 'none';
         const source = this._fullscreenSourceView;
         this._fullscreenSourceView = null; // Reset state
         return source;
     },
-    
+
     _navigate(direction) {
         if (this.filteredImages.length === 0) return;
 
@@ -888,24 +952,22 @@ const holafImageViewer = {
         }
 
         const clampedIndex = Math.max(0, Math.min(newIndex, this.filteredImages.length - 1));
-        
+
         if (clampedIndex === this.currentNavIndex && this.currentNavIndex !== -1) {
-            return; 
+            return;
         }
-        
+
         this.currentNavIndex = clampedIndex;
         const newImage = this.filteredImages[this.currentNavIndex];
         this.activeImage = newImage;
-        
-        // Immediate UI updates for responsiveness
+
         this._updateActiveThumbnail(this.currentNavIndex);
         this.updateInfoPane(newImage);
         this._preloadNextImage(this.currentNavIndex);
 
-        // Preload the image before showing it
         const newImageUrl = this._getFullImageUrl(newImage);
         const loader = new Image();
-        
+
         loader.onload = () => {
             const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
             const isFullscreen = this.fullscreenElements.overlay.style.display === 'flex';
@@ -920,11 +982,11 @@ const holafImageViewer = {
                 fsImg.src = newImageUrl;
             }
         };
-        
-        loader.onerror = () => { 
+
+        loader.onerror = () => {
             console.error(`[Holaf ImageViewer] Failed to preload image for navigation: ${newImageUrl}`);
         };
-        
+
         loader.src = newImageUrl;
     },
 
@@ -954,7 +1016,7 @@ const holafImageViewer = {
 
         this.currentNavIndex = clampedIndex;
         this.activeImage = this.filteredImages[this.currentNavIndex];
-        
+
         this._updateActiveThumbnail(this.currentNavIndex);
         this.updateInfoPane(this.activeImage);
     },
@@ -975,7 +1037,7 @@ const holafImageViewer = {
 
     _handleKeyDown(e) {
         if (!this.panelElements?.panelEl || this.panelElements.panelEl.style.display === 'none') return;
-        
+
         const targetTagName = e.target.tagName.toLowerCase();
         if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') {
             return;
@@ -984,7 +1046,7 @@ const holafImageViewer = {
         const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
         const isFullscreen = this.fullscreenElements?.overlay.style.display === 'flex';
 
-        switch(e.key) {
+        switch (e.key) {
             case 'Enter':
                 e.preventDefault();
                 if (this.currentNavIndex === -1 && this.filteredImages.length > 0) {
@@ -1020,7 +1082,7 @@ const holafImageViewer = {
                 break;
         }
     },
-    
+
     _setupZoomAndPan(state, container, imageEl) {
         const updateTransform = () => {
             imageEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
@@ -1028,44 +1090,39 @@ const holafImageViewer = {
 
         container.addEventListener('wheel', (e) => {
             e.preventDefault();
-            
+
             const oldScale = state.scale;
             const zoomFactor = 1.1;
-            
+
             const newScale = e.deltaY < 0 ? oldScale * zoomFactor : oldScale / zoomFactor;
-            
-            // Clamp the scale to a reasonable range
+
             state.scale = Math.max(1, Math.min(newScale, 30));
 
-            // If the scale didn't change (e.g., at min/max), do nothing
             if (state.scale === oldScale) return;
 
             const rect = container.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            // The translation needs to be adjusted to keep the point under the mouse stationary
-            // The formula is: new_translate = mouse_pos - (mouse_pos - old_translate) * (new_scale / old_scale)
             state.tx = mouseX - (mouseX - state.tx) * (state.scale / oldScale);
             state.ty = mouseY - (mouseY - state.ty) * (state.scale / oldScale);
 
             if (state.scale <= 1) {
-                // If scale is back to 1 or less, reset everything for a clean, centered state
                 this._resetTransform(state, imageEl, container);
             } else {
                 imageEl.style.cursor = 'grab';
             }
-            
+
             updateTransform();
         });
 
         imageEl.addEventListener('mousedown', (e) => {
             e.preventDefault();
             if (state.scale <= 1) return;
-            
+
             let startX = e.clientX - state.tx;
             let startY = e.clientY - state.ty;
-            
+
             imageEl.style.cursor = 'grabbing';
             imageEl.style.transition = 'none';
 
@@ -1081,7 +1138,7 @@ const holafImageViewer = {
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
             };
-            
+
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -1094,10 +1151,7 @@ const holafImageViewer = {
 
     applyCurrentTheme() {
         if (this.panelElements?.panelEl) {
-            const currentThemeName = holafModelManager.settings.theme; 
-            const themeConfig = HOLAF_THEMES.find(t => t.name === currentThemeName) || HOLAF_THEMES[0];
-            HOLAF_THEMES.forEach(t => this.panelElements.panelEl.classList.remove(t.className));
-            this.panelElements.panelEl.classList.add(themeConfig.className);
+            this.setTheme(this.settings.theme, false);
         }
     },
 
@@ -1108,7 +1162,6 @@ const holafImageViewer = {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
 
-            // Apply settings on show
             this._applyThumbnailFit();
             this._applyThumbnailSize();
 

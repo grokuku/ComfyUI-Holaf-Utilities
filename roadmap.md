@@ -8,17 +8,21 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
 
 ### Tâches Générales et Bugs
 
-**Statut : 🔴 Non commencées / 🟡 En cours.**
+**Statut : ✅ Mis à jour.**
 
-1.  **Correction de Bugs :**
-    *   [À FAIRE] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" ne fonctionne pas.
+1.  **Améliorations de l'Interface :**
+    *   [COMPLETED] Les barres de titre des panneaux (Image Viewer, Nodes Manager) ont été uniformisées pour inclure les contrôles de thème et de zoom, comme le Model Manager et le Terminal.
+    *   [COMPLETED] La gestion des thèmes est désormais indépendante pour chaque outil, avec une sauvegarde individuelle de l'état.
+
+2.  **Correction de Bugs :**
+    *   [COMPLETED] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" est maintenant fonctionnelle.
     *   [À FAIRE] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée mais n'a pas d'effet visuel sur les vignettes.
 
-2.  **Panneau de Configuration Centralisé :**
+3.  **Panneau de Configuration Centralisé :**
     *   [À FAIRE] Ajouter une entrée "Options" dans le menu principal (sous un séparateur).
     *   [À FAIRE] Créer un nouveau panneau "Options" qui permet de modifier graphiquement les paramètres de `config.ini` pour tous les outils (Terminal, Model Manager, etc.).
 
-3.  **Fonctionnalité de Redémarrage :**
+4.  **Fonctionnalité de Redémarrage :**
     *   [À FAIRE] Ajouter une entrée "Restart ComfyUI" en bas du menu principal (sous un séparateur).
     *   [À FAIRE] Implémenter la logique pour déclencher un redémarrage du serveur, similaire à celle utilisée par le "ComfyUI-Manager".
 
