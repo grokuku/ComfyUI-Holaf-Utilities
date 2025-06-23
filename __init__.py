@@ -39,6 +39,7 @@
 # CORRECTION: Replaced on-demand image DB sync with a periodic background thread for performance.
 # CORRECTION: Made metadata extraction ultra-robust with manual path parsing and detailed logging to fix a critical bug.
 # CORRECTION: Fixed workflow loading for JSON files containing invalid 'NaN' values by sanitizing them to 'null'.
+# MODIFICATION: Implemented a robust server restart mechanism using os.execv, inspired by ComfyUI-Manager.
 # === End Documentation ===
 
 import server
@@ -305,18 +306,84 @@ def _verify_password(stored_hash, provided_password):
     new_key = hashlib.pbkdf2_hmac('sha256', provided_password.encode('utf-8'), salt, iterations)
     return hmac.compare_digest(new_key, key)
 
+# --- Global Restart Logic ---
+def _do_restart():
+    """This function is run in a separate thread to allow the server to respond before restarting."""
+    print("🔵 [Holaf-Utilities] Server restart requested. Waiting 1 second...")
+    time.sleep(1)
+    print("🔴 [Holaf-Utilities] RESTARTING NOW...")
+    # This replaces the current process with a new one, using the same arguments
+    try:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print(f"🔴 [Holaf-Utilities] CRITICAL: Restart via os.execv failed: {e}")
+
 # --- API Endpoints ---
 
 @server.PromptServer.instance.routes.get("/holaf/utilities/settings")
 async def holaf_get_all_settings(request: web.Request):
     current_config = get_config() 
     password_is_set = current_config.get('password_hash') is not None
-    return web.json_response({
-        "password_is_set": password_is_set, 
-        "ui_terminal_settings": current_config.get('ui_terminal'),
-        "ui_model_manager_settings": current_config.get('ui_model_manager'),
-        "ui_image_viewer_settings": current_config.get('ui_image_viewer')
-    })
+    
+    # Reconstruct the config structure as a plain dict for JSON serialization
+    response_data = {
+        "password_is_set": password_is_set,
+        "Terminal": {"shell_command": current_config.get('shell_command')},
+        "TerminalUI": current_config.get('ui_terminal'),
+        "ModelManagerUI": current_config.get('ui_model_manager'),
+        "ImageViewerUI": current_config.get('ui_image_viewer')
+    }
+    
+    return web.json_response(response_data)
+
+@server.PromptServer.instance.routes.post("/holaf/utilities/save-all-settings")
+async def holaf_save_all_settings(request: web.Request):
+    async with CONFIG_LOCK:
+        try:
+            data = await request.json()
+            config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+            config_parser_obj = configparser.ConfigParser()
+            config_parser_obj.read(config_path)
+
+            # Iterate over each main section provided in the data
+            for section, settings in data.items():
+                if section == 'Security': continue # Never allow changing security from this endpoint
+                
+                if not config_parser_obj.has_section(section):
+                    config_parser_obj.add_section(section)
+                
+                if isinstance(settings, dict):
+                    for key, value in settings.items():
+                        safe_key = re.sub(r'[^a-zA-Z0-9_]', '', key)
+                        if not safe_key: continue
+                        
+                        if value is None or str(value).strip() == '':
+                            if config_parser_obj.has_option(section, safe_key):
+                                config_parser_obj.remove_option(section, safe_key)
+                        else:
+                             config_parser_obj.set(section, str(safe_key), str(value))
+            
+            with open(config_path, 'w') as configfile:
+                config_parser_obj.write(configfile)
+
+            # Update global config immediately
+            global CONFIG
+            CONFIG = get_config()
+
+            return web.json_response({"status": "ok", "message": "All settings saved."})
+        except Exception as e:
+            print(f"🔴 [Holaf-Utilities] Error saving all settings: {e}")
+            traceback.print_exc()
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+@server.PromptServer.instance.routes.post("/holaf/utilities/restart")
+async def holaf_restart_server(request: web.Request):
+    # Run the restart in a daemon thread. This allows us to return a response to the client
+    # before the server process is replaced.
+    restart_thread = threading.Thread(target=_do_restart, daemon=True)
+    restart_thread.start()
+    return web.json_response({"status": "ok", "message": "Restart command received and scheduled."})
+
 
 @server.PromptServer.instance.routes.post("/holaf/terminal/save-settings")
 async def holaf_terminal_save_settings(request: web.Request):

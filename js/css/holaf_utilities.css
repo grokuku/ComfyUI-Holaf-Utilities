@@ -7,6 +7,8 @@
  *           Applied theme variables to shared panel elements and Model Manager specifics.
  * MODIFIED: Styled main "Holaf's Utilities" button and its dropdown to match Graphite Orange theme.
  * MODIFIED: Added styles for Nodes Manager checkboxes and action buttons.
+ * MODIFICATION: Added styles for custom modal dialogs.
+ * MODIFICATION: Added styles for the new Settings Panel.
  */
 
 /* --- THEME DEFINITIONS (Variables CSS) --- */
@@ -351,6 +353,66 @@
     color: var(--holaf-text-secondary) !important;
     cursor: not-allowed !important;
     opacity: 0.6 !important;
+}
+
+
+/* --- CUSTOM MODAL DIALOG STYLES --- */
+#holaf-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#holaf-modal-dialog {
+    background-color: var(--holaf-background-primary, #1E1E1E);
+    color: var(--holaf-text-primary, #E0E0E0);
+    border: 1px solid var(--holaf-border-color, #3F3F3F);
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6);
+    min-width: 300px;
+    max-width: 500px;
+    width: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+#holaf-modal-dialog .holaf-utility-header {
+    cursor: default !important;
+    /* No dragging for modals */
+}
+
+#holaf-modal-dialog .holaf-modal-content {
+    padding: 20px 15px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--holaf-text-secondary, #A0A0A0);
+}
+
+#holaf-modal-dialog .holaf-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 10px 15px;
+    border-top: 1px solid var(--holaf-border-color, #3F3F3F);
+}
+
+#holaf-modal-dialog .holaf-modal-footer .comfy-button.secondary {
+    background-color: var(--holaf-background-secondary) !important;
+    color: var(--holaf-text-secondary) !important;
+    border: 1px solid var(--holaf-border-color) !important;
+}
+
+#holaf-modal-dialog .holaf-modal-footer .comfy-button.secondary:hover {
+    border-color: var(--holaf-accent-color) !important;
+    color: var(--holaf-text-primary) !important;
+    opacity: 1;
 }
 
 
@@ -715,7 +777,8 @@
 #holaf-nodes-manager-panel .holaf-nodes-manager-req-icon {
     color: var(--holaf-text-secondary);
     flex-shrink: 0;
-    margin-left: 4px; /* Reduced margin for tighter icon packing */
+    margin-left: 4px;
+    /* Reduced margin for tighter icon packing */
     opacity: 0.7;
     vertical-align: middle;
 }
@@ -730,7 +793,8 @@
 }
 
 #holaf-nodes-manager-panel .holaf-nodes-manager-left-pane {
-    flex: 0 0 320px; /* Slightly wider for checkboxes and icons */
+    flex: 0 0 320px;
+    /* Slightly wider for checkboxes and icons */
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--holaf-border-color);
@@ -749,15 +813,19 @@
     padding: 8px;
     border-bottom: 1px solid var(--holaf-border-color);
     flex-shrink: 0;
-    display: flex; /* For aligning refresh and select all */
+    display: flex;
+    /* For aligning refresh and select all */
     align-items: center;
 }
 
 #holaf-nodes-manager-panel .holaf-nodes-manager-actions-toolbar .comfy-button {
-    flex-grow: 1; /* Make buttons fill space if wrapped */
-    font-size: 12px; /* Smaller font for action buttons */
+    flex-grow: 1;
+    /* Make buttons fill space if wrapped */
+    font-size: 12px;
+    /* Smaller font for action buttons */
     padding: 4px 8px;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-actions-toolbar .comfy-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -771,20 +839,26 @@
 }
 
 #holaf-nodes-manager-panel .holaf-nodes-manager-list-item {
-    padding: 6px 10px; /* Adjusted padding */
-    cursor: default; /* Default cursor, name span will be pointer */
+    padding: 6px 10px;
+    /* Adjusted padding */
+    cursor: default;
+    /* Default cursor, name span will be pointer */
     border-radius: 4px;
     margin-bottom: 2px;
     color: var(--holaf-text-primary);
     transition: background-color 0.15s;
-    display: flex; /* For aligning checkbox, name, and icons */
+    display: flex;
+    /* For aligning checkbox, name, and icons */
     align-items: center;
 }
+
 /* Style for the item whose README is currently displayed */
 #holaf-nodes-manager-panel .holaf-nodes-manager-list-item.selected-readme {
-    background-color: var(--holaf-accent-color) !important; /* Use important if needed to override hover */
+    background-color: var(--holaf-accent-color) !important;
+    /* Use important if needed to override hover */
     color: var(--holaf-button-text) !important;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-list-item.selected-readme:hover {
     background-color: color-mix(in srgb, var(--holaf-accent-color) 90%, black 10%) !important;
 }
@@ -794,11 +868,13 @@
     background-color: var(--holaf-header-button-hover-bg);
 }
 
-#holaf-nodes-manager-panel .holaf-nodes-manager-list-item > span:first-of-type { /* Target the name span */
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item>span:first-of-type {
+    /* Target the name span */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-grow: 1; /* Allow name to take available space */
+    flex-grow: 1;
+    /* Allow name to take available space */
 }
 
 #holaf-nodes-manager-panel .holaf-nodes-manager-item-cb {
@@ -807,8 +883,8 @@
 }
 
 #holaf-nodes-manager-panel #holaf-nodes-manager-select-all-cb {
-     accent-color: var(--holaf-accent-color);
-     transform: scale(0.95);
+    accent-color: var(--holaf-accent-color);
+    transform: scale(0.95);
 }
 
 
@@ -820,18 +896,22 @@
     font-weight: bold;
     display: flex;
     align-items: center;
-    justify-content: space-between; /* Pushes source tag to right */
+    justify-content: space-between;
+    /* Pushes source tag to right */
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-header h3 {
     margin: 0;
     font-size: 1.1em;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-header a {
     color: var(--holaf-accent-color);
     text-decoration: none;
     margin-left: 10px;
     font-size: 0.9em;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-header a:hover {
     text-decoration: underline;
 }
@@ -844,10 +924,12 @@
     color: var(--holaf-text-primary);
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-family: sans-serif; /* More readable for rendered markdown */
+    font-family: sans-serif;
+    /* More readable for rendered markdown */
     font-size: 14px;
     line-height: 1.6;
 }
+
 /* Basic Markdown styling */
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h1,
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h2,
@@ -858,18 +940,29 @@
     margin-top: 24px;
     margin-bottom: 16px;
 }
-#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h1 { font-size: 1.8em; }
-#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h2 { font-size: 1.5em; }
-#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h3 { font-size: 1.25em; }
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h1 {
+    font-size: 1.8em;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h2 {
+    font-size: 1.5em;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h3 {
+    font-size: 1.25em;
+}
 
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content p {
     margin-bottom: 1em;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content ul,
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content ol {
     padding-left: 2em;
     margin-bottom: 1em;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content code {
     background-color: var(--holaf-background-secondary);
     padding: 0.2em 0.4em;
@@ -878,6 +971,7 @@
     border-radius: 3px;
     font-family: monospace;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content pre {
     background-color: var(--holaf-background-secondary);
     padding: 1em;
@@ -885,12 +979,14 @@
     border-radius: 3px;
     font-family: monospace;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content pre code {
     padding: 0;
     margin: 0;
     font-size: 100%;
     background: none;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content blockquote {
     border-left: .25em solid var(--holaf-border-color);
     padding: 0 1em;
@@ -898,22 +994,27 @@
     margin-left: 0;
     margin-right: 0;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content img {
     max-width: 100%;
     height: auto;
-    background-color: var(--holaf-background-secondary); /* Helps with transparent PNGs */
+    background-color: var(--holaf-background-secondary);
+    /* Helps with transparent PNGs */
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content table {
     border-collapse: collapse;
     margin-bottom: 1em;
     width: auto;
     max-width: 100%;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content th,
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content td {
     border: 1px solid var(--holaf-border-color);
     padding: 0.5em 0.75em;
 }
+
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content th {
     background-color: var(--holaf-background-secondary);
     font-weight: bold;
@@ -940,5 +1041,113 @@
 
 #holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-thumb:hover,
 #holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
+}
+
+/* --- SETTINGS PANEL SPECIFIC STYLES --- */
+#holaf-settings-panel .holaf-settings-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    color: var(--holaf-text-primary);
+}
+
+#holaf-settings-panel .holaf-settings-toolbar {
+    padding: 8px;
+    border-bottom: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-secondary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#holaf-settings-panel .holaf-settings-status-indicator {
+    font-size: 12px;
+    font-style: italic;
+    transition: color 0.3s;
+}
+
+#holaf-settings-panel .holaf-settings-form {
+    padding: 15px;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.holaf-settings-group {
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--holaf-border-color);
+}
+
+.holaf-settings-group:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.holaf-settings-group h3 {
+    margin: 0 0 5px 0;
+    color: var(--holaf-text-primary);
+}
+
+.holaf-settings-group-description {
+    font-size: 13px;
+    color: var(--holaf-text-secondary);
+    margin: 0 0 15px 0;
+}
+
+.holaf-settings-field {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    align-items: center;
+    gap: 10px 15px;
+    margin-bottom: 12px;
+}
+
+.holaf-settings-field label {
+    font-weight: bold;
+    text-align: right;
+}
+
+.holaf-settings-field input,
+.holaf-settings-field select {
+    padding: 6px 8px;
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.holaf-settings-field input:focus,
+.holaf-settings-field select:focus {
+    outline: none;
+    border-color: var(--holaf-accent-color);
+}
+
+.holaf-settings-field-description {
+    grid-column: 2 / 3;
+    font-size: 12px;
+    color: var(--holaf-text-secondary);
+    margin: -5px 0 0 0;
+    padding: 0;
+}
+
+/* Settings panel scrollbar */
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar {
+    width: 10px;
+}
+
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar-track {
+    background: var(--holaf-scrollbar-track);
+}
+
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar-thumb {
+    background-color: var(--holaf-scrollbar-thumb);
+    border-radius: 5px;
+    border: 2px solid var(--holaf-scrollbar-track);
+}
+
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar-thumb:hover {
     background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
 }
