@@ -17,6 +17,7 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
 2.  **Correction de Bugs :**
     *   [COMPLETED] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" est maintenant fonctionnelle.
     *   [À FAIRE] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée mais n'a pas d'effet visuel sur les vignettes.
+    *   [À FAIRE] Le texte du filtre dans le "Custom Nodes Manager" est sauvegardé dans config.ini mais n'est pas correctement rechargé et appliqué à la réouverture du panneau après un redémarrage de ComfyUI.
 
 3.  **Panneau de Configuration Centralisé :**
     *   [À FAIRE] Ajouter une entrée "Options" dans le menu principal (sous un séparateur).

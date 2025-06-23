@@ -25,6 +25,7 @@
  * MODIFICATION: Added name filter input to the Nodes Manager toolbar.
  * MODIFICATION: Implemented persistence for filterText.
  * CORRECTION: Ensured panel position is correctly loaded using x/y from settings if panel_x/panel_y are null.
+ * CORRECTION: Ensured `init` awaits `loadSettings` for proper filter text loading on startup.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -62,15 +63,15 @@ const holafNodesManager = {
         panel_height: 600,
         panel_is_fullscreen: false,
         zoom_level: 1.0,
-        filter_text: "", // Added for persistence
-        x: null, // Fallback for position from onStateChange
-        y: null  // Fallback for position from onStateChange
+        filter_text: "",
+        x: null,
+        y: null
     },
     saveSettingsTimeout: null,
-    filterText: "", // Current runtime filter text
+    filterText: "",
 
-    init() {
-        this.loadSettings();
+    async init() { // Made init async
+        await this.loadSettings(); // Await loading of settings
     },
 
     async loadSettings() {
@@ -80,12 +81,12 @@ const holafNodesManager = {
             if (allSettings.NodesManagerUI) {
                 const fetchedSettings = allSettings.NodesManagerUI;
                 const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
-                this.settings = { ...this.settings, ...fetchedSettings }; // Merges all keys from fetchedSettings
+                this.settings = { ...this.settings, ...fetchedSettings };
                 if (!validTheme) {
                     this.settings.theme = HOLAF_THEMES[0].name;
                 }
-                // Initialize runtime filterText from loaded settings
-                this.filterText = this.settings.filter_text || "";
+                this.filterText = this.settings.filter_text || ""; // Initialize runtime filter from loaded settings
+                // No need to set this.settings.filter_text here again, it's already set by the spread
             }
         } catch (e) {
             console.error("[Holaf NodesManager] Could not load settings:", e);
@@ -95,10 +96,8 @@ const holafNodesManager = {
     saveSettings() {
         clearTimeout(this.saveSettingsTimeout);
         this.saveSettingsTimeout = setTimeout(async () => {
-            // Ensure current filterText is in settings before saving
-            this.settings.filter_text = this.filterText;
+            this.settings.filter_text = this.filterText; // Ensure current runtime filter is in settings object
             try {
-                // Construct the payload carefully, only sending recognized keys by config loader or general save
                 const settingsToSave = {
                     theme: this.settings.theme,
                     panel_x: this.settings.panel_x,
@@ -109,10 +108,8 @@ const holafNodesManager = {
                     zoom_level: this.settings.zoom_level,
                     filter_text: this.settings.filter_text
                 };
-                // Add x/y if panel_x/y are null (panel was likely dragged)
                 if (this.settings.panel_x === null && this.settings.x !== null) settingsToSave.x = this.settings.x;
                 if (this.settings.panel_y === null && this.settings.y !== null) settingsToSave.y = this.settings.y;
-
 
                 await fetch('/holaf/utilities/save-all-settings', {
                     method: 'POST',
@@ -234,14 +231,12 @@ const holafNodesManager = {
                     y: this.settings.panel_y !== null && this.settings.panel_y !== undefined ? this.settings.panel_y : this.settings.y
                 },
                 onClose: () => this.hide(),
-                onStateChange: (newState) => { // newState contains x, y, width, height
+                onStateChange: (newState) => {
                     if (!this.settings.panel_is_fullscreen) {
-                        // Prioritize panel_x/y if they exist, otherwise use x/y from newState
                         this.settings.panel_x = newState.x;
                         this.settings.panel_y = newState.y;
                         this.settings.panel_width = newState.width;
                         this.settings.panel_height = newState.height;
-                        // Also store x,y for compatibility if panel_x/y are later cleared
                         this.settings.x = newState.x;
                         this.settings.y = newState.y;
                         this.saveSettings();
@@ -296,11 +291,11 @@ const holafNodesManager = {
         document.getElementById("holaf-nodes-manager-refresh-btn").onclick = () => this.refreshNodesList();
 
         const filterInputEl = document.getElementById("holaf-nodes-manager-filter-input");
-        filterInputEl.value = this.filterText; // Set initial value from loaded settings
+        filterInputEl.value = this.filterText;
         filterInputEl.oninput = (e) => {
             this.filterText = e.target.value.toLowerCase();
-            this.settings.filter_text = this.filterText; // Keep settings object updated
-            this.saveSettings(); // Save on input change
+            // this.settings.filter_text = this.filterText; // No longer needed here, saveSettings handles it
+            this.saveSettings();
             this.renderNodesList();
         };
 
@@ -323,7 +318,6 @@ const holafNodesManager = {
         listEl.innerHTML = `<p class="holaf-manager-message">Scanning...</p>`;
 
         const oldSelectedNodeName = this.currentlyDisplayedNode ? this.currentlyDisplayedNode.name : null;
-        // No need to clear selectedNodes here, as it holds global selections. Filter affects display.
 
         try {
             const response = await fetch("/holaf/nodes/list");
@@ -333,7 +327,7 @@ const holafNodesManager = {
             }
             const data = await response.json();
             this.nodesList = data.nodes || [];
-            this.renderNodesList(); // This will apply the current filterText
+            this.renderNodesList();
 
             if (oldSelectedNodeName) {
                 const stillExistsNode = this.nodesList.find(n => n.name === oldSelectedNodeName);
@@ -352,8 +346,7 @@ const holafNodesManager = {
             readmeContentEl.innerHTML = '';
             this.currentlyDisplayedNode = null;
         }
-        this.updateActionButtonsState(); // Selected count still global
-        // updateSelectAllCheckboxState is called at the end of renderNodesList
+        this.updateActionButtonsState();
     },
 
     getFilteredNodes() {
@@ -393,7 +386,7 @@ const holafNodesManager = {
             };
             checkbox.onchange = async (e) => {
                 const nodeName = e.target.dataset.nodeName;
-                const nodeObj = this.nodesList.find(n => n.name === nodeName); // Find in full list
+                const nodeObj = this.nodesList.find(n => n.name === nodeName);
 
                 if (e.target.checked) {
                     this.selectedNodes.add(nodeName);
@@ -405,7 +398,6 @@ const holafNodesManager = {
                                 if (searchData.url) {
                                     nodeObj.repo_url = searchData.url;
                                     this.rerenderNodeItemIcons(nodeName, nodeObj);
-                                    // this.updateActionButtonsState(); // Called by updateSelectAllCheckboxState
                                 }
                             }
                         } catch (searchError) {
@@ -415,8 +407,8 @@ const holafNodesManager = {
                 } else {
                     this.selectedNodes.delete(nodeName);
                 }
-                this.updateActionButtonsState(); // Update global selected count display
-                this.updateSelectAllCheckboxState(); // Update select all based on visible items
+                this.updateActionButtonsState();
+                this.updateSelectAllCheckboxState();
             };
             itemEl.appendChild(checkbox);
 
@@ -502,19 +494,17 @@ const holafNodesManager = {
             }
         });
 
-        // Update checkboxes for visible items
         const listEl = document.getElementById("holaf-nodes-manager-list");
         if (listEl) {
             listEl.querySelectorAll(".holaf-nodes-manager-item-cb").forEach(cb => {
                 const nodeName = cb.dataset.nodeName;
-                // Check if this node is in the currently filtered (visible) list
                 if (filteredNodes.some(n => n.name === nodeName)) {
                     cb.checked = checked;
                 }
             });
         }
         this.updateActionButtonsState();
-        this.updateSelectAllCheckboxState(); // This will correctly set indeterminate state based on visible items
+        this.updateSelectAllCheckboxState();
     },
 
     updateSelectAllCheckboxState() {
@@ -544,7 +534,7 @@ const holafNodesManager = {
     },
 
     updateActionButtonsState() {
-        const selectedCount = this.selectedNodes.size; // Global selected count
+        const selectedCount = this.selectedNodes.size;
         const selectedCountEl = document.getElementById("holaf-nodes-manager-selected-count");
         if (selectedCountEl) {
             selectedCountEl.textContent = `${selectedCount} selected`;
@@ -585,7 +575,7 @@ const holafNodesManager = {
         let canInstallReqAny = false;
 
         for (const nodeName of this.selectedNodes) {
-            const node = this.nodesList.find(n => n.name === nodeName); // Check against full list
+            const node = this.nodesList.find(n => n.name === nodeName);
             if (node) {
                 if (node.is_git_repo || node.repo_url) {
                     canUpdateAny = true;
@@ -622,7 +612,6 @@ const holafNodesManager = {
                         repoUrlWasFoundThisCall = true;
                         node.repo_url = effectiveRepoUrl;
                         this.rerenderNodeItemIcons(node.name, node);
-                        // this.updateActionButtonsState(); // Not needed here, selection state unchanged
                     }
                 }
             } catch (e) {
@@ -824,9 +813,8 @@ const holafNodesManager = {
             HolafPanelManager.createDialog({ title: `${actionName} Complete`, message: summaryMessage });
 
             if (refreshNeeded) {
-                await this.refreshNodesList(); // This will re-render with current filter
+                await this.refreshNodesList();
             } else {
-                // Potentially re-render if only icon status changed for a visible item
                 let iconsChanged = false;
                 if (result.details && Array.isArray(result.details)) {
                     result.details.forEach(item => {
@@ -849,7 +837,6 @@ const holafNodesManager = {
         } finally {
             removeInProgressDialog();
             this.isActionInProgress = false;
-            // updateActionButtonsState already called or refreshNodesList will call it
         }
     },
 
@@ -940,9 +927,8 @@ const holafNodesManager = {
         await this.ensureScriptsLoaded();
 
         if (!this.panelElements) {
-            this.createPanel(); // This calls populatePanelContent which sets filterInput.value
+            this.createPanel();
         } else {
-            // Ensure filter input is updated if panel is just being reshown
             const filterInputEl = document.getElementById("holaf-nodes-manager-filter-input");
             if (filterInputEl) filterInputEl.value = this.filterText;
         }
@@ -959,13 +945,19 @@ const holafNodesManager = {
             this.applyCurrentZoom();
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
+
+            // Ensure filter input reflects the loaded this.filterText state before rendering list
+            const filterInputEl = document.getElementById("holaf-nodes-manager-filter-input");
+            if (filterInputEl && filterInputEl.value !== this.filterText) {
+                filterInputEl.value = this.filterText;
+            }
+
             if (!this.isInitialized || this.nodesList.length === 0) {
-                this.refreshNodesList(); // Will also render with filter
+                this.refreshNodesList();
                 this.isInitialized = true;
             } else {
-                this.renderNodesList(); // Apply current filter
-                this.updateActionButtonsState(); // Update selected count and button states
-                // updateSelectAllCheckboxState is called by renderNodesList
+                this.renderNodesList();
+                this.updateActionButtonsState();
             }
         }
     },
@@ -982,7 +974,7 @@ app.holafNodesManager = holafNodesManager;
 app.registerExtension({
     name: "Holaf.NodesManager.Panel",
     async setup() {
-        holafNodesManager.init();
+        await holafNodesManager.init(); // Ensure settings are loaded before any show() call
     },
 });
 
