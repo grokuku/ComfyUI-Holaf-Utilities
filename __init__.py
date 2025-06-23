@@ -41,6 +41,8 @@
 # CORRECTION: Fixed workflow loading for JSON files containing invalid 'NaN' values by sanitizing them to 'null'.
 # MODIFICATION: Implemented a robust server restart mechanism using os.execv, inspired by ComfyUI-Manager.
 # MODIFICATION: Added settings section for Nodes Manager UI.
+# OPTIMIZATION: Reworked Image Viewer API to use server-side filtering for massive performance gains with large galleries.
+# MODIFICATION: Added date range filtering to the Image Viewer backend API.
 # === End Documentation ===
 
 import server
@@ -65,6 +67,7 @@ import math # Added for NaN check and GCD
 from urllib.parse import unquote, quote
 import re # For sanitizing paths
 import time # Added for timestamped logging
+import datetime # Added for date filter parsing
 import aiofiles
 from PIL import Image, ImageOps
 from PIL.PngImagePlugin import PngInfo
@@ -161,6 +164,11 @@ def _init_shared_database():
             last_synced_at REAL
         )
         ''')
+        
+        # Add indexes for Image Viewer performance
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_subfolder ON images(subfolder)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
         
         conn.commit()
 
@@ -1266,30 +1274,133 @@ def _sync_image_database_blocking():
         if conn: conn.close()
 
 
-def _get_images_from_db_blocking():
-    """Blocking function to get all images from the DB."""
+def _get_filter_options_blocking():
+    """Gets all unique, non-empty subfolders and formats from the DB."""
     conn = None
     try:
         conn = _get_shared_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT filename, subfolder, format, mtime, size_bytes FROM images ORDER BY mtime DESC")
-        return [dict(row) for row in cursor.fetchall()]
+        
+        cursor.execute("SELECT DISTINCT subfolder FROM images WHERE subfolder != ''")
+        subfolders = sorted([row['subfolder'] for row in cursor.fetchall()])
+        
+        cursor.execute("SELECT DISTINCT format FROM images")
+        formats = sorted([row['format'] for row in cursor.fetchall()])
+        
+        # Check if there are any images in the root output folder
+        cursor.execute("SELECT 1 FROM images WHERE subfolder = '' LIMIT 1")
+        has_root_images = cursor.fetchone() is not None
+
+        return {"subfolders": subfolders, "formats": formats, "has_root": has_root_images}
     except Exception as e:
-        print(f"🔴 [Holaf-ImageViewer] Failed to get images from DB: {e}")
-        return []
+        print(f"🔴 [Holaf-ImageViewer] Failed to get filter options from DB: {e}")
+        return {"subfolders": [], "formats": [], "has_root": False}
     finally:
         if conn: conn.close()
 
-@server.PromptServer.instance.routes.get("/holaf/images/list")
-async def holaf_get_output_images(request: web.Request):
+@server.PromptServer.instance.routes.get("/holaf/images/filter-options")
+async def holaf_get_image_filter_options(request: web.Request):
     try:
         loop = asyncio.get_event_loop()
-        image_list = await loop.run_in_executor(None, _get_images_from_db_blocking)
-        return web.json_response(image_list)
+        filter_options = await loop.run_in_executor(None, _get_filter_options_blocking)
+        return web.json_response(filter_options)
     except Exception as e:
-        print(f"🔴 [Holaf-ImageViewer] Error listing output images from DB: {e}")
+        print(f"🔴 [Holaf-ImageViewer] Error listing filter options from DB: {e}")
         traceback.print_exc()
         return web.json_response({"error": str(e)}, status=500)
+
+def _get_filtered_images_from_db_blocking(filters):
+    """Gets images from DB based on provided filters."""
+    conn = None
+    try:
+        conn = _get_shared_db_connection()
+        cursor = conn.cursor()
+        
+        query = "SELECT filename, subfolder, format, mtime, size_bytes FROM images"
+        where_clauses = []
+        params = []
+        
+        folder_filters = filters.get('folder_filters', [])
+        if folder_filters:
+            folder_conditions = []
+            for folder in folder_filters:
+                if folder == 'root':
+                    folder_conditions.append("subfolder = ?")
+                    params.append('')
+                else:
+                    folder_conditions.append("(subfolder = ? OR subfolder LIKE ?)")
+                    params.extend([folder, f"{folder}/%"])
+            if folder_conditions:
+                 where_clauses.append(f"({ ' OR '.join(folder_conditions) })")
+
+        format_filters = filters.get('format_filters', [])
+        if format_filters:
+            placeholders = ','.join('?' for _ in format_filters)
+            where_clauses.append(f"format IN ({placeholders})")
+            params.extend(format_filters)
+            
+        start_date = filters.get('startDate')
+        if start_date:
+            try:
+                dt_start = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+                ts_start = time.mktime(dt_start.timetuple())
+                where_clauses.append("mtime >= ?")
+                params.append(ts_start)
+            except (ValueError, TypeError):
+                print(f"🟡 [Holaf-ImageViewer] Invalid start date format: {start_date}")
+
+        end_date = filters.get('endDate')
+        if end_date:
+            try:
+                # Add 1 day to make the end date inclusive
+                dt_end = datetime.datetime.strptime(end_date, '%Y-%m-%d') + datetime.timedelta(days=1)
+                ts_end = time.mktime(dt_end.timetuple())
+                where_clauses.append("mtime < ?")
+                params.append(ts_end)
+            except (ValueError, TypeError):
+                print(f"🟡 [Holaf-ImageViewer] Invalid end date format: {end_date}")
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+            
+        count_query = query.replace("filename, subfolder, format, mtime, size_bytes", "COUNT(*)")
+        cursor.execute(count_query, params)
+        filtered_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM images")
+        total_db_count = cursor.fetchone()[0]
+
+        query += " ORDER BY mtime DESC"
+        
+        cursor.execute(query, params)
+        images = [dict(row) for row in cursor.fetchall()]
+        
+        return {
+            "images": images,
+            "filtered_count": filtered_count,
+            "total_db_count": total_db_count
+        }
+
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Failed to get filtered images from DB: {e}")
+        return {"images": [], "filtered_count": 0, "total_db_count": 0}
+    finally:
+        if conn: conn.close()
+
+@server.PromptServer.instance.routes.post("/holaf/images/list")
+async def holaf_get_output_images(request: web.Request):
+    try:
+        filters = await request.json()
+        loop = asyncio.get_event_loop()
+        response_data = await loop.run_in_executor(None, _get_filtered_images_from_db_blocking, filters)
+        return web.json_response(response_data)
+    except json.JSONDecodeError:
+        return web.json_response({"error": "Invalid JSON payload."}, status=400)
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error listing filtered images from DB: {e}")
+        traceback.print_exc()
+        return web.json_response({"error": str(e)}, status=500)
+
 
 def _create_thumbnail_blocking(original_path, thumb_path):
     """Creates a thumbnail for an image. This is a blocking I/O function.

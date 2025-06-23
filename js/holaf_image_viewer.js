@@ -21,26 +21,42 @@
  * MODIFIED: Added a slider to control thumbnail size.
  * MODIFIED: Added unified header controls (theme, zoom) for UI consistency.
  * MODIFICATION: Made theme setting independent for this panel.
+ * OPTIMIZATION: Overhauled data loading to use server-side filtering. Frontend no longer loads the entire image list, resulting in a massive performance boost for large galleries.
+ * OPTIMIZATION: Implemented virtual/infinite scrolling for the gallery itself to prevent browser lock-up when rendering thousands of thumbnails.
+ * MODIFICATION: Added date range filter inputs and corresponding API logic.
+ * MODIFICATION: Added PageUp/PageDown key handlers for fast gallery scrolling.
+ * MODIFICATION: Double-clicking a zoomed-in image now enters fullscreen.
+ * MODIFICATION: Implemented logic to preserve scroll position on filter updates.
+ * CORRECTION: Periodic refresh is now non-disruptive ("silent refresh").
+ * CORRECTION: Improved scroll preservation logic on filter changes.
+ * MODIFICATION: Implemented progressive background rendering of thumbnails.
+ * MODIFICATION: Added Home/End key handlers for gallery navigation.
+ * CORRECTION: Fixed settings loading race condition by awaiting settings in show().
+ * CORRECTION: Added applyPanelSettings to correctly apply size/pos/theme on every show.
  */
 
 import { app } from "../../../scripts/app.js";
 import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
 import holafModelManager from "./holaf_model_manager.js"; // Only used for default theme, not for control
 
+const RENDER_BATCH_SIZE = 100; // Number of thumbnails to render at a time
+
 const holafImageViewer = {
     panelElements: null,
     isInitialized: false,
+    areSettingsLoaded: false,
     isLoading: false,
-    images: [],
     filteredImages: [],
+    renderedCount: 0,
     activeImage: null,
     currentNavIndex: -1,
-    thumbnailObserver: null,
+    galleryObserver: null,
+    backgroundRenderHandle: null,
     metadataAbortController: null,
     fullscreenElements: null,
     refreshIntervalId: null,
-    _fullscreenSourceView: null, // 'gallery' or 'zoomed'
-    settings: { // Default settings
+    _fullscreenSourceView: null,
+    settings: {
         theme: "Graphite Orange",
         panel_x: null,
         panel_y: null,
@@ -49,17 +65,16 @@ const holafImageViewer = {
         panel_is_fullscreen: false,
         folder_filters: [],
         format_filters: [],
-        thumbnail_fit: 'cover', // 'cover' (cropped) or 'contain' (no crop)
-        thumbnail_size: 150, // Default thumbnail size in pixels
+        thumbnail_fit: 'cover',
+        thumbnail_size: 150,
+        startDate: '',
+        endDate: '',
     },
-
-    // State for zoom/pan
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
 
     init() {
         document.addEventListener("keydown", (e) => this._handleKeyDown(e));
-
         const cssId = "holaf-image-viewer-css";
         if (!document.getElementById(cssId)) {
             const link = document.createElement("link");
@@ -69,8 +84,6 @@ const holafImageViewer = {
             link.href = "extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css";
             document.head.appendChild(link);
         }
-
-        this.loadSettings();
     },
 
     async loadSettings() {
@@ -81,76 +94,79 @@ const holafImageViewer = {
                 const fetchedSettings = allSettings.ImageViewerUI;
                 const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
                 this.settings = { ...this.settings, ...fetchedSettings };
-                if (!validTheme) {
-                    this.settings.theme = HOLAF_THEMES[0].name;
-                }
+                if (!validTheme) this.settings.theme = HOLAF_THEMES[0].name;
                 console.log("[Holaf ImageViewer] Settings loaded:", this.settings);
             }
         } catch (e) {
             console.error("[Holaf ImageViewer] Could not load settings:", e);
         }
+        this.areSettingsLoaded = true;
     },
 
     async saveSettings(newSettings) {
+        // Handle inconsistent property names from panel manager
+        if (newSettings.x !== undefined) newSettings.panel_x = newSettings.x;
+        if (newSettings.y !== undefined) newSettings.panel_y = newSettings.y;
+        if (newSettings.width !== undefined) newSettings.panel_width = newSettings.width;
+        if (newSettings.height !== undefined) newSettings.panel_height = newSettings.height;
+        delete newSettings.x;
+        delete newSettings.y;
+        delete newSettings.width;
+        delete newSettings.height;
+
         Object.assign(this.settings, newSettings);
-        try {
-            // Send the entire settings object for this UI
-            await fetch("/holaf/image-viewer/save-settings", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(this.settings),
-            });
-        } catch (error) {
-            console.error("[Holaf ImageViewer] Error saving settings:", error);
+
+        if (!this.debouncedSave) {
+            this.debouncedSave = (() => {
+                let timeout;
+                return (settingsToSave) => {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => {
+                         fetch("/holaf/image-viewer/save-settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(settingsToSave),
+                        }).catch(error => console.error("[Holaf ImageViewer] Error saving settings:", error));
+                    }, 750);
+                };
+            })();
         }
+        this.debouncedSave(this.settings);
     },
 
     setTheme(themeName, doSave = true) {
         const themeConfig = HOLAF_THEMES.find(t => t.name === themeName);
-        if (!themeConfig) {
-            console.warn(`[Holaf ImageViewer] Theme '${themeName}' not found.`);
-            return;
+        if (!themeConfig) { console.warn(`[Holaf ImageViewer] Theme '${themeName}' not found.`); return; }
+        
+        if (doSave) {
+            this.saveSettings({ theme: themeName });
+        } else {
+            this.settings.theme = themeName;
         }
-
-        this.settings.theme = themeName;
 
         if (this.panelElements && this.panelElements.panelEl) {
-            HOLAF_THEMES.forEach(t => {
-                this.panelElements.panelEl.classList.remove(t.className);
-            });
+            HOLAF_THEMES.forEach(t => this.panelElements.panelEl.classList.remove(t.className));
             this.panelElements.panelEl.classList.add(themeConfig.className);
         }
-
-        if (doSave) this.saveSettings({ theme: themeName });
     },
 
     _createFullscreenOverlay() {
         if (document.getElementById('holaf-viewer-fullscreen-overlay')) return;
-
         const overlay = document.createElement('div');
         overlay.id = 'holaf-viewer-fullscreen-overlay';
         overlay.style.display = 'none';
-
-        overlay.innerHTML = `
-            <button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="Close (Esc)">✖</button>
-            <button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="Previous (Left Arrow)">‹</button>
-            <img src="" />
-            <button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>
-        `;
+        overlay.innerHTML = `<button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="Close (Esc)">✖</button><button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="Previous (Left Arrow)">‹</button><img src="" /><button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>`;
         document.body.appendChild(overlay);
-
         this.fullscreenElements = {
-            overlay: overlay,
+            overlay,
             img: overlay.querySelector('img'),
             closeBtn: overlay.querySelector('#holaf-viewer-fs-close'),
             prevBtn: overlay.querySelector('#holaf-viewer-fs-prev'),
-            nextBtn: overlay.querySelector('#holaf-viewer-fs-next'),
+            nextBtn: overlay.querySelector('#holaf-viewer-fs-next')
         };
-
         this.fullscreenElements.closeBtn.onclick = () => this._handleEscape();
         this.fullscreenElements.prevBtn.onclick = () => this._navigate(-1);
         this.fullscreenElements.nextBtn.onclick = () => this._navigate(1);
-
         this._setupZoomAndPan(this.fullscreenViewState, overlay, this.fullscreenElements.img);
     },
 
@@ -172,10 +188,8 @@ const holafImageViewer = {
 
     createPanel() {
         if (this.panelElements && this.panelElements.panelEl) return;
-
         const headerControls = document.createElement("div");
         headerControls.className = "holaf-header-button-group";
-
         const themeButtonContainer = document.createElement("div");
         themeButtonContainer.style.position = 'relative';
         const themeButton = document.createElement("button");
@@ -187,23 +201,11 @@ const holafImageViewer = {
             e.stopPropagation();
             themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
         };
-        document.addEventListener('click', () => { if (themeMenu) themeMenu.style.display = 'none' });
+        document.addEventListener('click', () => {
+            if (themeMenu) themeMenu.style.display = 'none'
+        });
         themeButtonContainer.append(themeButton, themeMenu);
-
-        const zoomOutButton = document.createElement("button");
-        zoomOutButton.className = "holaf-header-button";
-        zoomOutButton.title = "UI Zoom not applicable for this panel";
-        zoomOutButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-        zoomOutButton.disabled = true;
-
-        const zoomInButton = document.createElement("button");
-        zoomInButton.className = "holaf-header-button";
-        zoomInButton.title = "UI Zoom not applicable for this panel";
-        zoomInButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-        zoomInButton.disabled = true;
-
-        headerControls.append(themeButtonContainer, zoomOutButton, zoomInButton);
-
+        headerControls.append(themeButtonContainer);
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-viewer-panel",
@@ -212,20 +214,12 @@ const holafImageViewer = {
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => this.hide(),
-                onStateChange: (newState) => {
-                    this.saveSettings(newState)
-                },
+                onStateChange: (newState) => this.saveSettings(newState),
                 onFullscreenToggle: (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }),
             });
-
             this.populatePanelContent();
-            this.applyCurrentTheme();
+            this.applyPanelSettings();
             this._createFullscreenOverlay();
-
-            if (this.settings.panel_is_fullscreen) {
-                HolafPanelManager.toggleFullscreen(this.panelElements.panelEl, (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }));
-            }
-
         } catch (e) {
             console.error("[Holaf ImageViewer] Error creating panel:", e);
             HolafPanelManager.createDialog({ title: "Panel Error", message: "Error creating Image Viewer panel. Check console for details." });
@@ -240,8 +234,20 @@ const holafImageViewer = {
             <div class="holaf-viewer-container" style="flex-grow: 1;">
                 <div id="holaf-viewer-left-pane" class="holaf-viewer-pane">
                     <div class="holaf-viewer-filter-group">
+                        <h4>Date Range</h4>
+                        <div id="holaf-viewer-date-filter" class="holaf-viewer-filter-list">
+                            <div class="holaf-viewer-filter-item" style="flex-direction: column; align-items: flex-start;">
+                                <label for="holaf-viewer-date-start">From:</label>
+                                <input type="date" id="holaf-viewer-date-start" style="width: 100%; box-sizing: border-box;">
+                                <label for="holaf-viewer-date-end" style="margin-top: 5px;">To:</label>
+                                <input type="date" id="holaf-viewer-date-end" style="width: 100%; box-sizing: border-box;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="holaf-viewer-filter-group">
                         <h4>Folders</h4>
                         <div id="holaf-viewer-folders-filter" class="holaf-viewer-filter-list">
+                            <p class="holaf-viewer-message"><em>Loading...</em></p>
                         </div>
                     </div>
                     <div class="holaf-viewer-filter-group">
@@ -264,8 +270,7 @@ const holafImageViewer = {
                     </div>
                 </div>
                 <div id="holaf-viewer-center-pane" class="holaf-viewer-pane">
-                    <div id="holaf-viewer-toolbar">
-                    </div>
+                    <div id="holaf-viewer-toolbar"></div>
                     <div id="holaf-viewer-gallery">
                         <p class="holaf-viewer-message">Loading images...</p>
                     </div>
@@ -284,16 +289,18 @@ const holafImageViewer = {
             </div>
             <div id="holaf-viewer-statusbar"></div>
         `;
-
+        const dateStartEl = contentEl.querySelector('#holaf-viewer-date-start');
+        const dateEndEl = contentEl.querySelector('#holaf-viewer-date-end');
+        dateStartEl.value = this.settings.startDate || '';
+        dateEndEl.value = this.settings.endDate || '';
+        dateStartEl.onchange = () => this.loadFilteredImages();
+        dateEndEl.onchange = () => this.loadFilteredImages();
         const thumbFitToggle = contentEl.querySelector('#holaf-viewer-thumb-fit-toggle');
         thumbFitToggle.checked = this.settings.thumbnail_fit === 'contain';
         thumbFitToggle.onchange = (e) => {
-            const newFitMode = e.target.checked ? 'contain' : 'cover';
-            this.saveSettings({ thumbnail_fit: newFitMode });
+            this.saveSettings({ thumbnail_fit: e.target.checked ? 'contain' : 'cover' });
             this._applyThumbnailFit();
         };
-        this._applyThumbnailFit();
-
         const thumbSizeSlider = contentEl.querySelector('#holaf-viewer-thumb-size-slider');
         const thumbSizeValue = contentEl.querySelector('#holaf-viewer-thumb-size-value');
         thumbSizeSlider.value = this.settings.thumbnail_size;
@@ -301,59 +308,131 @@ const holafImageViewer = {
         thumbSizeSlider.oninput = (e) => {
             const newSize = parseInt(e.target.value);
             thumbSizeValue.textContent = `${newSize}px`;
-            this.saveSettings({ thumbnail_size: newSize });
+        };
+        thumbSizeSlider.onchange = (e) => {
+            this.saveSettings({ thumbnail_size: parseInt(e.target.value) });
             this._applyThumbnailSize();
         };
-        this._applyThumbnailSize();
-
         const zoomView = contentEl.querySelector('#holaf-viewer-zoom-view');
         const zoomCloseBtn = contentEl.querySelector('.holaf-viewer-zoom-close');
         const zoomImage = zoomView.querySelector('img');
         const zoomFullscreenBtn = contentEl.querySelector('.holaf-viewer-zoom-fullscreen-icon');
-
         zoomCloseBtn.onclick = () => this._hideZoomedView();
-        zoomImage.ondblclick = () => this._hideZoomedView();
+        zoomImage.ondblclick = () => this._showFullscreenView(this.activeImage);
         zoomImage.onclick = (e) => e.stopPropagation();
-
         zoomFullscreenBtn.onclick = () => {
-            if (this.activeImage) {
-                this._showFullscreenView(this.activeImage);
-            }
+            if (this.activeImage) this._showFullscreenView(this.activeImage);
         };
-
         this._setupZoomAndPan(this.zoomViewState, zoomView, zoomImage);
     },
 
-    _applyThumbnailFit() {
-        const galleryEl = document.getElementById("holaf-viewer-gallery");
-        if (galleryEl) {
-            galleryEl.classList.toggle('contain-thumbnails', this.settings.thumbnail_fit === 'contain');
+    applyPanelSettings() {
+        if (!this.panelElements || !this.panelElements.panelEl) return;
+
+        this.setTheme(this.settings.theme, false);
+
+        const isFullscreen = this.settings.panel_is_fullscreen;
+        const panelIsFullscreen = this.panelElements.panelEl.classList.contains("holaf-panel-fullscreen");
+
+        if (isFullscreen && !panelIsFullscreen) {
+            HolafPanelManager.toggleFullscreen(this.panelElements.panelEl, (isFs) => this.saveSettings({ panel_is_fullscreen: isFs }));
+        } else if (!isFullscreen && panelIsFullscreen) {
+            HolafPanelManager.toggleFullscreen(this.panelElements.panelEl, (isFs) => this.saveSettings({ panel_is_fullscreen: isFs }));
         }
+        
+        if (!this.settings.panel_is_fullscreen) {
+            this.panelElements.panelEl.style.width = `${this.settings.panel_width}px`;
+            this.panelElements.panelEl.style.height = `${this.settings.panel_height}px`;
+
+            if (this.settings.panel_x !== null && this.settings.panel_y !== null) {
+                this.panelElements.panelEl.style.left = `${this.settings.panel_x}px`;
+                this.panelElements.panelEl.style.top = `${this.settings.panel_y}px`;
+                this.panelElements.panelEl.style.transform = 'none';
+            } else {
+                this.panelElements.panelEl.style.left = '50%';
+                this.panelElements.panelEl.style.top = '50%';
+                this.panelElements.panelEl.style.transform = 'translate(-50%, -50%)';
+            }
+        }
+        
+        this._applyThumbnailFit();
+        this._applyThumbnailSize();
+    },
+
+    _applyThumbnailFit() {
+        const el = document.getElementById("holaf-viewer-gallery");
+        if (el) el.classList.toggle('contain-thumbnails', this.settings.thumbnail_fit === 'contain');
     },
 
     _applyThumbnailSize() {
-        const galleryEl = document.getElementById("holaf-viewer-gallery");
-        if (galleryEl) {
-            galleryEl.style.setProperty('--holaf-thumbnail-size', `${this.settings.thumbnail_size}px`);
+        const el = document.getElementById("holaf-viewer-gallery");
+        if (el) el.style.setProperty('--holaf-thumbnail-size', `${this.settings.thumbnail_size}px`);
+    },
+
+    async loadAndPopulateFilters() {
+        try {
+            const response = await fetch('/holaf/images/filter-options', { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+            const data = await response.json();
+            const topLevelFolders = data.subfolders.map(p => p.split('/')[0]).filter((v, i, a) => a.indexOf(v) === i).sort();
+            const foldersEl = document.getElementById('holaf-viewer-folders-filter');
+            const formatsEl = document.getElementById('holaf-viewer-formats-filter');
+            foldersEl.innerHTML = '';
+            formatsEl.innerHTML = '';
+            const useSavedFolderFilters = this.settings.folder_filters && this.settings.folder_filters.length > 0;
+            const useSavedFormatFilters = this.settings.format_filters && this.settings.format_filters.length > 0;
+            if (data.has_root) {
+                foldersEl.appendChild(this.createFilterItem('folder-filter-root', '(root)', useSavedFolderFilters ? this.settings.folder_filters.includes('root') : true, () => this.loadFilteredImages()));
+            }
+            topLevelFolders.forEach(folder => {
+                foldersEl.appendChild(this.createFilterItem(`folder-filter-${folder}`, folder, useSavedFolderFilters ? this.settings.folder_filters.includes(folder) : true, () => this.loadFilteredImages()));
+            });
+            data.formats.forEach(format => {
+                formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, useSavedFormatFilters ? this.settings.format_filters.includes(format) : true, () => this.loadFilteredImages()));
+            });
+            this.loadFilteredImages();
+        } catch (e) {
+            console.error("[Holaf ImageViewer] Failed to load filter options:", e);
+            document.getElementById('holaf-viewer-folders-filter').innerHTML = `<p class="holaf-viewer-message error">Error loading filters.</p>`;
         }
     },
 
-    async loadImages() {
+    async _fetchFilteredImages() {
+        const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
+        const selectedFormats = [...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''));
+        const startDate = document.getElementById('holaf-viewer-date-start').value;
+        const endDate = document.getElementById('holaf-viewer-date-end').value;
+        this.saveSettings({ folder_filters: selectedFolders, format_filters: selectedFormats, startDate, endDate });
+        const response = await fetch('/holaf/images/list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_filters: selectedFolders, format_filters: selectedFormats, startDate, endDate })
+        });
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        return await response.json();
+    },
+
+    async loadFilteredImages() {
         if (this.isLoading) return;
         this.isLoading = true;
-
+        this.setLoadingState("Applying filters...");
+        const activeImageCanonPath = this.activeImage ? this.activeImage.path_canon : null;
         try {
-            const response = await fetch('/holaf/images/list', { cache: 'no-store' });
-            if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-
-            const newImages = await response.json();
-
-            if (JSON.stringify(this.images) !== JSON.stringify(newImages)) {
-                this.images = newImages;
-                this.populateFilters();
-                this.applyFiltersAndRender();
+            const data = await this._fetchFilteredImages();
+            this.filteredImages = data.images;
+            this.renderGallery();
+            document.getElementById('holaf-viewer-statusbar').textContent = `Displaying ${data.filtered_count} of ${data.total_db_count} total images.`;
+            if (activeImageCanonPath) {
+                const newIndex = this.filteredImages.findIndex(img => img.path_canon === activeImageCanonPath);
+                if (newIndex > -1) {
+                    this.currentNavIndex = newIndex;
+                    this.activeImage = this.filteredImages[newIndex];
+                    setTimeout(() => this._updateActiveThumbnail(newIndex), 100);
+                } else {
+                    this.activeImage = null;
+                    this.currentNavIndex = -1;
+                }
             }
-
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load images:", e);
             this.setLoadingState(`Error: ${e.message}`, false);
@@ -362,201 +441,130 @@ const holafImageViewer = {
         }
     },
 
-    populateFilters() {
-        const folderSet = new Set();
-        this.images.forEach(img => {
-            const topLevelFolder = (img.subfolder || '').split('/')[0];
-            folderSet.add(topLevelFolder);
-        });
-
-        const formatSet = new Set();
-        this.images.forEach(img => {
-            formatSet.add(img.format);
-        });
-
-        const folders = Array.from(folderSet).sort();
-        const formats = Array.from(formatSet).sort();
-
-        const foldersEl = document.getElementById('holaf-viewer-folders-filter');
-        const formatsEl = document.getElementById('holaf-viewer-formats-filter');
-
-        foldersEl.innerHTML = '';
-        formatsEl.innerHTML = '';
-
-        const useSavedFolderFilters = this.settings.folder_filters && this.settings.folder_filters.length > 0;
-        const useSavedFormatFilters = this.settings.format_filters && this.settings.format_filters.length > 0;
-
-        if (folders.length > 1) {
-            const selectAllItem = this.createFilterItem('folder-filter-select-all', 'Select All', !useSavedFolderFilters, (e) => {
-                const isChecked = e.target.checked;
-                foldersEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                    if (cb.id !== 'folder-filter-select-all') {
-                        cb.checked = isChecked;
-                    }
+    async performSilentRefresh() {
+        if (this.isLoading) return;
+        try {
+            const data = await this._fetchFilteredImages();
+            const newImages = data.images;
+            const currentImagePaths = new Set(this.filteredImages.map(img => img.path_canon));
+            const addedImages = newImages.filter(img => !currentImagePaths.has(img.path_canon));
+            if (addedImages.length > 0) {
+                console.log(`[Holaf ImageViewer] Silent refresh: Found ${addedImages.length} new images.`);
+                const galleryEl = document.getElementById("holaf-viewer-gallery");
+                const fragment = document.createDocumentFragment();
+                addedImages.forEach(image => {
+                    const placeholder = this.createPlaceholder(image, -1);
+                    fragment.appendChild(placeholder);
+                    this.galleryObserver.observe(placeholder);
                 });
-                this.applyFiltersAndRender();
-            });
-            selectAllItem.style.fontWeight = 'bold';
-            selectAllItem.style.borderBottom = '1px solid var(--holaf-border-color)';
-            selectAllItem.style.paddingBottom = '5px';
-            selectAllItem.style.marginBottom = '5px';
-            foldersEl.appendChild(selectAllItem);
+                galleryEl.prepend(fragment);
+                this.filteredImages.unshift(...addedImages);
+                // Re-index all thumbnails
+                galleryEl.querySelectorAll('.holaf-viewer-thumbnail-placeholder').forEach((el, i) => el.dataset.index = i);
+                if (this.currentNavIndex !== -1) {
+                    this.currentNavIndex += addedImages.length;
+                    this._updateActiveThumbnail(this.currentNavIndex);
+                }
+            }
+            document.getElementById('holaf-viewer-statusbar').textContent = `Displaying ${data.filtered_count} of ${data.total_db_count} total images.`;
+        } catch (e) {
+            console.warn("[Holaf ImageViewer] Silent refresh failed:", e);
         }
-
-        const updateSelectAllState = () => {
-            const selectAllCb = foldersEl.querySelector('#folder-filter-select-all');
-            if (!selectAllCb) return;
-
-            const allFolderCbs = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-select-all)');
-            const allChecked = Array.from(allFolderCbs).every(cb => cb.checked);
-            selectAllCb.checked = allChecked;
-        };
-
-        folders.forEach(folder => {
-            const id = `folder-filter-${folder || 'root'}`;
-            const labelText = folder === '' ? 'root' : folder;
-            const isChecked = useSavedFolderFilters ? this.settings.folder_filters.includes(labelText) : true;
-            const item = this.createFilterItem(id, labelText, isChecked, () => {
-                updateSelectAllState();
-                this.applyFiltersAndRender();
-            });
-            foldersEl.appendChild(item);
-        });
-        updateSelectAllState();
-
-        formats.forEach(format => {
-            const id = `format-filter-${format}`;
-            const isChecked = useSavedFormatFilters ? this.settings.format_filters.includes(format) : true;
-            const item = this.createFilterItem(id, format, isChecked, () => this.applyFiltersAndRender());
-            formatsEl.appendChild(item);
-        });
     },
 
     createFilterItem(id, label, isChecked, onChange) {
         const container = document.createElement('div');
         container.className = 'holaf-viewer-filter-item';
-
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = id;
         checkbox.checked = isChecked;
         checkbox.onchange = onChange;
-
         const labelEl = document.createElement('label');
         labelEl.htmlFor = id;
         labelEl.textContent = label;
-
         container.append(checkbox, labelEl);
         return container;
     },
 
-    applyFiltersAndRender() {
-        const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-        const isFullscreen = this.fullscreenElements?.overlay.style.display === 'flex';
-        const wasInEnlargedView = isZoomed || isFullscreen;
-        const previousActiveImage = this.activeImage;
-        const previousNavIndex = this.currentNavIndex;
-
-        const selectedFolders = [];
-        document.querySelectorAll('#holaf-viewer-folders-filter input:checked:not(#folder-filter-select-all)').forEach(cb => {
-            const folderName = cb.id.replace('folder-filter-', '');
-            selectedFolders.push(folderName === 'root' ? '' : folderName);
-        });
-
-        const selectedFormats = [];
-        document.querySelectorAll('#holaf-viewer-formats-filter input:checked').forEach(cb => {
-            selectedFormats.push(cb.id.replace('format-filter-', ''));
-        });
-
-        // Save the current filter state
-        const folderLabels = selectedFolders.map(f => f === '' ? 'root' : f);
-        this.saveSettings({ folder_filters: folderLabels, format_filters: selectedFormats });
-
-        this.filteredImages = this.images.filter(img => {
-            const imgSubfolder = img.subfolder || '';
-            const folderMatch = selectedFolders.some(selectedFolder => {
-                if (selectedFolder === '') {
-                    return imgSubfolder === '';
-                }
-                return imgSubfolder === selectedFolder || imgSubfolder.startsWith(selectedFolder + '/');
-            });
-            const formatMatch = selectedFormats.includes(img.format);
-            return folderMatch && formatMatch;
-        });
-
-        const statusBar = document.getElementById('holaf-viewer-statusbar');
-        if (statusBar) {
-            statusBar.textContent = `Displaying ${this.filteredImages.length} of ${this.images.length} images.`;
-        }
-
-        this.renderGallery(this.filteredImages);
-
-        if (wasInEnlargedView && previousActiveImage) {
-            let newNavIndex = this._findImageIndexInFilteredList(previousActiveImage);
-
-            if (newNavIndex !== -1) {
-                this.currentNavIndex = newNavIndex;
-            } else {
-                if (this.filteredImages.length === 0) {
-                    if (isZoomed) this._hideZoomedView();
-                    if (isFullscreen) this._hideFullscreenView();
-                    return;
-                }
-
-                newNavIndex = Math.min(previousNavIndex, this.filteredImages.length - 1);
-
-                this.activeImage = this.filteredImages[newNavIndex];
-                this.currentNavIndex = newNavIndex;
-
-                const newImageUrl = this._getFullImageUrl(this.activeImage);
-                if (isZoomed) document.querySelector('#holaf-viewer-zoom-view img').src = newImageUrl;
-                if (isFullscreen) this.fullscreenElements.img.src = newImageUrl;
-
-                this.updateInfoPane(this.activeImage);
-                this._updateActiveThumbnail(this.currentNavIndex);
-            }
-        }
-    },
-
-    renderGallery(imagesToRender) {
+    renderGallery() {
         const galleryEl = document.getElementById("holaf-viewer-gallery");
         if (!galleryEl) return;
-
-        if (this.thumbnailObserver) this.thumbnailObserver.disconnect();
-
+        if (this.galleryObserver) this.galleryObserver.disconnect();
+        if (this.backgroundRenderHandle) clearTimeout(this.backgroundRenderHandle);
         galleryEl.innerHTML = '';
-        if (!imagesToRender || imagesToRender.length === 0) {
+        this.renderedCount = 0;
+        if (!this.filteredImages || this.filteredImages.length === 0) {
             this.setLoadingState("No images match the current filters.", false);
             return;
         }
-
-        this.thumbnailObserver = new IntersectionObserver((entries, observer) => {
+        const sentinel = document.createElement('div');
+        sentinel.id = 'holaf-viewer-load-sentinel';
+        galleryEl.appendChild(sentinel);
+        this.galleryObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                if (entry.isIntersecting) {
+                if (!entry.isIntersecting) return;
+                if (entry.target.id === 'holaf-viewer-load-sentinel') {
+                    this.renderImageBatch();
+                } else {
                     const placeholder = entry.target;
                     const imageIndex = placeholder.dataset.index;
-                    const image = this.images[imageIndex];
-                    if (!image) return;
-
-                    observer.unobserve(placeholder);
-                    this.loadSpecificThumbnail(placeholder, image, false);
+                    const image = this.filteredImages[imageIndex];
+                    if (image) {
+                        this.galleryObserver.unobserve(placeholder);
+                        this.loadSpecificThumbnail(placeholder, image, false);
+                    }
                 }
             });
-        }, {
-            root: galleryEl, rootMargin: "200px 0px 200px 0px"
-        });
+        }, { root: galleryEl, rootMargin: "400px 0px" });
+        this.renderImageBatch();
+        this.galleryObserver.observe(sentinel);
+    },
 
+    renderImageBatch(isBackground = false) {
+        const galleryEl = document.getElementById("holaf-viewer-gallery");
+        const sentinel = document.getElementById('holaf-viewer-load-sentinel');
+        if (!galleryEl) return;
+        if (this.backgroundRenderHandle && !isBackground) {
+            clearTimeout(this.backgroundRenderHandle);
+        }
         const fragment = document.createDocumentFragment();
-        imagesToRender.forEach(image => {
-            const originalIndex = this.images.findIndex(img => img.filename === image.filename && img.subfolder === image.subfolder);
-            const placeholder = this.createPlaceholder(image, originalIndex);
+        const nextRenderLimit = Math.min(this.renderedCount + RENDER_BATCH_SIZE, this.filteredImages.length);
+        for (let i = this.renderedCount; i < nextRenderLimit; i++) {
+            const placeholder = this.createPlaceholder(this.filteredImages[i], i);
             fragment.appendChild(placeholder);
-            this.thumbnailObserver.observe(placeholder);
-        });
-        galleryEl.appendChild(fragment);
+            this.galleryObserver.observe(placeholder);
+        }
+        if (sentinel) {
+            galleryEl.insertBefore(fragment, sentinel);
+        } else {
+            galleryEl.appendChild(fragment);
+        }
+        this.renderedCount = nextRenderLimit;
+        if (this.renderedCount < this.filteredImages.length) {
+            if (!isBackground) {
+                this.startBackgroundRendering();
+            }
+        } else {
+            if (sentinel) sentinel.remove();
+        }
+    },
+
+    startBackgroundRendering() {
+        if (this.backgroundRenderHandle) clearTimeout(this.backgroundRenderHandle);
+        const renderNext = () => {
+            if (this.renderedCount >= this.filteredImages.length) {
+                this.backgroundRenderHandle = null;
+                return;
+            }
+            this.renderImageBatch(true);
+            this.backgroundRenderHandle = setTimeout(renderNext, 50);
+        };
+        this.backgroundRenderHandle = setTimeout(renderNext, 500);
     },
 
     _getFullImageUrl(image) {
+        if (!image) return "";
         const url = new URL(window.location.origin);
         url.pathname = '/view';
         url.search = new URLSearchParams({
@@ -567,24 +575,17 @@ const holafImageViewer = {
         return url.href;
     },
 
-    _findImageIndexInFilteredList(imageToFind) {
-        if (!imageToFind) return -1;
-        return this.filteredImages.findIndex(img => img.filename === imageToFind.filename && img.subfolder === imageToFind.subfolder);
-    },
-
     _updateActiveThumbnail(navIndex) {
         const currentActive = document.querySelector('.holaf-viewer-thumbnail-placeholder.active');
         if (currentActive) currentActive.classList.remove('active');
-
-        if (navIndex < 0 || navIndex >= this.filteredImages.length) return;
-
-        const image = this.filteredImages[navIndex];
-        const masterIndex = this.images.findIndex(img => img.filename === image.filename && img.subfolder === image.subfolder);
-
-        const newActiveThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${masterIndex}"]`);
+        if (navIndex < 0 || navIndex >= this.renderedCount) return;
+        const newActiveThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${navIndex}"]`);
         if (newActiveThumbnail) {
             newActiveThumbnail.classList.add('active');
-            newActiveThumbnail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            newActiveThumbnail.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest'
+            });
         }
     },
 
@@ -596,18 +597,14 @@ const holafImageViewer = {
             subfolder: image.subfolder,
             mtime: image.mtime
         };
-        if (forceRegen) {
-            params.force_regen = 'true';
-        }
+        if (forceRegen) params.force_regen = 'true';
         imageUrl.search = new URLSearchParams(params);
-
         const img = document.createElement('img');
         img.src = imageUrl.href;
         img.alt = image.filename;
         img.loading = "lazy";
-
         img.onload = () => {
-            placeholder.innerHTML = ''; // Clear potential error message
+            placeholder.innerHTML = '';
             placeholder.classList.remove('error');
             const fsIcon = document.createElement('div');
             fsIcon.className = 'holaf-viewer-fullscreen-icon';
@@ -620,28 +617,22 @@ const holafImageViewer = {
             placeholder.appendChild(fsIcon);
             placeholder.prepend(img);
         };
-
         img.onerror = async () => {
             placeholder.classList.add('error');
             const response = await fetch(imageUrl.href, { cache: 'no-store' }).catch(() => null);
             let errorText = 'ERR: Failed to fetch.';
-            if (response) {
-                errorText = await response.text().catch(() => 'ERR: Could not read error.');
-            }
-
+            if (response) errorText = await response.text().catch(() => 'ERR: Could not read error.');
             const errorOverlay = document.createElement('div');
             errorOverlay.className = 'holaf-viewer-error-overlay';
             errorOverlay.textContent = errorText;
-
             const retryButton = document.createElement('button');
             retryButton.className = 'holaf-viewer-retry-button';
             retryButton.textContent = 'Retry';
             retryButton.onclick = (e) => {
                 e.stopPropagation();
-                this.loadSpecificThumbnail(placeholder, image, true); // Force regeneration
+                this.loadSpecificThumbnail(placeholder, image, true);
             };
-
-            placeholder.innerHTML = ''; // Clear previous content
+            placeholder.innerHTML = '';
             placeholder.appendChild(errorOverlay);
             placeholder.appendChild(retryButton);
         };
@@ -651,27 +642,14 @@ const holafImageViewer = {
         const placeholder = document.createElement('div');
         placeholder.className = 'holaf-viewer-thumbnail-placeholder';
         placeholder.dataset.index = index;
-
         placeholder.addEventListener('click', () => {
             if (this.activeImage === image) return;
             this.activeImage = image;
-            this.currentNavIndex = this._findImageIndexInFilteredList(image);
+            this.currentNavIndex = index;
             this._updateActiveThumbnail(this.currentNavIndex);
             this.updateInfoPane(image);
         });
-
         placeholder.addEventListener('dblclick', () => this._showZoomedView(image));
-
-        const fullscreenIcon = document.createElement('div');
-        fullscreenIcon.className = 'holaf-viewer-fullscreen-icon';
-        fullscreenIcon.innerHTML = '⛶';
-        fullscreenIcon.title = 'View fullscreen';
-        fullscreenIcon.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this._showFullscreenView(image);
-        });
-        placeholder.appendChild(fullscreenIcon);
-
         return placeholder;
     },
 
@@ -689,12 +667,8 @@ const holafImageViewer = {
                 textArea.focus();
                 textArea.select();
                 try {
-                    const successful = document.execCommand('copy');
-                    if (successful) {
-                        resolve();
-                    } else {
-                        reject(new Error('Copy command was not successful.'));
-                    }
+                    if (document.execCommand('copy')) resolve();
+                    else reject(new Error('Copy failed.'));
                 } catch (err) {
                     reject(err);
                 }
@@ -706,99 +680,55 @@ const holafImageViewer = {
     async updateInfoPane(image) {
         const infoContentEl = document.getElementById('holaf-viewer-info-content');
         if (!infoContentEl || !image) return;
-
         if (this.metadataAbortController) this.metadataAbortController.abort();
         this.metadataAbortController = new AbortController();
         const signal = this.metadataAbortController.signal;
-
-        const sizeInMB = (image.size_bytes / (1024 * 1024)).toFixed(2);
-        infoContentEl.innerHTML = `
-            <p><strong>Filename:</strong><br>${image.filename}</p>
-            <p><strong>Folder:</strong> ${image.subfolder || '/'}</p>
-            <p><strong>Size:</strong> ${sizeInMB} MB</p>
-            <p><strong>Format:</strong> ${image.format}</p>
-            <p><strong>Modified:</strong><br>${new Date(image.mtime * 1000).toLocaleString()}</p>
-            <div id="holaf-resolution-container"></div>
-            <hr>
-            <div id="holaf-metadata-container">
-                <p class="holaf-viewer-message"><em>Loading metadata...</em></p>
-            </div>
-        `;
-
+        const sizeInMB = (image.size_bytes / 1048576).toFixed(2);
+        infoContentEl.innerHTML = `<p><strong>Filename:</strong><br>${image.filename}</p><p><strong>Folder:</strong> ${image.subfolder || '/'}</p><p><strong>Size:</strong> ${sizeInMB} MB</p><p><strong>Format:</strong> ${image.format}</p><p><strong>Modified:</strong><br>${new Date(image.mtime * 1000).toLocaleString()}</p><div id="holaf-resolution-container"></div><hr><div id="holaf-metadata-container"><p class="holaf-viewer-message"><em>Loading metadata...</em></p></div>`;
         try {
             const metadataUrl = new URL(window.location.origin);
             metadataUrl.pathname = '/holaf/images/metadata';
-            metadataUrl.search = new URLSearchParams({
-                filename: image.filename,
-                subfolder: image.subfolder || ''
-            });
-
+            metadataUrl.search = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || '' });
             const response = await fetch(metadataUrl.href, { signal, cache: 'no-store' });
             const metadataContainer = document.getElementById('holaf-metadata-container');
             if (!metadataContainer) return;
-
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: `HTTP Error ${response.status}` }));
                 metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> ${errorData.error || 'Unknown error'}</p>`;
                 return;
             }
-
             const data = await response.json();
-
-            // Populate resolution info
             const resolutionContainer = document.getElementById('holaf-resolution-container');
             if (resolutionContainer) {
                 let resolutionHTML = '';
-                if (data.width && data.height) {
-                    resolutionHTML += `<p><strong>Resolution:</strong> ${data.width} x ${data.height} px</p>`;
-                }
-                if (data.ratio) {
-                    resolutionHTML += `<p><strong>Ratio:</strong> ${data.ratio}</p>`;
-                }
+                if (data.width && data.height) resolutionHTML += `<p><strong>Resolution:</strong> ${data.width}x${data.height} px</p>`;
+                if (data.ratio) resolutionHTML += `<p><strong>Ratio:</strong> ${data.ratio}</p>`;
                 resolutionContainer.innerHTML = resolutionHTML;
             }
-
-            const getSourceLabel = (source) => {
-                switch (source) {
-                    case "external_txt": return "(from .txt file)";
-                    case "external_json": return "(from .json file)";
-                    case "internal_png": return "(from PNG metadata)";
-                    default: return "";
-                }
+            const getSourceLabel = (s) => ({ "external_txt": "(from .txt)", "external_json": "(from .json)", "internal_png": "(from PNG)" }[s] || "");
+            metadataContainer.innerHTML = '';
+            const createButton = (txt, cb, dis = false) => {
+                const b = document.createElement('button');
+                b.className = 'holaf-viewer-info-button';
+                b.textContent = txt;
+                b.disabled = dis;
+                if (!dis) b.onclick = cb;
+                return b;
             };
-
-            metadataContainer.innerHTML = ''; // Clear loading message
-
-            const createButton = (text, onClick, disabled = false) => {
-                const button = document.createElement('button');
-                button.className = 'holaf-viewer-info-button';
-                button.textContent = text;
-                button.disabled = disabled;
-                if (!disabled) {
-                    button.onclick = onClick;
-                }
-                return button;
-            };
-
-            // --- Prompt Section ---
-            const promptSourceLabel = getSourceLabel(data.prompt_source);
-            metadataContainer.innerHTML += `<p><span class="holaf-viewer-metadata-label">Prompt:</span> <span class="holaf-viewer-metadata-source">${promptSourceLabel}</span></p>`;
-
+            metadataContainer.innerHTML += `<p><span class="holaf-viewer-metadata-label">Prompt:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.prompt_source)}</span></p>`;
             const promptActions = document.createElement('div');
             promptActions.className = 'holaf-viewer-info-actions';
-            const copyPromptBtn = createButton('📋 Copy Prompt', (e) => {
+            promptActions.appendChild(createButton('📋 Copy Prompt', (e) => {
                 this._copyTextToClipboard(data.prompt).then(() => {
                     e.target.textContent = 'Copied!';
-                    setTimeout(() => { e.target.textContent = '📋 Copy Prompt'; }, 1500);
+                    setTimeout(() => e.target.textContent = '📋 Copy Prompt', 1500);
                 }).catch(err => {
-                    console.error('Failed to copy prompt:', err);
+                    console.error('Copy failed:', err);
                     e.target.textContent = 'Copy Failed!';
-                    setTimeout(() => { e.target.textContent = '📋 Copy Prompt'; }, 2000);
+                    setTimeout(() => e.target.textContent = '📋 Copy Prompt', 2000);
                 });
-            }, !data.prompt);
-            promptActions.appendChild(copyPromptBtn);
+            }, !data.prompt));
             metadataContainer.appendChild(promptActions);
-
             if (data.prompt) {
                 const promptBox = document.createElement('div');
                 promptBox.className = 'holaf-viewer-metadata-box';
@@ -807,29 +737,17 @@ const holafImageViewer = {
             } else {
                 metadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
             }
-
-            // --- Workflow Section ---
-            const workflowSourceLabel = getSourceLabel(data.workflow_source);
-            metadataContainer.innerHTML += `<p style="margin-top: 15px;"><span class="holaf-viewer-metadata-label">Workflow:</span> <span class="holaf-viewer-metadata-source">${workflowSourceLabel}</span></p>`;
-
+            metadataContainer.innerHTML += `<p style="margin-top:15px;"><span class="holaf-viewer-metadata-label">Workflow:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.workflow_source)}</span></p>`;
             const workflowActions = document.createElement('div');
             workflowActions.className = 'holaf-viewer-info-actions';
-            const loadWorkflowBtn = createButton('⚡ Load Workflow', async () => {
-                const confirmed = await HolafPanelManager.createDialog({
-                    title: 'Load Workflow',
-                    message: 'This will load the image\'s workflow.\n\nAre you sure you want to continue?',
-                    buttons: [
-                        { text: 'Cancel', value: false, type: 'cancel' },
-                        { text: 'Load', value: true, type: 'confirm' },
-                    ]
-                });
-                if (confirmed) {
-                    app.loadGraphData(data.workflow);
-                }
-            }, !data.workflow || !!data.workflow.error);
-            workflowActions.appendChild(loadWorkflowBtn);
+            workflowActions.appendChild(createButton('⚡ Load Workflow', async () => {
+                if (await HolafPanelManager.createDialog({
+                        title: 'Load Workflow',
+                        message: 'Load image workflow?',
+                        buttons: [{ text: 'Cancel', value: false }, { text: 'Load', value: true }]
+                    })) app.loadGraphData(data.workflow);
+            }, !data.workflow || !!data.workflow.error));
             metadataContainer.appendChild(workflowActions);
-
             if (data.workflow && !data.workflow.error) {
                 const workflowBox = document.createElement('div');
                 workflowBox.className = 'holaf-viewer-metadata-box';
@@ -840,18 +758,17 @@ const holafImageViewer = {
             } else {
                 metadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>No workflow found.</em></p>`;
             }
-
         } catch (err) {
-            const metadataContainer = document.getElementById('holaf-metadata-container');
+            const m = document.getElementById('holaf-metadata-container');
             if (err.name === 'AbortError') return;
-            console.error("[Holaf ImageViewer] Error fetching metadata:", err);
-            if (metadataContainer) metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> Failed to fetch metadata.</p>`;
+            console.error("Metadata fetch error:", err);
+            if (m) m.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> Failed to fetch metadata.</p>`;
         } finally {
             this.metadataAbortController = null;
         }
     },
 
-    _resetTransform(state, imageEl, containerEl) {
+    _resetTransform(state, imageEl) {
         state.scale = 1;
         state.tx = 0;
         state.ty = 0;
@@ -859,43 +776,35 @@ const holafImageViewer = {
         imageEl.style.cursor = 'grab';
     },
 
-    _preloadNextImage(currentIndex) {
-        if (currentIndex < 0 || (currentIndex + 1) >= this.filteredImages.length) {
-            return; // No next image to preload
-        }
-        const nextImage = this.filteredImages[currentIndex + 1];
-        if (nextImage) {
-            const imageUrl = this._getFullImageUrl(nextImage);
-            const preloader = new Image();
-            preloader.src = imageUrl;
+    _preloadNextImage(idx) {
+        if (idx < 0 || (idx + 1) >= this.filteredImages.length) return;
+        const next = this.filteredImages[idx + 1];
+        if (next) {
+            const p = new Image();
+            p.src = this._getFullImageUrl(next);
         }
     },
 
     _showZoomedView(image) {
-        this.currentNavIndex = this._findImageIndexInFilteredList(image);
-        if (this.currentNavIndex === -1) return;
-
+        const idx = this.filteredImages.findIndex(i => i === image);
+        if (idx === -1) return;
         this.activeImage = image;
-
-        const zoomView = document.getElementById('holaf-viewer-zoom-view');
-        const zoomImage = zoomView.querySelector('img');
-        const imageUrl = this._getFullImageUrl(image);
-
-        const loader = new Image();
-        loader.onload = () => {
-            this._resetTransform(this.zoomViewState, zoomImage, zoomView);
-            zoomImage.src = imageUrl;
-            zoomView.style.display = 'flex';
+        this.currentNavIndex = idx;
+        const v = document.getElementById('holaf-viewer-zoom-view'),
+            i = v.querySelector('img'),
+            u = this._getFullImageUrl(image);
+        const l = new Image();
+        l.onload = () => {
+            this._resetTransform(this.zoomViewState, i);
+            i.src = u;
+            v.style.display = 'flex';
             document.getElementById('holaf-viewer-gallery').style.display = 'none';
         };
-        loader.onerror = () => {
-            console.error(`[Holaf ImageViewer] Failed to load enlarged image: ${imageUrl}`);
-        };
-        loader.src = imageUrl;
-
+        l.onerror = () => console.error(`Failed to load: ${u}`);
+        l.src = u;
         this.updateInfoPane(image);
-        this._updateActiveThumbnail(this.currentNavIndex);
-        this._preloadNextImage(this.currentNavIndex);
+        this._updateActiveThumbnail(idx);
+        this._preloadNextImage(idx);
     },
 
     _hideZoomedView() {
@@ -904,166 +813,129 @@ const holafImageViewer = {
     },
 
     _showFullscreenView(image) {
-        this.currentNavIndex = this._findImageIndexInFilteredList(image);
-        if (this.currentNavIndex === -1) return;
-
+        if (!image) return;
+        const idx = this.filteredImages.findIndex(i => i === image);
+        if (idx === -1) return;
         this.activeImage = image;
-
-        const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-        this._fullscreenSourceView = isZoomed ? 'zoomed' : 'gallery';
-
-        if (isZoomed) this._hideZoomedView();
-
-        const fsImg = this.fullscreenElements.img;
-        const fsOverlay = this.fullscreenElements.overlay;
-        const imageUrl = this._getFullImageUrl(image);
-
-        const loader = new Image();
-        loader.onload = () => {
-            this._resetTransform(this.fullscreenViewState, fsImg, fsOverlay);
-            fsImg.src = imageUrl;
-            fsOverlay.style.display = 'flex';
+        this.currentNavIndex = idx;
+        this._fullscreenSourceView = document.getElementById('holaf-viewer-zoom-view') ?.style.display === 'flex' ? 'zoomed' : 'gallery';
+        if (this._fullscreenSourceView === 'zoomed') this._hideZoomedView();
+        const { img: fImg, overlay: fOv } = this.fullscreenElements, u = this._getFullImageUrl(image);
+        const l = new Image();
+        l.onload = () => {
+            this._resetTransform(this.fullscreenViewState, fImg);
+            fImg.src = u;
+            fOv.style.display = 'flex';
         };
-        loader.onerror = () => {
-            console.error(`[Holaf ImageViewer] Failed to load fullscreen image: ${imageUrl}`);
-        };
-        loader.src = imageUrl;
-
+        l.onerror = () => console.error(`Failed to load: ${u}`);
+        l.src = u;
         this.updateInfoPane(image);
-        this._updateActiveThumbnail(this.currentNavIndex);
-        this._preloadNextImage(this.currentNavIndex);
+        this._updateActiveThumbnail(idx);
+        this._preloadNextImage(idx);
     },
 
     _hideFullscreenView() {
         this.fullscreenElements.overlay.style.display = 'none';
-        const source = this._fullscreenSourceView;
-        this._fullscreenSourceView = null; // Reset state
-        return source;
+        const s = this._fullscreenSourceView;
+        this._fullscreenSourceView = null;
+        return s;
     },
 
     _navigate(direction) {
         if (this.filteredImages.length === 0) return;
-
-        let newIndex;
-        if (this.currentNavIndex === -1) {
-            newIndex = 0;
-        } else {
-            newIndex = this.currentNavIndex + direction;
-        }
-
+        let newIndex = (this.currentNavIndex === -1) ? 0 : this.currentNavIndex + direction;
         const clampedIndex = Math.max(0, Math.min(newIndex, this.filteredImages.length - 1));
-
-        if (clampedIndex === this.currentNavIndex && this.currentNavIndex !== -1) {
-            return;
-        }
-
+        if (clampedIndex === this.currentNavIndex && this.currentNavIndex !== -1) return;
         this.currentNavIndex = clampedIndex;
-        const newImage = this.filteredImages[this.currentNavIndex];
-        this.activeImage = newImage;
-
-        this._updateActiveThumbnail(this.currentNavIndex);
-        this.updateInfoPane(newImage);
-        this._preloadNextImage(this.currentNavIndex);
-
-        const newImageUrl = this._getFullImageUrl(newImage);
+        this.activeImage = this.filteredImages[clampedIndex];
+        this._updateActiveThumbnail(clampedIndex);
+        this.updateInfoPane(this.activeImage);
+        this._preloadNextImage(clampedIndex);
+        const newImageUrl = this._getFullImageUrl(this.activeImage);
         const loader = new Image();
-
         loader.onload = () => {
-            const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
+            const isZoomed = document.getElementById('holaf-viewer-zoom-view') ?.style.display === 'flex';
             const isFullscreen = this.fullscreenElements.overlay.style.display === 'flex';
-
             if (isZoomed) {
-                const zoomImage = document.querySelector('#holaf-viewer-zoom-view img');
-                this._resetTransform(this.zoomViewState, zoomImage, zoomImage.parentElement);
-                zoomImage.src = newImageUrl;
+                const zImg = document.querySelector('#holaf-viewer-zoom-view img');
+                this._resetTransform(this.zoomViewState, zImg);
+                zImg.src = newImageUrl;
             } else if (isFullscreen) {
-                const fsImg = this.fullscreenElements.img;
-                this._resetTransform(this.fullscreenViewState, fsImg, fsImg.parentElement);
-                fsImg.src = newImageUrl;
+                const fImg = this.fullscreenElements.img;
+                this._resetTransform(this.fullscreenViewState, fImg);
+                fImg.src = newImageUrl;
             }
         };
-
-        loader.onerror = () => {
-            console.error(`[Holaf ImageViewer] Failed to preload image for navigation: ${newImageUrl}`);
-        };
-
+        loader.onerror = () => console.error(`Preload failed: ${newImageUrl}`);
         loader.src = newImageUrl;
     },
 
-    _navigateGrid(direction) { // +1 for down, -1 for up
+    _navigateGrid(direction) {
         if (this.filteredImages.length === 0) return;
-
-        const galleryEl = document.getElementById('holaf-viewer-gallery');
-        const firstThumbnail = galleryEl?.querySelector('.holaf-viewer-thumbnail-placeholder');
-        if (!galleryEl || !firstThumbnail) return;
-
-        const galleryStyle = window.getComputedStyle(galleryEl);
-        const thumbStyle = window.getComputedStyle(firstThumbnail);
-        const galleryWidth = galleryEl.clientWidth;
-        const thumbWidth = firstThumbnail.offsetWidth + parseFloat(thumbStyle.marginLeft) + parseFloat(thumbStyle.marginRight);
-        const numColumns = Math.max(1, Math.floor(galleryWidth / thumbWidth));
-
-        let newIndex;
-        if (this.currentNavIndex === -1) {
-            newIndex = 0;
-        } else {
-            newIndex = this.currentNavIndex + (direction * numColumns);
-        }
-
+        const g = document.getElementById('holaf-viewer-gallery');
+        const f = g ?.querySelector('.holaf-viewer-thumbnail-placeholder');
+        if (!g || !f) return;
+        const s = window.getComputedStyle(f),
+            w = f.offsetWidth + parseFloat(s.marginLeft) + parseFloat(s.marginRight),
+            n = Math.max(1, Math.floor(g.clientWidth / w));
+        let newIndex = (this.currentNavIndex === -1) ? 0 : this.currentNavIndex + (direction * n);
         const clampedIndex = Math.max(0, Math.min(newIndex, this.filteredImages.length - 1));
-
         if (clampedIndex === this.currentNavIndex) return;
-
         this.currentNavIndex = clampedIndex;
-        this.activeImage = this.filteredImages[this.currentNavIndex];
-
-        this._updateActiveThumbnail(this.currentNavIndex);
+        this.activeImage = this.filteredImages[clampedIndex];
+        this._updateActiveThumbnail(clampedIndex);
         this.updateInfoPane(this.activeImage);
     },
 
     _handleEscape() {
-        const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-        const isFullscreen = this.fullscreenElements?.overlay.style.display === 'flex';
-
-        if (isFullscreen) {
-            const source = this._hideFullscreenView();
-            if (source === 'zoomed' && this.activeImage) {
-                this._showZoomedView(this.activeImage);
-            }
-        } else if (isZoomed) {
+        if (this.fullscreenElements ?.overlay.style.display === 'flex') {
+            const s = this._hideFullscreenView();
+            if (s === 'zoomed' && this.activeImage) this._showZoomedView(this.activeImage);
+        } else if (document.getElementById('holaf-viewer-zoom-view') ?.style.display === 'flex') {
             this._hideZoomedView();
         }
     },
 
     _handleKeyDown(e) {
-        if (!this.panelElements?.panelEl || this.panelElements.panelEl.style.display === 'none') return;
-
+        if (!this.panelElements ?.panelEl || this.panelElements.panelEl.style.display === 'none') return;
         const targetTagName = e.target.tagName.toLowerCase();
-        if (targetTagName === 'input' || targetTagName === 'textarea' || targetTagName === 'select') {
-            return;
-        }
-
-        const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-        const isFullscreen = this.fullscreenElements?.overlay.style.display === 'flex';
-
+        if (['input', 'textarea', 'select'].includes(targetTagName)) return;
+        const isZoomed = document.getElementById('holaf-viewer-zoom-view') ?.style.display === 'flex',
+            isFullscreen = this.fullscreenElements ?.overlay.style.display === 'flex';
+        const galleryEl = document.getElementById('holaf-viewer-gallery');
         switch (e.key) {
-            case 'Enter':
-                e.preventDefault();
-                if (this.currentNavIndex === -1 && this.filteredImages.length > 0) {
-                    this._navigate(1); // Select first image if none is selected
-                }
-                if (this.currentNavIndex === -1) return;
-
-                const imageToDisplay = this.filteredImages[this.currentNavIndex];
-
-                if (e.shiftKey) { // Shift+Enter: go directly to fullscreen
-                    if (!isFullscreen) this._showFullscreenView(imageToDisplay);
-                } else { // Regular Enter: toggle between views
-                    if (isZoomed) this._showFullscreenView(imageToDisplay);
-                    else if (!isFullscreen) this._showZoomedView(imageToDisplay);
+            case 'PageUp':
+            case 'PageDown':
+                if (!isZoomed && !isFullscreen && galleryEl) {
+                    e.preventDefault();
+                    galleryEl.scrollBy({ top: (e.key === 'PageDown' ? 1 : -1) * galleryEl.clientHeight * 0.9, behavior: 'smooth' });
                 }
                 break;
-
+            case 'Home':
+            case 'End':
+                if (!isZoomed && !isFullscreen && this.filteredImages.length > 0) {
+                    e.preventDefault();
+                    if (e.key === 'Home') {
+                        this._navigate(0 - this.currentNavIndex);
+                    } else { // End key
+                        if (this.backgroundRenderHandle) clearTimeout(this.backgroundRenderHandle);
+                        while (this.renderedCount < this.filteredImages.length) this.renderImageBatch(true);
+                        this._navigate(this.filteredImages.length - 1 - this.currentNavIndex);
+                    }
+                }
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (this.currentNavIndex === -1 && this.filteredImages.length > 0) this.currentNavIndex = 0;
+                if (this.currentNavIndex === -1) return;
+                const img = this.filteredImages[this.currentNavIndex];
+                if (e.shiftKey) {
+                    if (!isFullscreen) this._showFullscreenView(img);
+                } else {
+                    if (isZoomed) this._showFullscreenView(img);
+                    else if (!isFullscreen) this._showZoomedView(img);
+                }
+                break;
             case 'ArrowRight':
             case 'ArrowLeft':
                 e.preventDefault();
@@ -1084,91 +956,73 @@ const holafImageViewer = {
     },
 
     _setupZoomAndPan(state, container, imageEl) {
-        const updateTransform = () => {
-            imageEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
-        };
-
+        const u = () => { imageEl.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; };
         container.addEventListener('wheel', (e) => {
             e.preventDefault();
-
-            const oldScale = state.scale;
-            const zoomFactor = 1.1;
-
-            const newScale = e.deltaY < 0 ? oldScale * zoomFactor : oldScale / zoomFactor;
-
-            state.scale = Math.max(1, Math.min(newScale, 30));
-
-            if (state.scale === oldScale) return;
-
-            const rect = container.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-
-            state.tx = mouseX - (mouseX - state.tx) * (state.scale / oldScale);
-            state.ty = mouseY - (mouseY - state.ty) * (state.scale / oldScale);
-
-            if (state.scale <= 1) {
-                this._resetTransform(state, imageEl, container);
-            } else {
-                imageEl.style.cursor = 'grab';
-            }
-
-            updateTransform();
+            const o = state.scale,
+                n = e.deltaY < 0 ? o * 1.1 : o / 1.1;
+            state.scale = Math.max(1, Math.min(n, 30));
+            if (state.scale === o) return;
+            const r = container.getBoundingClientRect(),
+                mX = e.clientX - r.left,
+                mY = e.clientY - r.top;
+            state.tx = mX - (mX - state.tx) * (state.scale / o);
+            state.ty = mY - (mY - state.ty) * (state.scale / o);
+            if (state.scale <= 1) this._resetTransform(state, imageEl);
+            else imageEl.style.cursor = 'grab';
+            u();
         });
-
         imageEl.addEventListener('mousedown', (e) => {
             e.preventDefault();
             if (state.scale <= 1) return;
-
-            let startX = e.clientX - state.tx;
-            let startY = e.clientY - state.ty;
-
+            let sX = e.clientX - state.tx,
+                sY = e.clientY - state.ty;
             imageEl.style.cursor = 'grabbing';
             imageEl.style.transition = 'none';
-
-            const onMouseMove = (moveEvent) => {
-                state.tx = moveEvent.clientX - startX;
-                state.ty = moveEvent.clientY - startY;
-                updateTransform();
+            const onM = (m) => {
+                state.tx = m.clientX - sX;
+                state.ty = m.clientY - sY;
+                u();
             };
-
-            const onMouseUp = () => {
+            const onU = () => {
                 imageEl.style.cursor = 'grab';
-                imageEl.style.transition = 'transform 0.2s ease-out';
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
+                imageEl.style.transition = 'transform .2s ease-out';
+                document.removeEventListener('mousemove', onM);
+                document.removeEventListener('mouseup', onU);
             };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('mousemove', onM);
+            document.addEventListener('mouseup', onU);
         });
     },
 
     setLoadingState(message) {
-        const galleryEl = document.getElementById("holaf-viewer-gallery");
-        if (galleryEl) galleryEl.innerHTML = `<p class="holaf-viewer-message">${message}</p>`;
+        const g = document.getElementById("holaf-viewer-gallery");
+        if (g) g.innerHTML = `<p class="holaf-viewer-message">${message}</p>`;
     },
-
-    applyCurrentTheme() {
-        if (this.panelElements?.panelEl) {
-            this.setTheme(this.settings.theme, false);
+    
+    async show() {
+        if (!this.areSettingsLoaded) {
+            await this.loadSettings();
         }
-    },
 
-    show() {
-        if (!this.panelElements) this.createPanel();
+        if (!this.panelElements) {
+            this.createPanel();
+        }
+        
+        const panelIsVisible = this.panelElements?.panelEl && this.panelElements.panelEl.style.display === "flex";
+        if (panelIsVisible) {
+            this.hide();
+            return;
+        }
+
         if (this.panelElements?.panelEl) {
-            this.applyCurrentTheme();
+            this.applyPanelSettings();
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
-
-            this._applyThumbnailFit();
-            this._applyThumbnailSize();
-
-            this.loadImages();
+            
+            this.loadAndPopulateFilters();
             if (this.refreshIntervalId) clearInterval(this.refreshIntervalId);
-            this.refreshIntervalId = setInterval(() => this.loadImages(), 15000);
-
+            this.refreshIntervalId = setInterval(() => this.performSilentRefresh(), 20000);
             if (!this.isInitialized) this.isInitialized = true;
         }
     },
@@ -1176,22 +1030,18 @@ const holafImageViewer = {
     hide() {
         if (this.panelElements?.panelEl) {
             this.panelElements.panelEl.style.display = "none";
-
             if (this.refreshIntervalId) {
                 clearInterval(this.refreshIntervalId);
                 this.refreshIntervalId = null;
+            }
+            if (this.backgroundRenderHandle) {
+                clearTimeout(this.backgroundRenderHandle);
+                this.backgroundRenderHandle = null;
             }
         }
     }
 };
 
 app.holafImageViewer = holafImageViewer;
-
-app.registerExtension({
-    name: "Holaf.ImageViewer.Panel",
-    async setup() {
-        holafImageViewer.init();
-    },
-});
-
+app.registerExtension({ name: "Holaf.ImageViewer.Panel", async setup() { holafImageViewer.init(); } });
 export default holafImageViewer;

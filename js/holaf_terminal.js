@@ -400,16 +400,16 @@ const holafTerminal = {
         try {
             const r = await fetch("/holaf/utilities/settings");
             const d = await r.json();
-            if (d.ui_terminal_settings) {
-                const validTheme = HOLAF_THEMES.find(t => t.name === d.ui_terminal_settings.theme);
-                this.settings.theme = validTheme ? d.ui_terminal_settings.theme : HOLAF_THEMES[0].name;
+            if (d.TerminalUI) {
+                const validTheme = HOLAF_THEMES.find(t => t.name === d.TerminalUI.theme);
+                this.settings.theme = validTheme ? d.TerminalUI.theme : HOLAF_THEMES[0].name;
 
-                this.settings.fontSize = d.ui_terminal_settings.font_size || this.settings.fontSize;
-                this.settings.panel_x = d.ui_terminal_settings.panel_x;
-                this.settings.panel_y = d.ui_terminal_settings.panel_y;
-                this.settings.panel_width = d.ui_terminal_settings.panel_width || this.settings.panel_width;
-                this.settings.panel_height = d.ui_terminal_settings.panel_height || this.settings.panel_height;
-                this.settings.panel_is_fullscreen = !!d.ui_terminal_settings.panel_is_fullscreen;
+                this.settings.fontSize = d.TerminalUI.font_size || this.settings.fontSize;
+                this.settings.panel_x = d.TerminalUI.panel_x;
+                this.settings.panel_y = d.TerminalUI.panel_y;
+                this.settings.panel_width = d.TerminalUI.panel_width || this.settings.panel_width;
+                this.settings.panel_height = d.TerminalUI.panel_height || this.settings.panel_height;
+                this.settings.panel_is_fullscreen = !!d.TerminalUI.panel_is_fullscreen;
 
                 this.applySettings();
             }

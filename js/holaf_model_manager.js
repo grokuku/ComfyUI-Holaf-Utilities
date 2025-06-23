@@ -94,8 +94,8 @@ const holafModelManager = {
                 const response = await fetch("/holaf/utilities/settings");
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const allSettings = await response.json();
-                if (allSettings.ui_model_manager_settings) {
-                    const fetchedMMSettings = allSettings.ui_model_manager_settings;
+                if (allSettings.ModelManagerUI) {
+                    const fetchedMMSettings = allSettings.ModelManagerUI;
 
                     const validTheme = HOLAF_THEMES.find(t => t.name === fetchedMMSettings.theme);
 

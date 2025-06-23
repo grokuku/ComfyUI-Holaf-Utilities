@@ -15,8 +15,9 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
     *   [COMPLETED] La gestion des thèmes est désormais indépendante pour chaque outil, avec une sauvegarde individuelle de l'état.
 
 2.  **Correction de Bugs :**
+    *   [COMPLETED] La logique de chargement et de sauvegarde des paramètres des panneaux (taille, position, thème, état plein écran) a été entièrement corrigée et unifiée pour le Terminal, le Model Manager et l'Image Viewer, résolvant les problèmes de persistance.
     *   [COMPLETED] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" est maintenant fonctionnelle.
-    *   [À FAIRE] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée mais n'a pas d'effet visuel sur les vignettes.
+    *   [COMPLETED] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée et fonctionnelle.
     *   [À FAIRE] Le texte du filtre dans le "Custom Nodes Manager" est sauvegardé dans config.ini mais n'est pas correctement rechargé et appliqué à la réouverture du panneau après un redémarrage de ComfyUI.
 
 3.  **Panneau de Configuration Centralisé :**
@@ -76,6 +77,7 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
     *   [COMPLETED] Le zoom (molette) se centre désormais de manière fiable sur la position du curseur.
     *   [COMPLETED] Le curseur de la souris est une main (`grab`/`grabbing`) et le comportement de "drag" natif du navigateur est désactivé.
     *   [COMPLETED] Navigation au clavier (flèches haut/bas/gauche/droite) dans la galerie.
+    *   [COMPLETED] Navigation clavier étendue (PageUp/Down, Home/End) pour un défilement rapide.
 
 3.  **Frontend - Panneau Droit (Métadonnées Complètes) :**
     *   [COMPLETED] L'API et le frontend chargent et affichent les métadonnées (prompt/workflow) depuis des fichiers externes (.txt, .json) ou internes (PNG), en indiquant la source. Le bug critique de récupération des métadonnées (dû aux valeurs `NaN` dans les JSON) a été corrigé.
@@ -110,19 +112,23 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 
 2.  **Performance - Intégration à la Base de Données :**
     *   [COMPLETED] Une table `images` a été ajoutée à la base de données partagée (SQLite) pour un chargement instantané.
+    *   [COMPLETED] Le filtrage (dossiers, formats, dates) est maintenant effectué côté serveur via des requêtes SQL optimisées, éliminant les blocages du navigateur avec de grandes galeries.
     *   [COMPLETED] Un scan de synchronisation est effectué en arrière-plan au démarrage, puis périodiquement (toutes les 60 secondes) pour mettre à jour la base de données sans bloquer le serveur.
 
-3.  **Fonctionnalité - Actualisation Automatique :**
-    *   [COMPLETED] Le bouton "Refresh" a été remplacé par une synchronisation automatique performante. Le frontend interroge le backend toutes les 15 secondes, et le backend met à jour sa propre base de données toutes les 60 secondes, de manière non-bloquante.
+3.  **Performance - Rendu Virtualisé et Stabilité :**
+    *   [COMPLETED] La galerie utilise un "infinite scroll" avec rendu par lots et chargement progressif en arrière-plan. Cela permet un affichage initial instantané et une barre de défilement fonctionnelle même avec des dizaines de milliers d'images.
+    *   [COMPLETED] La position de défilement est mieux préservée lors des changements de filtres, en s'ancrant sur l'image active.
 
-4.  **Fonctionnalité - Mode Plein Écran & Interactivité :**
+4.  **Fonctionnalité - Actualisation Automatique :**
+    *   [COMPLETED] Le rafraîchissement périodique est désormais "silencieux" : il ajoute les nouvelles images sans recharger toute la galerie et sans perturber la position de l'utilisateur.
+
+5.  **Fonctionnalité - Mode Plein Écran & Interactivité :**
     *   [COMPLETED] Ajouter une icône "fullscreen" sur les vignettes au survol.
     *   [COMPLETED] Gérer l'affichage plein écran (overlay) via l'icône.
-    *   [COMPLETED] Les images (petites ou grandes) s'adaptent désormais pour remplir l'espace de la vue plein écran.
     *   [COMPLETED] Navigation au clavier (flèches) entre les images dans les vues agrandie et plein écran.
     *   [COMPLETED] Le zoom/panoramique en plein écran est fonctionnel et se centre désormais de manière fiable sur le curseur.
     *   [COMPLETED] Ajout de raccourcis clavier avancés : Entrée/Shift+Entrée pour naviguer entre les vues, Échap contextuel pour revenir en arrière.
-    *   [COMPLETED] La vue plein écran est désormais sans bordure et les boutons de contrôle sont toujours cliquables (correction du z-index).
+    *   [COMPLETED] Double-cliquer sur une image en vue agrandie permet de passer en plein écran.
     *   [COMPLETED] **Navigation Fluide (Préchargement) :** L'image suivante est préchargée en arrière-plan lors de la navigation en vue agrandie/plein écran, et l'affichage n'est mis à jour qu'une fois l'image prête, éliminant tout scintillement.
 
 ---
@@ -141,6 +147,7 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
     *   [COMPLETED] Ajout d'une barre de statut affichant le nombre d'images filtrées par rapport au total.
     *   [COMPLETED] **Option d'affichage des vignettes :** Ajout d'un panneau "Options d'Affichage" avec une case à cocher pour basculer entre les modes "Cover" (rognées) et "Contain" (entières). Ce paramètre est sauvegardé dans la configuration.
     *   [COMPLETED] **Taille des vignettes réglable :** Ajout d'un slider pour contrôler la taille des vignettes, avec sauvegarde du paramètre.
+    *   [COMPLETED] **Filtre par Date :** Ajout de champs pour filtrer les images dans une plage de dates spécifique.
 
 3.  **Fonctionnalités à Définir :**
     *   **"Edit" :** Laisser un bouton réservé.
