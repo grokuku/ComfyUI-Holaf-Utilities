@@ -1,0 +1,248 @@
+/*
+ * Holaf Utilities - Nodes Manager Specific Styles
+ */
+
+#holaf-nodes-manager-panel {
+    /* --holaf-nm-zoom-factor is set here by JS */
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-container {
+    font-size: calc(14px * var(--holaf-nm-zoom-factor)); /* Base font size scales with zoom */
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%; /* Fill the panel */
+    overflow: hidden; /* Prevent content overflow from breaking panel */
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-left-pane {
+    flex: 0 0 calc(320px * var(--holaf-nm-zoom-factor)); /* Scaled width */
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-secondary);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-right-pane {
+    flex: 1 1 auto; /* Take remaining space */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Manage overflow internally */
+    background-color: var(--holaf-background-primary);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-toolbar {
+    padding: calc(6px * var(--holaf-nm-zoom-factor));
+    border-bottom: 1px solid var(--holaf-border-color);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: calc(6px * var(--holaf-nm-zoom-factor));
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-filter-input {
+    flex-grow: 1;
+    padding: calc(4px * var(--holaf-nm-zoom-factor)) calc(6px * var(--holaf-nm-zoom-factor));
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
+    border-radius: 3px;
+    color: var(--holaf-text-primary);
+    font-size: calc(13px * var(--holaf-nm-zoom-factor)); /* Consistent with other search inputs */
+    outline: none;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-filter-input:focus {
+    border-color: var(--holaf-accent-color);
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-actions-toolbar { /* Container for action buttons */
+    /* This class was missing, assuming it's a div wrapping buttons in the left pane's toolbar */
+    display: flex;
+    gap: calc(4px * var(--holaf-nm-zoom-factor));
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-actions-toolbar .comfy-button {
+    flex-grow: 1; /* Make buttons fill space if wrapped */
+    font-size: calc(12px * var(--holaf-nm-zoom-factor)); /* Smaller font for action buttons */
+    padding: calc(4px * var(--holaf-nm-zoom-factor)) calc(8px * var(--holaf-nm-zoom-factor));
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-actions-toolbar .comfy-button:disabled {
+    opacity: 0.5; /* Ensure disabled style is applied if not already by comfy-button base */
+    cursor: not-allowed;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: calc(5px * var(--holaf-nm-zoom-factor));
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item {
+    padding: calc(1px * var(--holaf-nm-zoom-factor)) calc(10px * var(--holaf-nm-zoom-factor)); /* Compact padding */
+    cursor: default; /* Items are not directly clickable, selection is via checkbox or dedicated action */
+    border-radius: 4px;
+    margin-bottom: calc(1px * var(--holaf-nm-zoom-factor)); /* Very tight margin */
+    color: var(--holaf-text-primary);
+    transition: background-color 0.15s;
+    display: flex;
+    align-items: center; /* Vertically align checkbox, name, icons */
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item.selected-readme {
+    background-color: var(--holaf-accent-color) !important;
+    color: var(--holaf-button-text) !important;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item.selected-readme:hover {
+    background-color: color-mix(in srgb, var(--holaf-accent-color) 90%, black 10%) !important;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item:not(.selected-readme):hover {
+    background-color: var(--holaf-header-button-hover-bg); /* Use a subtle hover from shared variables */
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-list-item > span:first-of-type { /* Target the name span */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1; /* Allow name to take available space before icons */
+    margin-left: calc(5px * var(--holaf-nm-zoom-factor)); /* Space after checkbox */
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-item-cb { /* Individual item checkbox */
+    accent-color: var(--holaf-accent-color);
+    transform: scale(calc(0.9 * var(--holaf-nm-zoom-factor)));
+    margin: 0;
+    flex-shrink: 0;
+}
+
+#holaf-nodes-manager-panel #holaf-nodes-manager-select-all-cb { /* "Select All" checkbox in toolbar */
+    accent-color: var(--holaf-accent-color);
+    transform: scale(calc(0.95 * var(--holaf-nm-zoom-factor))); /* Slightly larger */
+    margin-right: calc(5px * var(--holaf-nm-zoom-factor));
+}
+
+/* Icons in list items */
+#holaf-nodes-manager-panel .holaf-nodes-manager-manual-icon,
+#holaf-nodes-manager-panel .holaf-nodes-manager-git-icon,
+#holaf-nodes-manager-panel .holaf-nodes-manager-req-icon {
+    color: var(--holaf-text-secondary);
+    flex-shrink: 0;
+    margin-left: calc(4px * var(--holaf-nm-zoom-factor)); /* Reduced margin for tighter icon packing */
+    opacity: 0.7;
+    vertical-align: middle; /* Align with text */
+    font-size: 0.9em; /* Slightly smaller than item text */
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-header {
+    padding: calc(10px * var(--holaf-nm-zoom-factor)) calc(15px * var(--holaf-nm-zoom-factor));
+    background-color: var(--holaf-background-secondary);
+    border-bottom: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Pushes source tag to right */
+    flex-shrink: 0;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-header h3 {
+    margin: 0;
+    font-size: calc(1.1em * var(--holaf-nm-zoom-factor));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-header a { /* For GitHub link */
+    color: var(--holaf-accent-color);
+    text-decoration: none;
+    margin-left: calc(10px * var(--holaf-nm-zoom-factor));
+    font-size: calc(0.9em * var(--holaf-nm-zoom-factor));
+    flex-shrink: 0;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-header a:hover {
+    text-decoration: underline;
+}
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content {
+    flex-grow: 1;
+    overflow: auto; /* Scroll for long readmes */
+    padding: calc(15px * var(--holaf-nm-zoom-factor)) calc(20px * var(--holaf-nm-zoom-factor));
+    color: var(--holaf-text-primary);
+    white-space: pre-wrap; /* Preserve whitespace for text-based readmes */
+    word-wrap: break-word;
+    font-family: sans-serif; /* More readable for rendered markdown if it's rendered as HTML */
+    font-size: calc(14px * var(--holaf-nm-zoom-factor)); /* Base readme font size */
+    line-height: 1.6;
+}
+
+/* Basic Markdown styling for README content if rendered as HTML */
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h1,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h2,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h3 {
+    color: var(--holaf-text-primary);
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding-bottom: calc(0.3em * var(--holaf-nm-zoom-factor));
+    margin-top: calc(24px * var(--holaf-nm-zoom-factor));
+    margin-bottom: calc(16px * var(--holaf-nm-zoom-factor));
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h1 { font-size: calc(1.8em * var(--holaf-nm-zoom-factor)); }
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h2 { font-size: calc(1.5em * var(--holaf-nm-zoom-factor)); }
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content h3 { font-size: calc(1.25em * var(--holaf-nm-zoom-factor)); }
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content p { margin-bottom: calc(1em * var(--holaf-nm-zoom-factor)); }
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content ul,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content ol { padding-left: calc(2em * var(--holaf-nm-zoom-factor)); margin-bottom: calc(1em * var(--holaf-nm-zoom-factor)); }
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content code {
+    background-color: var(--holaf-background-secondary);
+    padding: calc(0.2em * var(--holaf-nm-zoom-factor)) calc(0.4em * var(--holaf-nm-zoom-factor));
+    margin: 0;
+    font-size: calc(0.85em * var(--holaf-nm-zoom-factor)); /* 85% of parent */
+    border-radius: 3px;
+    font-family: monospace;
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content pre {
+    background-color: var(--holaf-background-secondary);
+    padding: calc(1em * var(--holaf-nm-zoom-factor));
+    overflow: auto;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: calc(0.9em * var(--holaf-nm-zoom-factor)); /* Slightly smaller for pre blocks */
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content pre code { padding: 0; margin: 0; font-size: 100%; background: none; } /* Reset for code inside pre */
+
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content blockquote {
+    border-left: calc(0.25em * var(--holaf-nm-zoom-factor)) solid var(--holaf-border-color);
+    padding: 0 calc(1em * var(--holaf-nm-zoom-factor));
+    color: var(--holaf-text-secondary);
+    margin-left: 0; margin-right: 0;
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content img { max-width: 100%; height: auto; background-color: var(--holaf-background-secondary); }
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content table { border-collapse: collapse; margin-bottom: calc(1em * var(--holaf-nm-zoom-factor)); width: auto; max-width: 100%; }
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content th,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content td { border: 1px solid var(--holaf-border-color); padding: calc(0.5em * var(--holaf-nm-zoom-factor)) calc(0.75em * var(--holaf-nm-zoom-factor)); }
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content th { background-color: var(--holaf-background-secondary); font-weight: bold; }
+
+/* Scrollbar for Nodes Manager (specific for zoom factor) */
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar {
+    width: calc(10px * var(--holaf-nm-zoom-factor, 1));
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-track,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-track {
+    background: var(--holaf-scrollbar-track);
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-thumb,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-thumb {
+    background-color: var(--holaf-scrollbar-thumb);
+    border-radius: calc(5px * var(--holaf-nm-zoom-factor, 1));
+    border: calc(2px * var(--holaf-nm-zoom-factor, 1)) solid var(--holaf-scrollbar-track);
+}
+#holaf-nodes-manager-panel .holaf-nodes-manager-list::-webkit-scrollbar-thumb:hover,
+#holaf-nodes-manager-panel .holaf-nodes-manager-readme-content::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
+}

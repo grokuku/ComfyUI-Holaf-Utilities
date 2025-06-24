@@ -1,0 +1,136 @@
+/*
+ * Holaf Utilities - Settings Panel Specific Styles
+ */
+
+#holaf-settings-panel .holaf-settings-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Fill the panel */
+    color: var(--holaf-text-primary);
+}
+
+#holaf-settings-panel .holaf-settings-toolbar {
+    padding: 8px;
+    border-bottom: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-background-secondary);
+    display: flex;
+    align-items: center;
+    gap: 12px; /* Space between Save button and status */
+    flex-shrink: 0;
+}
+
+#holaf-settings-panel .holaf-settings-status-indicator {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--holaf-text-secondary);
+    transition: color 0.3s; /* For status change feedback */
+    margin-left: auto; /* Push status to the right if toolbar has space */
+}
+
+/* Status indicator colors for feedback */
+#holaf-settings-panel .holaf-settings-status-indicator.success {
+    color: #4CAF50; /* Green for success */
+}
+#holaf-settings-panel .holaf-settings-status-indicator.error {
+    color: #F44336; /* Red for error */
+}
+#holaf-settings-panel .holaf-settings-status-indicator.saving {
+    color: var(--holaf-accent-color); /* Accent color for saving */
+}
+
+
+#holaf-settings-panel .holaf-settings-form {
+    padding: 15px;
+    overflow-y: auto; /* Scroll for many settings */
+    flex-grow: 1;
+}
+
+.holaf-settings-group {
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--holaf-border-color);
+}
+.holaf-settings-group:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.holaf-settings-group h3 { /* Group title */
+    margin: 0 0 5px 0;
+    color: var(--holaf-text-primary);
+    font-size: 1.1em;
+}
+
+.holaf-settings-group-description {
+    font-size: 13px;
+    color: var(--holaf-text-secondary);
+    margin: 0 0 15px 0;
+    line-height: 1.4;
+}
+
+.holaf-settings-field {
+    display: grid;
+    grid-template-columns: 180px 1fr; /* Label width, then input takes rest */
+    align-items: center;
+    gap: 10px 15px; /* Row gap, Column gap */
+    margin-bottom: 12px;
+}
+
+.holaf-settings-field label {
+    font-weight: bold;
+    text-align: right;
+    color: var(--holaf-text-primary);
+    font-size: 0.9em;
+}
+
+.holaf-settings-field input[type="text"],
+.holaf-settings-field input[type="number"],
+.holaf-settings-field input[type="password"], /* For future use if needed */
+.holaf-settings-field select {
+    padding: 6px 8px;
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box; /* Include padding and border in element's total width and height */
+    font-size: 0.9em;
+}
+
+.holaf-settings-field input[type="checkbox"] {
+    accent-color: var(--holaf-accent-color);
+    transform: scale(1.1);
+    justify-self: start; /* Align checkbox to the start of its grid cell */
+}
+
+
+.holaf-settings-field input:focus,
+.holaf-settings-field select:focus {
+    outline: none;
+    border-color: var(--holaf-accent-color);
+}
+
+.holaf-settings-field-description {
+    grid-column: 2 / 3; /* Span across the input column */
+    font-size: 12px;
+    color: var(--holaf-text-secondary);
+    margin: -5px 0 0 0; /* Adjust position to be right under the input */
+    padding: 0;
+    line-height: 1.3;
+}
+
+/* Settings panel scrollbar */
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar {
+    width: 10px;
+}
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar-track {
+    background: var(--holaf-scrollbar-track);
+}
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar-thumb {
+    background-color: var(--holaf-scrollbar-thumb);
+    border-radius: 5px;
+    border: 2px solid var(--holaf-scrollbar-track);
+}
+#holaf-settings-panel .holaf-settings-form::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
+}

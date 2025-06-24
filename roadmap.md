@@ -10,29 +10,34 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
 
 **Statut : 🟡 En cours (avec bugs identifiés pour le System Monitor).**
 
-1.  **Améliorations de l'Interface :**
+1.  **Refactorisation Majeure du Code :**
+    *   [COMPLETED] **Backend (Python) :** Le fichier monolithique `__init__.py` a été scindé en plusieurs modules plus petits et gérables (`holaf_database.py`, `holaf_config.py`, `holaf_terminal.py`, `holaf_image_viewer_utils.py`, `holaf_system_monitor.py`, `holaf_utils.py`, `holaf_server_management.py`) pour une meilleure maintenabilité et organisation.
+    *   [COMPLETED] **Frontend (CSS) :** Le fichier CSS principal `holaf_utilities.css` a été divisé en fichiers CSS thématiques et par composant (`holaf_themes.css`, `holaf_shared_panel.css`, `holaf_main_button.css`, `holaf_model_manager_styles.css`, etc.) pour une meilleure gestion des styles. Le chargement de ces fichiers a été mis à jour dans `holaf_main.js`.
+
+2.  **Améliorations de l'Interface :**
     *   [COMPLETED] Les barres de titre des panneaux (Image Viewer, Nodes Manager) ont été uniformisées pour inclure les contrôles de thème et de zoom, comme le Model Manager et le Terminal.
     *   [COMPLETED] La gestion des thèmes est désormais indépendante pour chaque outil, avec une sauvegarde individuelle de l'état.
 
-2.  **Correction de Bugs :**
+3.  **Correction de Bugs :**
     *   [COMPLETED] La logique de chargement et de sauvegarde des paramètres des panneaux (taille, position, thème, état plein écran) a été entièrement corrigée et unifiée pour le Terminal, le Model Manager et l'Image Viewer, résolvant les problèmes de persistance.
     *   [COMPLETED] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" est maintenant fonctionnelle.
     *   [COMPLETED] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée et fonctionnelle.
+    *   [COMPLETED] Le problème de bordure noire inattendue autour du contenu du Terminal a été corrigé via une révision des styles CSS du wrapper du terminal.
     *   [À FAIRE] Le texte du filtre dans le "Custom Nodes Manager" est sauvegardé dans config.ini mais n'est pas correctement rechargé et appliqué à la réouverture du panneau après un redémarrage de ComfyUI.
-    *   **[BUG - System Monitor]** **Aucun log backend :** Les logs de débogage ajoutés dans `__init__.py` pour la fonction `_get_system_stats_blocking` et le handler WebSocket `holaf_monitor_websocket_handler` n'apparaissent pas dans la console serveur, indiquant un problème en amont (connexion WebSocket non établie correctement, route non atteinte, ou erreur précoce non capturée dans le handler).
+    *   **[BUG - System Monitor]** **Aucun log backend :** Les logs de débogage ajoutés dans le module `holaf_system_monitor.py` (anciennement `__init__.py`) pour la fonction `_get_system_stats_blocking` et le handler WebSocket `holaf_monitor_websocket_handler` n'apparaissent pas dans la console serveur, indiquant un problème en amont (connexion WebSocket non établie correctement, route non atteinte, ou erreur précoce non capturée dans le handler).
     *   **[BUG - System Monitor]** **Données incorrectes/manquantes sur le frontend :**
         *   Les valeurs CPU et RAM affichées sur le frontend sont à 0% et ne se mettent pas à jour.
         *   Les informations GPU n'apparaissent pas du tout sur le frontend (ni en texte, ni en graphique).
         *   Les graphiques eux-mêmes (lignes de données) ne s'affichent pas dans le canvas, seules les légendes et les axes/grilles sont visibles.
     *   **[BUG - System Monitor]** **Problème de configuration `psutil` initial ?** La première initialisation de `psutil.cpu_percent(interval=None)` pourrait poser problème sur certains systèmes ou configurations, nécessitant une gestion d'erreur plus robuste ou une approche alternative si `psutil` n'est pas disponible/fonctionnel.
 
-3.  **Panneau de Configuration Centralisé :**
+4.  **Panneau de Configuration Centralisé :**
     *   [À FAIRE] Ajouter une entrée "Options" dans le menu principal (sous un séparateur).
     *   [À FAIRE] Créer un nouveau panneau "Options" qui permet de modifier graphiquement les paramètres de `config.ini` pour tous les outils (Terminal, Model Manager, etc.).
 
-4.  **Fonctionnalité de Redémarrage :**
-    *   [À FAIRE] Ajouter une entrée "Restart ComfyUI" en bas du menu principal (sous un séparateur).
-    *   [À FAIRE] Implémenter la logique pour déclencher un redémarrage du serveur, similaire à celle utilisée par le "ComfyUI-Manager".
+5.  **Fonctionnalité de Redémarrage :**
+    *   [COMPLETED] Ajout d'une entrée "Restart ComfyUI" en bas du menu principal.
+    *   [COMPLETED] Implémentation de la logique pour déclencher un redémarrage du serveur (via `holaf_server_management.py`).
 
 ---
 

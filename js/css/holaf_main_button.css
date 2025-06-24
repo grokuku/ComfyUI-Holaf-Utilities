@@ -1,0 +1,49 @@
+/*
+ * Holaf Utilities - Main Menu Button Styles
+ * Styles for the top-level "Holaf's Utilities" button and its dropdown.
+ */
+
+/* Base style for the main "Holaf's Utilities" button */
+#holaf-utilities-menu-button {
+    background-color: #D8700D; /* Graphite Orange Accent - Default theme for this button */
+    color: white;
+    font-size: 14px;
+    padding: 10px;
+    cursor: pointer;
+    border: 1px solid #A9560A; /* Darker Graphite Orange Accent */
+    border-radius: 8px;
+    margin: 0 4px; /* Default ComfyUI menu button margin */
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+#holaf-utilities-menu-button:hover {
+    background-color: #E77D1E; /* Lighter Graphite Orange Accent for hover */
+    border-color: #BF6A0B;
+}
+
+/* Dropdown menu for Holaf's Utilities */
+#holaf-utilities-dropdown-menu {
+    display: none; /* Shown by JS */
+    position: fixed; /* Relative to viewport */
+    background-color: #2B2B2B; /* Graphite Orange Secondary BG - Default theme */
+    border: 1px solid #3F3F3F; /* Graphite Orange Border */
+    border-radius: 4px;
+    list-style: none;
+    padding: 5px 0;
+    margin: 0;
+    z-index: 100000; /* Ensure it's on top */
+    min-width: 150px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+}
+
+#holaf-utilities-dropdown-menu li {
+    padding: 8px 12px;
+    cursor: pointer;
+    color: #E0E0E0; /* Graphite Orange Primary Text */
+    transition: background-color 0.15s, color 0.15s;
+}
+
+#holaf-utilities-dropdown-menu li:hover {
+    background-color: #D8700D; /* Graphite Orange Accent */
+    color: white;
+}

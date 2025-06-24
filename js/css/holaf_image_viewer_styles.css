@@ -1,0 +1,20 @@
+/*
+ * Holaf Utilities - Image Viewer Specific Styles
+ * This file is currently a placeholder for Image Viewer styles.
+ * The actual styles are in holaf_image_viewer.css (provided separately).
+ *
+ * If holaf_image_viewer.css is comprehensive and self-contained, this
+ * file might not be needed unless shared utility styles specific to
+ * the image viewer panel (but not globally shared) are identified.
+ */
+
+#holaf-viewer-panel .holaf-viewer-content {
+    /* e.g., styles for image grid, thumbnails, info panel, etc.
+       These are likely in the dedicated holaf_image_viewer.css
+    */
+}
+
+/* If there are any themeable elements specific to the Image Viewer's *panel*
+   (not the content styled by holaf_image_viewer.css), they could go here.
+   For example, if the Image Viewer had a unique toolbar structure within its panel.
+*/

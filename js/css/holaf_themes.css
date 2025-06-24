@@ -1,0 +1,119 @@
+/*
+ * Holaf Utilities - Theme Definitions
+ * Contains all CSS variable definitions for different themes.
+ */
+
+/* Graphite Orange Theme (Dark) */
+.holaf-theme-graphite-orange {
+    --holaf-accent-color: #D8700D;
+    --holaf-background-primary: #1E1E1E;
+    --holaf-background-secondary: #2B2B2B;
+    --holaf-text-primary: #E0E0E0;
+    --holaf-text-secondary: #A0A0A0;
+    --holaf-border-color: #3F3F3F;
+    --holaf-button-background: #D8700D;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #252525;
+    --holaf-tag-background: #4F4F4F;
+    --holaf-tag-text: #DADADA;
+    --holaf-family-tag-background: #5A3E1E;
+    --holaf-family-tag-text: #E8D8C8;
+    --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
+    --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
+    --holaf-header-button-text: #B0B0B0;
+    --holaf-header-button-hover-text: #E0E0E0;
+    --holaf-scrollbar-thumb: #555555;
+    --holaf-scrollbar-track: var(--holaf-background-secondary);
+}
+
+/* Midnight Purple Theme (Dark) */
+.holaf-theme-midnight-purple {
+    --holaf-accent-color: #8A2BE2;
+    --holaf-background-primary: #1C1C2E;
+    --holaf-background-secondary: #2A2A40;
+    --holaf-text-primary: #E0D8F0;
+    --holaf-text-secondary: #9890B0;
+    --holaf-border-color: #383850;
+    --holaf-button-background: #8A2BE2;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #242438;
+    --holaf-tag-background: #4A3A5E;
+    --holaf-tag-text: #E0D8F0;
+    --holaf-family-tag-background: #4A2A60;
+    --holaf-family-tag-text: #E8D8F8;
+    --holaf-header-button-bg: rgba(224, 216, 240, 0.08);
+    --holaf-header-button-hover-bg: rgba(224, 216, 240, 0.15);
+    --holaf-header-button-text: #B0A8C0;
+    --holaf-header-button-hover-text: #E0D8F0;
+    --holaf-scrollbar-thumb: #4A3A5E;
+    --holaf-scrollbar-track: var(--holaf-background-secondary);
+}
+
+/* Forest Green Theme (Dark) */
+.holaf-theme-forest-green {
+    --holaf-accent-color: #228B22;
+    --holaf-background-primary: #1A241A;
+    --holaf-background-secondary: #283A28;
+    --holaf-text-primary: #D0E0D0;
+    --holaf-text-secondary: #809080;
+    --holaf-border-color: #304830;
+    --holaf-button-background: #228B22;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #223022;
+    --holaf-tag-background: #3A5E3A;
+    --holaf-tag-text: #D0E0D0;
+    --holaf-family-tag-background: #2A4A2A;
+    --holaf-family-tag-text: #D8E8D8;
+    --holaf-header-button-bg: rgba(208, 224, 208, 0.08);
+    --holaf-header-button-hover-bg: rgba(208, 224, 208, 0.15);
+    --holaf-header-button-text: #A0B0A0;
+    --holaf-header-button-hover-text: #D0E0D0;
+    --holaf-scrollbar-thumb: #3A5E3A;
+    --holaf-scrollbar-track: var(--holaf-background-secondary);
+}
+
+/* Steel Blue Theme (Dark) */
+.holaf-theme-steel-blue {
+    --holaf-accent-color: #4682B4;
+    --holaf-background-primary: #1C2024;
+    --holaf-background-secondary: #2A3038;
+    --holaf-text-primary: #D0D8E0;
+    --holaf-text-secondary: #808890;
+    --holaf-border-color: #36404A;
+    --holaf-button-background: #4682B4;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #24282D;
+    --holaf-tag-background: #3A4E5E;
+    --holaf-tag-text: #D0D8E0;
+    --holaf-family-tag-background: #304050;
+    --holaf-family-tag-text: #D8E0E8;
+    --holaf-header-button-bg: rgba(208, 216, 224, 0.08);
+    --holaf-header-button-hover-bg: rgba(208, 216, 224, 0.15);
+    --holaf-header-button-text: #A0A8B0;
+    --holaf-header-button-hover-text: #D0D8E0;
+    --holaf-scrollbar-thumb: #3A4E5E;
+    --holaf-scrollbar-track: var(--holaf-background-secondary);
+}
+
+/* Ashy Light Theme (Light) */
+.holaf-theme-ashy-light {
+    --holaf-accent-color: #607D8B;
+    --holaf-background-primary: #FAFAFA;
+    --holaf-background-secondary: #F0F0F0;
+    --holaf-text-primary: #263238;
+    --holaf-text-secondary: #546E7A;
+    --holaf-border-color: #DCDCDC;
+    --holaf-button-background: #607D8B;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #FFFFFF;
+    --holaf-tag-background: #E0E0E0;
+    --holaf-tag-text: #37474F;
+    --holaf-family-tag-background: #CFD8DC;
+    --holaf-family-tag-text: #37474F;
+    --holaf-header-button-bg: rgba(0, 0, 0, 0.05);
+    --holaf-header-button-hover-bg: rgba(0, 0, 0, 0.1);
+    --holaf-header-button-text: #546E7A;
+    --holaf-header-button-hover-text: #263238;
+    --holaf-scrollbar-thumb: #B0BEC5;
+    --holaf-scrollbar-track: var(--holaf-background-secondary);
+}

@@ -11,6 +11,7 @@
  * CORRECTION: Removed automatic page reload after sending restart command.
  * MODIFICATION: Imported and activated the new Settings Manager.
  * MODIFICATION: Added "Toggle Monitor" menu item.
+ * REFACTOR CSS: Modified loadSharedCss to load multiple split CSS files.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -23,7 +24,7 @@ import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";
 import "./holaf_image_viewer.js";
 import "./holaf_settings_manager.js";
-import "./holaf_monitor.js"; // <-- Import the new monitor
+import "./holaf_monitor.js";
 
 /**
  * A simple, themed modal dialog helper.
@@ -87,7 +88,7 @@ const HolafUtilitiesMenu = {
     dropdownMenuEl: null, // Référence au menu déroulant
 
     init() {
-        this.loadSharedCss();
+        this.loadSharedCss(); // This will now load multiple CSS files
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
         if (menuContainer) {
@@ -243,15 +244,32 @@ const HolafUtilitiesMenu = {
     },
 
     loadSharedCss() {
-        const cssId = "holaf-utilities-shared-css";
-        if (!document.getElementById(cssId)) {
-            const link = document.createElement("link");
-            link.id = cssId;
-            link.rel = "stylesheet";
-            link.type = "text/css";
-            link.href = "extensions/ComfyUI-Holaf-Utilities/css/holaf_utilities.css";
-            document.head.appendChild(link);
-        }
+        const cssFiles = [
+            "holaf_themes.css",
+            "holaf_shared_panel.css",
+            "holaf_main_button.css",
+            "holaf_model_manager_styles.css",
+            "holaf_terminal_styles.css",
+            "holaf_nodes_manager_styles.css",
+            "holaf_settings_panel_styles.css",
+            "holaf_system_monitor_styles.css",
+            "holaf_image_viewer_styles.css" // Keep this for potential panel-specific styles for Image Viewer
+        ];
+
+        const basePath = "extensions/ComfyUI-Holaf-Utilities/css/";
+
+        cssFiles.forEach(fileName => {
+            const cssId = `holaf-css-${fileName.replace('.css', '')}`;
+            if (!document.getElementById(cssId)) {
+                const link = document.createElement("link");
+                link.id = cssId;
+                link.rel = "stylesheet";
+                link.type = "text/css";
+                link.href = basePath + fileName;
+                document.head.appendChild(link);
+                console.log(`[Holaf Main] Loaded CSS: ${fileName}`);
+            }
+        });
     }
 };
 
