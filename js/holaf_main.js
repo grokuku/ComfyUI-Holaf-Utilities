@@ -10,6 +10,7 @@
  * MODIFICATION: Replaced native confirm() with a custom, themed modal dialog.
  * CORRECTION: Removed automatic page reload after sending restart command.
  * MODIFICATION: Imported and activated the new Settings Manager.
+ * MODIFICATION: Added "Toggle Monitor" menu item.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -21,7 +22,8 @@ import "./holaf_terminal.js";
 import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";
 import "./holaf_image_viewer.js";
-import "./holaf_settings_manager.js"; // <-- This line is now active
+import "./holaf_settings_manager.js";
+import "./holaf_monitor.js"; // <-- Import the new monitor
 
 /**
  * A simple, themed modal dialog helper.
@@ -114,6 +116,8 @@ const HolafUtilitiesMenu = {
             { label: "Custom Nodes Manager", handlerName: "holafNodesManager" },
             { label: "Image Viewer", handlerName: "holafImageViewer" },
             { type: 'separator' },
+            { label: "Toggle Monitor", special: "toggle_monitor" },
+            { type: 'separator' },
             { label: "Settings", handlerName: "holafSettingsManager" },
             { type: 'separator' },
             { label: "Restart ComfyUI", special: 'restart' }
@@ -151,6 +155,14 @@ const HolafUtilitiesMenu = {
                                 HolafModal.show("Restart Command Sent", "The server is restarting. You will need to **manually refresh** this page after the server is back online.", () => { }, "OK", null);
                             });
                     });
+                } else if (itemInfo.special === "toggle_monitor") {
+                    const monitor = app.holafSystemMonitor;
+                    if (monitor && typeof monitor.toggle === "function") {
+                        monitor.toggle();
+                    } else {
+                        console.error("[Holaf Utilities] HolafSystemMonitor is not available.");
+                        HolafModal.show("Error", "System Monitor module not loaded.", () => {}, "OK", null);
+                    }
                 } else {
                     // Handle standard panel opening
                     const handler = app[itemInfo.handlerName];

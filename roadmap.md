@@ -8,7 +8,7 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
 
 ### Tâches Générales et Bugs
 
-**Statut : ✅ Mis à jour.**
+**Statut : 🟡 En cours (avec bugs identifiés pour le System Monitor).**
 
 1.  **Améliorations de l'Interface :**
     *   [COMPLETED] Les barres de titre des panneaux (Image Viewer, Nodes Manager) ont été uniformisées pour inclure les contrôles de thème et de zoom, comme le Model Manager et le Terminal.
@@ -19,6 +19,12 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
     *   [COMPLETED] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" est maintenant fonctionnelle.
     *   [COMPLETED] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée et fonctionnelle.
     *   [À FAIRE] Le texte du filtre dans le "Custom Nodes Manager" est sauvegardé dans config.ini mais n'est pas correctement rechargé et appliqué à la réouverture du panneau après un redémarrage de ComfyUI.
+    *   **[BUG - System Monitor]** **Aucun log backend :** Les logs de débogage ajoutés dans `__init__.py` pour la fonction `_get_system_stats_blocking` et le handler WebSocket `holaf_monitor_websocket_handler` n'apparaissent pas dans la console serveur, indiquant un problème en amont (connexion WebSocket non établie correctement, route non atteinte, ou erreur précoce non capturée dans le handler).
+    *   **[BUG - System Monitor]** **Données incorrectes/manquantes sur le frontend :**
+        *   Les valeurs CPU et RAM affichées sur le frontend sont à 0% et ne se mettent pas à jour.
+        *   Les informations GPU n'apparaissent pas du tout sur le frontend (ni en texte, ni en graphique).
+        *   Les graphiques eux-mêmes (lignes de données) ne s'affichent pas dans le canvas, seules les légendes et les axes/grilles sont visibles.
+    *   **[BUG - System Monitor]** **Problème de configuration `psutil` initial ?** La première initialisation de `psutil.cpu_percent(interval=None)` pourrait poser problème sur certains systèmes ou configurations, nécessitant une gestion d'erreur plus robuste ou une approche alternative si `psutil` n'est pas disponible/fonctionnel.
 
 3.  **Panneau de Configuration Centralisé :**
     *   [À FAIRE] Ajouter une entrée "Options" dans le menu principal (sous un séparateur).
