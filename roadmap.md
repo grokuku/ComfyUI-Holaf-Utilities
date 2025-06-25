@@ -13,6 +13,7 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
 1.  **Refactorisation Majeure du Code :**
     *   [COMPLETED] **Backend (Python) :** Le fichier monolithique `__init__.py` a été scindé en plusieurs modules plus petits et gérables (`holaf_database.py`, `holaf_config.py`, `holaf_terminal.py`, `holaf_image_viewer_utils.py`, `holaf_system_monitor.py`, `holaf_utils.py`, `holaf_server_management.py`) pour une meilleure maintenabilité et organisation.
     *   [COMPLETED] **Frontend (CSS) :** Le fichier CSS principal `holaf_utilities.css` a été divisé en fichiers CSS thématiques et par composant (`holaf_themes.css`, `holaf_shared_panel.css`, `holaf_main_button.css`, `holaf_model_manager_styles.css`, etc.) pour une meilleure gestion des styles. Le chargement de ces fichiers a été mis à jour dans `holaf_main.js`.
+    *   [COMPLETED] **Frontend (JS - Image Viewer) :** Le fichier `holaf_image_viewer.js` a été décomposé en modules logiques (`ui`, `gallery`, `actions`, `navigation`, `infopane`, `settings`), réduisant drastiquement la taille du fichier principal et améliorant la maintenabilité.
 
 2.  **Améliorations de l'Interface :**
     *   [COMPLETED] Les barres de titre des panneaux (Image Viewer, Nodes Manager) ont été uniformisées pour inclure les contrôles de thème et de zoom, comme le Model Manager et le Terminal.
@@ -23,6 +24,7 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
     *   [COMPLETED] La sauvegarde de la position/taille du panneau "Custom Nodes Manager" est maintenant fonctionnelle.
     *   [COMPLETED] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée et fonctionnelle.
     *   [COMPLETED] Le problème de bordure noire inattendue autour du contenu du Terminal a été corrigé via une révision des styles CSS du wrapper du terminal.
+    *   [COMPLETED] Les erreurs "Cannot operate on a closed database" dans l'Image Viewer ont été corrigées par une meilleure gestion des connexions SQLite.
     *   [À FAIRE] Le texte du filtre dans le "Custom Nodes Manager" est sauvegardé dans config.ini mais n'est pas correctement rechargé et appliqué à la réouverture du panneau après un redémarrage de ComfyUI.
     *   **[BUG - System Monitor]** **Aucun log backend :** Les logs de débogage ajoutés dans le module `holaf_system_monitor.py` (anciennement `__init__.py`) pour la fonction `_get_system_stats_blocking` et le handler WebSocket `holaf_monitor_websocket_handler` n'apparaissent pas dans la console serveur, indiquant un problème en amont (connexion WebSocket non établie correctement, route non atteinte, ou erreur précoce non capturée dans le handler).
     *   **[BUG - System Monitor]** **Données incorrectes/manquantes sur le frontend :**
@@ -74,13 +76,15 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 
 ### Phase 2 : Interactivité Avancée et Filtres
 
-**Statut : ✅ Complétée et Stabilisée.**
+**Statut : ✅ Complétée et Stabilisée (sauf indication contraire).**
 
 1.  **Frontend - Panneau Gauche (Filtres) :**
     *   [COMPLETED] Les listes de dossiers sont générées dynamiquement, en groupant les sous-dossiers sous leur parent de premier niveau.
     *   [COMPLETED] Les filtres par dossier sont récursifs : cocher un dossier affiche les images de tous ses sous-dossiers.
-    *   [COMPLETED] Une checkbox "Select All" a été ajoutée pour gérer tous les filtres de dossiers d'un coup.
+    *   [COMPLETED] Le filtre "Trashcan" (corbeille) est maintenant affiché en permanence dans la liste des filtres, même si la corbeille est vide.
+    *   [À FAIRE] Une checkbox "Select All" pour gérer tous les filtres de dossiers d'un coup.
     *   [COMPLETED] La liste des formats est générée dynamiquement et les filtres sont fonctionnels.
+    *   [COMPLETED] La sauvegarde des sélections de filtres (dossiers, formats) est désormais fiable, y compris pour les sélections vides.
 
 2.  **Frontend - Panneau Central (Vue Agrandie & Navigation) :**
     *   [COMPLETED] Double-clic sur une vignette pour l'afficher en **vue agrandie** dans le panneau central.
@@ -99,39 +103,82 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 
 ### Phase 3 : Actions sur les Images et Sélection Multiple
 
-**Statut : 🔴 Non commencée.**
+**Statut : 🟡 En cours.**
 
 1.  **Frontend - Sélection Multiple :**
-    *   Ajouter une `checkbox` sur chaque vignette.
-    *   Activer/désactiver les boutons d'action en fonction de la sélection.
+    *   [COMPLETED] Ajout d'une `checkbox` sur chaque vignette.
+    *   [COMPLETED] Logique de base pour la sélection simple et Ctrl+clic.
+    *   [COMPLETED] Mise à jour de la barre de statut pour afficher le nombre d'éléments sélectionnés.
+    *   [COMPLETED] La sélection multiple est maintenant préservée lors d'un rafraîchissement manuel de la galerie (changement de filtre).
 
-2.  **Backend & Frontend - Barre d'outils :**
-    *   **Bouton "Delete" :** Créer l'API et la logique front-end pour la suppression.
-    *   **Bouton "Convert" :** Créer l'API et la logique front-end pour la conversion.
-    *   **Bouton "Remove Metadata" :** Créer l'API et la logique front-end.
+2.  **Backend & Frontend - Actions sur les Images :**
+    *   **Boutons d'Action :**
+        *   [COMPLETED] Ajout des boutons "Delete", "Restore", "Extract Metadata", "Inject Metadata" à l'interface.
+        *   [COMPLETED] Logique d'activation/désactivation basique des boutons en fonction de la sélection.
+    *   **Fonctionnalité "Delete" :**
+        *   [COMPLETED] **Backend :**
+            *   Création du dossier `output/trashcan`.
+            *   Endpoint API `/holaf/images/delete` pour déplacer les fichiers (image, .txt, .json) vers `trashcan` et mettre à jour la DB (`is_trashed=1`, `original_path_canon`, `path_canon`, `subfolder`, gestion des conflits de noms dans la corbeille).
+            *   `sync_image_database_blocking` ignore le dossier `trashcan`.
+            *   `/holaf/images/list` filtre par défaut `is_trashed=0`.
+            *   `get_filter_options_route` ignore `trashcan`.
+        *   [COMPLETED] **Frontend :**
+            *   Le bouton "Delete" appelle l'API.
+            *   Rafraîchissement de la liste après suppression.
+            *   Affichage des messages de confirmation/erreur.
+    *   **Fonctionnalité "Restore" :**
+        *   [COMPLETED] **Backend :** Endpoint API `/holaf/images/restore` pour déplacer les fichiers de `trashcan` vers `original_path_canon` et mettre à jour la DB. Gère les conflits. La route est enregistrée dans `__init__.py`.
+        *   [COMPLETED] **Frontend :**
+            *   Le bouton "Restore" appelle l'API avec confirmation.
+            *   La logique d'activation du bouton est fonctionnelle.
+            *   [COMPLETED] L'interaction avec le filtre "Trashcan" a été améliorée : il est maintenant visuellement séparé, sa sélection est exclusive (désactive les autres filtres de dossier), et le système mémorise l'état des filtres précédents pour les restaurer.
+    *   **Amélioration des Actions sur les Images :**
+        *   [COMPLETED] **Backend & Frontend :** Ajout d'un bouton "Empty" à côté du filtre "Trashcan" avec dialogue de confirmation pour supprimer définitivement tout le contenu de la corbeille. Création de la route API `/holaf/images/empty-trashcan` correspondante.
+    *   **Fonctionnalité "Extract Metadata" :**
+        *   [À FAIRE] **Backend :** Endpoint API `/holaf/images/extract-metadata`. Lit les métadonnées internes de l'image, les sauvegarde dans des fichiers `.txt` (prompt) et `.json` (workflow) à côté de l'image.
+        *   [À FAIRE (Complexe/Optionnel)] **Backend :** Option pour effacer les métadonnées de l'image source *sans recompression* après extraction. Nécessite une bibliothèque de manipulation d'images bas niveau (ex: `exiftool` en sous-processus, ou des bibliothèques Python spécialisées comme `piexif` pour JPEG, mais plus complexe pour PNG).
+        *   [À FAIRE] **Frontend :** Le bouton "Extract Metadata" appelle l'API.
+    *   **Fonctionnalité "Inject Metadata" :**
+        *   [À FAIRE] **Backend :** Endpoint API `/holaf/images/inject-metadata`. Lit les données des fichiers `.txt` et `.json` associés, les injecte dans les métadonnées de l'image. S'assurer que le format du workflow injecté est compatible avec ce que ComfyUI attend (généralement un champ "workflow" dans les `info` du PNG).
+        *   [À FAIRE] **Frontend :** Le bouton "Inject Metadata" appelle l'API.
 
 ---
 
 ### Phase 4 : Performance et Fonctionnalités "Deluxe"
 
-**Statut : ✅ Complétée et Stabilisée.**
+**Statut : 🟡 En cours (Implémentation de la génération optimisée des miniatures, avec bug identifié).**
 
 1.  **Performance - Cache des Vignettes (Thumbnails) :**
-    *   [COMPLETED] Le backend génère et met en cache les miniatures via l'endpoint `/holaf/images/thumbnail`.
+    *   [COMPLETED] Le backend génère et met en cache les miniatures via l'endpoint `/holaf/images/thumbnail` (génération à la demande si absente).
+    *   [COMPLETED] La génération des miniatures côté serveur (`_create_thumbnail_blocking`) a été modifiée pour que la miniature conserve son ratio d'aspect original et que sa plus petite dimension corresponde à `THUMBNAIL_SIZE`.
     *   [COMPLETED] Le backend nettoie les miniatures des images supprimées lors de la synchronisation de la base de données.
     *   [COMPLETED] Le frontend affiche maintenant une erreur détaillée et un bouton "Réessayer" si la génération d'une miniature échoue.
+    *   **[EN COURS - Optimisation Avancée] Génération des miniatures en tâche de fond :**
+        *   **Objectif :** Pré-générer les miniatures pour améliorer la fluidité de la navigation et réduire la charge lors de l'affichage initial.
+        *   **Backend (Python - `holaf_image_viewer_utils.py`, `holaf_database.py`, `__init__.py`) :**
+            *   [COMPLETED] **Base de Données (`holaf_database.py`) :** Ajout des colonnes `thumbnail_status`, `thumbnail_priority_score`, `thumbnail_last_generated_at` et des index correspondants.
+            *   [COMPLETED] **Thread Worker (`__init__.py`, `holaf_image_viewer_utils.py`) :** Création et gestion (démarrage/arrêt basique) du thread `thumbnail_worker_thread`.
+            *   [COMPLETED] **Logique de Sélection des Tâches par le Worker :** Implémentation d'une logique de base pour sélectionner les images à traiter en fonction de `viewer_is_active` et `thumbnail_status`/`thumbnail_priority_score`. Le worker ignore les images `is_trashed=1`.
+            *   [COMPLETED] **API Endpoints (`holaf_image_viewer_utils.py`) :** Ajout de `/holaf/images/viewer-activity` et `/holaf/images/prioritize-thumbnails`.
+            *   [COMPLETED] **Mise à jour `sync_image_database_blocking` :** Marque les miniatures comme obsolètes (`thumbnail_status = 0`) lors des modifications d'images.
+            *   [COMPLETED] **Endpoint `/holaf/images/thumbnail` (GET existant) :** Logique modifiée pour vérifier/utiliser `thumbnail_status` et `thumbnail_last_generated_at` pour décider de la regénération. Met à jour la DB après génération.
+            *   **[BUG - Possiblement résolu, à surveiller]** Erreur 500 lors du service des miniatures : Les modifications récentes sur la gestion des connexions DB pourraient avoir résolu ce problème. À confirmer par des tests.
+        *   **Frontend (JavaScript - `holaf_image_viewer.js`) :**
+            *   [COMPLETED] Appels à `/holaf/images/viewer-activity` dans `show()` et `hide()`.
+            *   [COMPLETED] Utilisation de `IntersectionObserver` pour détecter les placeholders visibles et appel (par lots, avec debounce) à `/holaf/images/prioritize-thumbnails`.
+            *   [COMPLETED] La logique de chargement d'une miniature individuelle (`loadSpecificThumbnail`) demande l'URL.
 
 2.  **Performance - Intégration à la Base de Données :**
-    *   [COMPLETED] Une table `images` a été ajoutée à la base de données partagée (SQLite) pour un chargement instantané.
-    *   [COMPLETED] Le filtrage (dossiers, formats, dates) est maintenant effectué côté serveur via des requêtes SQL optimisées, éliminant les blocages du navigateur avec de grandes galeries.
-    *   [COMPLETED] Un scan de synchronisation est effectué en arrière-plan au démarrage, puis périodiquement (toutes les 60 secondes) pour mettre à jour la base de données sans bloquer le serveur.
+    *   [COMPLETED] Une table `images` a été ajoutée à la base de données partagée (SQLite) pour un chargement instantané (avec colonnes `is_trashed`, `original_path_canon`).
+    *   [COMPLETED] Le filtrage (dossiers, formats, dates, corbeille) est maintenant effectué côté serveur via des requêtes SQL optimisées, éliminant les blocages du navigateur avec de grandes galeries.
+    *   [COMPLETED] Un scan de synchronisation est effectué en arrière-plan au démarrage, puis périodiquement (toutes les 5 minutes via `__init__.py`) pour mettre à jour la base de données sans bloquer le serveur, en ignorant le contenu de la corbeille.
 
 3.  **Performance - Rendu Virtualisé et Stabilité :**
     *   [COMPLETED] La galerie utilise un "infinite scroll" avec rendu par lots et chargement progressif en arrière-plan. Cela permet un affichage initial instantané et une barre de défilement fonctionnelle même avec des dizaines de milliers d'images.
     *   [COMPLETED] La position de défilement est mieux préservée lors des changements de filtres, en s'ancrant sur l'image active.
 
 4.  **Fonctionnalité - Actualisation Automatique :**
-    *   [COMPLETED] Le rafraîchissement périodique est désormais "silencieux" : il ajoute les nouvelles images sans recharger toute la galerie et sans perturber la position de l'utilisateur.
+    *   [COMPLETED] Le rafraîchissement périodique automatique a été désactivé pour éliminer tout clignotement de l'interface et donner un contrôle total à l'utilisateur sur le rechargement de la galerie.
 
 5.  **Fonctionnalité - Mode Plein Écran & Interactivité :**
     *   [COMPLETED] Ajouter une icône "fullscreen" sur les vignettes au survol.
@@ -146,20 +193,45 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 
 ### Phase 5 : Qualité de Vie et Actions sur les Métadonnées
 
-**Statut : ✅ Complétée.**
+**Statut : ✅ Complétée (pour les fonctionnalités de base du panneau d'info).**
 
 1.  **Fonctionnalité - Actions sur le Panneau d'Info :**
     *   [COMPLETED] Ajout d'un bouton `📋 Copy Prompt` pour copier le prompt de l'image dans le presse-papiers.
     *   [COMPLETED] Ajout d'un bouton `⚡ Load Workflow` pour charger le workflow de l'image dans ComfyUI, avec une boîte de dialogue de confirmation.
     *   [COMPLETED] La logique de copie est robuste et fonctionne même dans les contextes non-sécurisés (HTTP sur IP locale).
     *   [COMPLETED] Le message de confirmation du chargement de workflow a été mis à jour pour refléter le système d'onglets de ComfyUI.
+    *   [COMPLETED] Affichage de "Original Path" si l'image est dans la corbeille.
 
 2.  **Fonctionnalité - Retour Visuel :**
-    *   [COMPLETED] Ajout d'une barre de statut affichant le nombre d'images filtrées par rapport au total.
+    *   [COMPLETED] Ajout d'une barre de statut affichant le nombre d'images filtrées par rapport au total, et le nombre d'images sélectionnées.
     *   [COMPLETED] **Option d'affichage des vignettes :** Ajout d'un panneau "Options d'Affichage" avec une case à cocher pour basculer entre les modes "Cover" (rognées) et "Contain" (entières). Ce paramètre est sauvegardé dans la configuration.
     *   [COMPLETED] **Taille des vignettes réglable :** Ajout d'un slider pour contrôler la taille des vignettes, avec sauvegarde du paramètre.
     *   [COMPLETED] **Filtre par Date :** Ajout de champs pour filtrer les images dans une plage de dates spécifique.
+    *   [COMPLETED] Les cases à cocher sur les vignettes n'apparaissent désormais qu'au survol ou si l'image est sélectionnée, pour une interface plus épurée.
 
 3.  **Fonctionnalités à Définir :**
-    *   **"Edit" :** Laisser un bouton réservé.
+    *   **"Edit" :** Laisser un bouton réservé. (Probablement pour renommer ou ajouter des tags DB uniquement)
     *   **"Diaporama" :** Laisser un bouton réservé.
+
+---
+
+**Résumé de l'état actuel de l'Image Viewer (Phase 3 - Actions) :**
+
+*   **Interface de Sélection Multiple :** En place (checkboxes, logique de base de sélection).
+*   **Boutons d'Action :** Visibles et leur état (activé/désactivé) est géré.
+*   **Action "Delete" :** Complétée.
+*   **Action "Restore" :** Complétée.
+*   **Action "Empty Trashcan" :** Complétée.
+*   **Actions "Extract Metadata", "Inject Metadata" :** Squelettes en place côté frontend (boutons et handlers vides), backend non commencé.
+*   **Filtre pour la corbeille :** Complété (intégré dynamiquement à la liste des filtres de dossier).
+
+**Prochaines étapes pour l'Image Viewer :**
+
+1.  **Implémenter la fonctionnalité "Extract Metadata" :**
+    *   Backend : Créer l'API pour sauvegarder les métadonnées internes dans des fichiers `.txt` et `.json`.
+    *   Frontend : Lier le bouton à la nouvelle API.
+    *   Évaluer la complexité de l'effacement des métadonnées de l'image source.
+2.  **Implémenter la fonctionnalité "Inject Metadata" :**
+    *   Backend : Créer l'API pour lire les fichiers `.txt`/`.json` et les écrire dans les métadonnées de l'image.
+    *   Frontend : Lier le bouton à l'API.
+3.  **Amélioration QDV :** Ajouter une checkbox "Select All" pour les filtres de dossier.

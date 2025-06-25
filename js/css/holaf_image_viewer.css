@@ -6,6 +6,7 @@
  * MODIFICATION: Added styles for Display Options panel and thumbnail fit toggle.
  * CORRECTION: Fixed a CSS syntax error that was preventing the thumbnail fit toggle from working.
  * MODIFICATION: Added styles for thumbnail size slider and used CSS variable for dynamic sizing.
+ * MODIFICATION: Added styles for action buttons and thumbnail checkboxes.
  */
 
 #holaf-viewer-panel .holaf-viewer-container {
@@ -59,10 +60,66 @@
     cursor: pointer;
     user-select: none;
 }
+.holaf-viewer-filter-item input[type="checkbox"]:disabled + label {
+    color: var(--holaf-text-secondary);
+    cursor: not-allowed;
+}
+
+.holaf-viewer-trash-separator {
+    height: 1px;
+    background-color: var(--holaf-border-color);
+    margin: 10px 0;
+}
+
 .holaf-viewer-filter-item input[type="checkbox"] {
     accent-color: var(--holaf-accent-color);
     cursor: pointer;
 }
+
+/* --- Action Buttons --- */
+.holaf-viewer-actions-group {
+    margin-bottom: 20px;
+}
+.holaf-viewer-actions-group h4 {
+    margin: 0 0 10px 0;
+    color: var(--holaf-text-primary);
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding-bottom: 5px;
+    font-size: 14px;
+}
+.holaf-viewer-actions-buttons-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.holaf-viewer-action-button {
+    background-color: var(--holaf-button-background);
+    color: var(--holaf-button-text);
+    border: 1px solid transparent;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+.holaf-viewer-action-button:hover:not(:disabled) {
+    opacity: 0.85;
+}
+.holaf-viewer-action-button:active:not(:disabled) {
+    opacity: 0.7;
+}
+.holaf-viewer-action-button:disabled {
+    background-color: var(--holaf-background-secondary);
+    color: var(--holaf-text-secondary);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+#holaf-viewer-btn-delete:not(:disabled) { background-color: #c04040; }
+#holaf-viewer-btn-delete:hover:not(:disabled) { background-color: #d05050; opacity: 1;}
+#holaf-viewer-btn-restore:not(:disabled) { background-color: #40a060; }
+#holaf-viewer-btn-restore:hover:not(:disabled) { background-color: #50b070; opacity: 1;}
+
 
 /* --- New Display Options Panel --- */
 .holaf-viewer-display-options {
@@ -98,7 +155,7 @@
 #holaf-viewer-center-pane {
     flex: 1 1 auto;
     /* CORRECTION: Padding removed from here to allow zoom view to be borderless. */
-    position: relative; 
+    position: relative;
 }
 
 #holaf-viewer-toolbar {
@@ -194,7 +251,32 @@
     height: 100%;
     object-fit: cover; /* Default: Cropped */
     display: block;
+    z-index: 1; /* Ensure image is below checkbox and icon */
 }
+
+/* Thumbnail Checkbox */
+.holaf-viewer-thumb-checkbox {
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 6; /* Above image and fullscreen icon */
+    transform: scale(1.1);
+    accent-color: var(--holaf-accent-color);
+    background-color: rgba(0,0,0,0.3); /* Slight background for visibility */
+    border-radius: 2px;
+    cursor: pointer;
+}
+.holaf-viewer-thumbnail-placeholder:hover .holaf-viewer-thumb-checkbox,
+.holaf-viewer-thumbnail-placeholder:has(> .holaf-viewer-thumb-checkbox:checked) .holaf-viewer-thumb-checkbox {
+    opacity: 1;
+}
+
+.holaf-viewer-thumb-checkbox:hover {
+    background-color: rgba(0,0,0,0.5);
+}
+
 
 /* Thumbnail Fit Toggle */
 #holaf-viewer-gallery.contain-thumbnails .holaf-viewer-thumbnail-placeholder img {
@@ -219,11 +301,16 @@
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
-    z-index: 5;
+    z-index: 5; /* Below checkbox */
 }
 .holaf-viewer-thumbnail-placeholder:hover .holaf-viewer-fullscreen-icon {
     opacity: 1;
 }
+/* Hide fullscreen icon if checkbox is checked to avoid overlap */
+.holaf-viewer-thumbnail-placeholder:has(> .holaf-viewer-thumb-checkbox:checked) .holaf-viewer-fullscreen-icon {
+    opacity: 0;
+}
+
 
 /* --- Zoom-in View (within center pane) --- */
 #holaf-viewer-zoom-view {
@@ -306,8 +393,8 @@
     color: var(--holaf-text-secondary);
     word-break: break-all;
 }
-#holaf-viewer-info-content p strong { color: var(--holaf-text-primary); } 
-.holaf-viewer-metadata-label { font-weight: bold; color: var(--holaf-text-primary); } 
+#holaf-viewer-info-content p strong { color: var(--holaf-text-primary); }
+.holaf-viewer-metadata-label { font-weight: bold; color: var(--holaf-text-primary); }
 .holaf-viewer-metadata-source { font-size: 0.85em; font-style: italic; color: var(--holaf-text-secondary); margin-left: 5px; }
 
 #holaf-viewer-info-content hr {

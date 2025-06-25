@@ -23,6 +23,10 @@ import threading
 import importlib.util
 import folder_paths # ComfyUI global
 from aiohttp import web
+import time # For time.sleep in periodic task wrapper
+import re # Added for finalize_upload_model_route for subfolder splitting
+
+# import atexit # Option pour le futur
 
 # --- Holaf Utilities Submodules ---
 from . import holaf_database
@@ -51,7 +55,7 @@ except ImportError:
 
 # --- Global Application Configuration ---
 # Loaded once and can be updated by config saving routes
-CONFIG = {} 
+CONFIG = {}
 
 def reload_global_config():
     global CONFIG
@@ -117,8 +121,8 @@ async def holaf_terminal_save_ui_settings_route(request: web.Request):
             config_parser_obj = holaf_config.get_config_parser()
             section = 'TerminalUI'
             if not config_parser_obj.has_section(section): config_parser_obj.add_section(section)
-            
-            for key, value_type in [('theme', str), ('font_size', int), 
+
+            for key, value_type in [('theme', str), ('font_size', int),
                                     ('panel_width', int), ('panel_height', int),
                                     ('panel_is_fullscreen', bool)]:
                 if key in data:
@@ -135,7 +139,7 @@ async def holaf_terminal_save_ui_settings_route(request: web.Request):
                     else:
                         if config_parser_obj.has_option(section, key_pos): config_parser_obj.remove_option(section, key_pos)
                         if CONFIG.get('ui_terminal'): CONFIG['ui_terminal'][key_pos] = None
-            
+
             with open(holaf_config.get_config_path(), 'w') as cf: config_parser_obj.write(cf)
         reload_global_config()
         return web.json_response({"status": "ok", "message": "Terminal UI settings saved."})
@@ -183,22 +187,21 @@ async def finalize_upload_model_route(request: web.Request):
 
         if not all([upload_id, filename_orig, total_chunks, dest_type]):
             return web.json_response({"status": "error", "message": "Missing fields."}, status=400)
-        
+
         filename = holaf_utils.sanitize_filename(filename_orig)
         if not filename: return web.json_response({"status": "error", "message": "Invalid filename."}, status=400)
 
         base_paths = folder_paths.get_folder_paths(dest_type)
         if not base_paths: return web.json_response({"error": f"Invalid dest type '{dest_type}'"}, status=400)
-        
+
+        # Use re.split for subfolder to handle both / and \
         final_subfolder_parts = [p for p in map(holaf_utils.sanitize_directory_component, re.split(r'[/\\]', subfolder)) if p]
         final_dest_dir = os.path.join(os.path.normpath(base_paths[0]), *final_subfolder_parts)
         final_save_path = os.path.normpath(os.path.join(final_dest_dir, filename))
 
-        # Path safety check (relative to ComfyUI base)
         comfy_base = os.path.normpath(folder_paths.base_path)
         rel_save_path = os.path.relpath(final_save_path, comfy_base).replace(os.sep, '/')
-        
-        # Assume model_manager_helper.is_path_safe exists and works
+
         if model_manager_helper and not model_manager_helper.is_path_safe(rel_save_path, is_directory_model=False):
              return web.json_response({"status": "error", "message": "Save path outside allowed model dirs."}, status=403)
         if os.path.exists(final_save_path):
@@ -206,11 +209,10 @@ async def finalize_upload_model_route(request: web.Request):
 
         def on_assembly_done():
             if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
-                # Run scan in a new thread to avoid blocking finalize response
                 threading.Timer(1.0, model_manager_helper.scan_and_update_db).start()
-        
+
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, holaf_utils.assemble_chunks_blocking, 
+        await loop.run_in_executor(None, holaf_utils.assemble_chunks_blocking,
                                    final_save_path, upload_id, total_chunks, on_assembly_done)
         return web.json_response({"status": "ok", "message": f"Finalization for '{filename}' started."})
     except Exception as e:
@@ -221,8 +223,7 @@ if model_manager_helper:
     @routes.get("/holaf/models")
     async def get_models_route(request: web.Request):
         try:
-            # Assumes get_all_models_from_db uses holaf_database.get_db_connection() internally
-            models = model_manager_helper.get_all_models_from_db() 
+            models = model_manager_helper.get_all_models_from_db()
             return web.json_response(models)
         except Exception as e:
             print(f"🔴 [MM] Error fetching models: {e}"); traceback.print_exc()
@@ -236,28 +237,24 @@ if model_manager_helper:
             if not paths or not isinstance(paths, list):
                 return web.json_response({"error": "'paths' list required."}, status=400)
             loop = asyncio.get_event_loop()
-            # Assumes process_deep_scan_request is blocking and uses DB correctly
             results = await loop.run_in_executor(None, model_manager_helper.process_deep_scan_request, paths)
             return web.json_response({"status": "ok", "details": results})
         except Exception as e:
             print(f"🔴 [MM] Error deep scanning: {e}"); traceback.print_exc()
             return web.json_response({"error": str(e)}, status=500)
 
-    @routes.post("/holaf/models/delete")
-    async def delete_model_route(request: web.Request): # Simplified, actual logic in helper
-        # This is a complex route, its full logic should be in model_manager_helper
-        # For now, a placeholder assuming the helper handles DB and file deletion.
+    @routes.post("/holaf/models/delete") # This is for Model Manager, distinct from Image Viewer delete
+    async def delete_model_route(request: web.Request):
         try:
             data = await request.json()
             paths = data.get("paths", [])
-            # The original logic for deletion is complex, involves DB and file system.
-            # This should be handled by a function in model_manager_helper.
-            # For this refactor, we'll assume such a helper function exists or will be created.
-            # e.g., result = model_manager_helper.delete_models_by_path(paths)
-            print(f"🟡 [MM] Delete route called for paths: {paths}. Full deletion logic should be in model_manager_helper.")
-            # This is a stub - real implementation would call a helper.
-            # It's not safe to directly call os.remove here without the full context of is_path_safe and DB updates.
-            return web.json_response({"status": "warning", "message": "Delete function stubbed. See model_manager_helper.", "details": {"deleted_count":0, "errors":[]}})
+            # Ensure this calls the correct helper if/when implemented for models
+            if model_manager_helper and hasattr(model_manager_helper, 'delete_models_from_db_and_disk'):
+                # results = await loop.run_in_executor(None, model_manager_helper.delete_models_from_db_and_disk, paths)
+                # return web.json_response(results)
+                pass # Placeholder for actual model deletion logic
+            print(f"🟡 [MM] Delete route called for model paths: {paths}. Full deletion logic should be in model_manager_helper.")
+            return web.json_response({"status": "warning", "message": "Model delete function stubbed. See model_manager_helper.", "details": {"deleted_count":0, "errors":[]}})
         except Exception as e:
             print(f"🔴 [MM] Error deleting models: {e}"); traceback.print_exc()
             return web.json_response({"error": str(e)}, status=500)
@@ -270,9 +267,9 @@ if model_manager_helper:
                 cp = holaf_config.get_config_parser()
                 s = 'ModelManagerUI'
                 if not cp.has_section(s): cp.add_section(s)
-                
-                map_cfg = {'theme': str, 'panel_width': int, 'panel_height': int, 
-                           'filter_type': str, 'filter_search_text': str, 
+
+                map_cfg = {'theme': str, 'panel_width': int, 'panel_height': int,
+                           'filter_type': str, 'filter_search_text': str,
                            'sort_column': str, 'sort_order': str, 'zoom_level': float,
                            'panel_is_fullscreen': bool}
                 for k, v_type in map_cfg.items():
@@ -283,7 +280,7 @@ if model_manager_helper:
                 for k_pos in ['panel_x', 'panel_y']:
                     if k_pos in data:
                         val = data[k_pos]
-                        if val is not None: 
+                        if val is not None:
                             cp.set(s, k_pos, str(val))
                             if CONFIG.get('ui_model_manager'): CONFIG['ui_model_manager'][k_pos] = int(val)
                         else:
@@ -296,7 +293,7 @@ if model_manager_helper:
             print(f"🔴 Error saving MM UI settings: {e}"); traceback.print_exc()
             return web.json_response({"status": "error", "message": str(e)}, status=500)
 
-    @routes.post("/holaf/models/download-chunk") # New logic using holaf_utils
+    @routes.post("/holaf/models/download-chunk")
     async def download_model_chunk_route(request: web.Request):
         try:
             data = await request.json()
@@ -304,7 +301,7 @@ if model_manager_helper:
             chunk_index = int(data.get("chunk_index"))
             chunk_size = int(data.get("chunk_size"))
 
-            if not model_manager_helper.is_path_safe(path_canon, is_directory_model=False): # Assumes helper exists
+            if not model_manager_helper.is_path_safe(path_canon, is_directory_model=False):
                 return web.Response(status=403, text="Access forbidden.")
 
             comfy_base = os.path.normpath(folder_paths.base_path)
@@ -313,7 +310,7 @@ if model_manager_helper:
 
             if not os.path.isfile(abs_model_path):
                 return web.Response(status=404, text="Model file not found.")
-            
+
             offset = chunk_index * chunk_size
             chunk_data = await holaf_utils.read_file_chunk(abs_model_path, offset, chunk_size)
             if chunk_data is None: raise IOError("File could not be read.")
@@ -322,15 +319,37 @@ if model_manager_helper:
             print(f"🔴 [MM] Error downloading chunk: {e}"); traceback.print_exc()
             return web.Response(status=500, text=str(e))
 
-# Image Viewer Routes (delegated to holaf_image_viewer_utils)
+# --- Image Viewer Routes ---
 @routes.get("/holaf/images/filter-options")
 async def iv_filter_options_route(r): return await holaf_image_viewer_utils.get_filter_options_route(r)
+
 @routes.post("/holaf/images/list")
 async def iv_list_images_route(r): return await holaf_image_viewer_utils.list_images_route(r)
+
 @routes.get("/holaf/images/thumbnail")
 async def iv_get_thumbnail_route(r): return await holaf_image_viewer_utils.get_thumbnail_route(r)
+
 @routes.get("/holaf/images/metadata")
 async def iv_get_metadata_route(r): return await holaf_image_viewer_utils.get_metadata_route(r)
+
+# Image Viewer Actions
+@routes.post("/holaf/images/delete") # New route for deleting images
+async def iv_delete_images_route(r): return await holaf_image_viewer_utils.delete_images_route(r)
+@routes.post("/holaf/images/restore")
+async def iv_restore_images_route(r): return await holaf_image_viewer_utils.restore_images_route(r)
+@routes.post("/holaf/images/empty-trashcan")
+async def iv_empty_trashcan_route(r): return await holaf_image_viewer_utils.empty_trashcan_route(r)
+# Future routes for extract, inject will go here
+
+# Image Viewer Thumbnail Worker and Stats
+@routes.post("/holaf/images/viewer-activity")
+async def iv_set_viewer_activity_route(r): return await holaf_image_viewer_utils.set_viewer_activity_route(r)
+
+@routes.post("/holaf/images/prioritize-thumbnails")
+async def iv_prioritize_thumbnails_route(r): return await holaf_image_viewer_utils.prioritize_thumbnails_route(r)
+
+@routes.get("/holaf/images/thumbnail-stats")
+async def iv_thumbnail_stats_route(r): return await holaf_image_viewer_utils.iv_get_thumbnail_stats_route(r)
 
 @routes.post("/holaf/image-viewer/save-settings")
 async def image_viewer_save_ui_settings_route(request: web.Request):
@@ -340,31 +359,36 @@ async def image_viewer_save_ui_settings_route(request: web.Request):
             cp = holaf_config.get_config_parser()
             s = 'ImageViewerUI'
             if not cp.has_section(s): cp.add_section(s)
-            
-            # Panel state from panel manager or direct keys
+
+            # Consolidate panel dimension keys
             pos_x = data.get('panel_x', data.get('x'))
             pos_y = data.get('panel_y', data.get('y'))
             width = data.get('panel_width', data.get('width'))
             height = data.get('panel_height', data.get('height'))
 
-            if pos_x is not None: cp.set(s, 'panel_x', str(pos_x))
-            else: 
+            # Handle panel position and size
+            if pos_x is not None: cp.set(s, 'panel_x', str(int(pos_x)))
+            else:
                 if cp.has_option(s, 'panel_x'): cp.remove_option(s, 'panel_x')
-            if pos_y is not None: cp.set(s, 'panel_y', str(pos_y))
+            if pos_y is not None: cp.set(s, 'panel_y', str(int(pos_y)))
             else:
                 if cp.has_option(s, 'panel_y'): cp.remove_option(s, 'panel_y')
-            if width is not None: cp.set(s, 'panel_width', str(width))
-            if height is not None: cp.set(s, 'panel_height', str(height))
+            if width is not None: cp.set(s, 'panel_width', str(int(width)))
+            if height is not None: cp.set(s, 'panel_height', str(int(height)))
             
-            if 'panel_is_fullscreen' in data: cp.set(s, 'panel_is_fullscreen', str(data['panel_is_fullscreen']))
-            if 'folder_filters' in data: cp.set(s, 'folder_filters', '","'.join(data['folder_filters']))
-            if 'format_filters' in data: cp.set(s, 'format_filters', '","'.join(data['format_filters']))
-            if 'thumbnail_fit' in data: cp.set(s, 'thumbnail_fit', str(data['thumbnail_fit']))
-            if 'thumbnail_size' in data: cp.set(s, 'thumbnail_size', str(data['thumbnail_size']))
-            if 'theme' in data: cp.set(s, 'theme', str(data['theme']))
-                
+            # Handle other specific settings
+            for key in ['panel_is_fullscreen', 'thumbnail_fit', 'thumbnail_size', 'theme', 'startDate', 'endDate']:
+                if key in data:
+                    cp.set(s, key, str(data[key]))
+            
+            # Handle list-type settings
+            if 'folder_filters' in data and isinstance(data['folder_filters'], list):
+                cp.set(s, 'folder_filters', json.dumps(data['folder_filters'])) # Store as JSON string
+            if 'format_filters' in data and isinstance(data['format_filters'], list):
+                cp.set(s, 'format_filters', json.dumps(data['format_filters'])) # Store as JSON string
+
             with open(holaf_config.get_config_path(), 'w') as cf: cp.write(cf)
-        reload_global_config() # Important to update live CONFIG
+        reload_global_config() # Reload to reflect changes in the live CONFIG
         return web.json_response({"status": "ok", "message": "Image Viewer settings saved."})
     except Exception as e:
         print(f"🔴 Error saving IV UI settings: {e}"); traceback.print_exc()
@@ -376,42 +400,40 @@ if nodes_manager_helper:
     async def nm_get_list_route(r):
         try:
             loop = asyncio.get_event_loop()
-            # Assumes scan_custom_nodes is blocking
             node_list = await loop.run_in_executor(None, nodes_manager_helper.scan_custom_nodes)
             return web.json_response({"nodes": node_list})
         except Exception as e: print(f"🔴 [NM] Error list: {e}"); return web.json_response({"error":str(e)},500)
 
-    # Simplified batch handler (actual logic in helper)
     async def _handle_node_action_batch(request: web.Request, action_func_name: str):
         try:
             data = await request.json()
-            payloads = data.get("node_payloads", data.get("node_names", [])) # Adapt to input
+            payloads = data.get("node_payloads", data.get("node_names", [])) # Accept old and new payload keys
             if not payloads: return web.json_response({"error": "No nodes specified"}, status=400)
 
             items_to_process = []
+            # Standardize payload to a list of dicts
             for p_item in payloads:
-                if isinstance(p_item, dict) and "name" in p_item:
+                if isinstance(p_item, dict) and "name" in p_item: # New format: {"name": "...", "repo_url_override": "..."}
                     items_to_process.append(p_item)
-                elif isinstance(p_item, str): # Simple name list
-                    items_to_process.append({"name": p_item, "repo_url_override": None})
-            
+                elif isinstance(p_item, str): # Old format: "node_name"
+                    items_to_process.append({"name": p_item, "repo_url_override": None}) # Convert to new format
+
             results = []
             loop = asyncio.get_event_loop()
             action_func = getattr(nodes_manager_helper, action_func_name)
 
             for item_data in items_to_process:
                 node_name = item_data["name"]
-                # Pass additional args if the helper function expects them (e.g., repo_url_override for update)
                 if action_func_name == "update_node_from_git":
+                     # Pass repo_url_override if present, otherwise it will be None and helper handles default
                      result = await loop.run_in_executor(None, action_func, node_name, item_data.get("repo_url_override"))
                 else:
-                     result = await loop.run_in_executor(None, action_func, node_name)
-                results.append({"node_name": node_name, **result})
-            
-            # Determine overall status
+                     result = await loop.run_in_executor(None, action_func, node_name) # Other actions don't need repo_url
+                results.append({"node_name": node_name, **result}) # Merge node_name with result dict
+
             all_ok = all(r.get('status') == 'success' for r in results)
             any_ok = any(r.get('status') == 'success' for r in results)
-            http_status = 200 if all_ok else (207 if any_ok else 400)
+            http_status = 200 if all_ok else (207 if any_ok else 400) # 207 Multi-Status if some succeed
             overall_status = "ok" if all_ok else ("partial_success" if any_ok else "error")
             return web.json_response({"status": overall_status, "details": results}, status=http_status)
 
@@ -437,7 +459,6 @@ if nodes_manager_helper:
     async def nm_get_github_readme(request: web.Request):
         try:
             data = await request.json()
-            # Assumes helper takes owner and repo
             content = await nodes_manager_helper.get_github_readme_content(data.get("owner"), data.get("repo"))
             return web.Response(text=content, content_type='text/plain', charset='utf-8')
         except Exception as e: return web.Response(text=str(e), status=500)
@@ -446,7 +467,6 @@ if nodes_manager_helper:
     async def nm_search_github(request: web.Request):
         try:
             node_name = request.match_info.get('node_name', "")
-            # Assumes helper takes node_name
             repo_url = await nodes_manager_helper.search_github_for_repo(node_name)
             return web.json_response({"url": repo_url})
         except Exception as e: return web.json_response({"error": str(e)}, status=500)
@@ -465,13 +485,12 @@ if os.path.isdir(nodes_dir_path):
     for filename in os.listdir(nodes_dir_path):
         if filename.endswith(".py") and not filename.startswith("__"):
             module_name = f"ComfyUI-Holaf-Utilities.nodes.{os.path.splitext(filename)[0]}"
-            # Corrected to be relative to this package's "nodes" subdir
             full_module_path_for_spec = os.path.join(nodes_dir_path, filename)
             try:
                 spec = importlib.util.spec_from_file_location(module_name, full_module_path_for_spec)
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
-                    sys.modules[module_name] = module # Add to sys.modules before execution
+                    sys.modules[module_name] = module # Add to sys.modules before exec_module
                     spec.loader.exec_module(module)
                     if hasattr(module, "NODE_CLASS_MAPPINGS"):
                         NODE_CLASS_MAPPINGS.update(module.NODE_CLASS_MAPPINGS)
@@ -488,42 +507,99 @@ else:
 
 
 # --- ComfyUI Extension Registration ---
-WEB_DIRECTORY = "js" # Relative to this __init__.py file
+WEB_DIRECTORY = "js"
 
-# --- Background Periodic Tasks ---
-stop_event = threading.Event() # For graceful shutdown if ever needed
+# --- Background Periodic Tasks & Worker Threads ---
+stop_event = threading.Event()
+all_background_threads = [] # Keep track of threads for cleaner shutdown if needed
 
 def _periodic_task_wrapper(interval_seconds, task_func, *args, **kwargs):
     def task_loop():
-        time.sleep(kwargs.pop('initial_delay', 0)) # Optional initial delay
+        initial_delay = kwargs.pop('initial_delay', 0)
+        if initial_delay > 0:
+             if stop_event.wait(initial_delay): return # Exit if stop_event set during delay
+
         while not stop_event.is_set():
             try:
                 task_func(*args, **kwargs)
             except Exception as e:
                 print(f"🔴 [Holaf-Periodic] Error in '{task_func.__name__}': {e}")
                 traceback.print_exc()
-            stop_event.wait(interval_seconds) # Use threading.Event.wait for interruptible sleep
-    
+            if stop_event.wait(interval_seconds): break # Exit if stop_event set during wait
+
     thread = threading.Thread(target=task_loop, daemon=True)
     thread.start()
+    all_background_threads.append(thread) # Add to list
     return thread
+
+thumbnail_worker_thread_ref = None # Specific reference for thumbnail worker
+
+def start_thumbnail_worker():
+    global thumbnail_worker_thread_ref # Use the specific reference
+    if thumbnail_worker_thread_ref is None or not thumbnail_worker_thread_ref.is_alive():
+        print("🔵 [Holaf-Init] Starting Thumbnail Generation Worker thread...")
+        # Pass stop_event directly
+        thumbnail_worker_thread_ref = threading.Thread(
+            target=holaf_image_viewer_utils.run_thumbnail_generation_worker,
+            args=(stop_event,),
+            daemon=True
+        )
+        thumbnail_worker_thread_ref.start()
+        all_background_threads.append(thumbnail_worker_thread_ref) # Also add to general list
+    else:
+        print("🟡 [Holaf-Init] Thumbnail Generation Worker thread already running.")
+
+def shutdown_tasks():
+    print("🔵 [Holaf-Init] Signaling background tasks and workers to stop...")
+    stop_event.set()
+    # Wait for threads to finish, with a timeout
+    # Timeout can be adjusted. 5 seconds is usually enough for tasks to notice stop_event.
+    # join_timeout = 5
+    # for thread in all_background_threads:
+    #     if thread.is_alive():
+    #         thread.join(timeout=join_timeout)
+    #         if thread.is_alive():
+    #             print(f"  🔴 Thread {thread.name} did not stop in time ({join_timeout}s).")
+    # No need to join daemon threads explicitly if add_on_shutdown works as expected.
+    # ComfyUI's shutdown should handle daemon threads exiting.
+    print("🔵 [Holaf-Init] Shutdown signal process complete.")
+
+# Attempt to register shutdown_tasks with ComfyUI's server lifecycle
+# This is the preferred way if it works without AttributeError
+try:
+    if hasattr(server.PromptServer.instance, "add_on_shutdown"):
+        server.PromptServer.instance.add_on_shutdown(shutdown_tasks)
+        print("🔵 [Holaf-Init] Registered shutdown_tasks with ComfyUI server.")
+    else: # Fallback if add_on_shutdown is not available
+        # import atexit
+        # atexit.register(shutdown_tasks)
+        print("🟡 [Holaf-Init] server.add_on_shutdown not available. Background tasks will rely on daemon status for exit.")
+except AttributeError:
+    # import atexit
+    # atexit.register(shutdown_tasks)
+    print("🟡 [Holaf-Init] AttributeError registering shutdown_tasks. Background tasks will rely on daemon status for exit.")
+
 
 print("🔵 [Holaf-Init] Scheduling startup and periodic background tasks...")
 
-# Model Manager initial scan (if helper and function exist)
+# Model Manager initial scan
 if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
-    _periodic_task_wrapper(3600, model_manager_helper.scan_and_update_db, initial_delay=5.0) # Scan on startup then hourly
+    _periodic_task_wrapper(3600, model_manager_helper.scan_and_update_db, initial_delay=5.0)
 else:
-    print("🔴 [Holaf-Init] Model Manager scan_and_update_db not available for scheduling.")
+    print("🟡 [Holaf-Init] Model Manager scan_and_update_db not available for scheduling.")
 
-# Image Viewer DB sync
-_periodic_task_wrapper(60.0, holaf_image_viewer_utils.sync_image_database_blocking, initial_delay=10.0)
+_periodic_task_wrapper(300.0, holaf_image_viewer_utils.sync_image_database_blocking, initial_delay=10.0)
+
+# Delay starting the thumbnail worker slightly to let main init complete
+main_thread_startup_timer = threading.Timer(15.0, start_thumbnail_worker)
+main_thread_startup_timer.daemon = True # Ensure this timer doesn't block shutdown
+main_thread_startup_timer.start()
 
 
 # --- Final Initialization Message ---
 print("\n" + "="*50)
 print("✅ [Holaf-Utilities] Extension initialized with modular structure.")
-final_config = CONFIG # Use the live global CONFIG
+final_config = CONFIG # Use the reloaded global CONFIG
 print(f"  > Terminal Shell: {final_config.get('shell_command', 'N/A')}")
 if final_config.get('password_hash'):
     print("  > Terminal Status: 🔑 Password is set.")
@@ -534,5 +610,4 @@ if not NODE_CLASS_MAPPINGS:
 print("="*50 + "\n")
 sys.stdout.flush()
 
-# Required by ComfyUI
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']

@@ -9,44 +9,87 @@ import datetime
 import traceback
 from urllib.parse import unquote, quote
 import re
+import aiofiles
+import sqlite3 # Ensured import is present
+import shutil # For moving files AND rmtree
 
 from aiohttp import web
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 import folder_paths # ComfyUI global
 
-from . import holaf_database 
+from . import holaf_database
 from . import holaf_utils # For sanitize_filename, THUMBNAIL_CACHE_DIR, THUMBNAIL_SIZE
 
 # --- Constants ---
 SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+TRASHCAN_DIR_NAME = "trashcan" # Name of the trash directory within output_dir
 STANDARD_RATIOS = [
     {"name": "1:1", "value": 1.0}, {"name": "4:3", "value": 4/3}, {"name": "3:4", "value": 3/4},
-    {"name": "3:2", "value": 3/2}, {"name": "2:3", "value": 2/3}, {"name": "16:9", "value": 16/9}, 
+    {"name": "3:2", "value": 3/2}, {"name": "2:3", "value": 2/3}, {"name": "16:9", "value": 16/9},
     {"name": "9:16", "value": 9/16}, {"name": "16:10", "value": 16/10}, {"name": "10:16", "value": 10/16},
-    {"name": "5:4", "value": 5/4}, {"name": "4:5", "value": 4/5}, {"name": "21:9", "value": 21/9}, 
+    {"name": "5:4", "value": 5/4}, {"name": "4:5", "value": 4/5}, {"name": "21:9", "value": 21/9},
     {"name": "9:21", "value": 9/21},
 ]
 RATIO_THRESHOLD = 0.02 # 2% tolerance for matching standard ratios
+
+# --- Thumbnail Worker Globals ---
+viewer_is_active = False # Updated by /viewer-activity endpoint
+# Potentially add a lock if access becomes concurrent in a more complex worker
+# thumbnail_generation_lock = asyncio.Lock() # If needed for DB operations inside worker
+
+WORKER_IDLE_SLEEP_SECONDS = 5.0  # Sleep when no work is found
+WORKER_POST_JOB_SLEEP_SECONDS = 0.1 # Very short sleep after completing a job
+
+
+# --- Helper for Trashcan ---
+def ensure_trashcan_exists():
+    """Ensures the trashcan directory exists within the main output directory."""
+    output_dir = folder_paths.get_output_directory()
+    trashcan_path = os.path.join(output_dir, TRASHCAN_DIR_NAME)
+    if not os.path.exists(trashcan_path):
+        try:
+            os.makedirs(trashcan_path, exist_ok=True)
+            print(f"🔵 [Holaf-ImageViewer] Created trashcan directory: {trashcan_path}")
+        except OSError as e:
+            print(f"🔴 [Holaf-ImageViewer] Failed to create trashcan directory {trashcan_path}: {e}")
+            return None
+    return trashcan_path
+
+# Call it once at module load to be sure
+ensure_trashcan_exists()
+
 
 # --- Database Synchronization ---
 def sync_image_database_blocking():
     print("🔵 [Holaf-ImageViewer] Starting image database synchronization...")
     output_dir = folder_paths.get_output_directory()
+    trashcan_full_path = os.path.join(output_dir, TRASHCAN_DIR_NAME)
     current_time = time.time()
     conn = None
+    sync_exception = None
 
     try:
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, path_canon, mtime, size_bytes FROM images")
+        # Fetch mtime and size for existing DB images to detect changes (non-trashed only for this check)
+        cursor.execute("SELECT id, path_canon, mtime, size_bytes, thumbnail_last_generated_at FROM images WHERE is_trashed = 0")
         db_images = {row['path_canon']: dict(row) for row in cursor.fetchall()}
-        
+
         disk_images_canons = set()
         if not os.path.isdir(output_dir):
             print(f"🟡 [Holaf-ImageViewer] Output directory not found: {output_dir}")
         else:
-            for root, _, files in os.walk(output_dir):
+            for root, dirs, files in os.walk(output_dir):
+                # Skip the trashcan directory itself and its contents from regular sync
+                if os.path.normpath(root) == os.path.normpath(trashcan_full_path):
+                    dirs[:] = [] # Don't go into subdirectories of trashcan
+                    continue
+
+                # Also skip if root is a subfolder of trashcan_full_path
+                if os.path.normpath(root).startswith(os.path.normpath(trashcan_full_path) + os.sep):
+                    continue
+
                 for filename in files:
                     file_ext = os.path.splitext(filename)[1].lower()
                     if file_ext not in SUPPORTED_IMAGE_FORMATS:
@@ -55,55 +98,58 @@ def sync_image_database_blocking():
                     try:
                         full_path = os.path.join(root, filename)
                         file_stat = os.stat(full_path)
-                        
+
                         subfolder = os.path.relpath(root, output_dir)
                         if subfolder == '.': subfolder = ''
                         
+                        # Ensure we are not processing something already in trashcan (double safety)
+                        if subfolder.startswith(TRASHCAN_DIR_NAME + '/') or subfolder == TRASHCAN_DIR_NAME:
+                            continue
+
                         path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
                         disk_images_canons.add(path_canon)
 
                         existing_record = db_images.get(path_canon)
 
-                        if existing_record:
+                        if existing_record: # Image exists in DB and is not trashed
                             if existing_record['mtime'] != file_stat.st_mtime or \
                                existing_record['size_bytes'] != file_stat.st_size:
                                 cursor.execute("""
-                                    UPDATE images SET mtime = ?, size_bytes = ?, last_synced_at = ?
-                                    WHERE id = ?
-                                """, (file_stat.st_mtime, file_stat.st_size, current_time, existing_record['id']))
-                        else:
+                                    UPDATE images
+                                    SET mtime = ?, size_bytes = ?, last_synced_at = ?,
+                                        thumbnail_status = 0, thumbnail_priority_score = 1000, thumbnail_last_generated_at = NULL
+                                    WHERE id = ? AND is_trashed = 0
+                                """, (file_stat.st_mtime, file_stat.st_size, current_time,
+                                      existing_record['id']))
+                        else: # New image found on disk (not in DB or was previously trashed and now outside trash)
                             cursor.execute("""
-                                INSERT INTO images (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(), 
+                                INSERT OR REPLACE INTO images 
+                                    (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, is_trashed, original_path_canon)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)
+                            """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(),
                                   file_stat.st_mtime, file_stat.st_size, current_time))
                     except Exception as e:
-                        print(f"🔴 [Holaf-ImageViewer] Error processing file {filename}: {e}")
-        
+                        print(f"🔴 [Holaf-ImageViewer] Error processing file {filename} during sync: {e}")
+
         conn.commit()
 
+        # Remove non-trashed DB entries for files no longer on disk (excluding trashcan)
         stale_canons = set(db_images.keys()) - disk_images_canons
         if stale_canons:
-            print(f"🔵 [Holaf-ImageViewer] Found {len(stale_canons)} stale image entries to remove.")
-            for path_canon in stale_canons:
-                cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_canon,))
-                try:
-                    path_hash = hashlib.sha1(path_canon.encode('utf-8')).hexdigest()
-                    thumb_filename = f"{path_hash}.jpg"
-                    thumb_path = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
-                    if os.path.exists(thumb_path):
-                        os.remove(thumb_path)
-                except Exception as e_thumb:
-                    print(f"🔴 [Holaf-ImageViewer] Error removing thumbnail for {path_canon}: {e_thumb}")
+            print(f"🔵 [Holaf-ImageViewer] Found {len(stale_canons)} stale non-trashed image entries to remove from DB.")
+            for path_canon_to_delete in stale_canons:
+                cursor.execute("DELETE FROM images WHERE path_canon = ? AND is_trashed = 0", (path_canon_to_delete,))
             conn.commit()
         print("✅ [Holaf-ImageViewer] Image database synchronization complete.")
-    
+
     except Exception as e:
+        sync_exception = e
         print(f"🔴 [Holaf-ImageViewer] Error during sync: {e}")
-        if conn: conn.rollback()
         traceback.print_exc()
     finally:
-        if conn: conn.close()
+        if conn:
+            holaf_database.close_db_connection(exception=sync_exception)
+
 
 # --- Metadata Extraction ---
 def _sanitize_json_nan(obj):
@@ -131,13 +177,13 @@ def _get_best_ratio_string(width, height):
     return f"{width // common_divisor}:{height // common_divisor}"
 
 def _extract_image_metadata_blocking(image_path_abs):
-    print(f"🔵 [Holaf-ImageViewer-Debug] Starting metadata extraction for: {image_path_abs}")
+    # print(f"🔵 [Holaf-ImageViewer-Debug] Starting metadata extraction for: {image_path_abs}") # DEBUG
     directory, filename = os.path.split(image_path_abs)
     base_filename = os.path.splitext(filename)[0]
-    
+
     prompt_txt_path = os.path.join(directory, base_filename + ".txt")
     workflow_json_path = os.path.join(directory, base_filename + ".json")
-    
+
     result = {
         "prompt": None, "prompt_source": "none",
         "workflow": None, "workflow_source": "none",
@@ -150,7 +196,7 @@ def _extract_image_metadata_blocking(image_path_abs):
             result["prompt_source"] = "external_txt"
         except Exception as e:
             result["prompt"] = f"Error reading .txt file: {e}"; result["prompt_source"] = "error"
-    
+
     if os.path.isfile(workflow_json_path):
         try:
             with open(workflow_json_path, 'r', encoding='utf-8') as f: loaded_json = json.load(f)
@@ -173,67 +219,177 @@ def _extract_image_metadata_blocking(image_path_abs):
                         result["workflow"] = {"error": "Malformed workflow in PNG"}; result["workflow_source"] = "error"
     except FileNotFoundError:
         return {"error": "Image file not found for internal metadata read."}
+    except UnidentifiedImageError:
+        print(f"  [Debug] 🟡 Note: Could not read image data for {filename}. Reason: UnidentifiedImageError (corrupt or unsupported format for metadata).")
     except Exception as e:
         print(f"  [Debug] 🟡 Note: Could not read image data for {filename}. Reason: {e}")
-            
-    print(f"✅ [Holaf-ImageViewer-Debug] Finished metadata extraction for: {filename}")
+
+    # print(f"✅ [Holaf-ImageViewer-Debug] Finished metadata extraction for: {filename}") # DEBUG
     return result
 
 # --- Thumbnail Generation ---
-def _create_thumbnail_blocking(original_path_abs, thumb_path_abs):
+def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_canon_for_db_update=None):
+    """ Returns True on success, False on failure. Handles its own DB updates and error logging. """
+    conn_update_db = None
+    update_exception = None
     try:
+        if os.path.exists(thumb_path_abs):
+            try:
+                os.remove(thumb_path_abs)
+            except OSError as e_remove_pre:
+                print(f"🟡 [Holaf-ImageViewer] Failed to preemptively remove {thumb_path_abs}: {e_remove_pre}. Will attempt save anyway.")
+
         with Image.open(original_path_abs) as img:
-            img = ImageOps.fit(img, holaf_utils.THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
-            img.convert("RGB").save(thumb_path_abs, "JPEG", quality=85, optimize=True)
-        print(f"🔵 [Holaf-ImageViewer] Created thumbnail: {os.path.basename(thumb_path_abs)}")
-    except Exception as e:
+            img_copy = img.copy()
+            target_thumb_dim_config = holaf_utils.THUMBNAIL_SIZE
+            target_dim_w, target_dim_h = target_thumb_dim_config if isinstance(target_thumb_dim_config, tuple) else (target_thumb_dim_config, target_thumb_dim_config)
+            original_width, original_height = img_copy.size
+            if original_width == 0 or original_height == 0: raise ValueError("Original image dimensions cannot be zero.")
+
+            ratio = min(target_dim_w / original_width, target_dim_h / original_height)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+            if new_width <= 0: new_width = 1
+            if new_height <= 0: new_height = 1
+
+            img_copy = img_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            img_to_save = img_copy
+            if img_copy.mode in ('RGBA', 'LA') or ('transparency' in img_copy.info and img_copy.mode == 'P'):
+                try:
+                    background = Image.new("RGB", img_copy.size, (128, 128, 128))
+                    img_for_paste = img_copy.convert('RGBA') if img_copy.mode == 'P' else img_copy
+                    mask = img_for_paste.split()[-1] if 'A' in img_for_paste.mode else None
+                    if mask and mask.mode == 'L': background.paste(img_for_paste, (0,0), mask=mask)
+                    else: background.paste(img_for_paste, (0,0)) # Paste without mask if no alpha or unexpected mask
+                    img_to_save = background
+                except Exception as e_paste:
+                    print(f"🔴 [Holaf-ImageViewer] Error during transparent background paste for {thumb_path_abs}: {e_paste}. Falling back to simple convert.")
+                    img_to_save = img_copy.convert("RGB")
+            else:
+                img_to_save = img_copy.convert("RGB")
+            img_to_save.save(thumb_path_abs, "JPEG", quality=85, optimize=True)
+
+        if image_path_canon_for_db_update: # Success
+            conn_update_db = holaf_database.get_db_connection()
+            cursor = conn_update_db.cursor()
+            cursor.execute("""
+                UPDATE images
+                SET thumbnail_status = 2, thumbnail_last_generated_at = ?, thumbnail_priority_score = 1000
+                WHERE path_canon = ?
+            """, (time.time(), image_path_canon_for_db_update))
+            conn_update_db.commit()
+        return True
+    except UnidentifiedImageError as e_unid:
+        update_exception = e_unid
+        print(f"🔴 [Holaf-ImageViewer] Could not identify image: {original_path_abs}")
+        if image_path_canon_for_db_update:
+            conn_update_db = holaf_database.get_db_connection()
+            cursor = conn_update_db.cursor()
+            cursor.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (image_path_canon_for_db_update,))
+            conn_update_db.commit()
+        return False
+    except Exception as e_gen:
+        update_exception = e_gen
+        print(f"🔴 [Holaf-ImageViewer] Error in _create_thumbnail_blocking for {original_path_abs}: {e_gen}")
+        if image_path_canon_for_db_update:
+             conn_update_db = holaf_database.get_db_connection()
+             cursor = conn_update_db.cursor()
+             cursor.execute("UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = CASE WHEN thumbnail_priority_score > 1000 THEN 1000 ELSE thumbnail_priority_score END WHERE path_canon = ?", (image_path_canon_for_db_update,))
+             conn_update_db.commit()
         if os.path.exists(thumb_path_abs):
             try: os.remove(thumb_path_abs)
             except Exception as e_clean: print(f"🔴 [Holaf-ImageViewer] Could not clean up failed thumbnail {thumb_path_abs}: {e_clean}")
-        raise e 
+        return False
+    finally:
+        if conn_update_db:
+            holaf_database.close_db_connection(exception=update_exception)
+
 
 # --- API Route Handlers ---
 async def get_filter_options_route(request: web.Request):
     conn = None
+    response_data = {"subfolders": [], "formats": [], "has_root": False}
+    error_status = 500
+    current_exception = None
     try:
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT subfolder FROM images WHERE subfolder != ''")
-        subfolders = sorted([row['subfolder'] for row in cursor.fetchall()])
-        cursor.execute("SELECT DISTINCT format FROM images")
+
+        # Get subfolders from non-trashed images
+        cursor.execute("SELECT DISTINCT subfolder FROM images WHERE subfolder != '' AND is_trashed = 0")
+        subfolders = {row['subfolder'] for row in cursor.fetchall()}
+
+        # Check if there are any items in the trash
+        cursor.execute("SELECT 1 FROM images WHERE is_trashed = 1 LIMIT 1")
+        has_trashed_items = cursor.fetchone() is not None
+
+        # If there are trashed items, add 'trashcan' to the list of folders to be displayed
+        if has_trashed_items:
+            subfolders.add(TRASHCAN_DIR_NAME)
+
+        # Get formats from non-trashed images
+        cursor.execute("SELECT DISTINCT format FROM images WHERE is_trashed = 0")
         formats = sorted([row['format'] for row in cursor.fetchall()])
-        cursor.execute("SELECT 1 FROM images WHERE subfolder = '' LIMIT 1")
+
+        # Check for non-trashed images in root
+        cursor.execute("SELECT 1 FROM images WHERE subfolder = '' AND is_trashed = 0 LIMIT 1")
         has_root_images = cursor.fetchone() is not None
-        return web.json_response({"subfolders": subfolders, "formats": formats, "has_root": has_root_images})
+        
+        conn.commit()
+        response_data = {"subfolders": sorted(list(subfolders)), "formats": formats, "has_root": has_root_images}
+        return web.json_response(response_data)
     except Exception as e:
+        current_exception = e
         print(f"🔴 [Holaf-ImageViewer] Failed to get filter options from DB: {e}")
-        return web.json_response({"subfolders": [], "formats": [], "has_root": False}, status=500)
+        return web.json_response(response_data, status=error_status)
     finally:
-        if conn: conn.close()
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
 
 async def list_images_route(request: web.Request):
     conn = None
+    filters = {}
+    current_exception = None
+    default_response_data = {
+        "images": [], "filtered_count": 0, "total_db_count": 0, "generated_thumbnails_count": 0
+    }
     try:
         filters = await request.json()
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
-        
-        query = "SELECT filename, subfolder, format, mtime, size_bytes FROM images"
+
+        query_fields = "id, filename, subfolder, format, mtime, size_bytes, path_canon, thumbnail_status, thumbnail_last_generated_at, is_trashed, original_path_canon"
+        query_base = f"SELECT {query_fields} FROM images"
         where_clauses, params = [], []
-        
+
         folder_filters = filters.get('folder_filters', [])
-        if folder_filters:
-            conditions = []
-            for folder in folder_filters:
-                if folder == 'root': conditions.append("subfolder = ?"); params.append('')
-                else: conditions.append("(subfolder = ? OR subfolder LIKE ?)"); params.extend([folder, f"{folder}/%"])
-            if conditions: where_clauses.append(f"({ ' OR '.join(conditions) })")
+        
+        # If 'trashcan' is selected, we ONLY show the trashcan, regardless of other selections.
+        if TRASHCAN_DIR_NAME in folder_filters:
+            where_clauses.append("is_trashed = 1")
+            # Build a condition that only matches the trashcan and its subdirectories.
+            where_clauses.append("(subfolder = ? OR subfolder LIKE ?)")
+            params.extend([TRASHCAN_DIR_NAME, f"{TRASHCAN_DIR_NAME}/%"])
+
+        else: # Normal view, non-trashed items
+            where_clauses.append("is_trashed = 0")
+            if folder_filters:
+                conditions = []
+                for folder in folder_filters:
+                    if folder == 'root':
+                        conditions.append("subfolder = ?")
+                        params.append('')
+                    else:
+                        conditions.append("(subfolder = ? OR subfolder LIKE ?)")
+                        params.extend([folder, f"{folder}/%"])
+                if conditions:
+                    where_clauses.append(f"({ ' OR '.join(conditions) })")
 
         format_filters = filters.get('format_filters', [])
-        if format_filters:
+        if format_filters: # Format filters apply to both trash and non-trash views
             placeholders = ','.join('?' * len(format_filters))
             where_clauses.append(f"format IN ({placeholders})"); params.extend(format_filters)
-            
+
         if filters.get('startDate'):
             try:
                 dt_start = datetime.datetime.strptime(filters['startDate'], '%Y-%m-%d')
@@ -245,83 +401,595 @@ async def list_images_route(request: web.Request):
                 where_clauses.append("mtime < ?"); params.append(time.mktime(dt_end.timetuple()))
             except (ValueError, TypeError): print(f"🟡 Invalid end date: {filters['endDate']}")
 
-        if where_clauses: query += " WHERE " + " AND ".join(where_clauses)
-            
-        count_query = query.replace("filename, subfolder, format, mtime, size_bytes", "COUNT(*)")
-        cursor.execute(count_query, params)
+        final_query = query_base
+        if where_clauses:
+            final_query += " WHERE " + " AND ".join(where_clauses)
+
+        count_query_filtered = final_query.replace(query_fields, "COUNT(*)")
+        cursor.execute(count_query_filtered, params)
         filtered_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM images"); total_db_count = cursor.fetchone()[0]
-        query += " ORDER BY mtime DESC"
+
+        # Total non-trashed images in DB
+        cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0")
+        total_db_count = cursor.fetchone()[0]
+        # Generated thumbnails for non-trashed images
+        cursor.execute("SELECT COUNT(*) FROM images WHERE thumbnail_status = 2 AND is_trashed = 0")
+        generated_thumbnails_count = cursor.fetchone()[0]
         
-        cursor.execute(query, params)
-        images = [dict(row) for row in cursor.fetchall()]
-        return web.json_response({"images": images, "filtered_count": filtered_count, "total_db_count": total_db_count})
-    except json.JSONDecodeError: return web.json_response({"error": "Invalid JSON"}, status=400)
+        conn.commit()
+
+        final_query += " ORDER BY mtime DESC"
+        cursor.execute(final_query, params)
+        images_data = [dict(row) for row in cursor.fetchall()]
+        
+        return web.json_response({
+            "images": images_data,
+            "filtered_count": filtered_count,
+            "total_db_count": total_db_count,
+            "generated_thumbnails_count": generated_thumbnails_count
+        })
+    except json.JSONDecodeError as e_json:
+        current_exception = e_json
+        print(f"🔴 [Holaf-ImageViewer] Invalid JSON in list_images_route: {e_json}")
+        return web.json_response({"error": "Invalid JSON", **default_response_data}, status=400)
     except Exception as e:
+        current_exception = e
         print(f"🔴 [Holaf-ImageViewer] Error listing filtered images: {e}"); traceback.print_exc()
-        return web.json_response({"error": str(e)}, status=500)
+        return web.json_response({"error": str(e), **default_response_data}, status=500)
     finally:
-        if conn: conn.close()
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+async def delete_images_route(request: web.Request):
+    conn = None
+    current_exception = None
+    output_dir = folder_paths.get_output_directory()
+    trashcan_base_path = ensure_trashcan_exists()
+    if not trashcan_base_path:
+        return web.json_response({"status": "error", "message": "Trashcan directory could not be created/accessed."}, status=500)
+
+    try:
+        data = await request.json()
+        paths_canon_to_delete = data.get("paths_canon", [])
+        if not paths_canon_to_delete or not isinstance(paths_canon_to_delete, list):
+            return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
+
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        
+        deleted_files_count = 0
+        errors = []
+
+        for original_path_canon in paths_canon_to_delete:
+            original_full_path = os.path.normpath(os.path.join(output_dir, original_path_canon))
+            
+            if not os.path.isfile(original_full_path):
+                errors.append({"path": original_path_canon, "error": "File not found on disk."})
+                # Mark as trashed in DB anyway if it exists, to clean up entry
+                cursor.execute("UPDATE images SET is_trashed = 1, original_path_canon = ? WHERE path_canon = ? AND is_trashed = 0", 
+                               (original_path_canon, original_path_canon))
+                continue
+
+            original_subfolder, original_filename = os.path.split(original_path_canon)
+            
+            # Create corresponding subfolder structure in trashcan
+            trash_subfolder_path = os.path.join(trashcan_base_path, original_subfolder)
+            os.makedirs(trash_subfolder_path, exist_ok=True)
+            
+            # Determine unique filename in trash (simple append of timestamp for now if conflict)
+            destination_filename_in_trash = original_filename
+            destination_full_path_in_trash = os.path.join(trash_subfolder_path, destination_filename_in_trash)
+            
+            counter = 0
+            base_name, ext = os.path.splitext(destination_filename_in_trash)
+            while os.path.exists(destination_full_path_in_trash):
+                counter += 1
+                destination_filename_in_trash = f"{base_name}_{counter}{ext}"
+                destination_full_path_in_trash = os.path.join(trash_subfolder_path, destination_filename_in_trash)
+
+            new_path_canon_in_trash = os.path.join(TRASHCAN_DIR_NAME, original_subfolder, destination_filename_in_trash).replace(os.sep, '/')
+            new_subfolder_in_trash = os.path.join(TRASHCAN_DIR_NAME, original_subfolder).replace(os.sep, '/')
+
+
+            try:
+                shutil.move(original_full_path, destination_full_path_in_trash)
+                
+                # Move associated .txt and .json files
+                base_original_path, _ = os.path.splitext(original_full_path)
+                base_dest_path_in_trash, _ = os.path.splitext(destination_full_path_in_trash)
+
+                for meta_ext in ['.txt', '.json']:
+                    original_meta_file = base_original_path + meta_ext
+                    dest_meta_file_in_trash = base_dest_path_in_trash + meta_ext
+                    if os.path.exists(original_meta_file):
+                        shutil.move(original_meta_file, dest_meta_file_in_trash)
+                
+                cursor.execute("""
+                    UPDATE images 
+                    SET is_trashed = 1, original_path_canon = ?, path_canon = ?, subfolder = ?, filename = ?
+                    WHERE path_canon = ? AND is_trashed = 0 
+                """, (original_path_canon, new_path_canon_in_trash, new_subfolder_in_trash, destination_filename_in_trash, original_path_canon))
+                
+                if cursor.rowcount > 0:
+                    deleted_files_count += 1
+                else: # DB record might have been already marked or missing
+                    errors.append({"path": original_path_canon, "error": "DB record not updated (already trashed or missing). File moved."})
+
+
+            except Exception as move_exc:
+                errors.append({"path": original_path_canon, "error": f"Failed to move file: {str(move_exc)}"})
+        
+        conn.commit()
+        status_message = f"Processed {len(paths_canon_to_delete)} items. Successfully deleted {deleted_files_count} files."
+        if errors:
+            status_message += f" Encountered {len(errors)} errors."
+            return web.json_response({"status": "partial_success", "message": status_message, "details": errors}, status=207)
+        
+        return web.json_response({"status": "ok", "message": status_message, "deleted_count": deleted_files_count})
+
+    except json.JSONDecodeError as e_json:
+        current_exception = e_json
+        return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        current_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error deleting images: {e}"); traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+async def restore_images_route(request: web.Request):
+    conn = None
+    current_exception = None
+    output_dir = folder_paths.get_output_directory()
+
+    try:
+        data = await request.json()
+        paths_canon_to_restore = data.get("paths_canon", [])
+        if not paths_canon_to_restore or not isinstance(paths_canon_to_restore, list):
+            return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
+
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+
+        restored_files_count = 0
+        errors = []
+
+        for path_in_trash_canon in paths_canon_to_restore:
+            # Get the original path from the database
+            cursor.execute("SELECT original_path_canon FROM images WHERE path_canon = ? AND is_trashed = 1", (path_in_trash_canon,))
+            row = cursor.fetchone()
+            
+            if not row or not row['original_path_canon']:
+                errors.append({"path": path_in_trash_canon, "error": "DB record not found or original path is missing."})
+                continue
+            
+            original_path_canon = row['original_path_canon']
+            current_full_path_in_trash = os.path.normpath(os.path.join(output_dir, path_in_trash_canon))
+            original_full_path_restored = os.path.normpath(os.path.join(output_dir, original_path_canon))
+
+            if not os.path.isfile(current_full_path_in_trash):
+                errors.append({"path": path_in_trash_canon, "error": "File not found in trashcan."})
+                # Clean up the DB entry if the file is gone
+                cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_in_trash_canon,))
+                continue
+
+            if os.path.exists(original_full_path_restored):
+                errors.append({"path": path_in_trash_canon, "error": f"Conflict: A file already exists at the original location '{original_path_canon}'."})
+                continue
+            
+            # Ensure destination directory exists
+            os.makedirs(os.path.dirname(original_full_path_restored), exist_ok=True)
+            
+            try:
+                # Move the main image file
+                shutil.move(current_full_path_in_trash, original_full_path_restored)
+
+                # Move associated .txt and .json files
+                base_path_in_trash, _ = os.path.splitext(current_full_path_in_trash)
+                base_restored_path, _ = os.path.splitext(original_full_path_restored)
+                
+                for meta_ext in ['.txt', '.json']:
+                    meta_file_in_trash = base_path_in_trash + meta_ext
+                    restored_meta_file = base_restored_path + meta_ext
+                    if os.path.exists(meta_file_in_trash):
+                        shutil.move(meta_file_in_trash, restored_meta_file)
+
+                # Update the database record
+                new_subfolder, new_filename = os.path.split(original_path_canon)
+                cursor.execute("""
+                    UPDATE images
+                    SET is_trashed = 0, original_path_canon = NULL, path_canon = ?, subfolder = ?, filename = ?
+                    WHERE path_canon = ?
+                """, (original_path_canon, new_subfolder.replace(os.sep, '/'), new_filename, path_in_trash_canon))
+
+                if cursor.rowcount > 0:
+                    restored_files_count += 1
+                else:
+                    # This case is unlikely if we passed the initial select, but good for safety
+                    errors.append({"path": path_in_trash_canon, "error": "DB record could not be updated after file move."})
+
+            except Exception as move_exc:
+                errors.append({"path": path_in_trash_canon, "error": f"Failed to move file: {str(move_exc)}"})
+
+        conn.commit()
+        status_message = f"Processed {len(paths_canon_to_restore)} items. Successfully restored {restored_files_count} files."
+        if errors:
+            status_message += f" Encountered {len(errors)} errors."
+            return web.json_response({"status": "partial_success", "message": status_message, "details": errors}, status=207)
+
+        return web.json_response({"status": "ok", "message": status_message, "restored_count": restored_files_count})
+
+    except json.JSONDecodeError as e_json:
+        current_exception = e_json
+        return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        current_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error restoring images: {e}"); traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+async def empty_trashcan_route(request: web.Request):
+    conn = None
+    current_exception = None
+    
+    try:
+        output_dir = folder_paths.get_output_directory()
+        trashcan_path = os.path.join(output_dir, TRASHCAN_DIR_NAME)
+
+        deleted_count = 0
+        errors = []
+
+        if os.path.isdir(trashcan_path):
+            for item_name in os.listdir(trashcan_path):
+                item_path = os.path.join(trashcan_path, item_name)
+                try:
+                    if os.path.isfile(item_path) or os.path.islink(item_path):
+                        os.unlink(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                    deleted_count += 1
+                except Exception as e:
+                    errors.append(f"Could not delete {item_name}: {e}")
+        
+        # Now, clear the database
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM images WHERE is_trashed = 1")
+        db_deleted_count = cursor.rowcount
+        conn.commit()
+
+        if errors:
+            error_message = f"Completed with {len(errors)} errors. DB entries for trashed items removed. Errors: {'; '.join(errors)}"
+            return web.json_response({"status": "partial_success", "message": error_message}, status=207)
+
+        return web.json_response({
+            "status": "ok",
+            "message": f"Trashcan emptied. {deleted_count} filesystem items and {db_deleted_count} database records removed."
+        })
+
+    except Exception as e:
+        current_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error emptying trashcan: {e}"); traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
 
 async def get_thumbnail_route(request: web.Request):
     filename = request.query.get("filename")
-    subfolder = request.query.get("subfolder", "")
-    force_regen = request.query.get("force_regen") == "true"
-    if not filename: return web.Response(status=400, text="Filename is required")
+    subfolder = request.query.get("subfolder", "") # This subfolder can now include 'trashcan'
+    force_regen_param = request.query.get("force_regen") == "true"
+
+    conn_info_read = None
+    original_rel_path = None
+    error_message_for_client = "ERR: Thumbnail processing failed."
+    current_exception = None
 
     try:
-        output_dir = folder_paths.get_output_directory()
+        if not filename:
+            error_message_for_client = "ERR: Filename is required."
+            return web.Response(status=400, text=error_message_for_client)
+
+        output_dir = folder_paths.get_output_directory() # Base output
         safe_filename = holaf_utils.sanitize_filename(filename)
-        safe_subfolder_parts = [holaf_utils.sanitize_directory_component(p) for p in subfolder.split('/') if p]
         
-        original_rel_path = os.path.join(*safe_subfolder_parts, safe_filename)
+        # original_rel_path is the path_canon from the DB, which might be inside trashcan
+        original_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
+        # original_abs_path is its location on disk, relative to output_dir
         original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
 
-        if not original_abs_path.startswith(os.path.normpath(output_dir)):
-            return web.Response(status=403, text="Forbidden path")
-        if not os.path.isfile(original_abs_path):
-            return web.Response(status=404, text="Original image not found")
 
+        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+            error_message_for_client = "ERR: Forbidden path for thumbnail."
+            return web.Response(status=403, text=error_message_for_client)
+
+        if not os.path.isfile(original_abs_path):
+            error_message_for_client = "ERR: Original image not found for thumbnail."
+            temp_conn_no_orig, no_orig_exception = None, None
+            try:
+                temp_conn_no_orig = holaf_database.get_db_connection()
+                cursor_no_orig = temp_conn_no_orig.cursor()
+                # Check if record exists using its current path_canon (which might be in trash)
+                cursor_no_orig.execute("SELECT id FROM images WHERE path_canon = ?", (original_rel_path,))
+                if cursor_no_orig.fetchone():
+                    cursor_no_orig.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (original_rel_path,))
+                    temp_conn_no_orig.commit()
+            except Exception as e_db_no_orig: no_orig_exception = e_db_no_orig
+            finally:
+                if temp_conn_no_orig: holaf_database.close_db_connection(exception=no_orig_exception)
+            return web.Response(status=404, text=error_message_for_client)
+
+        # Hash is based on path_canon, so trashed images get different hashes if path_canon changes
         path_hash = hashlib.sha1(original_rel_path.encode('utf-8')).hexdigest()
         thumb_filename = f"{path_hash}.jpg"
         thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
 
-        if force_regen and os.path.exists(thumb_path_abs):
+        conn_info_read = holaf_database.get_db_connection()
+        cursor = conn_info_read.cursor()
+        cursor.execute(
+            "SELECT mtime, thumbnail_status, thumbnail_last_generated_at FROM images WHERE path_canon = ?",
+            (original_rel_path,) # Use the current path_canon from DB
+        )
+        image_db_info = cursor.fetchone()
+        conn_info_read.commit()
+
+        needs_generation = force_regen_param
+        if image_db_info:
+            original_mtime_db = image_db_info['mtime']
+            thumb_status_db = image_db_info['thumbnail_status']
+            thumb_last_gen_db = image_db_info['thumbnail_last_generated_at']
+
+            if thumb_status_db == 0: needs_generation = True
+            elif thumb_status_db == 1: needs_generation = True
+            elif thumb_status_db == 3: error_message_for_client = "ERR: Thumbnail previously failed (permanent)."
+            elif thumb_last_gen_db is not None and original_mtime_db > thumb_last_gen_db: needs_generation = True
+            if thumb_status_db == 2 and not os.path.exists(thumb_path_abs) and not needs_generation:
+                needs_generation = True
+        else: error_message_for_client = "ERR: Image record not found in DB."
+        
+        holaf_database.close_db_connection()
+        conn_info_read = None
+
+        if error_message_for_client in ("ERR: Thumbnail previously failed (permanent).", "ERR: Image record not found in DB."):
+             return web.Response(status=404 if "not found" in error_message_for_client else 500, text=error_message_for_client)
+
+        if needs_generation and os.path.exists(thumb_path_abs):
             try: os.remove(thumb_path_abs)
-            except Exception as e: print(f"🔴 Error removing thumb for regen {thumb_path_abs}: {e}")
+            except Exception: pass # Ignore error if removal fails, generation will overwrite
+
+        if not needs_generation and os.path.exists(thumb_path_abs):
+            try:
+                async with aiofiles.open(thumb_path_abs, 'rb') as f: content = await f.read()
+                return web.Response(body=content, content_type='image/jpeg')
+            except Exception as e: needs_generation = True; error_message_for_client = "ERR: Failed to read existing thumb."
+
+        if needs_generation:
+            loop = asyncio.get_event_loop()
+            try:
+                # Pass original_rel_path (which is current path_canon) for DB update key
+                gen_success = await loop.run_in_executor(None, _create_thumbnail_blocking, original_abs_path, thumb_path_abs, original_rel_path)
+                if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
+            except Exception as e: current_exception = e; error_message_for_client = "ERR: Exception during thumbnail creation."
         
-        if os.path.exists(thumb_path_abs): return web.FileResponse(thumb_path_abs)
+        if os.path.exists(thumb_path_abs):
+            try:
+                async with aiofiles.open(thumb_path_abs, 'rb') as f: content = await f.read()
+                return web.Response(body=content, content_type='image/jpeg')
+            except Exception as e: current_exception = e; error_message_for_client = "ERR: Failed to read generated thumb at final stage."
         
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _create_thumbnail_blocking, original_abs_path, thumb_path_abs)
-        return web.FileResponse(thumb_path_abs)
-    except Exception as e:
-        err_msg = f"Thumbnail creation/serving failed: {str(e)}"
-        print(f"🔴 [Holaf-ImageViewer] {err_msg} for {filename} in {subfolder}")
-        traceback.print_exc()
-        return web.Response(status=500, text=err_msg)
+        print(f"🟡 [IV-Route] Final fallback for {original_rel_path}: Thumbnail not served. Reason: {error_message_for_client}")
+        return web.Response(status=500, text=error_message_for_client)
+
+    except Exception as e_outer:
+        current_exception = e_outer
+        # ... (rest of outer exception handling unchanged, but ensure DB updates use correct path_canon) ...
+        final_error_text = error_message_for_client if error_message_for_client != "ERR: Thumbnail processing failed." else f"ERR: Server error processing thumbnail for {filename}."
+        if original_rel_path: 
+            error_conn_outer, db_outer_exception = None, None
+            try:
+                error_conn_outer = holaf_database.get_db_connection()
+                cursor_outer = error_conn_outer.cursor()
+                cursor_outer.execute("UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = CASE WHEN thumbnail_priority_score > 1000 THEN 1000 ELSE thumbnail_priority_score END WHERE path_canon = ?", (original_rel_path,))
+                error_conn_outer.commit()
+            except Exception as db_e: db_outer_exception = db_e
+            finally:
+                if error_conn_outer: holaf_database.close_db_connection(exception=db_outer_exception)
+        return web.Response(status=500, text=final_error_text)
+    finally:
+        if conn_info_read: holaf_database.close_db_connection(exception=current_exception)
+
 
 async def get_metadata_route(request: web.Request):
     filename = request.query.get("filename")
-    subfolder = request.query.get("subfolder", "")
+    subfolder = request.query.get("subfolder", "") # Can now include TRASHCAN_DIR_NAME
     if not filename: return web.json_response({"error": "Filename required"}, status=400)
-
     try:
         output_dir = folder_paths.get_output_directory()
         safe_filename = holaf_utils.sanitize_filename(filename)
-        safe_subfolder_parts = [holaf_utils.sanitize_directory_component(p) for p in subfolder.split('/') if p]
-        original_rel_path = os.path.join(*safe_subfolder_parts, safe_filename)
-        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+        # Path is now constructed directly from subfolder and filename query params
+        image_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
+        image_abs_path = os.path.normpath(os.path.join(output_dir, image_rel_path))
 
-        if not original_abs_path.startswith(os.path.normpath(output_dir)) or \
-           not os.path.isfile(original_abs_path):
+        if not image_abs_path.startswith(os.path.normpath(output_dir)) or \
+           not os.path.isfile(image_abs_path):
             return web.json_response({"error": "Image not found or path forbidden"}, status=404)
 
         loop = asyncio.get_event_loop()
-        metadata = await loop.run_in_executor(None, _extract_image_metadata_blocking, original_abs_path)
-        
+        metadata = await loop.run_in_executor(None, _extract_image_metadata_blocking, image_abs_path)
+
         if "error" in metadata and metadata["error"]: return web.json_response(metadata, status=422)
         return web.json_response(metadata)
     except Exception as e:
         print(f"🔴 [Holaf-ImageViewer] Error in metadata endpoint for {filename}: {e}"); traceback.print_exc()
         return web.json_response({"error": f"Server error: {e}"}, status=500)
+
+# --- New Endpoints for Thumbnail Worker ---
+async def set_viewer_activity_route(request: web.Request):
+    global viewer_is_active
+    try:
+        data = await request.json()
+        is_active = data.get("active", False)
+        if not isinstance(is_active, bool):
+            return web.json_response({"status": "error", "message": "'active' must be boolean"}, status=400)
+        viewer_is_active = is_active
+        return web.json_response({"status": "ok", "viewer_active": viewer_is_active})
+    except json.JSONDecodeError:
+        return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error in set_viewer_activity_route: {e}"); traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+async def prioritize_thumbnails_route(request: web.Request):
+    conn = None
+    current_exception = None
+    try:
+        data = await request.json()
+        paths_canon = data.get("paths_canon")
+
+        if not paths_canon or not isinstance(paths_canon, list):
+            return web.json_response({"status": "error", "message": "'paths_canon' list required"}, status=400)
+
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        updated_count = 0
+        priority_score_for_visible = 10
+
+        for path_canon_str in paths_canon:
+            res = cursor.execute("""
+                UPDATE images
+                SET thumbnail_status = CASE thumbnail_status WHEN 0 THEN 1 ELSE thumbnail_status END,
+                    thumbnail_priority_score = MIN(thumbnail_priority_score, ?)
+                WHERE path_canon = ? AND thumbnail_status IN (0, 1)
+            """, (priority_score_for_visible, path_canon_str))
+            if res.rowcount > 0:
+                updated_count += 1
+        conn.commit()
+        return web.json_response({"status": "ok", "message": f"{updated_count} thumbnails prioritized."})
+
+    except json.JSONDecodeError as e_json:
+        current_exception = e_json
+        return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        current_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error in prioritize_thumbnails_route: {e}"); traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+async def iv_get_thumbnail_stats_route(request: web.Request):
+    conn = None
+    current_exception = None
+    default_response = {"total_db_count": 0, "generated_thumbnails_count": 0}
+    try:
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0") # Only non-trashed
+        total_db_count = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM images WHERE thumbnail_status = 2 AND is_trashed = 0") # Only non-trashed
+        generated_thumbnails_count = cursor.fetchone()[0]
+        conn.commit() 
+
+        return web.json_response({
+            "total_db_count": total_db_count,
+            "generated_thumbnails_count": generated_thumbnails_count,
+        })
+    except Exception as e:
+        current_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error getting thumbnail stats: {e}"); traceback.print_exc()
+        return web.json_response({"error": str(e), **default_response}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+# --- Thumbnail Generation Worker ---
+def run_thumbnail_generation_worker(stop_event):
+    print("🔵 [Holaf-ImageViewer-Worker] Thumbnail generation worker started.")
+    output_dir = folder_paths.get_output_directory()
+    batch_size_for_query = 1
+
+    while not stop_event.is_set():
+        conn_worker_db = None
+        image_to_process_path_canon = None # This is the key for DB updates, should be current path_canon
+        worker_exception = None
+        try:
+            conn_worker_db = holaf_database.get_db_connection()
+            cursor = conn_worker_db.cursor()
+            image_row_to_process = None
+
+            # Worker should only process non-trashed images
+            priority_query = """
+                SELECT path_canon FROM images
+                WHERE thumbnail_status = 1 AND is_trashed = 0
+                ORDER BY thumbnail_priority_score ASC, mtime DESC
+                LIMIT ?
+            """
+            cursor.execute(priority_query, (batch_size_for_query,))
+            image_row_to_process = cursor.fetchone()
+
+            if not image_row_to_process:
+                normal_query = """
+                    SELECT path_canon FROM images
+                    WHERE thumbnail_status = 0 AND is_trashed = 0
+                    ORDER BY mtime DESC
+                    LIMIT ?
+                """
+                cursor.execute(normal_query, (batch_size_for_query,))
+                image_row_to_process = cursor.fetchone()
+            
+            conn_worker_db.commit() 
+
+            if not image_row_to_process:
+                holaf_database.close_db_connection()
+                conn_worker_db = None
+                stop_event.wait(WORKER_IDLE_SLEEP_SECONDS)
+                continue
+            
+            holaf_database.close_db_connection()
+            conn_worker_db = None
+
+            image_to_process_path_canon = image_row_to_process['path_canon']
+            # The actual file on disk is at output_dir + path_canon (which is not in trash for worker)
+            original_abs_path = os.path.normpath(os.path.join(output_dir, image_to_process_path_canon))
+
+            if not os.path.isfile(original_abs_path):
+                temp_conn_err, no_file_exception = None, None
+                try:
+                    temp_conn_err = holaf_database.get_db_connection()
+                    temp_cursor_err = temp_conn_err.cursor()
+                    # Mark using its current path_canon
+                    temp_cursor_err.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (image_to_process_path_canon,))
+                    temp_conn_err.commit()
+                except Exception as e_db_no_file: no_file_exception = e_db_worker_no_file
+                finally:
+                    if temp_conn_err: holaf_database.close_db_connection(exception=no_file_exception)
+                stop_event.wait(WORKER_POST_JOB_SLEEP_SECONDS)
+                continue
+
+            path_hash = hashlib.sha1(image_to_process_path_canon.encode('utf-8')).hexdigest()
+            thumb_filename = f"{path_hash}.jpg"
+            thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
+
+            _create_thumbnail_blocking(original_abs_path, thumb_path_abs, image_path_canon_for_db_update=image_to_process_path_canon)
+            stop_event.wait(WORKER_POST_JOB_SLEEP_SECONDS)
+
+        except sqlite3.Error as e_sql:
+            worker_exception = e_sql
+            print(f"🔴 [Holaf-ImageViewer-Worker] SQLite error (processing '{image_to_process_path_canon}'): {e_sql}")
+            stop_event.wait(30.0)
+        except Exception as e_main:
+            worker_exception = e_main
+            print(f"🔴 [Holaf-ImageViewer-Worker] General error (processing '{image_to_process_path_canon}'): {e_main}")
+            stop_event.wait(30.0)
+        finally:
+            if conn_worker_db:
+                holaf_database.close_db_connection(exception=worker_exception)
+            image_to_process_path_canon = None
+
+    print("🔵 [Holaf-ImageViewer-Worker] Thumbnail generation worker stopped.")
