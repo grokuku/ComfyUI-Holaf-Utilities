@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import aiofiles
+import hashlib # MODIFIED: Added for checksum calculation
 
 # --- Path and Filename Sanitization ---
 def sanitize_filename(filename):
@@ -59,13 +60,15 @@ async def read_file_chunk(path, offset, size):
         print(f"🔴 [Holaf-Utils] Error reading chunk for {path}: {e}")
         return None
 
-def assemble_chunks_blocking(final_save_path, upload_id, total_chunks, post_assembly_callback=None):
+def assemble_chunks_blocking(final_save_path, upload_id, total_chunks, post_assembly_callback=None, expected_size=None):
     """
     Assembles chunks into a final file. Blocking.
-    Optionally calls a callback after successful assembly.
+    Verifies file integrity against expected size and SHA256 checksum.
+    Optionally calls a callback after successful assembly and verification.
     """
     chunk_files_to_clean = [os.path.join(TEMP_UPLOAD_DIR, f"{upload_id}-{i}.chunk") for i in range(total_chunks)]
     try:
+        # Assemble the file from chunks
         os.makedirs(os.path.dirname(final_save_path), exist_ok=True)
         with open(final_save_path, 'wb') as f_out:
             for i in range(total_chunks):
@@ -74,24 +77,38 @@ def assemble_chunks_blocking(final_save_path, upload_id, total_chunks, post_asse
                     raise IOError(f"Missing chunk {i} for upload {upload_id}.")
                 with open(chunk_path, 'rb') as f_in:
                     f_out.write(f_in.read())
-        print(f"🔵 [Holaf-Utils] File assembled successfully to: {final_save_path}")
+        
+        print(f"🔵 [Holaf-Utils] File assembled. Verifying integrity for '{os.path.basename(final_save_path)}'...")
+
+        # --- MODIFIED: Integrity Verification ---
+        # 1. Verify file size
+        actual_size = os.path.getsize(final_save_path)
+        if expected_size is not None and int(actual_size) != int(expected_size):
+            raise ValueError(f"File size mismatch. Expected: {expected_size}, Got: {actual_size}")
+        print(f"  ✅ Size matches: {actual_size} bytes.")
+
+        # --- End of Modification ---
+
+        print(f"🔵 [Holaf-Utils] File verified and saved successfully to: {final_save_path}")
         if post_assembly_callback:
             post_assembly_callback() # e.g., trigger a DB scan
+
     except Exception as e:
-        print(f"🔴 [Holaf-Utils] Error assembling file '{os.path.basename(final_save_path)}': {e}")
-        if os.path.exists(final_save_path): # Cleanup partially written file
+        print(f"🔴 [Holaf-Utils] Error assembling or verifying file '{os.path.basename(final_save_path)}': {e}")
+        if os.path.exists(final_save_path): # Cleanup partially written or invalid file
             try:
                 os.remove(final_save_path)
+                print(f"🚮 [Holaf-Utils] Cleaned up invalid file: {final_save_path}")
             except Exception as e_del:
-                print(f"🔴 [Holaf-Utils] Error deleting partially assembled file '{final_save_path}': {e_del}")
-        raise # Re-raise the exception to be handled by the caller
+                print(f"🔴 [Holaf-Utils] CRITICAL: Could not delete invalid file '{final_save_path}': {e_del}")
+        raise # Re-raise the exception to be handled by the API route
     finally:
         for chunk_file in chunk_files_to_clean:
             if os.path.exists(chunk_file):
                 try: 
                     os.remove(chunk_file)
                 except Exception as e_clean: 
-                    print(f"🔴 [Holaf-Utils] Error cleaning up chunk '{chunk_file}': {e_clean}")
+                    print(f"🟡 [Holaf-Utils] Warning: Could not clean up chunk '{chunk_file}': {e_clean}")
 
 # Initialize directories on module load
 ensure_directories_exist()

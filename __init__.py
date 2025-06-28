@@ -184,9 +184,13 @@ async def finalize_upload_model_route(request: web.Request):
         total_chunks = data.get('total_chunks')
         dest_type = data.get('destination_type')
         subfolder = data.get('subfolder', '')
+        # MODIFIED: Get only expected size from the request
+        expected_size = data.get('expected_size')
+        # expected_sha256 removed
 
-        if not all([upload_id, filename_orig, total_chunks, dest_type]):
-            return web.json_response({"status": "error", "message": "Missing fields."}, status=400)
+        # MODIFIED: Update validation to remove checksum
+        if not all([upload_id, filename_orig, total_chunks, dest_type, expected_size]):
+            return web.json_response({"status": "error", "message": "Missing fields, including expected size."}, status=400)
 
         filename = holaf_utils.sanitize_filename(filename_orig)
         if not filename: return web.json_response({"status": "error", "message": "Invalid filename."}, status=400)
@@ -212,8 +216,10 @@ async def finalize_upload_model_route(request: web.Request):
                 threading.Timer(1.0, model_manager_helper.scan_and_update_db).start()
 
         loop = asyncio.get_event_loop()
+        # MODIFIED: Pass only expected_size to the assembly function
         await loop.run_in_executor(None, holaf_utils.assemble_chunks_blocking,
-                                   final_save_path, upload_id, total_chunks, on_assembly_done)
+                                   final_save_path, upload_id, total_chunks, on_assembly_done,
+                                   expected_size)
         return web.json_response({"status": "ok", "message": f"Finalization for '{filename}' started."})
     except Exception as e:
         print(f"🔴 Error finalizing upload: {e}"); traceback.print_exc()

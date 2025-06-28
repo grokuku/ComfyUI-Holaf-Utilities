@@ -12,6 +12,7 @@
  * MODIFICATION: Imported and activated the new Settings Manager.
  * MODIFICATION: Added "Toggle Monitor" menu item.
  * REFACTOR CSS: Modified loadSharedCss to load multiple split CSS files.
+ * REFACTOR RESTART: Implemented a new multi-stage restart sequence with fixed dialog size.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -67,10 +68,23 @@ const HolafModal = {
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
 
-        const closeModal = () => overlay.remove();
+        const closeModal = () => {
+             // Clean up any intervals that might have been created by a process within the modal
+            if (window.holafRestartMonitorInterval) clearInterval(window.holafRestartMonitorInterval);
+            if (window.holafRestartTimerInterval) clearInterval(window.holafRestartTimerInterval);
+            delete window.holafRestartMonitorInterval;
+            delete window.holafRestartTimerInterval;
+            overlay.remove();
+        }
 
         document.getElementById("holaf-modal-confirm").onclick = () => {
-            if (onConfirm) onConfirm();
+            if (onConfirm) {
+                // If the confirm handler returns exactly false, we keep the modal open.
+                // This allows the handler to take control of the modal's lifecycle.
+                if (onConfirm() === false) {
+                    return;
+                }
+            }
             closeModal();
         };
 
@@ -141,20 +155,105 @@ const HolafUtilitiesMenu = {
             menuItem.onclick = () => {
                 // Handle special actions first
                 if (itemInfo.special === 'restart') {
-                    HolafModal.show("Restart ComfyUI", "Are you sure you want to restart the ComfyUI server?", () => {
+                    // Prepare the full HTML structure from the start to avoid resizing
+                    const restartDialogContent = `
+                        <div>
+                            <p id="holaf-restart-message">Are you sure you want to restart the ComfyUI server?</p>
+                            <p id="holaf-restart-timer-line" style="visibility: hidden; margin-top: 10px; height: 1.2em;">
+                                Time elapsed: <span id="holaf-restart-timer">0</span>s
+                            </p>
+                        </div>
+                    `;
+
+                    HolafModal.show("Restart ComfyUI", restartDialogContent, () => {
+                        // --- Stage 1: Transform the modal ---
+                        const dialog = document.getElementById("holaf-modal-dialog");
+                        if (!dialog) return; // Should not happen
+
+                        const messageEl = document.getElementById("holaf-restart-message");
+                        const timerLineEl = document.getElementById("holaf-restart-timer-line");
+                        
+                        // Update texts and visibility
+                        dialog.querySelector(".holaf-utility-header span").textContent = "Restarting Server";
+                        messageEl.textContent = "Sending restart command...";
+                        timerLineEl.style.visibility = "visible";
+
+                        // Update footer
+                        dialog.querySelector(".holaf-modal-footer").innerHTML = `
+                            <button id="holaf-restart-close-btn" class="comfy-button secondary">Close</button>
+                            <button id="holaf-restart-refresh-btn" class="comfy-button" disabled>Refresh</button>
+                        `;
+
+                        const cleanupAndClose = () => {
+                             const overlay = document.getElementById("holaf-modal-overlay");
+                             if(overlay) overlay.remove();
+                             if (window.holafRestartMonitorInterval) clearInterval(window.holafRestartMonitorInterval);
+                             if (window.holafRestartTimerInterval) clearInterval(window.holafRestartTimerInterval);
+                             delete window.holafRestartMonitorInterval;
+                             delete window.holafRestartTimerInterval;
+                        }
+
+                        dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
+
+                        // --- Stage 2: Send command and start monitoring ---
                         console.log("[Holaf Utilities] Sending restart request...");
                         fetch("/holaf/utilities/restart", { method: 'POST' })
                             .then(res => res.json())
                             .then(data => {
-                                if (data.status === "ok") {
-                                    HolafModal.show("Restart Command Sent", "The server is restarting. You will need to **manually refresh** this page after the server is back online.", () => { }, "OK", null);
-                                } else {
-                                    HolafModal.show("Error", `Failed to send restart command to the server: ${data.message || 'Unknown error'}.`, () => { }, "OK", null);
-                                }
+                                if (data.status !== "ok") throw new Error(data.message || 'Unknown server error');
+                                
+                                const timerEl = document.getElementById("holaf-restart-timer");
+                                const refreshBtn = document.getElementById("holaf-restart-refresh-btn");
+                                if (!messageEl || !timerEl || !refreshBtn) return; // Dialog was closed
+
+                                messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
+                                
+                                let seconds = 0;
+                                window.holafRestartTimerInterval = setInterval(() => {
+                                    seconds++;
+                                    if(timerEl) timerEl.textContent = seconds;
+                                }, 1000);
+
+                                let serverIsDown = false;
+                                const checkServerStatus = () => {
+                                    fetch(window.location.origin, { method: 'HEAD', mode: 'no-cors', cache: 'no-cache' })
+                                        .then(() => {
+                                            if (serverIsDown) {
+                                                // --- Stage 3: Server is back online ---
+                                                clearInterval(window.holafRestartMonitorInterval);
+                                                clearInterval(window.holafRestartTimerInterval);
+                                                delete window.holafRestartMonitorInterval;
+                                                delete window.holafRestartTimerInterval;
+                                                
+                                                if (!messageEl || !refreshBtn) return;
+
+                                                messageEl.innerHTML = `✅ Server has rebooted successfully in <strong>${seconds}</strong> seconds.`;
+                                                if (timerLineEl) timerLineEl.style.visibility = "hidden"; // Hide timer line on success
+                                                refreshBtn.textContent = "Refresh Page";
+                                                refreshBtn.disabled = false;
+                                                refreshBtn.onclick = () => location.reload();
+                                                refreshBtn.focus();
+                                            }
+                                        })
+                                        .catch(() => {
+                                            if (!serverIsDown) {
+                                                console.log("[Holaf Utilities] Server is now offline. Waiting for it to come back online.");
+                                                if(messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                                serverIsDown = true;
+                                            }
+                                        });
+                                };
+                                
+                                window.holafRestartMonitorInterval = setInterval(checkServerStatus, 2000);
                             })
                             .catch(err => {
-                                HolafModal.show("Restart Command Sent", "The server is restarting. You will need to **manually refresh** this page after the server is back online.", () => { }, "OK", null);
+                                console.error("[Holaf Utilities] Failed to send restart command:", err);
+                                dialog.querySelector(".holaf-modal-content").innerHTML = `<p style="color:var(--holaf-error-text,red);">Failed to send restart command to the server: ${err.message}.</p>`;
+                                dialog.querySelector("#holaf-restart-refresh-btn").disabled = true;
                             });
+
+                        // Return false to prevent the modal from closing automatically.
+                        return false;
                     });
                 } else if (itemInfo.special === "toggle_monitor") {
                     const monitor = app.holafSystemMonitor;

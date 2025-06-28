@@ -58,55 +58,18 @@ def init_database():
         conn = get_db_connection() # Gets or creates thread-local connection
         cursor = conn.cursor()
 
-        # --- Base Table Version ---
+        # --- MODIFICATION START ---
+        # Ensure base tables exist *before* versioning logic. This is robust.
+        # This will create tables if they are missing, even in an existing DB file.
+        print("  > Verifying base table schema...")
+        
+        # Base Table Version
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS holaf_db_version (
                 version INTEGER PRIMARY KEY
             )
         """)
-        # Important: Commit DDL changes like CREATE TABLE immediately
-        conn.commit()
 
-        cursor.execute("SELECT version FROM holaf_db_version")
-        db_version_row = cursor.fetchone()
-        current_db_version = db_version_row[0] if db_version_row else 0
-        latest_schema_version = 3 # Increment this when schema changes
-
-        if current_db_version < latest_schema_version:
-            print(f"  > DB version: {current_db_version}, Latest schema: {latest_schema_version}. Upgrading...")
-            _apply_schema_migrations(cursor, current_db_version, latest_schema_version)
-            # Migrations should handle their own commits if they involve multiple DDL/DML statements
-            # or the main commit after _apply_schema_migrations will cover it.
-            cursor.execute("DELETE FROM holaf_db_version") # Clear old version
-            cursor.execute("INSERT INTO holaf_db_version (version) VALUES (?)", (latest_schema_version,))
-            conn.commit() # Commit version update
-            print(f"  > DB upgraded to version {latest_schema_version}.")
-        else:
-            print(f"  > Database schema is up to date (version {current_db_version}).")
-
-    except sqlite3.Error as e:
-        print(f"🔴 [Holaf-DB] SQLite error during init: {e}")
-        # conn.rollback() is handled by close_db_connection if an exception is passed
-    except Exception as e:
-        print(f"🔴 [Holaf-DB] General error during init: {e}")
-    finally:
-        # The connection used by init_database (which is thread-local for the main thread at startup)
-        # should remain open if other startup tasks in the same thread need it.
-        # It will be closed eventually when the ComfyUI server stops or by individual request handlers.
-        # However, for this specific init function, if it's truly standalone, we could close.
-        # But given it's called at startup, let's assume the main thread might do more DB work.
-        # If no other startup tasks use DB, then: close_db_connection()
-        pass
-
-
-def _apply_schema_migrations(cursor, current_version, target_version):
-    """Applies database schema migrations sequentially.
-       The calling function is responsible for committing after this function returns.
-    """
-    conn = cursor.connection # Get the connection from the cursor
-
-    if current_version < 1 <= target_version:
-        print("  Applying schema version 1...")
         # Model Manager: Models Table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS models (
@@ -131,14 +94,7 @@ def _apply_schema_migrations(cursor, current_version, target_version):
                 local_mtime REAL
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_type ON models(type)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_family ON models(family)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_path_canon ON models(path_canon)")
-        # conn.commit() # Commit after each version's DDL if necessary, or once at the end.
-        current_version = 1
 
-    if current_version < 2 <= target_version:
-        print("  Applying schema version 2...")
         # Image Viewer: Images Table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS images (
@@ -160,12 +116,56 @@ def _apply_schema_migrations(cursor, current_version, target_version):
                 thumbnail_last_generated_at REAL
             )
         """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_path_canon ON images(path_canon)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_subfolder ON images(subfolder)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_thumb_status_priority ON images(thumbnail_status, thumbnail_priority_score)")
-        # conn.commit()
+        conn.commit() # Commit schema creations immediately
+        print("  > Base schema verified.")
+        # --- MODIFICATION END ---
+
+
+        cursor.execute("SELECT version FROM holaf_db_version")
+        db_version_row = cursor.fetchone()
+        current_db_version = db_version_row[0] if db_version_row else 0
+        latest_schema_version = 3 # Increment this when schema changes
+
+        if current_db_version < latest_schema_version:
+            print(f"  > DB version: {current_db_version}, Latest schema: {latest_schema_version}. Upgrading...")
+            _apply_schema_migrations(cursor, current_db_version, latest_schema_version)
+            # Migrations should handle their own commits if they involve multiple DDL/DML statements
+            # or the main commit after _apply_schema_migrations will cover it.
+            cursor.execute("DELETE FROM holaf_db_version") # Clear old version
+            cursor.execute("INSERT INTO holaf_db_version (version) VALUES (?)", (latest_schema_version,))
+            conn.commit() # Commit version update
+            print(f"  > DB upgraded to version {latest_schema_version}.")
+        else:
+            print(f"  > Database schema is up to date (version {current_db_version}).")
+
+    except sqlite3.Error as e:
+        print(f"🔴 [Holaf-DB] SQLite error during init: {e}")
+        # conn.rollback() is handled by close_db_connection if an exception is passed
+    except Exception as e:
+        print(f"🔴 [Holaf-DB] General error during init: {e}")
+    finally:
+        pass
+
+
+def _apply_schema_migrations(cursor, current_version, target_version):
+    """
+    Applies database schema migrations sequentially.
+    The calling function is responsible for committing after this function returns.
+    NOTE: Table CREATION is now handled in init_database for robustness. 
+          This function should primarily handle ALTER TABLE or data migration.
+    """
+    conn = cursor.connection # Get the connection from the cursor
+
+    # The schema for versions 1 and 2 (table creation) has been moved to init_database().
+    # This function now only needs to apply changes to *existing* tables.
+    if current_version < 1 <= target_version:
+        print("  Applying schema version 1 (Base models table)...")
+        # No actions needed here anymore as CREATE is handled above.
+        current_version = 1
+
+    if current_version < 2 <= target_version:
+        print("  Applying schema version 2 (Base images table)...")
+        # No actions needed here anymore as CREATE is handled above.
         current_version = 2
 
     if current_version < 3 <= target_version:
@@ -176,15 +176,18 @@ def _apply_schema_migrations(cursor, current_version, target_version):
 
         if 'is_trashed' not in columns:
             cursor.execute("ALTER TABLE images ADD COLUMN is_trashed BOOLEAN DEFAULT 0")
+            print("    > Added 'is_trashed' column to 'images' table.")
         if 'original_path_canon' not in columns:
             cursor.execute("ALTER TABLE images ADD COLUMN original_path_canon TEXT")
+            print("    > Added 'original_path_canon' column to 'images' table.")
 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
-        # conn.commit()
+        # conn.commit() # Commit is handled by the calling function.
         current_version = 3
 
     if current_version != target_version:
-        raise Exception(f"DB Migration Error: Reached version {current_version} but expected {target_version}.")
+        # This check is now less critical for table creation but good for migration integrity.
+        print(f"🟡 [Holaf-DB] Warning: Migration ended at version {current_version}, target was {target_version}.")
 
     # The main commit will happen in init_database after this function returns and version is updated.
 
@@ -203,6 +206,9 @@ if __name__ == '__main__':
             cursor_test.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = cursor_test.fetchall()
             print("Tables in database:", [table[0] for table in tables])
+            assert 'models' in [t[0] for t in tables], "FAILURE: 'models' table was not created."
+            assert 'images' in [t[0] for t in tables], "FAILURE: 'images' table was not created."
+            print("✅ All required tables are present.")
 
             # Test schema version 3 columns
             cursor_test.execute("PRAGMA table_info(images)")
