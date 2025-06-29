@@ -19,6 +19,7 @@ import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
 
 const STATS_REFRESH_INTERVAL_MS = 2000; // Refresh stats every 2 seconds
+const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunk size for downloads
 
 const holafImageViewer = {
     // State Properties
@@ -46,7 +47,11 @@ const holafImageViewer = {
         format_filters: undefined,
         thumbnail_fit: 'cover',
         thumbnail_size: 150,
-        startDate: '', endDate: '',
+        startDate: '',
+        endDate: '',
+        export_format: 'png',
+        export_include_meta: true,
+        export_meta_method: 'embed',
     },
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
@@ -58,6 +63,15 @@ const holafImageViewer = {
     currentTotalDbCount: 0,
     lastThumbStats: null,
     selectedImages: new Set(),
+    isExporting: false,
+    exportDownloadQueue: [],
+    exportStats: {
+        totalFiles: 0,
+        completedFiles: 0,
+        currentFileName: '',
+        currentFileProgress: 0,
+    },
+    exportStatusRaf: null, // ADDED: To hold the requestAnimationFrame ID
 
     // --- Initialization & Core Lifecycle ---
 
@@ -249,6 +263,7 @@ const holafImageViewer = {
     _updateActionButtonsState: function() { return Actions.updateActionButtonsState(this); },
     handleDelete: function() { return Actions.handleDelete(this); },
     handleRestore: function() { return Actions.handleRestore(this); },
+    handleExport: function() { return Actions.handleExport(this); },
     handleExtractMetadata: function() { return Actions.handleExtractMetadata(this); },
     handleInjectMetadata: function() { return Actions.handleInjectMetadata(this); },
 
@@ -477,6 +492,89 @@ const holafImageViewer = {
     _showFullscreenView: function(image) { return Navigation.showFullscreenView(this, image); },
     _hideFullscreenView: function() { return Navigation.hideFullscreenView(this); },
 
+    // --- Download Queue Processing ---
+    _startStatusAnimation() {
+        if (this.exportStatusRaf) return; // Already running
+        const loop = () => {
+            this.updateStatusBar();
+            this.exportStatusRaf = requestAnimationFrame(loop);
+        };
+        this.exportStatusRaf = requestAnimationFrame(loop);
+    },
+
+    _stopStatusAnimation() {
+        if (this.exportStatusRaf) {
+            cancelAnimationFrame(this.exportStatusRaf);
+            this.exportStatusRaf = null;
+        }
+    },
+
+    async processExportDownloadQueue() {
+        if (this.exportDownloadQueue.length === 0) {
+            this._stopStatusAnimation();
+            this.isExporting = false;
+            this.updateStatusBar(); // Final update to clear the status
+            if (this.exportStats.totalFiles > 0) {
+                HolafPanelManager.createDialog({ title: "Export Complete", message: `Successfully exported ${this.exportStats.totalFiles} file(s).`, buttons: [{ text: "OK" }] });
+            }
+            return;
+        }
+
+        this._startStatusAnimation();
+
+        const fileToDownload = this.exportDownloadQueue.shift();
+        const { export_id, path, size } = fileToDownload;
+        const filename = path.split('/').pop();
+        
+        this.exportStats.currentFileName = filename;
+        this.exportStats.currentFileProgress = 0;
+
+        let receivedBytes = 0;
+        const chunks = [];
+        const totalChunks = Math.ceil(size / DOWNLOAD_CHUNK_SIZE);
+        
+        try {
+            for (let i = 0; i < totalChunks; i++) {
+                const url = new URL(window.location.origin);
+                url.pathname = '/holaf/images/export-chunk';
+                url.search = new URLSearchParams({
+                    export_id: export_id,
+                    file_path: path,
+                    chunk_index: i,
+                    chunk_size: DOWNLOAD_CHUNK_SIZE
+                });
+
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error ${response.status} for chunk ${i}`);
+                
+                const chunk = await response.arrayBuffer();
+                chunks.push(chunk);
+                receivedBytes += chunk.byteLength;
+                this.exportStats.currentFileProgress = (receivedBytes / size) * 100;
+            }
+
+            const blob = new Blob(chunks);
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+
+            this.exportStats.completedFiles++;
+            setTimeout(() => this.processExportDownloadQueue(), 100);
+
+        } catch (error) {
+            console.error(`[Holaf ImageViewer] Failed to download file ${filename}:`, error);
+            HolafPanelManager.createDialog({ title: "Export Error", message: `Failed to download file: ${filename}\n\n${error.message}`, buttons: [{ text: "OK" }] });
+            this._stopStatusAnimation();
+            this.isExporting = false;
+            this.updateStatusBar();
+        }
+    },
+    
     // --- Status & Helpers ---
 
     _updateActiveThumbnail(navIndex) {
@@ -509,6 +607,13 @@ const holafImageViewer = {
     updateStatusBar(data, isFullUpdate = true) {
         const statusBarEl = document.getElementById('holaf-viewer-statusbar');
         if (!statusBarEl) return;
+        
+        if (this.isExporting) {
+            let progress = this.exportStats.currentFileProgress.toFixed(1);
+            statusBarEl.textContent = `Exporting (${this.exportStats.completedFiles + 1}/${this.exportStats.totalFiles}): ${this.exportStats.currentFileName} [${progress}%]`;
+            return;
+        }
+
         if (isFullUpdate) {
             this.currentFilteredCount = data.filtered_count !== undefined ? data.filtered_count : this.currentFilteredCount;
             this.currentTotalDbCount = data.total_db_count !== undefined ? data.total_db_count : this.currentTotalDbCount;
@@ -516,13 +621,17 @@ const holafImageViewer = {
         let statusText = `Displaying ${this.currentFilteredCount} of ${this.currentTotalDbCount} total images.`;
         const generatedCount = data.generated_thumbnails_count !== undefined ? data.generated_thumbnails_count : (this.lastThumbStats ? this.lastThumbStats.generated_thumbnails_count : 0);
         const totalForThumbs = data.total_db_count !== undefined ? data.total_db_count : (this.lastThumbStats ? this.lastThumbStats.total_db_count : this.currentTotalDbCount);
-        if (totalForThumbs > 0) {
+        
+        if (this.exportDownloadQueue.length > 0) {
+            statusText += ` | Export Queue: ${this.exportDownloadQueue.length} file(s)`;
+        } else if (totalForThumbs > 0) {
             const percentage = ((generatedCount / totalForThumbs) * 100).toFixed(1);
             statusText += ` | Thumbnails: ${generatedCount}/${totalForThumbs} (${percentage}%)`;
             this.allThumbnailsGenerated = (generatedCount >= totalForThumbs);
         } else {
              statusText += ` | Thumbnails: N/A`; this.allThumbnailsGenerated = true;
         }
+
         if (this.selectedImages.size > 0) {
             statusText += ` | Selected: ${this.selectedImages.size}`;
         }

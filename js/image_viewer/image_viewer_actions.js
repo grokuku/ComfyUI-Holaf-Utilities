@@ -17,11 +17,13 @@ export function attachActionListeners(viewer) {
     const btnRestore = document.getElementById('holaf-viewer-btn-restore');
     const btnExtract = document.getElementById('holaf-viewer-btn-extract');
     const btnInject = document.getElementById('holaf-viewer-btn-inject');
+    const btnExport = document.getElementById('holaf-viewer-btn-export');
 
     if (btnDelete) btnDelete.onclick = () => handleDelete(viewer);
     if (btnRestore) btnRestore.onclick = () => handleRestore(viewer);
     if (btnExtract) btnExtract.onclick = () => handleExtractMetadata(viewer);
     if (btnInject) btnInject.onclick = () => handleInjectMetadata(viewer);
+    if (btnExport) btnExport.onclick = () => handleExport(viewer);
 }
 
 /**
@@ -33,6 +35,7 @@ export function updateActionButtonsState(viewer) {
     const btnRestore = document.getElementById('holaf-viewer-btn-restore');
     const btnExtract = document.getElementById('holaf-viewer-btn-extract');
     const btnInject = document.getElementById('holaf-viewer-btn-inject');
+    const btnExport = document.getElementById('holaf-viewer-btn-export');
     const hasSelection = viewer.selectedImages.size > 0;
 
     let canRestore = false;
@@ -42,21 +45,14 @@ export function updateActionButtonsState(viewer) {
     }
     const canPerformNonTrashActions = hasSelection && Array.from(viewer.selectedImages).every(img => !img.is_trashed);
 
-
+    // MODIFIED: Removed the isExporting check to allow queueing.
     if (btnDelete) btnDelete.disabled = !canPerformNonTrashActions;
     if (btnRestore) btnRestore.disabled = !canRestore;
-    if (btnExtract) btnExtract.disabled = !canPerformNonTrashActions; // For now, only on non-trashed
-    if (btnInject) btnInject.disabled = !canPerformNonTrashActions;  // For now, only on non-trashed
-
-
-    const statusBarEl = document.getElementById('holaf-viewer-statusbar');
-    if (statusBarEl) {
-        let currentText = statusBarEl.textContent.split(' | Selected:')[0];
-        if (hasSelection) {
-            currentText += ` | Selected: ${viewer.selectedImages.size}`;
-        }
-        statusBarEl.textContent = currentText;
-    }
+    if (btnExtract) btnExtract.disabled = !canPerformNonTrashActions;
+    if (btnInject) btnInject.disabled = !canPerformNonTrashActions;
+    if (btnExport) btnExport.disabled = !canPerformNonTrashActions;
+    
+    // The status bar text is now exclusively managed by viewer.updateStatusBar()
 }
 
 /**
@@ -94,7 +90,7 @@ export async function handleDelete(viewer) {
                 viewer.selectedImages.clear();
                 viewer.activeImage = null;
                 viewer.currentNavIndex = -1;
-                viewer.loadFilteredImages(); // This will re-render and update button states
+                viewer.loadFilteredImages();
             } else {
                 HolafPanelManager.createDialog({
                     title: "Delete Error",
@@ -185,4 +181,131 @@ export function handleInjectMetadata(viewer) {
     if (viewer.selectedImages.size === 0) return;
     console.log("[Holaf ImageViewer] Inject Metadata action triggered for:", Array.from(viewer.selectedImages).map(img => img.filename));
     HolafPanelManager.createDialog({ title: "Not Implemented", message: "Inject Metadata functionality is not yet implemented.", buttons: [{ text: "OK" }] });
+}
+
+/**
+ * Handles the "Export" action for selected images by opening an options dialog.
+ * @param {object} viewer - The main image viewer instance.
+ */
+export function handleExport(viewer) {
+    if (viewer.selectedImages.size === 0) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'holaf-viewer-export-dialog-overlay';
+    
+    const imageCount = viewer.selectedImages.size;
+    const savedSettings = viewer.settings;
+
+    overlay.innerHTML = `
+        <div id="holaf-viewer-export-dialog">
+            <div class="holaf-viewer-export-header">
+                Exporting ${imageCount} image(s)
+            </div>
+            <div class="holaf-viewer-export-content">
+                <div class="holaf-viewer-export-option-group">
+                    <label>Image Format:</label>
+                    <div class="holaf-export-choices">
+                        <label><input type="radio" name="export-format" value="png" ${savedSettings.export_format === 'png' ? 'checked' : ''}> PNG</label>
+                        <label><input type="radio" name="export-format" value="jpg" ${savedSettings.export_format === 'jpg' ? 'checked' : ''}> JPG</label>
+                        <label><input type="radio" name="export-format" value="tiff" ${savedSettings.export_format === 'tiff' ? 'checked' : ''}> TIFF</label>
+                    </div>
+                </div>
+                <div class="holaf-viewer-export-option-group">
+                    <label>Metadata:</label>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <label>
+                            <input type="checkbox" id="holaf-export-include-meta" name="include-meta" ${savedSettings.export_include_meta ? 'checked' : ''}>
+                            Include Prompt & Workflow
+                        </label>
+                        <div id="holaf-export-meta-method-group" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px;">
+                            <label><input type="radio" name="meta-method" value="embed" ${savedSettings.export_meta_method === 'embed' ? 'checked' : ''}> Embed in image file</label>
+                            <label><input type="radio" name="meta-method" value="sidecar" ${savedSettings.export_meta_method === 'sidecar' ? 'checked' : ''}> Save as .txt/.json sidecar</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="holaf-viewer-export-footer">
+                <button id="holaf-export-cancel-btn" class="comfy-button secondary">Cancel</button>
+                <button id="holaf-export-start-btn" class="comfy-button">Add to Export Queue</button>
+            </div>
+        </div>
+    `;
+
+    viewer.panelElements.panelEl.appendChild(overlay);
+
+    const includeMetaCheckbox = overlay.querySelector('#holaf-export-include-meta');
+    const metaMethodGroup = overlay.querySelector('#holaf-export-meta-method-group');
+
+    const toggleMetaMethod = () => {
+        const isEnabled = includeMetaCheckbox.checked;
+        metaMethodGroup.style.opacity = isEnabled ? '1' : '0.5';
+        metaMethodGroup.style.pointerEvents = isEnabled ? 'auto' : 'none';
+    };
+
+    includeMetaCheckbox.addEventListener('change', toggleMetaMethod);
+
+    overlay.querySelector('#holaf-export-cancel-btn').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('#holaf-export-start-btn').addEventListener('click', async () => {
+        const format = overlay.querySelector('input[name="export-format"]:checked').value;
+        const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
+        const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
+
+        const newExportSettings = {
+            export_format: format,
+            export_include_meta: includeMeta,
+            export_meta_method: metaMethod
+        };
+        viewer.saveSettings(newExportSettings);
+        
+        const payload = {
+            ...newExportSettings,
+            paths_canon: Array.from(viewer.selectedImages).map(img => img.path_canon)
+        };
+        
+        overlay.remove();
+        
+        try {
+            const response = await fetch('/holaf/images/prepare-export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+
+            if (!response.ok || result.status !== 'ok') {
+                throw new Error(result.message || 'Failed to prepare export on server.');
+            }
+            if (result.errors && result.errors.length > 0) {
+                 HolafPanelManager.createDialog({ title: "Preparation Errors", message: `Some files could not be prepared:\n${result.errors.map(e => `- ${e.path}: ${e.error}`).join('\n')}` });
+            }
+
+            const manifestUrl = `/holaf/images/export-chunk?export_id=${result.export_id}&file_path=manifest.json&chunk_index=0&chunk_size=1000000`;
+            const manifestResponse = await fetch(manifestUrl);
+            const manifest = await manifestResponse.json();
+
+            if (manifest && manifest.length > 0) {
+                const newFiles = manifest.map(file => ({ ...file, export_id: result.export_id }));
+                viewer.exportDownloadQueue.push(...newFiles);
+                viewer.exportStats.totalFiles += newFiles.length;
+
+                if (!viewer.isExporting) {
+                    viewer.isExporting = true;
+                    viewer.updateStatusBar(); // Immediately update status bar to show "Exporting..."
+                    viewer.processExportDownloadQueue();
+                } else {
+                    viewer.updateStatusBar(); // Just update the total count
+                }
+            } else {
+                 if (!viewer.isExporting) viewer.updateStatusBar();
+                 HolafPanelManager.createDialog({ title: "Export Warning", message: "No new files were added to the export queue." });
+            }
+
+        } catch (error) {
+            console.error('[Holaf ImageViewer] Export preparation failed:', error);
+            HolafPanelManager.createDialog({ title: "Export Error", message: `Error adding to export queue: ${error.message}` });
+        }
+    });
+
+    toggleMetaMethod();
 }

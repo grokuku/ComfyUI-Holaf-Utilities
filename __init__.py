@@ -346,6 +346,10 @@ async def iv_restore_images_route(r): return await holaf_image_viewer_utils.rest
 @routes.post("/holaf/images/empty-trashcan")
 async def iv_empty_trashcan_route(r): return await holaf_image_viewer_utils.empty_trashcan_route(r)
 # Future routes for extract, inject will go here
+@routes.post("/holaf/images/prepare-export")
+async def iv_prepare_export_route(r): return await holaf_image_viewer_utils.prepare_export_route(r)
+@routes.get("/holaf/images/export-chunk")
+async def iv_download_export_chunk_route(r): return await holaf_image_viewer_utils.download_export_chunk_route(r)
 
 # Image Viewer Thumbnail Worker and Stats
 @routes.post("/holaf/images/viewer-activity")
@@ -383,7 +387,7 @@ async def image_viewer_save_ui_settings_route(request: web.Request):
             if height is not None: cp.set(s, 'panel_height', str(int(height)))
             
             # Handle other specific settings
-            for key in ['panel_is_fullscreen', 'thumbnail_fit', 'thumbnail_size', 'theme', 'startDate', 'endDate']:
+            for key in ['panel_is_fullscreen', 'thumbnail_fit', 'thumbnail_size', 'theme', 'startDate', 'endDate', 'export_format', 'export_include_meta', 'export_meta_method']:
                 if key in data:
                     cp.set(s, key, str(data[key]))
             

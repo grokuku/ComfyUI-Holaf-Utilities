@@ -17,6 +17,17 @@ export async function loadSettings(viewer) {
         const allSettings = await response.json();
         if (allSettings.ImageViewerUI) {
             const fetchedSettings = allSettings.ImageViewerUI;
+
+            // --- MODIFICATION START ---
+            // Explicitly convert string representations of booleans to actual booleans
+            if (fetchedSettings.export_include_meta !== undefined) {
+                fetchedSettings.export_include_meta = String(fetchedSettings.export_include_meta).toLowerCase() === 'true';
+            }
+            if (fetchedSettings.panel_is_fullscreen !== undefined) {
+                fetchedSettings.panel_is_fullscreen = String(fetchedSettings.panel_is_fullscreen).toLowerCase() === 'true';
+            }
+            // --- MODIFICATION END ---
+
             const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
             
             const folderFilters = fetchedSettings.folder_filters;

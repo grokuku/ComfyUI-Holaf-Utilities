@@ -31,23 +31,30 @@ def sanitize_upload_id(upload_id):
 # --- File and Directory Paths ---
 BASE_DIR = os.path.dirname(__file__)
 TEMP_UPLOAD_DIR = os.path.join(BASE_DIR, 'temp_uploads')
+TEMP_EXPORT_DIR = os.path.join(BASE_DIR, 'temp_exports') # ADDED
 THUMBNAIL_CACHE_DIR = os.path.join(BASE_DIR, '.cache', 'thumbnails')
 THUMBNAIL_SIZE = (200, 200) # Global, but related to image viewer / thumbnails
 
 def ensure_directories_exist():
     os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
+    os.makedirs(TEMP_EXPORT_DIR, exist_ok=True) # ADDED
     os.makedirs(THUMBNAIL_CACHE_DIR, exist_ok=True)
 
 def cleanup_temp_uploads_on_startup():
     try:
-        for item in os.listdir(TEMP_UPLOAD_DIR):
-            if item.endswith('.chunk'):
-                try:
-                    os.remove(os.path.join(TEMP_UPLOAD_DIR, item))
-                except Exception as e:
-                    print(f'🔴 [Holaf-Utilities] Could not remove temp chunk {item}: {e}')
+        if os.path.isdir(TEMP_UPLOAD_DIR):
+            shutil.rmtree(TEMP_UPLOAD_DIR)
+            os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
     except Exception as e:
         print(f'🔴 [Holaf-Utilities] Could not perform startup cleanup of temp_uploads: {e}')
+
+def cleanup_temp_exports_on_startup(): # ADDED
+    try:
+        if os.path.isdir(TEMP_EXPORT_DIR):
+            shutil.rmtree(TEMP_EXPORT_DIR)
+            os.makedirs(TEMP_EXPORT_DIR, exist_ok=True)
+    except Exception as e:
+        print(f'🔴 [Holaf-Utilities] Could not perform startup cleanup of temp_exports: {e}')
 
 # --- Chunked File Operations ---
 async def read_file_chunk(path, offset, size):
@@ -113,3 +120,4 @@ def assemble_chunks_blocking(final_save_path, upload_id, total_chunks, post_asse
 # Initialize directories on module load
 ensure_directories_exist()
 cleanup_temp_uploads_on_startup()
+cleanup_temp_exports_on_startup() # ADDED

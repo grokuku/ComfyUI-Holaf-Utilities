@@ -66,6 +66,7 @@ export function getPanelHTML() {
                         <button id="holaf-viewer-btn-restore" class="holaf-viewer-action-button" disabled title="Restore selected from trashcan">♻️ Restore</button>
                         <button id="holaf-viewer-btn-extract" class="holaf-viewer-action-button" disabled title="Extract metadata to .txt/.json and remove from image"> जाये Extract</button>
                         <button id="holaf-viewer-btn-inject" class="holaf-viewer-action-button" disabled title="Inject metadata from .txt/.json into image">💉 Inject</button>
+                        <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="Export selected images as a zip archive">��� Export</button>
                     </div>
                 </div>
 
