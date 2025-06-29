@@ -340,6 +340,8 @@ async def iv_get_metadata_route(r): return await holaf_image_viewer_utils.get_me
 
 # Image Viewer Actions
 @routes.post("/holaf/images/delete") # New route for deleting images
+@routes.post("/holaf/images/delete-permanently")
+async def iv_delete_images_permanently_route(r): return await holaf_image_viewer_utils.delete_images_permanently_route(r)
 async def iv_delete_images_route(r): return await holaf_image_viewer_utils.delete_images_route(r)
 @routes.post("/holaf/images/restore")
 async def iv_restore_images_route(r): return await holaf_image_viewer_utils.restore_images_route(r)

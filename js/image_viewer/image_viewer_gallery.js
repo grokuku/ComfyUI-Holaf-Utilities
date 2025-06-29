@@ -4,6 +4,7 @@
  *
  * This module manages the core gallery rendering logic, including
  * virtual/infinite scrolling, thumbnail loading, and prioritization.
+ * MODIFICATION: Added shift-click and ctrl-shift-click range selection logic.
  */
 
 import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
@@ -150,12 +151,44 @@ export function createPlaceholder(viewer, image, index) {
         if (e.target.tagName === 'INPUT') return;
 
         const imgData = viewer.filteredImages[index];
+        const hasAnchor = viewer.lastClickedIndex > -1;
 
-        if (!e.ctrlKey && !e.shiftKey) {
+        // --- MODIFIED: Reordered and added Ctrl+Shift logic ---
+        
+        // Case 1: Ctrl + Shift + Click (additive range selection)
+        if (e.ctrlKey && e.shiftKey && hasAnchor) {
+            const start = Math.min(viewer.lastClickedIndex, index);
+            const end = Math.max(viewer.lastClickedIndex, index);
+
+            // Add all items in the range to the current selection
+            for (let i = start; i <= end; i++) {
+                const imageInRange = viewer.filteredImages[i];
+                viewer.selectedImages.add(imageInRange);
+                const thumbInRange = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${i}"]`);
+                if (thumbInRange) {
+                    const checkboxInRange = thumbInRange.querySelector('.holaf-viewer-thumb-checkbox');
+                    if (checkboxInRange) checkboxInRange.checked = true;
+                }
+            }
+        // Case 2: Shift + Click (exclusive range selection)
+        } else if (e.shiftKey && hasAnchor) {
+            const start = Math.min(viewer.lastClickedIndex, index);
+            const end = Math.max(viewer.lastClickedIndex, index);
+
+            // Clear previous selection and select only the new range
             document.querySelectorAll('.holaf-viewer-thumb-checkbox:checked').forEach(cb => cb.checked = false);
             viewer.selectedImages.clear();
-            checkbox.checked = true;
-            viewer.selectedImages.add(imgData);
+
+            for (let i = start; i <= end; i++) {
+                const imageInRange = viewer.filteredImages[i];
+                viewer.selectedImages.add(imageInRange);
+                const thumbInRange = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${i}"]`);
+                if (thumbInRange) {
+                    const checkboxInRange = thumbInRange.querySelector('.holaf-viewer-thumb-checkbox');
+                    if (checkboxInRange) checkboxInRange.checked = true;
+                }
+            }
+        // Case 3: Ctrl + Click (toggle single item)
         } else if (e.ctrlKey) {
             checkbox.checked = !checkbox.checked;
             if (checkbox.checked) {
@@ -164,8 +197,19 @@ export function createPlaceholder(viewer, image, index) {
                 const itemToRemove = Array.from(viewer.selectedImages).find(selImg => selImg.path_canon === imgData.path_canon);
                 if (itemToRemove) viewer.selectedImages.delete(itemToRemove);
             }
+            // A ctrl-click sets the anchor for the next shift-click
+            viewer.lastClickedIndex = index;
+        // Case 4: Simple Click (select single item)
+        } else {
+            document.querySelectorAll('.holaf-viewer-thumb-checkbox:checked').forEach(cb => cb.checked = false);
+            viewer.selectedImages.clear();
+            checkbox.checked = true;
+            viewer.selectedImages.add(imgData);
+            // A simple click also sets the anchor
+            viewer.lastClickedIndex = index;
         }
         
+        // Update the 'active' image regardless of selection type
         viewer.activeImage = imgData;
         viewer.currentNavIndex = index;
         viewer._updateActiveThumbnail(viewer.currentNavIndex);
@@ -192,6 +236,9 @@ export function renderGallery(viewer) {
     galleryEl.innerHTML = '';
     viewer.renderedCount = 0;
     viewer.visiblePlaceholdersToPrioritize.clear();
+    // Reset last clicked index on gallery refresh
+    viewer.lastClickedIndex = -1; 
+
 
     if (!viewer.filteredImages || viewer.filteredImages.length === 0) {
         viewer.setLoadingState("No images match the current filters.");

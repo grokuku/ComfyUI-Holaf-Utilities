@@ -633,6 +633,76 @@ async def restore_images_route(request: web.Request):
         if conn:
             holaf_database.close_db_connection(exception=current_exception)
 
+# --- NEW: Route for permanent deletion ---
+async def delete_images_permanently_route(request: web.Request):
+    conn = None
+    current_exception = None
+    output_dir = folder_paths.get_output_directory()
+
+    try:
+        data = await request.json()
+        paths_canon_to_delete = data.get("paths_canon", [])
+        if not paths_canon_to_delete or not isinstance(paths_canon_to_delete, list):
+            return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
+
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+
+        deleted_files_count = 0
+        errors = []
+
+        for path_canon in paths_canon_to_delete:
+            # Safety check: do not allow this action on items already in trashcan.
+            cursor.execute("SELECT 1 FROM images WHERE path_canon = ? AND is_trashed = 1", (path_canon,))
+            if cursor.fetchone():
+                errors.append({"path": path_canon, "error": "Cannot permanently delete an item that is in the trashcan."})
+                continue
+
+            full_path = os.path.normpath(os.path.join(output_dir, path_canon))
+            
+            try:
+                # Delete main image file
+                if os.path.isfile(full_path):
+                    os.unlink(full_path)
+                
+                # Delete associated .txt and .json files
+                base_path, _ = os.path.splitext(full_path)
+                for meta_ext in ['.txt', '.json']:
+                    meta_file = base_path + meta_ext
+                    if os.path.exists(meta_file):
+                        os.unlink(meta_file)
+                
+                # Delete the record from the database
+                cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_canon,))
+                
+                if cursor.rowcount > 0:
+                    deleted_files_count += 1
+                else:
+                    errors.append({"path": path_canon, "error": "File deleted from disk, but no corresponding DB entry was found to remove."})
+
+            except Exception as delete_exc:
+                errors.append({"path": path_canon, "error": f"Failed to delete file or its metadata: {str(delete_exc)}"})
+        
+        conn.commit()
+        status_message = f"Processed {len(paths_canon_to_delete)} items. Successfully permanently deleted {deleted_files_count} files."
+        if errors:
+            status_message += f" Encountered {len(errors)} errors."
+            return web.json_response({"status": "partial_success", "message": status_message, "details": errors}, status=207)
+        
+        return web.json_response({"status": "ok", "message": status_message, "deleted_count": deleted_files_count})
+
+    except json.JSONDecodeError as e_json:
+        current_exception = e_json
+        return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
+    except Exception as e:
+        current_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error permanently deleting images: {e}"); traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+
 async def empty_trashcan_route(request: web.Request):
     conn = None
     current_exception = None
@@ -1089,7 +1159,7 @@ def run_thumbnail_generation_worker(stop_event):
                 continue
 
             path_hash = hashlib.sha1(image_to_process_path_canon.encode('utf-8')).hexdigest()
-            thumb_filename = f"{path_hash}.jpg"
+            thumb_filename = f"{path_haxsh}.jpg"
             thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
 
             _create_thumbnail_blocking(original_abs_path, thumb_path_abs, image_path_canon_for_db_update=image_to_process_path_canon)

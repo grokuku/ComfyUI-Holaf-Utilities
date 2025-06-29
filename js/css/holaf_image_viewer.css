@@ -7,6 +7,8 @@
  * CORRECTION: Fixed a CSS syntax error that was preventing the thumbnail fit toggle from working.
  * MODIFICATION: Added styles for thumbnail size slider and used CSS variable for dynamic sizing.
  * MODIFICATION: Added styles for action buttons and thumbnail checkboxes.
+ * MODIFICATION: Redesigned left panel layout for fixed and scrollable sections.
+ * MODIFICATION: Refined date range layout for label/input alignment.
  */
 
 #holaf-viewer-panel .holaf-viewer-container {
@@ -28,18 +30,44 @@
     overflow: hidden;
 }
 
-/* Left Pane - Filters */
 #holaf-viewer-left-pane {
     flex: 0 0 220px;
     padding: 10px;
     border-right: 1px solid var(--holaf-border-color);
     background-color: var(--holaf-background-secondary);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.holaf-viewer-scrollable-section {
+    flex: 1 1 auto;
     overflow-y: auto;
+    min-height: 50px;
+    padding-right: 5px;
+    margin-right: -5px;
+}
+
+.holaf-viewer-fixed-sections {
+    flex-shrink: 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--holaf-border-color);
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
 }
 
 .holaf-viewer-filter-group {
     margin-bottom: 20px;
 }
+
+.holaf-viewer-fixed-sections .holaf-viewer-filter-group,
+.holaf-viewer-fixed-sections .holaf-viewer-actions-group,
+.holaf-viewer-fixed-sections .holaf-viewer-display-options {
+    margin-bottom: 0;
+}
+
 .holaf-viewer-filter-group h4 {
     margin: 0 0 10px 0;
     color: var(--holaf-text-primary);
@@ -47,11 +75,13 @@
     padding-bottom: 5px;
     font-size: 14px;
 }
+
 .holaf-viewer-filter-list {
     display: flex;
     flex-direction: column;
     gap: 5px;
 }
+
 .holaf-viewer-filter-item {
     display: flex;
     align-items: center;
@@ -60,9 +90,42 @@
     cursor: pointer;
     user-select: none;
 }
+
 .holaf-viewer-filter-item input[type="checkbox"]:disabled + label {
     color: var(--holaf-text-secondary);
     cursor: not-allowed;
+}
+
+.holaf-viewer-date-range-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* MODIFICATION: justify-content changed from gap */
+.holaf-viewer-date-input-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* This pushes label to the left and input to the right */
+}
+
+.holaf-viewer-date-input-group label {
+    font-size: 13px;
+    color: var(--holaf-text-secondary);
+    flex-shrink: 0;
+}
+
+/* MODIFICATION: input no longer grows, has a fixed width */
+.holaf-viewer-date-input-group input[type="date"] {
+    flex-grow: 0; /* Input should not grow */
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    border-radius: 3px;
+    padding: 4px;
+    font-size: 12px;
+    width: 125px; /* Fixed width for the date input */
+    box-sizing: border-box;
 }
 
 .holaf-viewer-trash-separator {
@@ -76,10 +139,6 @@
     cursor: pointer;
 }
 
-/* --- Action Buttons --- */
-.holaf-viewer-actions-group {
-    margin-bottom: 20px;
-}
 .holaf-viewer-actions-group h4 {
     margin: 0 0 10px 0;
     color: var(--holaf-text-primary);
@@ -87,51 +146,57 @@
     padding-bottom: 5px;
     font-size: 14px;
 }
+
 .holaf-viewer-actions-buttons-container {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 5px;
 }
+
+.holaf-viewer-action-button-row {
+    display: flex;
+    gap: 5px;
+}
+
 .holaf-viewer-action-button {
+    flex: 1;
     background-color: var(--holaf-button-background);
     color: var(--holaf-button-text);
-    border: 1px solid transparent;
-    padding: 8px 10px;
-    font-size: 13px;
+    border: 1px solid var(--holaf-border-color);
+    padding: 6px 8px;
+    font-size: 12px;
     border-radius: 4px;
     cursor: pointer;
-    text-align: left;
-    transition: opacity 0.2s, background-color 0.2s;
+    text-align: center;
+    transition: opacity 0.2s, background-color 0.2s, border-color 0.2s;
 }
+
 .holaf-viewer-action-button:hover:not(:disabled) {
-    opacity: 0.85;
+    opacity: 0.9;
 }
+
 .holaf-viewer-action-button:active:not(:disabled) {
-    opacity: 0.7;
+    opacity: 0.8;
 }
+
 .holaf-viewer-action-button:disabled {
     background-color: var(--holaf-background-secondary);
     color: var(--holaf-text-secondary);
     cursor: not-allowed;
     opacity: 0.5;
 }
-#holaf-viewer-btn-delete:not(:disabled) { background-color: #c04040; }
+
+#holaf-viewer-btn-delete:not(:disabled) { background-color: #c04040; border-color: #a03030; }
 #holaf-viewer-btn-delete:hover:not(:disabled) { background-color: #d05050; opacity: 1;}
-#holaf-viewer-btn-restore:not(:disabled) { background-color: #40a060; }
+#holaf-viewer-btn-restore:not(:disabled) { background-color: #40a060; border-color: #308050;}
 #holaf-viewer-btn-restore:hover:not(:disabled) { background-color: #50b070; opacity: 1;}
 
-
-/* --- New Display Options Panel --- */
-.holaf-viewer-display-options {
-    margin-top: auto; /* Pushes this to the bottom */
-    padding-top: 20px;
-    border-top: 1px solid var(--holaf-border-color);
-}
 .holaf-viewer-display-options h4 {
     margin: 0 0 10px 0;
     color: var(--holaf-text-primary);
     font-size: 14px;
 }
+
 .holaf-viewer-slider-container {
     display: flex;
     align-items: center;
@@ -139,22 +204,21 @@
     font-size: 13px;
     margin-top: 10px;
 }
+
 .holaf-viewer-slider-container input[type="range"] {
     flex-grow: 1;
     accent-color: var(--holaf-accent-color);
 }
+
 .holaf-viewer-slider-container span {
-    min-width: 40px; /* Prevents layout shift */
+    min-width: 40px;
     text-align: right;
     font-family: monospace;
     color: var(--holaf-text-secondary);
 }
 
-
-/* Center Pane - Gallery */
 #holaf-viewer-center-pane {
     flex: 1 1 auto;
-    /* CORRECTION: Padding removed from here to allow zoom view to be borderless. */
     position: relative;
 }
 
@@ -172,7 +236,7 @@
     flex-wrap: wrap;
     align-content: flex-start;
     gap: 4px;
-    padding: 10px; /* CORRECTION: Padding moved here for the gallery view only. */
+    padding: 10px;
     box-sizing: border-box;
 }
 
@@ -184,11 +248,10 @@
     padding: 20px;
 }
 
-/* Placeholder & Thumbnail Styling */
 .holaf-viewer-thumbnail-placeholder {
     flex-basis: var(--holaf-thumbnail-size);
     flex-grow: 1;
-    max-width: calc(var(--holaf-thumbnail-size) * 1.8); /* Prevent extreme stretching on last row */
+    max-width: calc(var(--holaf-thumbnail-size) * 1.8);
     position: relative;
     aspect-ratio: 1 / 1;
     cursor: pointer;
@@ -198,19 +261,22 @@
     transition: border-color 0.2s;
     background-color: var(--holaf-input-background);
 }
+
 .holaf-viewer-thumbnail-placeholder:hover {
     border-color: var(--holaf-accent-color);
 }
+
 .holaf-viewer-thumbnail-placeholder.active {
     border-color: var(--holaf-accent-color);
     box-shadow: 0 0 8px var(--holaf-accent-color);
 }
+
 .holaf-viewer-thumbnail-placeholder.error {
     background-color: #5a2d2d;
     color: #ff8f8f;
-    font-weight: normal; /* Normal weight for the message */
+    font-weight: normal;
     display: flex;
-    flex-direction: column; /* Stack message and button */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 8px;
@@ -222,8 +288,8 @@
     text-align: center;
     line-height: 1.2;
     margin-bottom: 8px;
-    max-height: 100px; /* Limit message height */
-    overflow-y: auto; /* Allow scrolling for long errors */
+    max-height: 100px;
+    overflow-y: auto;
     word-break: break-word;
 }
 
@@ -249,25 +315,25 @@
     left: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover; /* Default: Cropped */
+    object-fit: cover;
     display: block;
-    z-index: 1; /* Ensure image is below checkbox and icon */
+    z-index: 1;
 }
 
-/* Thumbnail Checkbox */
 .holaf-viewer-thumb-checkbox {
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
     position: absolute;
     top: 6px;
     left: 6px;
-    z-index: 6; /* Above image and fullscreen icon */
+    z-index: 6;
     transform: scale(1.1);
     accent-color: var(--holaf-accent-color);
-    background-color: rgba(0,0,0,0.3); /* Slight background for visibility */
+    background-color: rgba(0,0,0,0.3);
     border-radius: 2px;
     cursor: pointer;
 }
+
 .holaf-viewer-thumbnail-placeholder:hover .holaf-viewer-thumb-checkbox,
 .holaf-viewer-thumbnail-placeholder:has(> .holaf-viewer-thumb-checkbox:checked) .holaf-viewer-thumb-checkbox {
     opacity: 1;
@@ -277,14 +343,10 @@
     background-color: rgba(0,0,0,0.5);
 }
 
-
-/* Thumbnail Fit Toggle */
 #holaf-viewer-gallery.contain-thumbnails .holaf-viewer-thumbnail-placeholder img {
-    object-fit: contain; /* Toggled: No crop */
+    object-fit: contain;
 }
 
-
-/* --- Fullscreen Icon on Hover --- */
 .holaf-viewer-fullscreen-icon {
     position: absolute;
     bottom: 5px;
@@ -301,18 +363,17 @@
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
-    z-index: 5; /* Below checkbox */
+    z-index: 5;
 }
+
 .holaf-viewer-thumbnail-placeholder:hover .holaf-viewer-fullscreen-icon {
     opacity: 1;
 }
-/* Hide fullscreen icon if checkbox is checked to avoid overlap */
+
 .holaf-viewer-thumbnail-placeholder:has(> .holaf-viewer-thumb-checkbox:checked) .holaf-viewer-fullscreen-icon {
     opacity: 0;
 }
 
-
-/* --- Zoom-in View (within center pane) --- */
 #holaf-viewer-zoom-view {
     position: absolute;
     top: 0;
@@ -321,21 +382,22 @@
     bottom: 0;
     background-color: var(--holaf-background-primary);
     z-index: 10;
-    /* CORRECTION: Padding removed to make it truly borderless */
     box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden; /* CRUCIAL for panning */
+    overflow: hidden;
 }
+
 #holaf-viewer-zoom-view img {
-    width: 100%; /* Use full container width */
-    height: 100%; /* Use full container height */
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     cursor: grab;
-    transition: transform 0.2s ease-out; /* Smooth initial zoom/reset */
+    transition: transform 0.2s ease-out;
     transform-origin: top left;
 }
+
 .holaf-viewer-zoom-close {
     position: absolute;
     top: 15px;
@@ -352,6 +414,7 @@
     cursor: pointer;
     z-index: 12;
 }
+
 .holaf-viewer-zoom-fullscreen-icon {
     position: absolute;
     bottom: 15px;
@@ -369,12 +432,11 @@
     z-index: 12;
     transition: background-color 0.2s;
 }
+
 .holaf-viewer-zoom-fullscreen-icon:hover {
     background-color: rgba(30, 30, 30, 0.8);
 }
 
-
-/* Right Pane - Info */
 #holaf-viewer-right-pane {
     flex: 0 0 300px;
     padding: 10px;
@@ -382,17 +444,20 @@
     background-color: var(--holaf-background-secondary);
     overflow-y: auto;
 }
+
 #holaf-viewer-right-pane h4 {
     margin: 0 0 10px 0;
     padding-bottom: 5px;
     border-bottom: 1px solid var(--holaf-border-color);
 }
+
 #holaf-viewer-info-content p {
     margin: 0 0 8px 0;
     font-size: 13px;
     color: var(--holaf-text-secondary);
     word-break: break-all;
 }
+
 #holaf-viewer-info-content p strong { color: var(--holaf-text-primary); }
 .holaf-viewer-metadata-label { font-weight: bold; color: var(--holaf-text-primary); }
 .holaf-viewer-metadata-source { font-size: 0.85em; font-style: italic; color: var(--holaf-text-secondary); margin-left: 5px; }
@@ -402,11 +467,12 @@
     opacity: 0.5;
     margin: 15px 0;
 }
+
 .holaf-viewer-info-actions {
     display: flex;
     gap: 8px;
-    margin-top: 5px; /* Space between label and buttons */
-    margin-bottom: 10px; /* Space before the box */
+    margin-top: 5px;
+    margin-bottom: 10px;
 }
 
 .holaf-viewer-info-button {
@@ -446,27 +512,28 @@
     color: var(--holaf-text-primary);
 }
 
-/* --- Fullscreen Overlay (reusable) --- */
 #holaf-viewer-fullscreen-overlay {
     position: fixed;
     top: 0; left: 0;
     width: 100vw; height: 100vh;
     background: rgba(0, 0, 0, 0.9);
-    z-index: 11000;
+    z-index: 10999; /* Lowered to be below the main dialog overlay (z-index: 100000) */
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden; /* CRUCIAL for panning */
+    overflow: hidden;
     padding: 0;
     box-sizing: border-box;
 }
+
 #holaf-viewer-fullscreen-overlay img {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    transition: transform 0.2s ease-out; /* Smooth initial zoom/reset */
+    transition: transform 0.2s ease-out;
     transform-origin: top left;
 }
+
 .holaf-viewer-fs-close {
     position: absolute;
     top: 20px;
@@ -483,9 +550,11 @@
     cursor: pointer;
     transition: transform 0.2s;
 }
+
 .holaf-viewer-fs-close:hover {
     transform: scale(1.1);
 }
+
 .holaf-viewer-fs-nav {
     position: absolute;
     top: 50%;
@@ -503,19 +572,21 @@
     transition: background-color 0.2s;
     user-select: none;
 }
+
 .holaf-viewer-fs-nav:hover {
     background: rgba(50, 50, 50, 0.8);
 }
+
 #holaf-viewer-fs-prev {
     left: 15px;
     border-radius: 0 10px 10px 0;
 }
+
 #holaf-viewer-fs-next {
     right: 15px;
     border-radius: 10px 0 0 10px;
 }
 
-/* --- Status Bar --- */
 #holaf-viewer-statusbar {
     flex-shrink: 0;
     padding: 5px 10px;
@@ -526,20 +597,21 @@
     text-align: right;
 }
 
-/* Scrollbars */
-#holaf-viewer-left-pane::-webkit-scrollbar,
+#holaf-viewer-scrollable-section::-webkit-scrollbar,
 #holaf-viewer-gallery::-webkit-scrollbar,
 #holaf-viewer-right-pane::-webkit-scrollbar,
 .holaf-viewer-metadata-box::-webkit-scrollbar {
     width: 8px;
 }
-#holaf-viewer-left-pane::-webkit-scrollbar-track,
+
+#holaf-viewer-scrollable-section::-webkit-scrollbar-track,
 #holaf-viewer-gallery::-webkit-scrollbar-track,
 #holaf-viewer-right-pane::-webkit-scrollbar-track,
 .holaf-viewer-metadata-box::-webkit-scrollbar-track {
     background: var(--holaf-scrollbar-track);
 }
-#holaf-viewer-left-pane::-webkit-scrollbar-thumb,
+
+#holaf-viewer-scrollable-section::-webkit-scrollbar-thumb,
 #holaf-viewer-gallery::-webkit-scrollbar-thumb,
 #holaf-viewer-right-pane::-webkit-scrollbar-thumb,
 .holaf-viewer-metadata-box::-webkit-scrollbar-thumb {
@@ -548,8 +620,6 @@
     border: 2px solid var(--holaf-scrollbar-track);
 }
 
-
-/* --- MODAL FOR EXPORT OPTIONS --- */
 #holaf-viewer-export-dialog-overlay {
     position: absolute;
     top: 0;
@@ -557,7 +627,7 @@
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.6);
-    z-index: 50; /* Above panel content, below header */
+    z-index: 50;
     display: flex;
     align-items: center;
     justify-content: center;

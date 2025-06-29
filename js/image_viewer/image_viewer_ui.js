@@ -37,51 +37,65 @@ export function getPanelHTML() {
     return `
         <div class="holaf-viewer-container" style="flex-grow: 1;">
             <div id="holaf-viewer-left-pane" class="holaf-viewer-pane">
+                
                 <div class="holaf-viewer-filter-group">
                     <h4>Date Range</h4>
-                    <div id="holaf-viewer-date-filter" class="holaf-viewer-filter-list">
-                        <div class="holaf-viewer-filter-item" style="flex-direction: column; align-items: flex-start;">
+                    <div id="holaf-viewer-date-filter" class="holaf-viewer-date-range-container">
+                        <div class="holaf-viewer-date-input-group">
                             <label for="holaf-viewer-date-start">From:</label>
-                            <input type="date" id="holaf-viewer-date-start" style="width: 100%; box-sizing: border-box;">
-                            <label for="holaf-viewer-date-end" style="margin-top: 5px;">To:</label>
-                            <input type="date" id="holaf-viewer-date-end" style="width: 100%; box-sizing: border-box;">
+                            <input type="date" id="holaf-viewer-date-start">
+                        </div>
+                        <div class="holaf-viewer-date-input-group">
+                            <label for="holaf-viewer-date-end">To:</label>
+                            <input type="date" id="holaf-viewer-date-end">
                         </div>
                     </div>
                 </div>
-                <div class="holaf-viewer-filter-group">
+
+                <div class="holaf-viewer-filter-group holaf-viewer-scrollable-section">
                     <h4>Folders</h4>
                     <div id="holaf-viewer-folders-filter" class="holaf-viewer-filter-list">
                         <p class="holaf-viewer-message"><em>Loading...</em></p>
                     </div>
                 </div>
-                <div class="holaf-viewer-filter-group">
-                    <h4>Formats</h4>
-                    <div id="holaf-viewer-formats-filter" class="holaf-viewer-filter-list"></div>
-                </div>
 
-                <div class="holaf-viewer-actions-group">
-                    <h4>Actions</h4>
-                    <div class="holaf-viewer-actions-buttons-container">
-                        <button id="holaf-viewer-btn-delete" class="holaf-viewer-action-button" disabled title="Move selected to trashcan">🗑️ Delete</button>
-                        <button id="holaf-viewer-btn-restore" class="holaf-viewer-action-button" disabled title="Restore selected from trashcan">♻️ Restore</button>
-                        <button id="holaf-viewer-btn-extract" class="holaf-viewer-action-button" disabled title="Extract metadata to .txt/.json and remove from image"> जाये Extract</button>
-                        <button id="holaf-viewer-btn-inject" class="holaf-viewer-action-button" disabled title="Inject metadata from .txt/.json into image">💉 Inject</button>
-                        <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="Export selected images as a zip archive">��� Export</button>
+                <div class="holaf-viewer-fixed-sections">
+                    <div class="holaf-viewer-filter-group">
+                        <h4>Formats</h4>
+                        <div id="holaf-viewer-formats-filter" class="holaf-viewer-filter-list"></div>
                     </div>
-                </div>
 
-                <div class="holaf-viewer-display-options">
-                    <h4>Display Options</h4>
-                    <div class="holaf-viewer-filter-list">
-                       <div class="holaf-viewer-filter-item">
-                            <input type="checkbox" id="holaf-viewer-thumb-fit-toggle">
-                            <label for="holaf-viewer-thumb-fit-toggle">Contained (no crop)</label>
-                       </div>
-                       <div class="holaf-viewer-slider-container">
-                           <label for="holaf-viewer-thumb-size-slider">Size</label>
-                           <input type="range" id="holaf-viewer-thumb-size-slider" min="80" max="300" step="10">
-                           <span id="holaf-viewer-thumb-size-value">150px</span>
-                       </div>
+                    <div class="holaf-viewer-actions-group">
+                        <h4>Actions</h4>
+                        <div class="holaf-viewer-actions-buttons-container">
+                            <div class="holaf-viewer-action-button-row">
+                                <button id="holaf-viewer-btn-delete" class="holaf-viewer-action-button" disabled title="Move selected to trashcan">🗑️ Delete</button>
+                                <button id="holaf-viewer-btn-restore" class="holaf-viewer-action-button" disabled title="Restore selected from trashcan">♻️ Restore</button>
+                            </div>
+                            <div class="holaf-viewer-action-button-row">
+                                <button id="holaf-viewer-btn-extract" class="holaf-viewer-action-button" disabled title="Extract metadata to .txt/.json and remove from image"> जाये Extract</button>
+                                <button id="holaf-viewer-btn-inject" class="holaf-viewer-action-button" disabled title="Inject metadata from .txt/.json into image">💉 Inject</button>
+                            </div>
+                             <div class="holaf-viewer-action-button-row">
+                                <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="Export selected images">📤 Export</button>
+                                <button id="holaf-viewer-btn-import" class="holaf-viewer-action-button" disabled title="Import images (coming soon)">📥 Import</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="holaf-viewer-display-options">
+                        <h4>Display Options</h4>
+                        <div class="holaf-viewer-filter-list">
+                           <div class="holaf-viewer-filter-item">
+                                <input type="checkbox" id="holaf-viewer-thumb-fit-toggle">
+                                <label for="holaf-viewer-thumb-fit-toggle">Contained (no crop)</label>
+                           </div>
+                           <div class="holaf-viewer-slider-container">
+                               <label for="holaf-viewer-thumb-size-slider">Size</label>
+                               <input type="range" id="holaf-viewer-thumb-size-slider" min="80" max="300" step="10">
+                               <span id="holaf-viewer-thumb-size-value">150px</span>
+                           </div>
+                        </div>
                     </div>
                 </div>
             </div>

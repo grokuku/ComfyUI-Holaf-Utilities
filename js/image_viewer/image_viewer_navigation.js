@@ -4,7 +4,10 @@
  *
  * This module handles all user navigation, including keyboard controls,
  * zoomed view, fullscreen view, and pan/zoom interactions.
+ * MODIFICATION: Corrected state synchronization after deleting from zoomed/fullscreen views.
  */
+
+import { handleDeletion } from './image_viewer_actions.js';
 
 /**
  * Resets the transformation (zoom/pan) state of a view.
@@ -214,16 +217,61 @@ export function handleEscape(viewer) {
  * @param {object} viewer - The main image viewer instance.
  * @param {KeyboardEvent} e - The keyboard event.
  */
-export function handleKeyDown(viewer, e) {
+export async function handleKeyDown(viewer, e) {
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
-    const targetTagName = e.target.tagName.toLowerCase();
-    if (['input', 'textarea', 'select'].includes(targetTagName) && e.key !== 'Escape') return;
+    
+    const isInputFocused = ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase());
+    if (isInputFocused && e.key !== 'Escape' && e.key !== 'Delete') return;
 
     const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
     const isFullscreen = viewer.fullscreenElements?.overlay.style.display === 'flex';
     const galleryEl = document.getElementById('holaf-viewer-gallery');
 
     switch (e.key) {
+        case 'Delete': {
+            e.preventDefault();
+            const isPermanent = e.shiftKey;
+            
+            // --- MODIFIED: Reworked logic for zoomed/fullscreen deletion ---
+            if ((isZoomed || isFullscreen) && viewer.activeImage) {
+                const originalIndex = viewer.currentNavIndex;
+                
+                const success = await handleDeletion(viewer, isPermanent, [viewer.activeImage]);
+                
+                if (success) {
+                    // We must fully reload the image list from the server to get the new state
+                    await viewer.loadFilteredImages();
+
+                    if (viewer.filteredImages.length === 0) {
+                        // If the list is empty, close the views and return to the gallery
+                        if (isFullscreen) hideFullscreenView(viewer);
+                        if (isZoomed) hideZoomedView();
+                        viewer.activeImage = null;
+                        viewer.currentNavIndex = -1;
+                        viewer.updateInfoPane(null);
+                    } else {
+                        // Calculate the new index. It should be the one before the deleted image.
+                        // Clamp the index to stay within the bounds of the new, shorter list.
+                        const newIndex = Math.min(originalIndex, viewer.filteredImages.length - 1);
+
+                        // Set currentNavIndex to one *after* our target, so navigate(-1) lands on it.
+                        // This reuses the navigation logic to update the UI correctly.
+                        viewer.currentNavIndex = newIndex + 1;
+                        navigate(viewer, -1);
+                    }
+                }
+            } else if (viewer.selectedImages.size > 0) {
+                // This logic is for deleting from the gallery view
+                const success = await handleDeletion(viewer, isPermanent, null);
+                if (success) {
+                    viewer.selectedImages.clear();
+                    viewer.activeImage = null;
+                    viewer.currentNavIndex = -1;
+                    await viewer.loadFilteredImages(); // Reload the gallery
+                }
+            }
+            break;
+        }
         case 'PageUp':
         case 'PageDown':
             if (!isZoomed && !isFullscreen && galleryEl) {
@@ -254,7 +302,7 @@ export function handleKeyDown(viewer, e) {
                 if (!isFullscreen) showFullscreenView(viewer, imgToView);
             } else {
                 if (isZoomed) showFullscreenView(viewer, imgToView);
-                else if (!isFullscreen) showZoomedView(viewer, imgToView);
+                else if (!isFullscreen) showFullscreenView(viewer, imgToView);
             }
             break;
         case 'ArrowRight':

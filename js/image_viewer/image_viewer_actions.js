@@ -4,6 +4,7 @@
  *
  * This module handles the logic for user actions like deleting, restoring,
  * and managing metadata for selected images.
+ * MODIFICATION: Forced dialogs to attach to document.body to fix z-index issues.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
@@ -18,6 +19,7 @@ export function attachActionListeners(viewer) {
     const btnExtract = document.getElementById('holaf-viewer-btn-extract');
     const btnInject = document.getElementById('holaf-viewer-btn-inject');
     const btnExport = document.getElementById('holaf-viewer-btn-export');
+    const btnImport = document.getElementById('holaf-viewer-btn-import');
 
     if (btnDelete) btnDelete.onclick = () => handleDelete(viewer);
     if (btnRestore) btnRestore.onclick = () => handleRestore(viewer);
@@ -36,76 +38,107 @@ export function updateActionButtonsState(viewer) {
     const btnExtract = document.getElementById('holaf-viewer-btn-extract');
     const btnInject = document.getElementById('holaf-viewer-btn-inject');
     const btnExport = document.getElementById('holaf-viewer-btn-export');
+    const btnImport = document.getElementById('holaf-viewer-btn-import');
+
     const hasSelection = viewer.selectedImages.size > 0;
 
     let canRestore = false;
     if (hasSelection) {
-        // Enable restore only if ALL selected images are in the trashcan
         canRestore = Array.from(viewer.selectedImages).every(img => img.is_trashed);
     }
     const canPerformNonTrashActions = hasSelection && Array.from(viewer.selectedImages).every(img => !img.is_trashed);
 
-    // MODIFIED: Removed the isExporting check to allow queueing.
     if (btnDelete) btnDelete.disabled = !canPerformNonTrashActions;
     if (btnRestore) btnRestore.disabled = !canRestore;
     if (btnExtract) btnExtract.disabled = !canPerformNonTrashActions;
     if (btnInject) btnInject.disabled = !canPerformNonTrashActions;
     if (btnExport) btnExport.disabled = !canPerformNonTrashActions;
-    
-    // The status bar text is now exclusively managed by viewer.updateStatusBar()
+    if (btnImport) btnImport.disabled = true;
 }
 
 /**
- * Handles the "Delete" action for selected images.
+ * Handles deletion of selected images, with an option for permanent deletion.
+ * @param {object} viewer - The main image viewer instance.
+ * @param {boolean} [permanent=false] - If true, permanently deletes files.
+ * @param {object[]|null} [imagesToProcess=null] - Specific images to delete. If null, uses viewer.selectedImages.
+ * @returns {Promise<boolean>} True if the operation was successful, otherwise false.
+ */
+export async function handleDeletion(viewer, permanent = false, imagesToProcess = null) {
+    const imagesForDeletion = imagesToProcess || Array.from(viewer.selectedImages);
+    if (imagesForDeletion.length === 0) return false;
+    
+    const isAnyFileTrashed = imagesForDeletion.some(img => img.is_trashed);
+    if (isAnyFileTrashed) {
+        HolafPanelManager.createDialog({
+            title: "Action Not Allowed",
+            message: "This action cannot be performed on items already in the trash. Use 'Restore' or 'Empty Trash'.",
+            buttons: [{ text: "OK" }],
+            parentElement: document.body // Ensure it's on top
+        });
+        return false;
+    }
+
+    const pathsToDelete = imagesForDeletion.map(img => img.path_canon);
+    const dialogTitle = permanent ? "Confirm Permanent Deletion" : "Confirm Delete";
+    const dialogMessage = permanent 
+        ? `Are you sure you want to PERMANENTLY delete ${imagesForDeletion.length} image(s)?\n\nThis action CANNOT be undone.`
+        : `Are you sure you want to move ${imagesForDeletion.length} image(s) to the trashcan?`;
+    const confirmButtonText = permanent ? "Permanently Delete" : "Delete";
+
+    const confirmed = await HolafPanelManager.createDialog({
+        title: dialogTitle,
+        message: dialogMessage,
+        buttons: [
+            { text: "Cancel", value: false, type: "cancel" },
+            { text: confirmButtonText, value: true, type: "danger" }
+        ],
+        parentElement: document.body // CORE FIX: Attach dialog to body
+    });
+
+    if (!confirmed) return false;
+
+    try {
+        const apiUrl = permanent ? "/holaf/images/delete-permanently" : "/holaf/images/delete";
+        const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paths_canon: pathsToDelete })
+        });
+        const result = await response.json();
+
+        if (response.ok || response.status === 207) {
+            return true; // SUCCESS
+        } else {
+            HolafPanelManager.createDialog({
+                title: "Delete Error",
+                message: `Failed to delete images: ${result.message || 'Unknown server error.'}`,
+                buttons: [{ text: "OK", value: true }],
+                parentElement: document.body // Ensure it's on top
+            });
+            return false; // FAILURE
+        }
+    } catch (error) {
+        console.error("[Holaf ImageViewer] Error calling delete API:", error);
+        HolafPanelManager.createDialog({
+            title: "API Error",
+            message: `Error communicating with server for delete operation: ${error.message}`,
+            buttons: [{ text: "OK", value: true }],
+            parentElement: document.body // Ensure it's on top
+        });
+        return false; // FAILURE
+    }
+}
+
+/**
+ * Handles the "Delete" button click. Now a wrapper around handleDeletion.
  * @param {object} viewer - The main image viewer instance.
  */
 export async function handleDelete(viewer) {
-    if (viewer.selectedImages.size === 0) return;
-    const imagesToDelete = Array.from(viewer.selectedImages);
-    const pathsToDelete = imagesToDelete.map(img => img.path_canon);
-
-    if (await HolafPanelManager.createDialog({
-        title: "Confirm Delete",
-        message: `Are you sure you want to move ${imagesToDelete.length} image(s) to the trashcan?`,
-        buttons: [
-            { text: "Cancel", value: false, type: "cancel" },
-            { text: "Delete", value: true, type: "danger" }
-        ]
-    })) {
-        try {
-            const response = await fetch("/holaf/images/delete", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ paths_canon: pathsToDelete })
-            });
-            const result = await response.json();
-
-            if (response.ok || response.status === 207) { // 207 for partial success
-                HolafPanelManager.createDialog({
-                    title: "Delete Operation",
-                    message: result.message || "Delete operation processed.",
-                    buttons: [{ text: "OK", value: true }]
-                });
-                // Refresh list
-                viewer.selectedImages.clear();
-                viewer.activeImage = null;
-                viewer.currentNavIndex = -1;
-                viewer.loadFilteredImages();
-            } else {
-                HolafPanelManager.createDialog({
-                    title: "Delete Error",
-                    message: `Failed to delete images: ${result.message || 'Unknown server error.'}`,
-                    buttons: [{ text: "OK", value: true }]
-                });
-            }
-        } catch (error) {
-            console.error("[Holaf ImageViewer] Error calling delete API:", error);
-            HolafPanelManager.createDialog({
-                title: "API Error",
-                message: `Error communicating with server for delete operation: ${error.message}`,
-                buttons: [{ text: "OK", value: true }]
-            });
-        }
+    if (await handleDeletion(viewer, false)) {
+        viewer.selectedImages.clear();
+        viewer.activeImage = null;
+        viewer.currentNavIndex = -1;
+        viewer.loadFilteredImages();
     }
 }
 
@@ -124,7 +157,8 @@ export async function handleRestore(viewer) {
         buttons: [
             { text: "Cancel", value: false, type: "cancel" },
             { text: "Restore", value: true, type: "confirm" }
-        ]
+        ],
+        parentElement: document.body // Ensure it's on top
     })) {
         try {
             const response = await fetch("/holaf/images/restore", {
@@ -138,9 +172,9 @@ export async function handleRestore(viewer) {
                 HolafPanelManager.createDialog({
                     title: "Restore Operation",
                     message: result.message || "Restore operation processed.",
-                    buttons: [{ text: "OK", value: true }]
+                    buttons: [{ text: "OK", value: true }],
+                    parentElement: document.body // Ensure it's on top
                 });
-                // Refresh list
                 viewer.selectedImages.clear();
                 viewer.activeImage = null;
                 viewer.currentNavIndex = -1;
@@ -149,7 +183,8 @@ export async function handleRestore(viewer) {
                 HolafPanelManager.createDialog({
                     title: "Restore Error",
                     message: `Failed to restore images: ${result.message || 'Unknown server error.'}`,
-                    buttons: [{ text: "OK", value: true }]
+                    buttons: [{ text: "OK", value: true }],
+                    parentElement: document.body // Ensure it's on top
                 });
             }
         } catch (error) {
@@ -157,7 +192,8 @@ export async function handleRestore(viewer) {
             HolafPanelManager.createDialog({
                 title: "API Error",
                 message: `Error communicating with server for restore operation: ${error.message}`,
-                buttons: [{ text: "OK", value: true }]
+                buttons: [{ text: "OK", value: true }],
+                parentElement: document.body // Ensure it's on top
             });
         }
     }
@@ -169,8 +205,12 @@ export async function handleRestore(viewer) {
  */
 export function handleExtractMetadata(viewer) {
     if (viewer.selectedImages.size === 0) return;
-    console.log("[Holaf ImageViewer] Extract Metadata action triggered for:", Array.from(viewer.selectedImages).map(img => img.filename));
-    HolafPanelManager.createDialog({ title: "Not Implemented", message: "Extract Metadata functionality is not yet implemented.", buttons: [{ text: "OK" }] });
+    HolafPanelManager.createDialog({ 
+        title: "Not Implemented", 
+        message: "Extract Metadata functionality is not yet implemented.", 
+        buttons: [{ text: "OK" }],
+        parentElement: document.body // Ensure it's on top
+    });
 }
 
 /**
@@ -179,8 +219,12 @@ export function handleExtractMetadata(viewer) {
  */
 export function handleInjectMetadata(viewer) {
     if (viewer.selectedImages.size === 0) return;
-    console.log("[Holaf ImageViewer] Inject Metadata action triggered for:", Array.from(viewer.selectedImages).map(img => img.filename));
-    HolafPanelManager.createDialog({ title: "Not Implemented", message: "Inject Metadata functionality is not yet implemented.", buttons: [{ text: "OK" }] });
+    HolafPanelManager.createDialog({ 
+        title: "Not Implemented", 
+        message: "Inject Metadata functionality is not yet implemented.", 
+        buttons: [{ text: "OK" }],
+        parentElement: document.body // Ensure it's on top
+    });
 }
 
 /**
@@ -277,7 +321,7 @@ export function handleExport(viewer) {
                 throw new Error(result.message || 'Failed to prepare export on server.');
             }
             if (result.errors && result.errors.length > 0) {
-                 HolafPanelManager.createDialog({ title: "Preparation Errors", message: `Some files could not be prepared:\n${result.errors.map(e => `- ${e.path}: ${e.error}`).join('\n')}` });
+                 HolafPanelManager.createDialog({ title: "Preparation Errors", message: `Some files could not be prepared:\n${result.errors.map(e => `- ${e.path}: ${e.error}`).join('\n')}`, parentElement: document.body });
             }
 
             const manifestUrl = `/holaf/images/export-chunk?export_id=${result.export_id}&file_path=manifest.json&chunk_index=0&chunk_size=1000000`;
@@ -291,19 +335,19 @@ export function handleExport(viewer) {
 
                 if (!viewer.isExporting) {
                     viewer.isExporting = true;
-                    viewer.updateStatusBar(); // Immediately update status bar to show "Exporting..."
+                    viewer.updateStatusBar();
                     viewer.processExportDownloadQueue();
                 } else {
-                    viewer.updateStatusBar(); // Just update the total count
+                    viewer.updateStatusBar();
                 }
             } else {
                  if (!viewer.isExporting) viewer.updateStatusBar();
-                 HolafPanelManager.createDialog({ title: "Export Warning", message: "No new files were added to the export queue." });
+                 HolafPanelManager.createDialog({ title: "Export Warning", message: "No new files were added to the export queue.", parentElement: document.body });
             }
 
         } catch (error) {
             console.error('[Holaf ImageViewer] Export preparation failed:', error);
-            HolafPanelManager.createDialog({ title: "Export Error", message: `Error adding to export queue: ${error.message}` });
+            HolafPanelManager.createDialog({ title: "Export Error", message: `Error adding to export queue: ${error.message}`, parentElement: document.body });
         }
     });
 

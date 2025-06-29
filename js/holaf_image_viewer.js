@@ -61,6 +61,7 @@ const holafImageViewer = {
     allThumbnailsGenerated: false,
     currentFilteredCount: 0,
     currentTotalDbCount: 0,
+    lastClickedIndex: -1,
     lastThumbStats: null,
     selectedImages: new Set(),
     isExporting: false,
