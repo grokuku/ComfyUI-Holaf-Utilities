@@ -37,18 +37,18 @@ export const HOLAF_THEMES = [
         base: "dark",
         colors: {
             accent: "#8A2BE2",
-            backgroundPrimary: "#1C1C2E",
-            backgroundSecondary: "#2A2A40",
-            textPrimary: "#E0D8F0",
-            textSecondary: "#9890B0",
-            border: "#383850",
-            selectionBackground: "#4A3A5E",
+            backgroundPrimary: "#1E1E1E",
+            backgroundSecondary: "#2B2B2B",
+            textPrimary: "#E0E0E0",
+            textSecondary: "#A0A0A0",
+            border: "#3F3F3F",
+            selectionBackground: "#555555",
             cursor: "#8A2BE2",
             buttonBackground: "#8A2BE2",
             buttonText: "#FFFFFF",
-            inputBackground: "#242438",
-            tagBackground: "#4A3A5E",
-            tagText: "#E0D8F0"
+            inputBackground: "#252525",
+            tagBackground: "#4F4F4F",
+            tagText: "#DADADA"
         }
     },
     {
@@ -57,18 +57,18 @@ export const HOLAF_THEMES = [
         base: "dark",
         colors: {
             accent: "#228B22",
-            backgroundPrimary: "#1A241A",
-            backgroundSecondary: "#283A28",
-            textPrimary: "#D0E0D0",
-            textSecondary: "#809080",
-            border: "#304830",
-            selectionBackground: "#3A5E3A",
+            backgroundPrimary: "#1E1E1E",
+            backgroundSecondary: "#2B2B2B",
+            textPrimary: "#E0E0E0",
+            textSecondary: "#A0A0A0",
+            border: "#3F3F3F",
+            selectionBackground: "#555555",
             cursor: "#228B22",
             buttonBackground: "#228B22",
             buttonText: "#FFFFFF",
-            inputBackground: "#223022",
-            tagBackground: "#3A5E3A",
-            tagText: "#D0E0D0"
+            inputBackground: "#252525",
+            tagBackground: "#4F4F4F",
+            tagText: "#DADADA"
         }
     },
     {
@@ -77,18 +77,18 @@ export const HOLAF_THEMES = [
         base: "dark",
         colors: {
             accent: "#4682B4",
-            backgroundPrimary: "#1C2024",
-            backgroundSecondary: "#2A3038",
-            textPrimary: "#D0D8E0",
-            textSecondary: "#808890",
-            border: "#36404A",
-            selectionBackground: "#3A4E5E",
+            backgroundPrimary: "#1E1E1E",
+            backgroundSecondary: "#2B2B2B",
+            textPrimary: "#E0E0E0",
+            textSecondary: "#A0A0A0",
+            border: "#3F3F3F",
+            selectionBackground: "#555555",
             cursor: "#4682B4",
             buttonBackground: "#4682B4",
             buttonText: "#FFFFFF",
-            inputBackground: "#24282D",
-            tagBackground: "#3A4E5E",
-            tagText: "#D0D8E0"
+            inputBackground: "#252525",
+            tagBackground: "#4F4F4F",
+            tagText: "#DADADA"
         }
     },
     {
