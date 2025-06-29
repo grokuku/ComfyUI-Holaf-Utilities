@@ -212,6 +212,11 @@ def _extract_image_metadata_blocking(image_path_abs):
             result["width"], result["height"] = img.size
             result["ratio"] = _get_best_ratio_string(result["width"], result["height"])
             if hasattr(img, 'info') and isinstance(img.info, dict):
+                # FIX: Check for prompt from internal PNG metadata
+                if result["prompt_source"] == "none" and 'prompt' in img.info:
+                    result["prompt"] = img.info['prompt']
+                    result["prompt_source"] = "internal_png"
+
                 if result["workflow_source"] == "none" and 'workflow' in img.info:
                     try:
                         loaded_json = json.loads(img.info['workflow'])
@@ -899,6 +904,131 @@ async def get_metadata_route(request: web.Request):
         print(f"🔴 [Holaf-ImageViewer] Error in metadata endpoint for {filename}: {e}"); traceback.print_exc()
         return web.json_response({"error": f"Server error: {e}"}, status=500)
 
+# --- NEW: Metadata Management Logic ---
+def _strip_png_metadata_and_get_mtime(image_abs_path):
+    """
+    Strips metadata from a PNG by re-saving its pixel data. This is a blocking function.
+    """
+    try:
+        with Image.open(image_abs_path) as img:
+            img.load()
+        
+        # Create a new image from the loaded pixel data to drop all metadata.
+        new_img = Image.new(img.mode, img.size)
+        new_img.putdata(list(img.getdata()))
+        
+        new_img.save(image_abs_path, "PNG")
+
+        return os.path.getmtime(image_abs_path)
+    except Exception as e:
+        # Re-raise to be caught by the calling executor
+        raise RuntimeError(f"Failed to strip metadata from PNG: {e}") from e
+
+
+async def extract_metadata_route(request: web.Request):
+    try:
+        data = await request.json()
+        paths_canon = data.get("paths_canon", [])
+        force_overwrite = data.get("force", False)
+
+        if not paths_canon:
+            return web.json_response({"error": "No image paths provided"}, status=400)
+        
+        successes, failures, conflicts = [], [], []
+        db_updates = []
+        
+        output_dir = folder_paths.get_output_directory()
+        loop = asyncio.get_event_loop()
+
+        for path in paths_canon:
+            image_abs_path = os.path.normpath(os.path.join(output_dir, path))
+            base_path, _ = os.path.splitext(image_abs_path)
+
+            try:
+                # 1. Pre-flight checks (non-blocking)
+                if not path.lower().endswith('.png'):
+                    failures.append({"path": path, "error": "Not a PNG file."})
+                    continue
+                if not await aiofiles.os.path.isfile(image_abs_path):
+                    failures.append({"path": path, "error": "File not found on disk."})
+                    continue
+                
+                # 2. Extract metadata (blocking, in executor)
+                internal_meta = await loop.run_in_executor(None, _extract_image_metadata_blocking, image_abs_path)
+                
+                has_workflow = internal_meta.get("workflow") and internal_meta.get("workflow_source") == "internal_png"
+                has_prompt = internal_meta.get("prompt") and internal_meta.get("prompt_source") == "internal_png"
+
+                if not has_workflow and not has_prompt:
+                    failures.append({"path": path, "error": "No internal metadata found to extract."})
+                    continue
+
+                # 3. Check for conflicts (non-blocking)
+                json_path = base_path + ".json"
+                txt_path = base_path + ".txt"
+                if not force_overwrite:
+                    conflict_details = []
+                    if has_workflow and await aiofiles.os.path.exists(json_path):
+                        conflict_details.append(f"'{os.path.basename(json_path)}' already exists.")
+                    if has_prompt and await aiofiles.os.path.exists(txt_path):
+                        conflict_details.append(f"'{os.path.basename(txt_path)}' already exists.")
+                    if conflict_details:
+                        conflicts.append({"path": path, "error": "Sidecar file(s) already exist.", "details": conflict_details})
+                        continue
+                
+                # 4. Write sidecars (asynchronous)
+                if has_workflow:
+                    async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
+                        await f.write(json.dumps(internal_meta["workflow"], indent=2))
+                if has_prompt:
+                    async with aiofiles.open(txt_path, 'w', encoding='utf-8') as f:
+                        await f.write(internal_meta["prompt"])
+
+                # 5. Strip metadata from PNG (blocking, in executor)
+                new_mtime = await loop.run_in_executor(None, _strip_png_metadata_and_get_mtime, image_abs_path)
+                
+                successes.append(path)
+                db_updates.append({"path": path, "mtime": new_mtime})
+
+            except Exception as e:
+                failures.append({"path": path, "error": f"Unexpected server error during processing: {e}"})
+
+        # 6. Perform DB updates in batch
+        if db_updates:
+            conn, db_exception = None, None
+            try:
+                conn = holaf_database.get_db_connection()
+                cursor, current_time = conn.cursor(), time.time()
+                for update in db_updates:
+                    cursor.execute("UPDATE images SET mtime = ?, last_synced_at = ? WHERE path_canon = ?", 
+                                   (update["mtime"], current_time, update["path"]))
+                conn.commit()
+            except Exception as e:
+                db_exception = e
+                print(f"🔴 [Holaf-ImageViewer] DB update failed during metadata extraction: {e}")
+                for update in db_updates:
+                    failures.append({"path": update["path"], "error": "File processed but DB update failed."})
+                successes = [s for s in successes if s not in [u["path"] for u in db_updates]]
+            finally:
+                if conn: holaf_database.close_db_connection(exception=db_exception)
+
+        response_status = "processed"
+        if conflicts: response_status = "processed_with_conflicts"
+        if not successes and not conflicts and failures: response_status = "failed"
+        
+        return web.json_response({
+            "status": response_status,
+            "results": {"successes": successes, "failures": failures, "conflicts": conflicts}
+        })
+
+    except json.JSONDecodeError:
+        return web.json_response({"error": "Invalid JSON in request"}, status=400)
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error in extract_metadata_route: {e}")
+        traceback.print_exc()
+        return web.json_response({"error": f"Server error: {e}"}, status=500)
+
+
 async def prepare_export_route(request: web.Request):
     try:
         data = await request.json()
@@ -1159,7 +1289,7 @@ def run_thumbnail_generation_worker(stop_event):
                 continue
 
             path_hash = hashlib.sha1(image_to_process_path_canon.encode('utf-8')).hexdigest()
-            thumb_filename = f"{path_haxsh}.jpg"
+            thumb_filename = f"{path_hash}.jpg"
             thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
 
             _create_thumbnail_blocking(original_abs_path, thumb_path_abs, image_path_canon_for_db_update=image_to_process_path_canon)

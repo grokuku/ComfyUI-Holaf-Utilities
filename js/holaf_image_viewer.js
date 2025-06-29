@@ -73,6 +73,8 @@ const holafImageViewer = {
         currentFileProgress: 0,
     },
     exportStatusRaf: null, // ADDED: To hold the requestAnimationFrame ID
+    conflictQueue: [],
+    isProcessingConflicts: false,
 
     // --- Initialization & Core Lifecycle ---
 
