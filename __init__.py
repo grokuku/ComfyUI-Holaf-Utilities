@@ -33,7 +33,7 @@ from . import holaf_database
 from . import holaf_config
 from . import holaf_utils # Also initializes its dirs and cleans up temp uploads
 from . import holaf_terminal
-from . import holaf_image_viewer_utils
+from . import holaf_image_viewer_backend
 from . import holaf_system_monitor
 from . import holaf_server_management
 
@@ -327,51 +327,51 @@ if model_manager_helper:
 
 # --- Image Viewer Routes ---
 @routes.get("/holaf/images/filter-options")
-async def iv_filter_options_route(r): return await holaf_image_viewer_utils.get_filter_options_route(r)
+async def iv_filter_options_route(r): return await holaf_image_viewer_backend.get_filter_options_route(r)
 
 @routes.post("/holaf/images/list")
-async def iv_list_images_route(r): return await holaf_image_viewer_utils.list_images_route(r)
+async def iv_list_images_route(r): return await holaf_image_viewer_backend.list_images_route(r)
 
 @routes.get("/holaf/images/thumbnail")
-async def iv_get_thumbnail_route(r): return await holaf_image_viewer_utils.get_thumbnail_route(r)
+async def iv_get_thumbnail_route(r): return await holaf_image_viewer_backend.get_thumbnail_route(r)
 
 @routes.get("/holaf/images/metadata")
-async def iv_get_metadata_route(r): return await holaf_image_viewer_utils.get_metadata_route(r)
+async def iv_get_metadata_route(r): return await holaf_image_viewer_backend.get_metadata_route(r)
 
 # Image Viewer Actions
 @routes.post("/holaf/images/delete")
-async def iv_delete_images_route(r): return await holaf_image_viewer_utils.delete_images_route(r)
+async def iv_delete_images_route(r): return await holaf_image_viewer_backend.delete_images_route(r)
 
 @routes.post("/holaf/images/delete-permanently")
-async def iv_delete_images_permanently_route(r): return await holaf_image_viewer_utils.delete_images_permanently_route(r)
+async def iv_delete_images_permanently_route(r): return await holaf_image_viewer_backend.delete_images_permanently_route(r)
 
 @routes.post("/holaf/images/restore")
-async def iv_restore_images_route(r): return await holaf_image_viewer_utils.restore_images_route(r)
+async def iv_restore_images_route(r): return await holaf_image_viewer_backend.restore_images_route(r)
 
 @routes.post("/holaf/images/empty-trashcan")
-async def iv_empty_trashcan_route(r): return await holaf_image_viewer_utils.empty_trashcan_route(r)
+async def iv_empty_trashcan_route(r): return await holaf_image_viewer_backend.empty_trashcan_route(r)
 
 @routes.post("/holaf/images/extract-metadata")
-async def iv_extract_metadata_route(r): return await holaf_image_viewer_utils.extract_metadata_route(r)
+async def iv_extract_metadata_route(r): return await holaf_image_viewer_backend.extract_metadata_route(r)
 
 @routes.post("/holaf/images/inject-metadata")
-async def iv_inject_metadata_route(r): return await holaf_image_viewer_utils.inject_metadata_route(r)
+async def iv_inject_metadata_route(r): return await holaf_image_viewer_backend.inject_metadata_route(r)
 
 @routes.post("/holaf/images/prepare-export")
-async def iv_prepare_export_route(r): return await holaf_image_viewer_utils.prepare_export_route(r)
+async def iv_prepare_export_route(r): return await holaf_image_viewer_backend.prepare_export_route(r)
 
 @routes.get("/holaf/images/export-chunk")
-async def iv_download_export_chunk_route(r): return await holaf_image_viewer_utils.download_export_chunk_route(r)
+async def iv_download_export_chunk_route(r): return await holaf_image_viewer_backend.download_export_chunk_route(r)
 
 # Image Viewer Thumbnail Worker and Stats
 @routes.post("/holaf/images/viewer-activity")
-async def iv_set_viewer_activity_route(r): return await holaf_image_viewer_utils.set_viewer_activity_route(r)
+async def iv_set_viewer_activity_route(r): return await holaf_image_viewer_backend.set_viewer_activity_route(r)
 
 @routes.post("/holaf/images/prioritize-thumbnails")
-async def iv_prioritize_thumbnails_route(r): return await holaf_image_viewer_utils.prioritize_thumbnails_route(r)
+async def iv_prioritize_thumbnails_route(r): return await holaf_image_viewer_backend.prioritize_thumbnails_route(r)
 
 @routes.get("/holaf/images/thumbnail-stats")
-async def iv_thumbnail_stats_route(r): return await holaf_image_viewer_utils.iv_get_thumbnail_stats_route(r)
+async def iv_thumbnail_stats_route(r): return await holaf_image_viewer_backend.iv_get_thumbnail_stats_route(r)
 
 @routes.post("/holaf/image-viewer/save-settings")
 async def image_viewer_save_ui_settings_route(request: web.Request):
@@ -562,7 +562,7 @@ def start_thumbnail_worker():
         print("🔵 [Holaf-Init] Starting Thumbnail Generation Worker thread...")
         # Pass stop_event directly
         thumbnail_worker_thread_ref = threading.Thread(
-            target=holaf_image_viewer_utils.run_thumbnail_generation_worker,
+            target=holaf_image_viewer_backend.run_thumbnail_generation_worker,
             args=(stop_event,),
             daemon=True
         )
@@ -610,7 +610,7 @@ if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
 else:
     print("🟡 [Holaf-Init] Model Manager scan_and_update_db not available for scheduling.")
 
-_periodic_task_wrapper(300.0, holaf_image_viewer_utils.sync_image_database_blocking, initial_delay=10.0)
+_periodic_task_wrapper(300.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
 
 # Delay starting the thumbnail worker slightly to let main init complete
 main_thread_startup_timer = threading.Timer(15.0, start_thumbnail_worker)
