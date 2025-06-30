@@ -949,7 +949,7 @@ async def extract_metadata_route(request: web.Request):
                 if not path.lower().endswith('.png'):
                     failures.append({"path": path, "error": "Not a PNG file."})
                     continue
-                if not await aiofiles.os.path.isfile(image_abs_path):
+                if not os.path.isfile(image_abs_path):
                     failures.append({"path": path, "error": "File not found on disk."})
                     continue
                 
@@ -968,9 +968,9 @@ async def extract_metadata_route(request: web.Request):
                 txt_path = base_path + ".txt"
                 if not force_overwrite:
                     conflict_details = []
-                    if has_workflow and await aiofiles.os.path.exists(json_path):
+                    if has_workflow and os.path.exists(json_path):
                         conflict_details.append(f"'{os.path.basename(json_path)}' already exists.")
-                    if has_prompt and await aiofiles.os.path.exists(txt_path):
+                    if has_prompt and os.path.exists(txt_path):
                         conflict_details.append(f"'{os.path.basename(txt_path)}' already exists.")
                     if conflict_details:
                         conflicts.append({"path": path, "error": "Sidecar file(s) already exist.", "details": conflict_details})
@@ -1029,6 +1029,142 @@ async def extract_metadata_route(request: web.Request):
         return web.json_response({"error": f"Server error: {e}"}, status=500)
 
 
+def _inject_png_metadata_and_get_mtime(image_abs_path, prompt_text=None, workflow_data=None):
+    """
+    Injects metadata into a PNG by re-saving it with new info chunks. This is a blocking function.
+    """
+    try:
+        with Image.open(image_abs_path) as img:
+            img.load() # Ensure image data is loaded
+        
+        png_info = PngImagePlugin.PngInfo()
+        if prompt_text:
+            png_info.add_text("prompt", prompt_text)
+        if workflow_data:
+            png_info.add_text("workflow", json.dumps(workflow_data))
+
+        # Re-save the image with the original pixel data but new metadata
+        img.save(image_abs_path, "PNG", pnginfo=png_info)
+
+        return os.path.getmtime(image_abs_path)
+    except Exception as e:
+        raise RuntimeError(f"Failed to inject metadata into PNG: {e}") from e
+
+
+async def inject_metadata_route(request: web.Request):
+    try:
+        data = await request.json()
+        paths_canon = data.get("paths_canon", [])
+        force_overwrite = data.get("force", False)
+
+        if not paths_canon:
+            return web.json_response({"error": "No image paths provided"}, status=400)
+        
+        successes, failures, conflicts = [], [], []
+        db_updates = []
+        
+        output_dir = folder_paths.get_output_directory()
+        loop = asyncio.get_event_loop()
+
+        for path in paths_canon:
+            image_abs_path = os.path.normpath(os.path.join(output_dir, path))
+            base_path, _ = os.path.splitext(image_abs_path)
+
+            try:
+                # 1. Pre-flight checks
+                if not path.lower().endswith('.png'):
+                    failures.append({"path": path, "error": "Not a PNG file."})
+                    continue
+                if not os.path.isfile(image_abs_path):
+                    failures.append({"path": path, "error": "File not found on disk."})
+                    continue
+
+                json_path = base_path + ".json"
+                txt_path = base_path + ".txt"
+                has_json = os.path.exists(json_path)
+                has_txt = os.path.exists(txt_path)
+                if not has_json and not has_txt:
+                    failures.append({"path": path, "error": "No .txt or .json sidecar files found to inject."})
+                    continue
+
+                # 2. Check for conflicts (image already has internal metadata)
+                if not force_overwrite:
+                    internal_meta = await loop.run_in_executor(None, _extract_image_metadata_blocking, image_abs_path)
+                    conflict_details = []
+                    if internal_meta.get("workflow_source") == "internal_png":
+                        conflict_details.append("Image already contains embedded workflow data.")
+                    if internal_meta.get("prompt_source") == "internal_png":
+                        conflict_details.append("Image already contains an embedded prompt.")
+                    if conflict_details:
+                        conflicts.append({"path": path, "error": "Internal metadata conflict.", "details": conflict_details})
+                        continue
+
+                # 3. Read sidecar data
+                prompt_to_inject, workflow_to_inject = None, None
+                if has_txt:
+                    async with aiofiles.open(txt_path, 'r', encoding='utf-8') as f:
+                        prompt_to_inject = await f.read()
+                if has_json:
+                    async with aiofiles.open(json_path, 'r', encoding='utf-8') as f:
+                        workflow_to_inject = json.loads(await f.read())
+
+                # 4. Inject metadata (blocking, in executor)
+                new_mtime = await loop.run_in_executor(None, _inject_png_metadata_and_get_mtime, image_abs_path, prompt_to_inject, workflow_to_inject)
+                
+                # 5. Delete sidecar files upon successful injection
+                if has_txt:
+                    try:
+                        os.remove(txt_path)
+                    except OSError as e:
+                        print(f"🟡 [Holaf-ImageViewer] Warning: Could not remove sidecar file {txt_path}: {e}")
+                if has_json:
+                    try:
+                        os.remove(json_path)
+                    except OSError as e:
+                        print(f"🟡 [Holaf-ImageViewer] Warning: Could not remove sidecar file {json_path}: {e}")
+
+                successes.append(path)
+                db_updates.append({"path": path, "mtime": new_mtime})
+
+            except Exception as e:
+                failures.append({"path": path, "error": f"Unexpected server error during processing: {e}"})
+
+        # 6. Perform DB updates in batch
+        if db_updates:
+            conn, db_exception = None, None
+            try:
+                conn = holaf_database.get_db_connection()
+                cursor, current_time = conn.cursor(), time.time()
+                for update in db_updates:
+                    cursor.execute("UPDATE images SET mtime = ?, last_synced_at = ? WHERE path_canon = ?", 
+                                   (update["mtime"], current_time, update["path"]))
+                conn.commit()
+            except Exception as e:
+                db_exception = e
+                print(f"🔴 [Holaf-ImageViewer] DB update failed during metadata injection: {e}")
+                for update in db_updates:
+                    failures.append({"path": update["path"], "error": "File processed but DB update failed."})
+                successes = [s for s in successes if s not in [u["path"] for u in db_updates]]
+            finally:
+                if conn: holaf_database.close_db_connection(exception=db_exception)
+        
+        response_status = "processed"
+        if conflicts: response_status = "processed_with_conflicts"
+        if not successes and not conflicts and failures: response_status = "failed"
+        
+        return web.json_response({
+            "status": response_status,
+            "results": {"successes": successes, "failures": failures, "conflicts": conflicts}
+        })
+
+    except json.JSONDecodeError:
+        return web.json_response({"error": "Invalid JSON in request"}, status=400)
+    except Exception as e:
+        print(f"🔴 [Holaf-ImageViewer] Error in inject_metadata_route: {e}")
+        traceback.print_exc()
+        return web.json_response({"error": f"Server error: {e}"}, status=500)
+
+
 async def prepare_export_route(request: web.Request):
     try:
         data = await request.json()
@@ -1067,39 +1203,44 @@ async def prepare_export_route(request: web.Request):
             dest_abs_path = os.path.join(dest_subfolder_abs_path, dest_filename)
 
             try:
-                metadata = None
+                prompt_data, workflow_data = None, None
                 if include_meta:
                     metadata = await loop.run_in_executor(None, _extract_image_metadata_blocking, source_abs_path)
+                    if metadata and not metadata.get("error"):
+                        prompt_data = metadata.get("prompt")
+                        workflow_data = metadata.get("workflow")
 
                 with Image.open(source_abs_path) as img:
-                    img_to_save = img.copy()
-                    
+                    img_to_save = img.copy() # CORRECTED: Ensure we work on a copy
                     save_params = {}
-                    if export_format == 'png':
-                        if include_meta and meta_method == 'embed' and metadata:
-                            png_info = PngImagePlugin.PngInfo()
-                            if metadata.get("prompt"): png_info.add_text("prompt", metadata["prompt"])
-                            if metadata.get("workflow"): png_info.add_text("workflow", json.dumps(metadata["workflow"]))
-                            save_params['pnginfo'] = png_info
-                        img_to_save.save(dest_abs_path, "PNG", **save_params)
-                    elif export_format == 'jpg':
-                        if img_to_save.mode == 'RGBA': img_to_save = img_to_save.convert('RGB')
-                        img_to_save.save(dest_abs_path, "JPEG", quality=95)
+
+                    if export_format == 'png' and include_meta and meta_method == 'embed':
+                        png_info = PngImagePlugin.PngInfo()
+                        if prompt_data: png_info.add_text("prompt", prompt_data)
+                        if workflow_data: png_info.add_text("workflow", json.dumps(workflow_data))
+                        if png_info.chunks: save_params['pnginfo'] = png_info
+                    
+                    # Ensure conversion for formats that don't support alpha
+                    if export_format == 'jpg':
+                        if img_to_save.mode in ['RGBA', 'P', 'LA']: img_to_save = img_to_save.convert('RGB')
+                        save_params['quality'] = 95
                     elif export_format == 'tiff':
-                        img_to_save.save(dest_abs_path, "TIFF", compression='tiff_lzw')
-                
+                        save_params['compression'] = 'tiff_lzw'
+
+                    img_to_save.save(dest_abs_path, format=export_format.upper(), **save_params)
+
                 rel_path = os.path.join(subfolder, dest_filename).replace(os.sep, '/')
                 manifest.append({'path': rel_path, 'size': os.path.getsize(dest_abs_path)})
                 
-                if include_meta and meta_method == 'sidecar' and metadata:
-                    if metadata.get("prompt"):
+                if include_meta and meta_method == 'sidecar':
+                    if prompt_data:
                         txt_path = os.path.join(dest_subfolder_abs_path, f"{base_name}.txt")
-                        async with aiofiles.open(txt_path, 'w', encoding='utf-8') as f: await f.write(metadata["prompt"])
+                        async with aiofiles.open(txt_path, 'w', encoding='utf-8') as f: await f.write(prompt_data)
                         txt_rel_path = os.path.join(subfolder, f"{base_name}.txt").replace(os.sep, '/')
                         manifest.append({'path': txt_rel_path, 'size': os.path.getsize(txt_path)})
-                    if metadata.get("workflow"):
+                    if workflow_data:
                         json_path = os.path.join(dest_subfolder_abs_path, f"{base_name}.json")
-                        async with aiofiles.open(json_path, 'w', encoding='utf-8') as f: await f.write(json.dumps(metadata["workflow"], indent=2))
+                        async with aiofiles.open(json_path, 'w', encoding='utf-8') as f: await f.write(json.dumps(workflow_data, indent=2))
                         json_rel_path = os.path.join(subfolder, f"{base_name}.json").replace(os.sep, '/')
                         manifest.append({'path': json_rel_path, 'size': os.path.getsize(json_path)})
 
@@ -1167,7 +1308,7 @@ async def prioritize_thumbnails_route(request: web.Request):
         paths_canon = data.get("paths_canon")
 
         if not paths_canon or not isinstance(paths_canon, list):
-            return web.json_response({"status": "error", "message": "'paths_canon' list required"}, status=400)
+            return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
 
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()

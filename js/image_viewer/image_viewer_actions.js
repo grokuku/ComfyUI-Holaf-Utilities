@@ -203,13 +203,15 @@ export async function handleRestore(viewer) {
 /**
  * Processes the next conflict in the viewer's conflict queue for metadata operations.
  * @param {object} viewer - The main image viewer instance.
+ * @param {string} operation - The name of the operation ('extract' or 'inject').
  */
-async function processNextConflict(viewer) {
+async function processNextConflict(viewer, operation) {
     if (!viewer.conflictQueue || viewer.conflictQueue.length === 0) {
         viewer.isProcessingConflicts = false;
+        const opDisplay = operation === 'extract' ? 'Extraction' : 'Injection';
         HolafPanelManager.createDialog({
             title: "Process Finished",
-            message: "All metadata operations have been processed.",
+            message: `All metadata ${opDisplay.toLowerCase()} operations have been processed.`,
             buttons: [{ text: "OK" }],
             parentElement: document.body
         });
@@ -223,7 +225,7 @@ async function processNextConflict(viewer) {
 
     const choice = await HolafPanelManager.createDialog({
         title: `Conflict on ${filename}`,
-        message: `For the image '${filename}':\n${conflict.error}\n\n${(conflict.details || []).join("\n")}\n\nDo you want to overwrite the existing file(s)?`,
+        message: `For the image '${filename}':\n${conflict.error}\n\n${(conflict.details || []).join("\n")}\n\nDo you want to overwrite the existing data?`,
         buttons: [
             { text: "Skip", value: 'skip', type: 'cancel' },
             { text: "Cancel All", value: 'cancel_all' },
@@ -235,7 +237,8 @@ async function processNextConflict(viewer) {
     if (choice === 'overwrite') {
         // Re-call the API for this single file with force=true
         try {
-            const response = await fetch('/holaf/images/extract-metadata', {
+            const apiUrl = `/holaf/images/${operation}-metadata`;
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ paths_canon: [conflict.path], force: true })
@@ -253,7 +256,7 @@ async function processNextConflict(viewer) {
     }
 
     // Process the next item in the queue recursively
-    await processNextConflict(viewer);
+    await processNextConflict(viewer, operation);
 }
 
 
@@ -315,7 +318,7 @@ export async function handleExtractMetadata(viewer) {
         // Start processing conflicts if any, otherwise finish up.
         if (conflicts.length > 0) {
             viewer.conflictQueue = conflicts;
-            processNextConflict(viewer);
+            processNextConflict(viewer, 'extract');
         } else {
             // No conflicts, just successes and/or failures.
             if (successes.length > 0 && failures.length === 0) {
@@ -341,17 +344,86 @@ export async function handleExtractMetadata(viewer) {
 }
 
 /**
- * Placeholder for "Inject Metadata" action.
+ * Handles the "Inject Metadata" action. Injects sidecar metadata into PNG files.
  * @param {object} viewer - The main image viewer instance.
  */
-export function handleInjectMetadata(viewer) {
-    if (viewer.selectedImages.size === 0) return;
-    HolafPanelManager.createDialog({ 
-        title: "Not Implemented", 
-        message: "Inject Metadata functionality is not yet implemented.", 
-        buttons: [{ text: "OK" }],
-        parentElement: document.body // Ensure it's on top
-    });
+export async function handleInjectMetadata(viewer) {
+    if (viewer.isProcessingConflicts) {
+        HolafPanelManager.createDialog({ title: "Process Busy", message: "Please resolve the current conflicts before starting a new operation.", parentElement: document.body });
+        return;
+    }
+
+    const pngImages = Array.from(viewer.selectedImages).filter(img => img.format.toLowerCase() === 'png');
+
+    if (pngImages.length === 0) {
+        HolafPanelManager.createDialog({
+            title: "Invalid Selection",
+            message: "The 'Inject' action only works on PNG images. Please select one or more PNG files.",
+            buttons: [{ text: "OK" }],
+            parentElement: document.body
+        });
+        return;
+    }
+    
+    const pathsToProcess = pngImages.map(img => img.path_canon);
+
+    try {
+        const response = await fetch('/holaf/images/inject-metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths_canon: pathsToProcess, force: false })
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || `Server returned status ${response.status}`);
+        }
+
+        // Initialize or clear conflict state
+        viewer.conflictQueue = [];
+        viewer.isProcessingConflicts = false;
+
+        const successes = result.results?.successes || [];
+        const failures = result.results?.failures || [];
+        const conflicts = result.results?.conflicts || [];
+
+        // Report failures immediately
+        if (failures.length > 0) {
+            const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
+            HolafPanelManager.createDialog({
+                title: "Injection Errors",
+                message: `Could not inject metadata for the following files:\n${failureMessage}`,
+                buttons: [{ text: "OK" }],
+                parentElement: document.body
+            });
+        }
+        
+        // Start processing conflicts if any, otherwise finish up.
+        if (conflicts.length > 0) {
+            viewer.conflictQueue = conflicts;
+            processNextConflict(viewer, 'inject');
+        } else {
+            // No conflicts, just successes and/or failures.
+            if (successes.length > 0 && failures.length === 0) {
+                 HolafPanelManager.createDialog({
+                    title: "Injection Complete",
+                    message: `Successfully injected metadata into ${successes.length} image(s).`,
+                    buttons: [{ text: "OK" }],
+                    parentElement: document.body
+                });
+            }
+            viewer.loadFilteredImages(); // Refresh
+        }
+
+    } catch (error) {
+        console.error("[Holaf ImageViewer] Error calling inject API:", error);
+        HolafPanelManager.createDialog({
+            title: "API Error",
+            message: `Error communicating with server for inject operation: ${error.message}`,
+            buttons: [{ text: "OK" }],
+            parentElement: document.body
+        });
+    }
 }
 
 /**

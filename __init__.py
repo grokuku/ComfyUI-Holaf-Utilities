@@ -339,17 +339,27 @@ async def iv_get_thumbnail_route(r): return await holaf_image_viewer_utils.get_t
 async def iv_get_metadata_route(r): return await holaf_image_viewer_utils.get_metadata_route(r)
 
 # Image Viewer Actions
-@routes.post("/holaf/images/delete") # New route for deleting images
+@routes.post("/holaf/images/delete")
+async def iv_delete_images_route(r): return await holaf_image_viewer_utils.delete_images_route(r)
+
 @routes.post("/holaf/images/delete-permanently")
 async def iv_delete_images_permanently_route(r): return await holaf_image_viewer_utils.delete_images_permanently_route(r)
-async def iv_delete_images_route(r): return await holaf_image_viewer_utils.delete_images_route(r)
+
 @routes.post("/holaf/images/restore")
 async def iv_restore_images_route(r): return await holaf_image_viewer_utils.restore_images_route(r)
+
 @routes.post("/holaf/images/empty-trashcan")
 async def iv_empty_trashcan_route(r): return await holaf_image_viewer_utils.empty_trashcan_route(r)
-# Future routes for extract, inject will go here
+
+@routes.post("/holaf/images/extract-metadata")
+async def iv_extract_metadata_route(r): return await holaf_image_viewer_utils.extract_metadata_route(r)
+
+@routes.post("/holaf/images/inject-metadata")
+async def iv_inject_metadata_route(r): return await holaf_image_viewer_utils.inject_metadata_route(r)
+
 @routes.post("/holaf/images/prepare-export")
 async def iv_prepare_export_route(r): return await holaf_image_viewer_utils.prepare_export_route(r)
+
 @routes.get("/holaf/images/export-chunk")
 async def iv_download_export_chunk_route(r): return await holaf_image_viewer_utils.download_export_chunk_route(r)
 
