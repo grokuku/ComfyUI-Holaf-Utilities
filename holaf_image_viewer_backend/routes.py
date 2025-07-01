@@ -893,7 +893,7 @@ async def prepare_export_route(request: web.Request):
                     elif export_format == 'tiff':
                         save_params['compression'] = 'tiff_lzw'
 
-                    img_to_save.save(dest_abs_path, format=export_format.upper(), **save_params)
+                    img_to_save.save(dest_abs_path, format='JPEG' if export_format == 'jpg' else export_format.upper(), **save_params)
 
                 rel_path = os.path.join(subfolder, dest_filename).replace(os.sep, '/')
                 manifest.append({'path': rel_path, 'size': os.path.getsize(dest_abs_path)})

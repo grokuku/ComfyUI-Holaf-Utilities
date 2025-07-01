@@ -68,6 +68,9 @@ def load_all_configs():
         'format_filters': [f.strip() for f in config_parser_obj.get('ImageViewerUI', 'format_filters', fallback='').split('","') if f.strip()],
         'thumbnail_fit': config_parser_obj.get('ImageViewerUI', 'thumbnail_fit', fallback='cover'),
         'thumbnail_size': config_parser_obj.getint('ImageViewerUI', 'thumbnail_size', fallback=150),
+        'export_format': config_parser_obj.get('ImageViewerUI', 'export_format', fallback='png'),
+        'export_include_meta': config_parser_obj.getboolean('ImageViewerUI', 'export_include_meta', fallback=True),
+        'export_meta_method': config_parser_obj.get('ImageViewerUI', 'export_meta_method', fallback='embed'),
     })
     
     ui_nodes_manager_defaults = {'panel_width': 900, 'panel_height': 600}
