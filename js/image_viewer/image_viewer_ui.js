@@ -37,7 +37,16 @@ export function getPanelHTML() {
     return `
         <div class="holaf-viewer-container" style="flex-grow: 1;">
             <div id="holaf-viewer-left-pane" class="holaf-viewer-pane">
-                
+
+                <div class="holaf-viewer-filter-group">
+                    <input type="search" id="holaf-viewer-search-input" placeholder="Search filename, prompt, workflow..." class="holaf-viewer-search-bar">
+                    <div id="holaf-viewer-search-scope-buttons" class="holaf-viewer-toggle-button-group">
+                        <button id="holaf-search-scope-filename" class="holaf-viewer-toggle-button">Name</button>
+                        <button id="holaf-search-scope-prompt" class="holaf-viewer-toggle-button">Prompt</button>
+                        <button id="holaf-search-scope-workflow" class="holaf-viewer-toggle-button">Workflow</button>
+                    </div>
+                </div>
+
                 <div class="holaf-viewer-filter-group">
                     <h4>Date Range</h4>
                     <div id="holaf-viewer-date-filter" class="holaf-viewer-date-range-container">
@@ -52,8 +61,23 @@ export function getPanelHTML() {
                     </div>
                 </div>
 
+                <div class="holaf-viewer-filter-group">
+                    <h4>Workflow Availability</h4>
+                    <div id="holaf-viewer-workflow-filter-buttons" class="holaf-viewer-toggle-button-group">
+                        <button id="holaf-workflow-filter-internal" class="holaf-viewer-toggle-button">Internal</button>
+                        <button id="holaf-workflow-filter-external" class="holaf-viewer-toggle-button">External</button>
+                    </div>
+                </div>
+
                 <div class="holaf-viewer-filter-group holaf-viewer-scrollable-section">
-                    <h4>Folders</h4>
+                    <div class="holaf-viewer-filter-header">
+                        <h4>Folders</h4>
+                        <div class="holaf-viewer-folder-actions">
+                            <a href="#" id="holaf-viewer-folders-select-all">All</a>
+                            <span class="holaf-folder-separator">/</span>
+                            <a href="#" id="holaf-viewer-folders-select-none">None</a>
+                        </div>
+                    </div>
                     <div id="holaf-viewer-folders-filter" class="holaf-viewer-filter-list">
                         <p class="holaf-viewer-message"><em>Loading...</em></p>
                     </div>

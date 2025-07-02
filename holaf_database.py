@@ -110,6 +110,8 @@ def init_database():
                 mtime REAL, -- last modification time
                 prompt_text TEXT,
                 workflow_json TEXT,
+                prompt_source TEXT,
+                workflow_source TEXT,
                 last_synced_at REAL,
                 thumbnail_status INTEGER DEFAULT 0, -- 0: New/Retry, 1: Prioritized, 2: Done, 3: Error
                 thumbnail_priority_score INTEGER DEFAULT 1000, -- Lower is higher priority
@@ -124,7 +126,7 @@ def init_database():
         cursor.execute("SELECT version FROM holaf_db_version")
         db_version_row = cursor.fetchone()
         current_db_version = db_version_row[0] if db_version_row else 0
-        latest_schema_version = 3 # Increment this when schema changes
+        latest_schema_version = 4 # Increment this when schema changes
 
         if current_db_version < latest_schema_version:
             print(f"  > DB version: {current_db_version}, Latest schema: {latest_schema_version}. Upgrading...")
@@ -184,6 +186,19 @@ def _apply_schema_migrations(cursor, current_version, target_version):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
         # conn.commit() # Commit is handled by the calling function.
         current_version = 3
+
+    if current_version < 4 <= target_version:
+        print("  Applying schema version 4 (Image Viewer Metadata Sources)...")
+        cursor.execute("PRAGMA table_info(images)")
+        columns = [row['name'] for row in cursor.fetchall()]
+        if 'prompt_source' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN prompt_source TEXT")
+            print("    > Added 'prompt_source' column to 'images' table.")
+        if 'workflow_source' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN workflow_source TEXT")
+            print("    > Added 'workflow_source' column to 'images' table.")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
+        current_version = 4
 
     if current_version != target_version:
         # This check is now less critical for table creation but good for migration integrity.

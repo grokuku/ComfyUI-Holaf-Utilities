@@ -687,3 +687,81 @@
     padding: 10px 15px;
     border-top: 1px solid var(--holaf-border-color);
 }
+
+/* --- MODIFICATION: Styles for new Search bar and Workflow toggle buttons --- */
+
+.holaf-viewer-search-bar {
+    width: 100%;
+    padding: 6px 8px;
+    background-color: var(--holaf-input-background);
+    border: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+    margin-bottom: 20px;
+}
+
+.holaf-viewer-filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+.holaf-viewer-filter-header h4 {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+.holaf-viewer-folder-actions {
+    font-size: 11px;
+}
+
+.holaf-viewer-folder-actions a {
+    color: var(--holaf-text-secondary);
+    text-decoration: none;
+    padding: 2px 4px;
+}
+
+.holaf-viewer-folder-actions a:hover {
+    color: var(--holaf-accent-color);
+    text-decoration: underline;
+}
+
+.holaf-folder-separator {
+    color: var(--holaf-border-color);
+    margin: 0 2px;
+}
+
+.holaf-viewer-toggle-button-group {
+    display: flex;
+    gap: 8px;
+}
+
+.holaf-viewer-toggle-button {
+    flex-grow: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-input-background);
+    color: var(--holaf-text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 12px;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.holaf-viewer-toggle-button:hover {
+    border-color: var(--holaf-text-secondary);
+}
+
+.holaf-viewer-toggle-button.active {
+    background-color: var(--holaf-accent-color);
+    color: var(--holaf-button-text); /* Uses the text color defined for accent buttons */
+    border-color: var(--holaf-accent-color);
+    font-weight: bold;
+}

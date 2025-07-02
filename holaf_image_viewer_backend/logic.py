@@ -96,6 +96,9 @@ def sync_image_database_blocking():
                         path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
                         disk_images_canons.add(path_canon)
 
+                        # --- MODIFICATION: Extract metadata here to get sources for DB insert/update ---
+                        meta = _extract_image_metadata_blocking(full_path)
+
                         existing_record = db_images.get(path_canon)
 
                         if existing_record: # Image exists in DB and is not trashed
@@ -104,17 +107,28 @@ def sync_image_database_blocking():
                                 cursor.execute("""
                                     UPDATE images
                                     SET mtime = ?, size_bytes = ?, last_synced_at = ?,
+                                        prompt_text = ?, workflow_json = ?, prompt_source = ?, workflow_source = ?,
+                                        width = ?, height = ?, aspect_ratio_str = ?,
                                         thumbnail_status = 0, thumbnail_priority_score = 1000, thumbnail_last_generated_at = NULL
                                     WHERE id = ? AND is_trashed = 0
                                 """, (file_stat.st_mtime, file_stat.st_size, current_time,
+                                      meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                                      meta.get('prompt_source'), meta.get('workflow_source'),
+                                      meta.get('width'), meta.get('height'), meta.get('ratio'),
                                       existing_record['id']))
                         else: # New image found on disk (not in DB or was previously trashed and now outside trash)
                             cursor.execute("""
                                 INSERT OR REPLACE INTO images 
-                                    (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, is_trashed, original_path_canon)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)
+                                    (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
+                                     is_trashed, original_path_canon,
+                                     prompt_text, workflow_json, prompt_source, workflow_source,
+                                     width, height, aspect_ratio_str)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?)
                             """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(),
-                                  file_stat.st_mtime, file_stat.st_size, current_time))
+                                  file_stat.st_mtime, file_stat.st_size, current_time,
+                                  meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                                  meta.get('prompt_source'), meta.get('workflow_source'),
+                                  meta.get('width'), meta.get('height'), meta.get('ratio')))
                     except Exception as e:
                         print(f"🔴 [Holaf-ImageViewer] Error processing file {filename} during sync: {e}")
 
@@ -195,7 +209,8 @@ def _extract_image_metadata_blocking(image_path_abs):
     try:
         with Image.open(image_path_abs) as img:
             result["width"], result["height"] = img.size
-            result["ratio"] = _get_best_ratio_string(result["width"], result["height"])
+            if result["width"] and result["height"]:
+                result["ratio"] = _get_best_ratio_string(result["width"], result["height"])
             if hasattr(img, 'info') and isinstance(img.info, dict):
                 # FIX: Check for prompt from internal PNG metadata
                 if result["prompt_source"] == "none" and 'prompt' in img.info:
