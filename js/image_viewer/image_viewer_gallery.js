@@ -68,10 +68,12 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
     img.onload = () => {
         const currentCheckbox = placeholder.querySelector('.holaf-viewer-thumb-checkbox');
         const currentFsIcon = placeholder.querySelector('.holaf-viewer-fullscreen-icon');
+        const currentEditIcon = placeholder.querySelector('.holaf-viewer-edit-icon'); // Keep edit icon
         placeholder.innerHTML = '';
         placeholder.classList.remove('error');
 
         if(currentCheckbox) placeholder.appendChild(currentCheckbox);
+        if(currentEditIcon) placeholder.appendChild(currentEditIcon); // Re-append edit icon
 
         const fsIcon = currentFsIcon || document.createElement('div');
         if(!currentFsIcon) {
@@ -126,6 +128,21 @@ export function createPlaceholder(viewer, image, index) {
     placeholder.className = 'holaf-viewer-thumbnail-placeholder';
     placeholder.dataset.index = index;
 
+    // --- MODIFICATION: Add Edit Icon ---
+    const editIcon = document.createElement('div');
+    editIcon.className = 'holaf-viewer-edit-icon';
+    editIcon.innerHTML = '✎'; // Pencil icon
+    editIcon.title = "Edit image";
+    if (image.has_edit_file) {
+        editIcon.classList.add('active');
+    }
+    editIcon.onclick = (e) => {
+        e.stopPropagation(); // Prevent grid click event
+        viewer._showZoomedView(image); // This will open the editor
+    };
+    placeholder.appendChild(editIcon);
+    // --- END MODIFICATION ---
+
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'holaf-viewer-thumb-checkbox';
@@ -148,7 +165,7 @@ export function createPlaceholder(viewer, image, index) {
     placeholder.appendChild(checkbox);
 
     placeholder.addEventListener('click', (e) => {
-        if (e.target.tagName === 'INPUT') return;
+        if (e.target.tagName === 'INPUT' || e.target.classList.contains('holaf-viewer-edit-icon')) return;
 
         const imgData = viewer.filteredImages[index];
         const hasAnchor = viewer.lastClickedIndex > -1;
@@ -218,7 +235,7 @@ export function createPlaceholder(viewer, image, index) {
     });
 
     placeholder.addEventListener('dblclick', (e) => {
-        if (e.target.tagName === 'INPUT') return;
+        if (e.target.tagName === 'INPUT' || e.target.classList.contains('holaf-viewer-edit-icon')) return;
         viewer._showZoomedView(image);
     });
     return placeholder;

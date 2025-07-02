@@ -7,12 +7,40 @@ import uuid
 
 import aiofiles
 from aiohttp import web
-from PIL import Image
+from PIL import Image, ImageEnhance
 import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
 from ... import holaf_utils
+
+# --- Helper Function to Apply Edits ---
+def _apply_pil_edits(image, edit_data):
+    """
+    Applies edits from a dictionary to a PIL Image object.
+    Returns the modified image.
+    """
+    if not isinstance(edit_data, dict):
+        return image
+
+    # Phase 1: Basic adjustments
+    if 'brightness' in edit_data:
+        enhancer = ImageEnhance.Brightness(image)
+        image = enhancer.enhance(float(edit_data['brightness']))
+    
+    if 'contrast' in edit_data:
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(float(edit_data['contrast']))
+        
+    if 'saturation' in edit_data:
+        # Note: Pillow calls this "Color"
+        enhancer = ImageEnhance.Color(image)
+        image = enhancer.enhance(float(edit_data['saturation']))
+        
+    # Placeholder for future edits like crop, etc.
+    
+    return image
+
 
 # --- API Route Handlers ---
 async def prepare_export_route(request: web.Request):
@@ -53,15 +81,33 @@ async def prepare_export_route(request: web.Request):
             dest_abs_path = os.path.join(dest_subfolder_abs_path, dest_filename)
 
             try:
+                # --- MODIFICATION START: Handle edits and metadata ---
                 prompt_data, workflow_data = None, None
                 if include_meta:
                     metadata = await loop.run_in_executor(None, logic._extract_image_metadata_blocking, source_abs_path)
                     if metadata and not metadata.get("error"):
                         prompt_data = metadata.get("prompt")
                         workflow_data = metadata.get("workflow")
+                
+                # Check for and load edit file
+                edit_file_path = os.path.join(os.path.dirname(source_abs_path), f"{base_name}.edt")
+                edit_data = None
+                # CORRECTED: Check if file exists and is not empty before parsing
+                if os.path.isfile(edit_file_path) and os.path.getsize(edit_file_path) > 0:
+                    try:
+                        with open(edit_file_path, 'r', encoding='utf-8') as f:
+                            edit_data = json.load(f)
+                    except Exception as e:
+                        print(f"🟡 [Holaf-Export] Warning: Could not read or parse edit file {edit_file_path}: {e}")
+                        errors.append({"path": path_canon, "error": f"Failed to apply edits: {e}"})
 
                 with Image.open(source_abs_path) as img:
-                    img_to_save = img.copy() # CORRECTED: Ensure we work on a copy
+                    img_to_save = img.copy()
+                    
+                    # Apply edits if they were loaded successfully
+                    if edit_data:
+                        img_to_save = _apply_pil_edits(img_to_save, edit_data)
+
                     save_params = {}
 
                     if export_format == 'png' and include_meta and meta_method == 'embed':
@@ -70,7 +116,6 @@ async def prepare_export_route(request: web.Request):
                         if workflow_data: png_info.add_text("workflow", json.dumps(workflow_data))
                         if png_info.chunks: save_params['pnginfo'] = png_info
                     
-                    # Ensure conversion for formats that don't support alpha
                     if export_format == 'jpg':
                         if img_to_save.mode in ['RGBA', 'P', 'LA']: img_to_save = img_to_save.convert('RGB')
                         save_params['quality'] = 95
@@ -78,6 +123,7 @@ async def prepare_export_route(request: web.Request):
                         save_params['compression'] = 'tiff_lzw'
 
                     img_to_save.save(dest_abs_path, format='JPEG' if export_format == 'jpg' else export_format.upper(), **save_params)
+                # --- MODIFICATION END ---
 
                 rel_path = os.path.join(subfolder, dest_filename).replace(os.sep, '/')
                 manifest.append({'path': rel_path, 'size': os.path.getsize(dest_abs_path)})

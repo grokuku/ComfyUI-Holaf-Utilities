@@ -134,10 +134,12 @@ export function getPanelHTML() {
                     <button class="holaf-viewer-zoom-fullscreen-icon" title="Enter fullscreen">⛶</button>
                 </div>
             </div>
-            <div id="holaf-viewer-right-pane" class="holaf-viewer-pane">
-                <h4>Image Information</h4>
-                <div id="holaf-viewer-info-content">
-                    <p class="holaf-viewer-message">Select an image to see details.</p>
+            <div id="holaf-viewer-right-column">
+                <div id="holaf-viewer-right-pane" class="holaf-viewer-pane">
+                    <h4>Image Information</h4>
+                    <div id="holaf-viewer-info-content">
+                        <p class="holaf-viewer-message">Select an image to see details.</p>
+                    </div>
                 </div>
             </div>
         </div>

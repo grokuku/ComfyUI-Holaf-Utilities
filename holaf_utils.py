@@ -28,6 +28,27 @@ def sanitize_upload_id(upload_id):
     sanitized = re.sub(r'[^a-zA-Z0-9-]', '', str(upload_id))
     return sanitized if sanitized else None
 
+def sanitize_path_canon(path_canon):
+    """
+    Sanitizes a canonical path (like 'folder/image.png') to prevent directory traversal.
+    It splits the path, sanitizes each component, and rejoins them.
+    """
+    if not path_canon: return ""
+    # Normalize to forward slashes, then split
+    parts = path_canon.replace('\\', '/').split('/')
+    
+    # Sanitize each part except the last one as a directory component
+    sanitized_parts = [sanitize_directory_component(p) for p in parts[:-1]]
+    
+    # Sanitize the last part as a filename
+    if parts:
+        sanitized_parts.append(sanitize_filename(parts[-1]))
+    
+    # Filter out any empty parts that might result from sanitization (e.g., '//')
+    # and rejoin.
+    return "/".join(filter(None, sanitized_parts))
+
+
 # --- File and Directory Paths ---
 BASE_DIR = os.path.dirname(__file__)
 TEMP_UPLOAD_DIR = os.path.join(BASE_DIR, 'temp_uploads')

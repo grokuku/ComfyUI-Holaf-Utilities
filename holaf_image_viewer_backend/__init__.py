@@ -32,6 +32,11 @@ from .routes.export_routes import (
     prepare_export_route,
     download_export_chunk_route
 )
+from .routes.edit_routes import (
+    load_edits_route,
+    save_edits_route,
+    delete_edits_route
+)
 from .routes.utility_routes import (
     set_viewer_activity_route
 )
@@ -68,6 +73,11 @@ __all__ = [
     # Export
     'prepare_export_route',
     'download_export_chunk_route',
+
+    # Image Editing
+    'load_edits_route',
+    'save_edits_route',
+    'delete_edits_route',
 
     # Utility
     'set_viewer_activity_route',

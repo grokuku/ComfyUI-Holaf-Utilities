@@ -115,6 +115,7 @@ def init_database():
                 last_synced_at REAL,
                 thumbnail_status INTEGER DEFAULT 0, -- 0: New/Retry, 1: Prioritized, 2: Done, 3: Error
                 thumbnail_priority_score INTEGER DEFAULT 1000, -- Lower is higher priority
+                has_edit_file BOOLEAN DEFAULT 0,
                 thumbnail_last_generated_at REAL
             )
         """)
@@ -126,7 +127,7 @@ def init_database():
         cursor.execute("SELECT version FROM holaf_db_version")
         db_version_row = cursor.fetchone()
         current_db_version = db_version_row[0] if db_version_row else 0
-        latest_schema_version = 4 # Increment this when schema changes
+        latest_schema_version = 5 # Increment this when schema changes
 
         if current_db_version < latest_schema_version:
             print(f"  > DB version: {current_db_version}, Latest schema: {latest_schema_version}. Upgrading...")
@@ -199,6 +200,15 @@ def _apply_schema_migrations(cursor, current_version, target_version):
             print("    > Added 'workflow_source' column to 'images' table.")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
         current_version = 4
+
+    if current_version < 5 <= target_version:
+        print("  Applying schema version 5 (Image Viewer Edit Files)...")
+        cursor.execute("PRAGMA table_info(images)")
+        columns = [row['name'] for row in cursor.fetchall()]
+        if 'has_edit_file' not in columns:
+            cursor.execute("ALTER TABLE images ADD COLUMN has_edit_file BOOLEAN DEFAULT 0")
+            print("    > Added 'has_edit_file' column to 'images' table.")
+        current_version = 5
 
     if current_version != target_version:
         # This check is now less critical for table creation but good for migration integrity.

@@ -63,7 +63,7 @@ async def list_images_route(request: web.Request):
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        query_fields = "id, filename, subfolder, format, mtime, size_bytes, path_canon, thumbnail_status, thumbnail_last_generated_at, is_trashed, original_path_canon"
+        query_fields = "id, filename, subfolder, format, mtime, size_bytes, path_canon, thumbnail_status, thumbnail_last_generated_at, is_trashed, original_path_canon, has_edit_file"
         query_base = f"SELECT {query_fields} FROM images"
         where_clauses, params = [], []
 

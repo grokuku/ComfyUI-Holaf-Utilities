@@ -17,6 +17,7 @@ import * as Gallery from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
+import { ImageEditor } from './image_viewer/image_viewer_editor.js'; // --- MODIFICATION: Import ImageEditor
 
 const STATS_REFRESH_INTERVAL_MS = 2000; // Refresh stats every 2 seconds
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunk size for downloads
@@ -37,6 +38,7 @@ const holafImageViewer = {
     metadataAbortController: null,
     fullscreenElements: null,
     refreshIntervalId: null,
+    editor: null, // --- MODIFICATION: Add editor property
     _fullscreenSourceView: null,
     _lastFolderFilterState: null,
     searchDebounceTimeout: null,
@@ -123,7 +125,10 @@ const holafImageViewer = {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
             this.loadAndPopulateFilters();
-            if (!this.isInitialized) this.isInitialized = true;
+            if (!this.isInitialized) {
+                this.editor = new ImageEditor(this); // --- MODIFICATION: Initialize the editor
+                this.isInitialized = true;
+            }
             this._updateViewerActivity(true);
         }
     },
@@ -592,10 +597,34 @@ const holafImageViewer = {
     _navigate: function(direction) { return Navigation.navigate(this, direction); },
     _navigateGrid: function(direction) { return Navigation.navigateGrid(this, direction); },
     _handleEscape: function() { return Navigation.handleEscape(this); },
-    _showZoomedView: function(image) { return Navigation.showZoomedView(this, image); },
-    _hideZoomedView: function() { return Navigation.hideZoomedView(); },
-    _showFullscreenView: function(image) { return Navigation.showFullscreenView(this, image); },
-    _hideFullscreenView: function() { return Navigation.hideFullscreenView(this); },
+    _showZoomedView: function(image) {
+        // --- MODIFICATION: Show the editor when zoomed view is shown ---
+        if (this.editor) this.editor.show(image);
+        return Navigation.showZoomedView(this, image);
+    },
+    _hideZoomedView: function() {
+        // --- MODIFICATION: Hide the editor and reset filters when zoomed view is hidden ---
+        if (this.editor) this.editor.hide();
+        const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
+        if (zoomedImg) zoomedImg.style.filter = 'none';
+        return Navigation.hideZoomedView();
+    },
+    _showFullscreenView: function(image) {
+        // --- MODIFICATION: Ensure editor is active for fullscreen view as well ---
+        if (this.editor) this.editor.show(image);
+        return Navigation.showFullscreenView(this, image);
+    },
+    _hideFullscreenView: function() {
+        // --- MODIFICATION: Reset filters when leaving fullscreen ---
+        const fullscreenImg = this.fullscreenElements?.img;
+        if (fullscreenImg) fullscreenImg.style.filter = 'none';
+        
+        // Hide editor only if we are not returning to the zoomed view
+        if (this._fullscreenSourceView !== 'zoomed') {
+             if (this.editor) this.editor.hide();
+        }
+        return Navigation.hideFullscreenView(this);
+    },
 
     // --- Download Queue Processing ---
     _startStatusAnimation() {
@@ -732,13 +761,21 @@ const holafImageViewer = {
             return;
         }
 
-        if (isFullUpdate) {
+        // --- MODIFICATION: Make function robust against missing data object ---
+        if (isFullUpdate && data) {
             this.currentFilteredCount = data.filtered_count !== undefined ? data.filtered_count : this.currentFilteredCount;
             this.currentTotalDbCount = data.total_db_count !== undefined ? data.total_db_count : this.currentTotalDbCount;
         }
+        
         let statusText = `Displaying ${this.currentFilteredCount} of ${this.currentTotalDbCount} total images.`;
-        const generatedCount = data.generated_thumbnails_count !== undefined ? data.generated_thumbnails_count : (this.lastThumbStats ? this.lastThumbStats.generated_thumbnails_count : 0);
-        const totalForThumbs = data.total_db_count !== undefined ? data.total_db_count : (this.lastThumbStats ? this.lastThumbStats.total_db_count : this.currentTotalDbCount);
+        
+        const generatedCount = (data && data.generated_thumbnails_count !== undefined) 
+            ? data.generated_thumbnails_count 
+            : (this.lastThumbStats ? this.lastThumbStats.generated_thumbnails_count : 0);
+        
+        const totalForThumbs = (data && data.total_db_count !== undefined) 
+            ? data.total_db_count 
+            : (this.lastThumbStats ? this.lastThumbStats.total_db_count : this.currentTotalDbCount);
         
         if (this.exportDownloadQueue.length > 0) {
             statusText += ` | Export Queue: ${this.exportDownloadQueue.length} file(s)`;

@@ -363,6 +363,17 @@ async def iv_prepare_export_route(r): return await holaf_image_viewer_backend.pr
 @routes.get("/holaf/images/export-chunk")
 async def iv_download_export_chunk_route(r): return await holaf_image_viewer_backend.download_export_chunk_route(r)
 
+# --- MODIFICATION START: Add new edit routes ---
+@routes.get("/holaf/images/load-edits")
+async def iv_load_edits_route(r): return await holaf_image_viewer_backend.load_edits_route(r)
+
+@routes.post("/holaf/images/save-edits")
+async def iv_save_edits_route(r): return await holaf_image_viewer_backend.save_edits_route(r)
+
+@routes.post("/holaf/images/delete-edits")
+async def iv_delete_edits_route(r): return await holaf_image_viewer_backend.delete_edits_route(r)
+# --- MODIFICATION END ---
+
 # Image Viewer Thumbnail Worker and Stats
 @routes.post("/holaf/images/viewer-activity")
 async def iv_set_viewer_activity_route(r): return await holaf_image_viewer_backend.set_viewer_activity_route(r)

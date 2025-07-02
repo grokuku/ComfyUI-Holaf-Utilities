@@ -86,6 +86,12 @@ def sync_image_database_blocking():
                         full_path = os.path.join(root, filename)
                         file_stat = os.stat(full_path)
 
+                        # --- MODIFICATION START: Check for .edt file ---
+                        base_name, _ = os.path.splitext(filename)
+                        edit_file_path = os.path.join(root, f"{base_name}.edt")
+                        has_edit_file = os.path.isfile(edit_file_path)
+                        # --- MODIFICATION END ---
+
                         subfolder = os.path.relpath(root, output_dir)
                         if subfolder == '.': subfolder = ''
                         
@@ -108,13 +114,13 @@ def sync_image_database_blocking():
                                     UPDATE images
                                     SET mtime = ?, size_bytes = ?, last_synced_at = ?,
                                         prompt_text = ?, workflow_json = ?, prompt_source = ?, workflow_source = ?,
-                                        width = ?, height = ?, aspect_ratio_str = ?,
+                                        width = ?, height = ?, aspect_ratio_str = ?, has_edit_file = ?,
                                         thumbnail_status = 0, thumbnail_priority_score = 1000, thumbnail_last_generated_at = NULL
                                     WHERE id = ? AND is_trashed = 0
                                 """, (file_stat.st_mtime, file_stat.st_size, current_time,
                                       meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
                                       meta.get('prompt_source'), meta.get('workflow_source'),
-                                      meta.get('width'), meta.get('height'), meta.get('ratio'),
+                                      meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file,
                                       existing_record['id']))
                         else: # New image found on disk (not in DB or was previously trashed and now outside trash)
                             cursor.execute("""
@@ -122,13 +128,13 @@ def sync_image_database_blocking():
                                     (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
                                      is_trashed, original_path_canon,
                                      prompt_text, workflow_json, prompt_source, workflow_source,
-                                     width, height, aspect_ratio_str)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?)
+                                     width, height, aspect_ratio_str, has_edit_file)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(),
                                   file_stat.st_mtime, file_stat.st_size, current_time,
                                   meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
                                   meta.get('prompt_source'), meta.get('workflow_source'),
-                                  meta.get('width'), meta.get('height'), meta.get('ratio')))
+                                  meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file))
                     except Exception as e:
                         print(f"🔴 [Holaf-ImageViewer] Error processing file {filename} during sync: {e}")
 
