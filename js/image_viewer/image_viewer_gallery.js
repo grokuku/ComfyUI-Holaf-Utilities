@@ -5,11 +5,13 @@
  * This module manages the core gallery rendering logic, including
  * virtual/infinite scrolling, thumbnail loading, and prioritization.
  * MODIFICATION: Added shift-click and ctrl-shift-click range selection logic.
+ * MODIFICATION: Replaced setTimeout with requestAnimationFrame for non-blocking rendering.
  */
 
 import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
 
-const RENDER_BATCH_SIZE = 100;
+const RENDER_BATCH_SIZE = 50;   // How many placeholders to render when the scroll sentinel is hit.
+const RENDER_CHUNK_SIZE = 10;   // How many placeholders to render per frame during background rendering.
 const PRIORITIZE_BATCH_SIZE = 50;
 const PRIORITIZE_DEBOUNCE_MS = 500;
 
@@ -72,11 +74,11 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
         placeholder.innerHTML = '';
         placeholder.classList.remove('error');
 
-        if(currentCheckbox) placeholder.appendChild(currentCheckbox);
-        if(currentEditIcon) placeholder.appendChild(currentEditIcon); // Re-append edit icon
+        if (currentCheckbox) placeholder.appendChild(currentCheckbox);
+        if (currentEditIcon) placeholder.appendChild(currentEditIcon); // Re-append edit icon
 
         const fsIcon = currentFsIcon || document.createElement('div');
-        if(!currentFsIcon) {
+        if (!currentFsIcon) {
             fsIcon.className = 'holaf-viewer-fullscreen-icon';
             fsIcon.innerHTML = '⛶';
             fsIcon.title = 'View fullscreen';
@@ -110,7 +112,7 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
             loadSpecificThumbnail(viewer, placeholder, image, true);
         };
         placeholder.innerHTML = '';
-        if(currentCheckbox) placeholder.appendChild(currentCheckbox);
+        if (currentCheckbox) placeholder.appendChild(currentCheckbox);
         placeholder.appendChild(errorOverlay);
         placeholder.appendChild(retryButton);
     };
@@ -146,7 +148,7 @@ export function createPlaceholder(viewer, image, index) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'holaf-viewer-thumb-checkbox';
-    
+
     checkbox.checked = Array.from(viewer.selectedImages).some(selImg => selImg.path_canon === image.path_canon);
     checkbox.title = "Select image";
 
@@ -171,7 +173,7 @@ export function createPlaceholder(viewer, image, index) {
         const hasAnchor = viewer.lastClickedIndex > -1;
 
         // --- MODIFIED: Reordered and added Ctrl+Shift logic ---
-        
+
         // Case 1: Ctrl + Shift + Click (additive range selection)
         if (e.ctrlKey && e.shiftKey && hasAnchor) {
             const start = Math.min(viewer.lastClickedIndex, index);
@@ -187,7 +189,7 @@ export function createPlaceholder(viewer, image, index) {
                     if (checkboxInRange) checkboxInRange.checked = true;
                 }
             }
-        // Case 2: Shift + Click (exclusive range selection)
+            // Case 2: Shift + Click (exclusive range selection)
         } else if (e.shiftKey && hasAnchor) {
             const start = Math.min(viewer.lastClickedIndex, index);
             const end = Math.max(viewer.lastClickedIndex, index);
@@ -205,7 +207,7 @@ export function createPlaceholder(viewer, image, index) {
                     if (checkboxInRange) checkboxInRange.checked = true;
                 }
             }
-        // Case 3: Ctrl + Click (toggle single item)
+            // Case 3: Ctrl + Click (toggle single item)
         } else if (e.ctrlKey) {
             checkbox.checked = !checkbox.checked;
             if (checkbox.checked) {
@@ -216,7 +218,7 @@ export function createPlaceholder(viewer, image, index) {
             }
             // A ctrl-click sets the anchor for the next shift-click
             viewer.lastClickedIndex = index;
-        // Case 4: Simple Click (select single item)
+            // Case 4: Simple Click (select single item)
         } else {
             document.querySelectorAll('.holaf-viewer-thumb-checkbox:checked').forEach(cb => cb.checked = false);
             viewer.selectedImages.clear();
@@ -225,7 +227,7 @@ export function createPlaceholder(viewer, image, index) {
             // A simple click also sets the anchor
             viewer.lastClickedIndex = index;
         }
-        
+
         // Update the 'active' image regardless of selection type
         viewer.activeImage = imgData;
         viewer.currentNavIndex = index;
@@ -249,12 +251,11 @@ export function renderGallery(viewer) {
     const galleryEl = document.getElementById("holaf-viewer-gallery");
     if (!galleryEl) return;
     if (viewer.galleryObserver) viewer.galleryObserver.disconnect();
-    if (viewer.backgroundRenderHandle) clearTimeout(viewer.backgroundRenderHandle);
+    if (viewer.backgroundRenderHandle) cancelAnimationFrame(viewer.backgroundRenderHandle);
     galleryEl.innerHTML = '';
     viewer.renderedCount = 0;
     viewer.visiblePlaceholdersToPrioritize.clear();
-    // Reset last clicked index on gallery refresh
-    viewer.lastClickedIndex = -1; 
+    viewer.lastClickedIndex = -1;
 
 
     if (!viewer.filteredImages || viewer.filteredImages.length === 0) {
@@ -279,8 +280,8 @@ export function renderGallery(viewer) {
                 const image = viewer.filteredImages[imageIndex];
                 if (image) {
                     if (!placeholder.dataset.thumbnailLoadingOrLoaded) {
-                         viewer.visiblePlaceholdersToPrioritize.add(image.path_canon);
-                         schedulePrioritizeThumbnails(viewer);
+                        viewer.visiblePlaceholdersToPrioritize.add(image.path_canon);
+                        schedulePrioritizeThumbnails(viewer);
                     }
                     viewer.galleryObserver.unobserve(placeholder);
                     loadSpecificThumbnail(viewer, placeholder, image, false);
@@ -289,23 +290,24 @@ export function renderGallery(viewer) {
         });
     }, { root: galleryEl, rootMargin: "400px 0px" });
 
-    renderImageBatch(viewer);
+    renderImageBatch(viewer); // Render initial batch
     viewer.galleryObserver.observe(sentinel);
     viewer._updateActionButtonsState();
 }
 
 /**
- * Renders a batch of image placeholders.
+ * Renders a batch of image placeholders when the sentinel is triggered.
  * @param {object} viewer - The main image viewer instance.
- * @param {boolean} [isBackground=false] - True if called from the background rendering loop.
  */
-export function renderImageBatch(viewer, isBackground = false) {
+export function renderImageBatch(viewer) {
     const galleryEl = document.getElementById("holaf-viewer-gallery");
     const sentinel = document.getElementById('holaf-viewer-load-sentinel');
     if (!galleryEl) return;
 
-    if (viewer.backgroundRenderHandle && !isBackground) {
-        clearTimeout(viewer.backgroundRenderHandle);
+    // Stop any existing background rendering, as the user has scrolled manually
+    if (viewer.backgroundRenderHandle) {
+        cancelAnimationFrame(viewer.backgroundRenderHandle);
+        viewer.backgroundRenderHandle = null;
     }
 
     const fragment = document.createDocumentFragment();
@@ -324,28 +326,55 @@ export function renderImageBatch(viewer, isBackground = false) {
     }
     viewer.renderedCount = nextRenderLimit;
 
+    // After a manual scroll/batch render, restart the non-blocking background rendering
     if (viewer.renderedCount < viewer.filteredImages.length) {
-        if (!isBackground) {
-            startBackgroundRendering(viewer);
-        }
+        startBackgroundRendering(viewer);
     } else {
         if (sentinel) sentinel.remove();
     }
 }
 
 /**
- * Starts a progressive background rendering of remaining placeholders.
+ * Starts a non-blocking, progressive background rendering of remaining placeholders.
  * @param {object} viewer - The main image viewer instance.
  */
 export function startBackgroundRendering(viewer) {
-    if (viewer.backgroundRenderHandle) clearTimeout(viewer.backgroundRenderHandle);
-    const renderNext = () => {
+    if (viewer.backgroundRenderHandle) {
+        cancelAnimationFrame(viewer.backgroundRenderHandle);
+    }
+
+    const galleryEl = document.getElementById("holaf-viewer-gallery");
+    const sentinel = document.getElementById('holaf-viewer-load-sentinel');
+    if (!galleryEl) return;
+
+    const renderNextChunk = () => {
+        // Stop if all images are rendered
         if (viewer.renderedCount >= viewer.filteredImages.length) {
+            if (sentinel) sentinel.remove();
             viewer.backgroundRenderHandle = null;
             return;
         }
-        renderImageBatch(viewer, true);
-        viewer.backgroundRenderHandle = setTimeout(renderNext, 50);
+
+        const fragment = document.createDocumentFragment();
+        const nextRenderLimit = Math.min(viewer.renderedCount + RENDER_CHUNK_SIZE, viewer.filteredImages.length);
+
+        for (let i = viewer.renderedCount; i < nextRenderLimit; i++) {
+            const placeholder = createPlaceholder(viewer, viewer.filteredImages[i], i);
+            fragment.appendChild(placeholder);
+            viewer.galleryObserver.observe(placeholder);
+        }
+
+        if (sentinel) {
+            galleryEl.insertBefore(fragment, sentinel);
+        } else {
+            galleryEl.appendChild(fragment);
+        }
+        viewer.renderedCount = nextRenderLimit;
+
+        // Queue up the next chunk for the next animation frame
+        viewer.backgroundRenderHandle = requestAnimationFrame(renderNextChunk);
     };
-    viewer.backgroundRenderHandle = setTimeout(renderNext, 500);
+
+    // Start the non-blocking render loop
+    viewer.backgroundRenderHandle = requestAnimationFrame(renderNextChunk);
 }

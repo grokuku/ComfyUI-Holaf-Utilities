@@ -12,6 +12,7 @@
  * CORRECTION: Fixed right column layout and edit icon styling.
  * MODIFICATION: Made UI more compact by reducing margins, gaps, and title font sizes.
  * CORRECTION: Fixed missing scrollbar on the right info pane when the editor is open.
+ * MODIFICATION: Added a loading overlay effect for non-blocking filter changes.
  */
 
 #holaf-viewer-panel .holaf-viewer-container {
@@ -264,7 +265,40 @@
     gap: 4px;
     padding: 10px;
     box-sizing: border-box;
+    position: relative;
+    /* Needed for the ::before overlay */
 }
+
+/* --- MODIFICATION START: Loading Overlay --- */
+#holaf-viewer-gallery.loading-overlay {
+    pointer-events: none;
+    /* Prevent clicks during load */
+    user-select: none;
+}
+
+#holaf-viewer-gallery.loading-overlay::before {
+    content: 'Loading...';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: var(--holaf-text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5em;
+    font-weight: bold;
+    z-index: 20;
+    /* Ensure it's on top of thumbnails */
+    border-radius: 4px;
+    transition: opacity 0.15s ease-in-out;
+    opacity: 1;
+}
+
+/* --- MODIFICATION END --- */
+
 
 .holaf-viewer-message {
     width: 100%;
