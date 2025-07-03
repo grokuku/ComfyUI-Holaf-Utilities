@@ -32,7 +32,7 @@
 .holaf-utility-header {
     background-color: var(--holaf-background-secondary) !important;
     color: var(--holaf-text-primary) !important;
-    padding: 8px 12px !important;
+    padding: 4px 12px !important;
     cursor: move !important;
     user-select: none !important;
     border-bottom: 1px solid var(--holaf-border-color) !important;

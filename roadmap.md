@@ -25,7 +25,10 @@ Développer une suite d'utilitaires robustes et intégrés pour ComfyUI, central
     *   [COMPLETED] L'option d'affichage "Contained (no crop)" de l'Image Viewer est sauvegardée et fonctionnelle.
     *   [COMPLETED] Le problème de bordure noire inattendue autour du contenu du Terminal a été corrigé via une révision des styles CSS du wrapper du terminal.
     *   [COMPLETED] Les erreurs "Cannot operate on a closed database" dans l'Image Viewer ont été corrigées par une meilleure gestion des connexions SQLite.
+    *   [COMPLETED] Le fond noir derrière l'icône d'édition sur les vignettes de l'Image Viewer a été supprimé.
+    *   [COMPLETED] Le panneau "Image Editor" se positionne désormais correctement sous le panneau d'informations dans la colonne de droite.
     *   [À FAIRE] Le texte du filtre dans le "Custom Nodes Manager" est sauvegardé dans config.ini mais n'est pas correctement rechargé et appliqué à la réouverture du panneau après un redémarrage de ComfyUI.
+    *   [À FAIRE] **[BUG - Image Viewer]** La barre de défilement du panneau d'informations (colonne de droite) n'apparaît pas lorsque l'éditeur d'image est ouvert, ce qui empêche de voir tout le contenu si celui-ci est trop grand.
     *   **[BUG - System Monitor]** **Aucun log backend :** Les logs de débogage ajoutés dans le module `holaf_system_monitor.py` (anciennement `__init__.py`) pour la fonction `_get_system_stats_blocking` et le handler WebSocket `holaf_monitor_websocket_handler` n'apparaissent pas dans la console serveur, indiquant un problème en amont (connexion WebSocket non établie correctement, route non atteinte, ou erreur précoce non capturée dans le handler).
     *   **[BUG - System Monitor]** **Données incorrectes/manquantes sur le frontend :**
         *   Les valeurs CPU et RAM affichées sur le frontend sont à 0% et ne se mettent pas à jour.
@@ -225,13 +228,3 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 *   **Actions "Extract Metadata", "Inject Metadata" :** Squelettes en place côté frontend (boutons et handlers vides), backend non commencé.
 *   **Filtre pour la corbeille :** Complété (intégré dynamiquement à la liste des filtres de dossier).
 
-**Prochaines étapes pour l'Image Viewer :**
-
-1.  **Implémenter la fonctionnalité "Extract Metadata" :**
-    *   Backend : Créer l'API pour sauvegarder les métadonnées internes dans des fichiers `.txt` et `.json`.
-    *   Frontend : Lier le bouton à la nouvelle API.
-    *   Évaluer la complexité de l'effacement des métadonnées de l'image source.
-2.  **Implémenter la fonctionnalité "Inject Metadata" :**
-    *   Backend : Créer l'API pour lire les fichiers `.txt`/`.json` et les écrire dans les métadonnées de l'image.
-    *   Frontend : Lier le bouton à l'API.
-3.  **Amélioration QDV :** Ajouter une checkbox "Select All" pour les filtres de dossier.

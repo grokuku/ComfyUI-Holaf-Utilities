@@ -29,19 +29,20 @@ export class ImageEditor {
     createPanel() {
         const editorContainer = document.createElement('div');
         editorContainer.id = 'holaf-viewer-editor-pane';
-        editorContainer.className = 'holaf-viewer-pane'; // Same style as other panes
+        // editorContainer.className = 'holaf-viewer-pane'; // This class is not needed here
         editorContainer.style.display = 'none'; // Initially hidden
         editorContainer.innerHTML = this._getPanelHTML();
-        
-        // Append it after the info pane in the right-hand column
-        const rightPane = document.getElementById('holaf-viewer-right-pane');
-        if (rightPane) {
-            rightPane.parentNode.insertBefore(editorContainer, rightPane.nextSibling);
+
+        // --- MODIFICATION START: Correctly append the editor to the right column ---
+        const rightColumn = document.getElementById('holaf-viewer-right-column');
+        if (rightColumn) {
+            rightColumn.appendChild(editorContainer);
             this.panelEl = editorContainer;
             this._attachListeners();
         } else {
-            console.error("[Holaf Editor] Could not find right pane to attach editor.");
+            console.error("[Holaf Editor] Could not find right column to attach editor.");
         }
+        // --- MODIFICATION END ---
     }
 
     /**
@@ -50,11 +51,11 @@ export class ImageEditor {
      */
     async show(image) {
         if (!this.panelEl) this.createPanel();
-        
+
         this.activeImage = image;
         this.panelEl.style.display = 'block';
         this.isDirty = false;
-        
+
         await this._loadEditsForCurrentImage();
         this._updateSaveButtonState();
     }
@@ -103,7 +104,7 @@ export class ImageEditor {
 
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         const fullscreenImg = this.viewer.fullscreenElements?.img;
-        
+
         const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
 
         if (zoomedImg) zoomedImg.style.filter = filterValue;
@@ -125,25 +126,25 @@ export class ImageEditor {
                     edits: this.currentState
                 })
             });
-            
+
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(`Server returned an error: ${response.status} ${response.statusText}. Response: ${errorText}`);
             }
 
             const result = await response.json();
-            
+
             if (result.status === 'ok') {
                 this.isDirty = false;
                 this._updateSaveButtonState();
                 this.activeImage.has_edit_file = true;
-                
+
                 const imageInList = this.viewer.filteredImages.find(img => img.path_canon === this.activeImage.path_canon);
                 if (imageInList) imageInList.has_edit_file = true;
 
                 this.viewer.updateStatusBar(null, false);
             } else {
-                 HolafPanelManager.createDialog({ title: "Save Error", message: `Could not save edits: ${result.message || 'Unknown error from server.'}` });
+                HolafPanelManager.createDialog({ title: "Save Error", message: `Could not save edits: ${result.message || 'Unknown error from server.'}` });
             }
         } catch (e) {
             console.error("[Holaf Editor] Error saving edits:", e);
@@ -156,20 +157,20 @@ export class ImageEditor {
      */
     async _resetEdits() {
         if (!this.activeImage) return;
-        
+
         if (!await HolafPanelManager.createDialog({
             title: "Confirm Reset",
             message: "Are you sure you want to reset all edits for this image? This will delete the saved .edt file.",
-            buttons: [ { text: "Cancel", value: false }, { text: "Reset", value: true, type: "danger" } ]
+            buttons: [{ text: "Cancel", value: false }, { text: "Reset", value: true, type: "danger" }]
         })) return;
-        
+
         try {
             const response = await fetch('/holaf/images/delete-edits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path_canon: this.activeImage.path_canon })
             });
-            
+
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(`Server returned an error: ${response.status} ${response.statusText}. Response: ${errorText}`);
@@ -190,14 +191,14 @@ export class ImageEditor {
                 this._updateSaveButtonState();
                 this.viewer.updateStatusBar(null, false);
             } else {
-                 HolafPanelManager.createDialog({ title: "Reset Error", message: `Could not reset edits: ${result.message || 'Unknown error from server.'}` });
+                HolafPanelManager.createDialog({ title: "Reset Error", message: `Could not reset edits: ${result.message || 'Unknown error from server.'}` });
             }
         } catch (e) {
-             console.error("[Holaf Editor] Error resetting edits:", e);
-             HolafPanelManager.createDialog({ title: "API Error", message: `Failed to reset edits. The server response might not be valid. Details: ${e.message}` });
+            console.error("[Holaf Editor] Error resetting edits:", e);
+            HolafPanelManager.createDialog({ title: "API Error", message: `Failed to reset edits. The server response might not be valid. Details: ${e.message}` });
         }
     }
-    
+
     /**
      * Updates the UI elements (sliders) to match the current state.
      */
@@ -227,11 +228,11 @@ export class ImageEditor {
         // --- MODIFICATION: Add dblclick to reset sliders ---
         ['brightness', 'contrast', 'saturation'].forEach(key => {
             const sliderContainer = this.panelEl.querySelector(`#holaf-editor-${key}-slider`).parentNode;
-            
+
             sliderContainer.addEventListener('dblclick', () => {
                 const defaultValue = DEFAULT_EDIT_STATE[key];
                 this.currentState[key] = defaultValue;
-                
+
                 this.isDirty = true;
                 this._updateSaveButtonState();
                 this._updateUIFromState();
@@ -245,7 +246,7 @@ export class ImageEditor {
                     this.currentState[key] = value;
                     const valueEl = sliderContainer.querySelector('.holaf-editor-slider-value');
                     if (valueEl) valueEl.textContent = e.target.value;
-                    
+
                     this.isDirty = true;
                     this._updateSaveButtonState();
                     this.applyPreview();
@@ -271,7 +272,7 @@ export class ImageEditor {
                 <span id="holaf-editor-${name}-value" class="holaf-editor-slider-value">${value}</span>
             </div>
         `;
-        
+
         return `
             <h4>Image Editor</h4>
             <div id="holaf-editor-content">
