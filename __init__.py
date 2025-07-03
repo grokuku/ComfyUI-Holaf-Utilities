@@ -66,6 +66,43 @@ print("--- Initializing Holaf Utilities ---")
 holaf_database.init_database()
 reload_global_config() # Load initial config
 
+
+# --- MODIFICATION START: Patch SaveImage to enable live updates ---
+# Import the node class we want to patch
+from nodes import SaveImage
+
+# Store the original save_images method
+original_save_images = SaveImage.save_images
+
+# Define our new patched method
+def holaf_patched_save_images(self, images, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
+    # Call the original method first to let it save the images and get the results
+    results = original_save_images(self, images, filename_prefix, prompt, extra_pnginfo)
+
+    # Now, after the images are saved, trigger our DB update for each saved file
+    if results and 'ui' in results and 'images' in results['ui']:
+        output_dir = folder_paths.get_output_directory()
+        for img_info in results['ui']['images']:
+            filename = img_info.get('filename')
+            subfolder = img_info.get('subfolder', '')
+            if filename:
+                # Construct the full, absolute path of the newly saved image
+                full_path = os.path.join(output_dir, subfolder, filename)
+                try:
+                    # Use a non-blocking call if possible, or a thread to avoid delaying the UI
+                    # For simplicity here, we call it directly. If it's slow, a thread is better.
+                    holaf_image_viewer_backend.logic.add_or_update_single_image(full_path)
+                except Exception as e:
+                    print(f"🔴 [Holaf-Patch] Error calling single image update for {full_path}: {e}")
+    
+    return results
+
+# Apply the patch by replacing the original method with our new one
+SaveImage.save_images = holaf_patched_save_images
+print("🔵 [Holaf-Init] Patched 'SaveImage' node for live Image Viewer updates.")
+# --- MODIFICATION END ---
+
+
 # --- API Route Definitions ---
 routes = server.PromptServer.instance.routes
 
@@ -337,6 +374,13 @@ async def iv_get_thumbnail_route(r): return await holaf_image_viewer_backend.get
 
 @routes.get("/holaf/images/metadata")
 async def iv_get_metadata_route(r): return await holaf_image_viewer_backend.get_metadata_route(r)
+
+# --- MODIFICATION START: Add route for checking last update time ---
+@routes.get("/holaf/images/last-update-time")
+async def iv_get_last_update_time_route(request: web.Request):
+    return web.json_response({"last_update": holaf_image_viewer_backend.logic.LAST_DB_UPDATE_TIME})
+# --- MODIFICATION END ---
+
 
 # Image Viewer Actions
 @routes.post("/holaf/images/delete")

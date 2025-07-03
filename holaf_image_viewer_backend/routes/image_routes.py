@@ -13,7 +13,7 @@ from ... import holaf_database
 # --- API Route Handlers ---
 async def get_filter_options_route(request: web.Request):
     conn = None
-    response_data = {"subfolders": [], "formats": [], "has_root": False}
+    response_data = {"subfolders": [], "formats": [], "has_root": False, "last_update_time": logic.LAST_DB_UPDATE_TIME}
     error_status = 500
     current_exception = None
     try:
@@ -41,7 +41,12 @@ async def get_filter_options_route(request: web.Request):
         has_root_images = cursor.fetchone() is not None
         
         conn.commit()
-        response_data = {"subfolders": sorted(list(subfolders)), "formats": formats, "has_root": has_root_images}
+        response_data = {
+            "subfolders": sorted(list(subfolders)), 
+            "formats": formats, 
+            "has_root": has_root_images,
+            "last_update_time": logic.LAST_DB_UPDATE_TIME # --- MODIFICATION: Add timestamp to response
+        }
         return web.json_response(response_data)
     except Exception as e:
         current_exception = e

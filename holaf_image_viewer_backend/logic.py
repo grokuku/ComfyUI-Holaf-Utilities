@@ -29,6 +29,16 @@ STANDARD_RATIOS = [
 ]
 RATIO_THRESHOLD = 0.02
 
+# --- MODIFICATION START: Live Update Tracking ---
+LAST_DB_UPDATE_TIME = time.time()
+
+def update_last_db_update_time():
+    """Updates the global timestamp to signal a database change."""
+    global LAST_DB_UPDATE_TIME
+    LAST_DB_UPDATE_TIME = time.time()
+# --- MODIFICATION END ---
+
+
 # --- Filesystem Helpers ---
 def ensure_trashcan_exists():
     """Ensures the trashcan directory exists within the main output directory."""
@@ -47,6 +57,73 @@ def ensure_trashcan_exists():
 ensure_trashcan_exists()
 
 # --- Database Synchronization ---
+
+# --- MODIFICATION START: New function for single image updates ---
+def add_or_update_single_image(image_abs_path):
+    """
+    Efficiently adds or updates a single image in the database.
+    This should be called by any process that saves a new image.
+    """
+    output_dir = folder_paths.get_output_directory()
+    if not image_abs_path.startswith(output_dir):
+        print(f"🟡 [Holaf-Logic] Attempted to add image outside of output directory, ignoring: {image_abs_path}")
+        return
+
+    conn = None
+    update_exception = None
+    try:
+        file_stat = os.stat(image_abs_path)
+        directory, filename = os.path.split(image_abs_path)
+        base_filename, file_ext = os.path.splitext(filename)
+
+        if file_ext.lower() not in SUPPORTED_IMAGE_FORMATS:
+            return
+
+        subfolder = os.path.relpath(directory, output_dir)
+        if subfolder == '.': subfolder = ''
+        path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
+
+        # Ensure we are not processing something in the trashcan
+        if subfolder.startswith(TRASHCAN_DIR_NAME + '/') or subfolder == TRASHCAN_DIR_NAME:
+            return
+
+        edit_file_path = os.path.join(directory, f"{base_filename}.edt")
+        has_edit_file = os.path.isfile(edit_file_path)
+
+        meta = _extract_image_metadata_blocking(image_abs_path)
+
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        
+        # Use INSERT OR REPLACE to handle both new and updated files cleanly
+        cursor.execute("""
+            INSERT OR REPLACE INTO images 
+                (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
+                 is_trashed, original_path_canon,
+                 prompt_text, workflow_json, prompt_source, workflow_source,
+                 width, height, aspect_ratio_str, has_edit_file,
+                 thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1000, NULL)
+        """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(),
+              file_stat.st_mtime, file_stat.st_size, time.time(),
+              meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+              meta.get('prompt_source'), meta.get('workflow_source'),
+              meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file))
+        
+        conn.commit()
+        print(f"🔵 [Holaf-Logic] Successfully added/updated single image in DB: {path_canon}")
+        update_last_db_update_time() # Signal that the DB has changed
+
+    except Exception as e:
+        update_exception = e
+        print(f"🔴 [Holaf-Logic] Error in add_or_update_single_image for {image_abs_path}: {e}")
+        traceback.print_exc()
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=update_exception)
+# --- MODIFICATION END ---
+
+
 def sync_image_database_blocking():
     print("🔵 [Holaf-ImageViewer] Starting image database synchronization...")
     output_dir = folder_paths.get_output_directory()
@@ -148,6 +225,7 @@ def sync_image_database_blocking():
                 cursor.execute("DELETE FROM images WHERE path_canon = ? AND is_trashed = 0", (path_canon_to_delete,))
             conn.commit()
         print("✅ [Holaf-ImageViewer] Image database synchronization complete.")
+        update_last_db_update_time() # --- MODIFICATION: Signal DB change after sync ---
 
     except Exception as e:
         sync_exception = e

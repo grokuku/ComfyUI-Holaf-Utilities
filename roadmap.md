@@ -175,6 +175,7 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
     *   [COMPLETED] Une table `images` a été ajoutée à la base de données partagée (SQLite) pour un chargement instantané (avec colonnes `is_trashed`, `original_path_canon`).
     *   [COMPLETED] Le filtrage (dossiers, formats, dates, corbeille) est maintenant effectué côté serveur via des requêtes SQL optimisées, éliminant les blocages du navigateur avec de grandes galeries.
     *   [COMPLETED] Un scan de synchronisation est effectué en arrière-plan au démarrage, puis périodiquement (toutes les 5 minutes via `__init__.py`) pour mettre à jour la base de données sans bloquer le serveur, en ignorant le contenu de la corbeille.
+    *   [À FAIRE - Amélioration Majeure] **Surveillance des Fichiers en Temps Réel :** Remplacer le scan périodique par une surveillance du système de fichiers (ex: avec la bibliothèque `watchdog`). Cela permettra une détection instantanée des ajouts, modifications ou suppressions de fichiers faits manuellement, rendant la visionneuse d'images entièrement réactive aux changements sur le disque.
 
 3.  **Performance - Rendu Virtualisé et Stabilité :**
     *   [COMPLETED] La galerie utilise un "infinite scroll" avec rendu par lots et chargement progressif en arrière-plan. Cela permet un affichage initial instantané et une barre de défilement fonctionnelle même avec des dizaines de milliers d'images.
@@ -227,4 +228,3 @@ Créer un visualiseur d'images complet et performant, intégré à ComfyUI, perm
 *   **Action "Empty Trashcan" :** Complétée.
 *   **Actions "Extract Metadata", "Inject Metadata" :** Squelettes en place côté frontend (boutons et handlers vides), backend non commencé.
 *   **Filtre pour la corbeille :** Complété (intégré dynamiquement à la liste des filtres de dossier).
-

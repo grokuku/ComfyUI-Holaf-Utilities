@@ -22,6 +22,7 @@ import { ImageEditor } from './image_viewer/image_viewer_editor.js'; // --- MODI
 const STATS_REFRESH_INTERVAL_MS = 2000; // Refresh stats every 2 seconds
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunk size for downloads
 const SEARCH_DEBOUNCE_MS = 400; // Debounce search input to avoid excessive API calls
+const FILTER_REFRESH_INTERVAL_MS = 5000; // --- MODIFICATION: How often to check for new folders/files
 
 const holafImageViewer = {
     // State Properties
@@ -42,6 +43,8 @@ const holafImageViewer = {
     _fullscreenSourceView: null,
     _lastFolderFilterState: null,
     searchDebounceTimeout: null,
+    filterRefreshIntervalId: null, // --- MODIFICATION: ID for the new interval
+    lastDbUpdateTime: 0, // --- MODIFICATION: Timestamp of the last known DB state
     workflowFilterState: { internal: true, external: true }, // Session-only state
     searchScopeState: { name: true, prompt: true, workflow: true }, // Session-only state
     settings: {
@@ -130,6 +133,9 @@ const holafImageViewer = {
                 this.isInitialized = true;
             }
             this._updateViewerActivity(true);
+            // --- MODIFICATION: Start the filter refresh interval ---
+            if (this.filterRefreshIntervalId) clearInterval(this.filterRefreshIntervalId);
+            this.filterRefreshIntervalId = setInterval(() => this.checkForUpdates(), FILTER_REFRESH_INTERVAL_MS);
         }
     },
 
@@ -149,6 +155,11 @@ const holafImageViewer = {
             if (this.statsRefreshIntervalId) {
                 clearInterval(this.statsRefreshIntervalId);
                 this.statsRefreshIntervalId = null;
+            }
+            // --- MODIFICATION: Stop the filter refresh interval ---
+            if (this.filterRefreshIntervalId) {
+                clearInterval(this.filterRefreshIntervalId);
+                this.filterRefreshIntervalId = null;
             }
             this._updateViewerActivity(false);
         }
@@ -390,17 +401,41 @@ const holafImageViewer = {
 
     // --- Data Loading & Filtering ---
 
-    async loadAndPopulateFilters() {
+    async checkForUpdates() {
+        if (this.isLoading) return; // Don't check if a filter load is already in progress
+        try {
+            const response = await fetch('/holaf/images/last-update-time', { cache: 'no-store' });
+            if (!response.ok) return;
+            const data = await response.json();
+
+            if (data.last_update > this.lastDbUpdateTime) {
+                console.log("[Holaf ImageViewer] New data detected on server, refreshing filters.");
+                this.lastDbUpdateTime = data.last_update;
+                await this.loadAndPopulateFilters(false, true); // Refresh filters without reloading gallery
+            }
+        } catch (e) {
+            console.error("[Holaf ImageViewer] Error checking for updates:", e);
+        }
+    },
+
+    async loadAndPopulateFilters(isInitialLoad = false, isUpdate = false) {
         try {
             const response = await fetch('/holaf/images/filter-options', { cache: 'no-store' });
             if (!response.ok) throw new Error(`HTTP error ${response.status}`);
             const data = await response.json();
 
-            const useSavedFolderFilters = this.settings.folder_filters !== undefined;
-            const useSavedFormatFilters = this.settings.format_filters !== undefined;
+            // --- MODIFICATION: Set the last update time on load ---
+            this.lastDbUpdateTime = data.last_update_time || this.lastDbUpdateTime;
+
+            const useSavedFolderFilters = this.settings.folder_filters !== undefined && !isUpdate;
+            const useSavedFormatFilters = this.settings.format_filters !== undefined && !isUpdate;
+
+            // --- MODIFICATION: Preserve current filter state during an update ---
+            const currentSelectedFolders = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''))) : null;
+            const currentSelectedFormats = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''))) : null;
 
             const allFolders = new Set(data.subfolders.map(p => p.split('/')[0]));
-            allFolders.delete('trashcan'); // Always try to remove trashcan from the main list
+            allFolders.delete('trashcan');
             const sortedFolders = Array.from(allFolders).sort();
 
             const foldersEl = document.getElementById('holaf-viewer-folders-filter');
@@ -410,19 +445,23 @@ const holafImageViewer = {
 
             const createFolderCheckbox = (folder, isRoot = false) => {
                 const id = isRoot ? 'root' : folder;
-                const isChecked = useSavedFolderFilters ? this.settings.folder_filters.includes(id) : true;
+                let isChecked = true;
+                if (isUpdate) { isChecked = currentSelectedFolders.has(id); }
+                else if (useSavedFolderFilters) { isChecked = this.settings.folder_filters.includes(id); }
                 return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, () => this.loadFilteredImages());
             };
 
             if (data.has_root) foldersEl.appendChild(createFolderCheckbox(null, true));
             sortedFolders.forEach(folder => foldersEl.appendChild(createFolderCheckbox(folder)));
 
-            // Always display the trashcan section
             const separator = document.createElement('div');
             separator.className = 'holaf-viewer-trash-separator';
             foldersEl.appendChild(separator);
 
-            const isTrashChecked = useSavedFolderFilters ? this.settings.folder_filters.includes('trashcan') : false;
+            let isTrashChecked = false;
+            if (isUpdate) { isTrashChecked = currentSelectedFolders.has('trashcan'); }
+            else if (useSavedFolderFilters) { isTrashChecked = this.settings.folder_filters.includes('trashcan'); }
+
             const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
                 const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
                 if (e.target.checked) {
@@ -439,7 +478,6 @@ const holafImageViewer = {
                 this.loadFilteredImages();
             });
 
-            // Add "Empty Trash" button
             const trashContainer = trashCheckboxItem;
             trashContainer.style.display = 'flex';
             trashContainer.style.justifyContent = 'space-between';
@@ -449,13 +487,8 @@ const holafImageViewer = {
             emptyTrashBtn.textContent = 'Empty';
             emptyTrashBtn.title = 'Permanently delete all files in the trashcan';
             emptyTrashBtn.style.cssText = 'font-size: 10px; padding: 2px 6px; margin-left: 10px; background-color: #802020; color: white; border: 1px solid #c03030; cursor: pointer; border-radius: 4px;';
-            emptyTrashBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this._handleEmptyTrash();
-            };
+            emptyTrashBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this._handleEmptyTrash(); };
             trashContainer.appendChild(emptyTrashBtn);
-
             foldersEl.appendChild(trashContainer);
 
             if (trashCheckboxItem.querySelector('input').checked) {
@@ -463,16 +496,22 @@ const holafImageViewer = {
             }
 
             data.formats.forEach(format => {
-                const isChecked = useSavedFormatFilters ? this.settings.format_filters.includes(format) : true;
+                let isChecked = true;
+                if (isUpdate) { isChecked = currentSelectedFormats.has(format); }
+                else if (useSavedFormatFilters) { isChecked = this.settings.format_filters.includes(format); }
                 formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, isChecked, () => this.loadFilteredImages()));
             });
 
-            this.loadFilteredImages(true); // MODIFICATION: Pass true for initial load
+            // --- MODIFICATION: Only load images if it's not a background filter update ---
+            if (!isUpdate) {
+                this.loadFilteredImages(isInitialLoad);
+            }
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load filter options:", e);
             document.getElementById('holaf-viewer-folders-filter').innerHTML = `<p class="holaf-viewer-message error">Error loading filters.</p>`;
         }
     },
+
 
     async _fetchFilteredImages() {
         const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
@@ -522,13 +561,12 @@ const holafImageViewer = {
         return await response.json();
     },
 
-    async loadFilteredImages(isInitialLoad = false) { // MODIFICATION: Add isInitialLoad flag
+    async loadFilteredImages(isInitialLoad = false) {
         if (this.isLoading) return;
         this.isLoading = true;
 
         const galleryEl = document.getElementById("holaf-viewer-gallery");
 
-        // MODIFICATION: Apply loading overlay instead of clearing content
         if (!isInitialLoad && galleryEl) {
             galleryEl.classList.add("loading-overlay");
         } else {
@@ -559,7 +597,6 @@ const holafImageViewer = {
                 if (newIndex > -1) {
                     this.currentNavIndex = newIndex;
                     this.activeImage = this.filteredImages[newIndex];
-                    // Use setTimeout to ensure the element exists after the render pass
                     setTimeout(() => this._updateActiveThumbnail(newIndex), 100);
                 } else {
                     this.activeImage = null; this.currentNavIndex = -1; this.updateInfoPane(null);
@@ -580,11 +617,10 @@ const holafImageViewer = {
 
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load images:", e);
-            this.setLoadingState(`Error: ${e.message}`); // Keep this for error display
+            this.setLoadingState(`Error: ${e.message}`);
             this.filteredImages = []; this.activeImage = null; this.currentNavIndex = -1; this.updateInfoPane(null);
         } finally {
             this.isLoading = false;
-            // MODIFICATION: Remove loading overlay
             if (galleryEl) {
                 galleryEl.classList.remove("loading-overlay");
             }
@@ -611,28 +647,23 @@ const holafImageViewer = {
     _navigateGrid: function (direction) { return Navigation.navigateGrid(this, direction); },
     _handleEscape: function () { return Navigation.handleEscape(this); },
     _showZoomedView: function (image) {
-        // --- MODIFICATION: Show the editor when zoomed view is shown ---
         if (this.editor) this.editor.show(image);
         return Navigation.showZoomedView(this, image);
     },
     _hideZoomedView: function () {
-        // --- MODIFICATION: Hide the editor and reset filters when zoomed view is hidden ---
         if (this.editor) this.editor.hide();
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         if (zoomedImg) zoomedImg.style.filter = 'none';
         return Navigation.hideZoomedView();
     },
     _showFullscreenView: function (image) {
-        // --- MODIFICATION: Ensure editor is active for fullscreen view as well ---
         if (this.editor) this.editor.show(image);
         return Navigation.showFullscreenView(this, image);
     },
     _hideFullscreenView: function () {
-        // --- MODIFICATION: Reset filters when leaving fullscreen ---
         const fullscreenImg = this.fullscreenElements?.img;
         if (fullscreenImg) fullscreenImg.style.filter = 'none';
 
-        // Hide editor only if we are not returning to the zoomed view
         if (this._fullscreenSourceView !== 'zoomed') {
             if (this.editor) this.editor.hide();
         }
@@ -774,7 +805,6 @@ const holafImageViewer = {
             return;
         }
 
-        // --- MODIFICATION: Make function robust against missing data object ---
         if (isFullUpdate && data) {
             this.currentFilteredCount = data.filtered_count !== undefined ? data.filtered_count : this.currentFilteredCount;
             this.currentTotalDbCount = data.total_db_count !== undefined ? data.total_db_count : this.currentTotalDbCount;
