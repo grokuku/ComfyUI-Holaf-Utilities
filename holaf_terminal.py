@@ -60,28 +60,29 @@ def is_running_in_venv():
 
 # --- API Route Handlers ---
 async def set_password_route(request: web.Request, global_app_config):
-    async with holaf_config.CONFIG_LOCK: # Use lock from config module
-        if global_app_config.get('password_hash'): 
-            return web.json_response({"status": "error", "message": "Password is already set."}, status=409)
+    # The lock is handled inside save_setting_to_config; removing it here prevents a deadlock.
+    if global_app_config.get('password_hash'): 
+        return web.json_response({"status": "error", "message": "Password is already set."}, status=409)
+    try:
+        data = await request.json()
+        password = data.get('password')
+        if not password or len(password) < 4:
+            return web.json_response({"status": "error", "message": "Password is too short."}, status=400)
+        
+        new_hash = _hash_password(password)
+        
         try:
-            data = await request.json()
-            password = data.get('password')
-            if not password or len(password) < 4:
-                return web.json_response({"status": "error", "message": "Password is too short."}, status=400)
-            
-            new_hash = _hash_password(password)
-            
-            try:
-                await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
-                global_app_config['password_hash'] = new_hash # Update live global config
-                print("🔑 [Holaf-Terminal] A new password has been set and saved via the UI.")
-                return web.json_response({"status": "ok", "action": "reload"})
-            except PermissionError:
-                print("🔵 [Holaf-Terminal] A user tried to set a password, but file permissions prevented saving.")
-                return web.json_response({"status": "manual_required", "hash": new_hash, "message": "Could not save config.ini due to file permissions."}, status=200)
-        except Exception as e:
-            print(f"🔴 [Holaf-Terminal] Error setting password: {e}")
-            return web.json_response({"status": "error", "message": str(e)}, status=500)
+            await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
+            global_app_config['password_hash'] = new_hash # Update live global config
+            print("🔑 [Holaf-Terminal] A new password has been set and saved via the UI.")
+            return web.json_response({"status": "ok", "action": "reload"})
+        except PermissionError:
+            print("🔵 [Holaf-Terminal] A user tried to set a password, but file permissions prevented saving.")
+            return web.json_response({"status": "manual_required", "hash": new_hash, "message": "Could not save config.ini due to file permissions."}, status=200)
+    except Exception as e:
+        print(f"🔴 [Holaf-Terminal] Error setting password: {e}")
+        traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 async def auth_route(request: web.Request, global_app_config):
     if not global_app_config.get('password_hash'):
