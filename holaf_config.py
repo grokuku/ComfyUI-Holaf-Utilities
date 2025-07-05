@@ -5,6 +5,7 @@ import platform
 import asyncio
 import re
 import traceback
+import json
 
 CONFIG_LOCK = asyncio.Lock()
 IS_WINDOWS = platform.system() == "Windows" # Needed for default shell
@@ -63,14 +64,32 @@ def load_all_configs():
 
     ui_image_viewer_defaults = {'panel_width': 1200, 'panel_height': 800}
     ui_settings_image_viewer = _parse_panel_settings(config_parser_obj, 'ImageViewerUI', ui_image_viewer_defaults)
+    
+    try:
+        folder_filters = json.loads(config_parser_obj.get('ImageViewerUI', 'folder_filters', fallback='[]'))
+    except json.JSONDecodeError:
+        folder_filters = []
+    try:
+        format_filters = json.loads(config_parser_obj.get('ImageViewerUI', 'format_filters', fallback='[]'))
+    except json.JSONDecodeError:
+        format_filters = []
+
     ui_settings_image_viewer.update({
-        'folder_filters': [f.strip() for f in config_parser_obj.get('ImageViewerUI', 'folder_filters', fallback='').split('","') if f.strip()],
-        'format_filters': [f.strip() for f in config_parser_obj.get('ImageViewerUI', 'format_filters', fallback='').split('","') if f.strip()],
+        'folder_filters': folder_filters,
+        'format_filters': format_filters,
         'thumbnail_fit': config_parser_obj.get('ImageViewerUI', 'thumbnail_fit', fallback='cover'),
         'thumbnail_size': config_parser_obj.getint('ImageViewerUI', 'thumbnail_size', fallback=150),
         'export_format': config_parser_obj.get('ImageViewerUI', 'export_format', fallback='png'),
         'export_include_meta': config_parser_obj.getboolean('ImageViewerUI', 'export_include_meta', fallback=True),
         'export_meta_method': config_parser_obj.get('ImageViewerUI', 'export_meta_method', fallback='embed'),
+        'search_text': config_parser_obj.get('ImageViewerUI', 'search_text', fallback=''),
+        'startDate': config_parser_obj.get('ImageViewerUI', 'startdate', fallback=''),
+        'endDate': config_parser_obj.get('ImageViewerUI', 'enddate', fallback=''),
+        'search_scope_name': config_parser_obj.getboolean('ImageViewerUI', 'search_scope_name', fallback=True),
+        'search_scope_prompt': config_parser_obj.getboolean('ImageViewerUI', 'search_scope_prompt', fallback=True),
+        'search_scope_workflow': config_parser_obj.getboolean('ImageViewerUI', 'search_scope_workflow', fallback=True),
+        'workflow_filter_internal': config_parser_obj.getboolean('ImageViewerUI', 'workflow_filter_internal', fallback=True),
+        'workflow_filter_external': config_parser_obj.getboolean('ImageViewerUI', 'workflow_filter_external', fallback=True),
     })
     
     ui_nodes_manager_defaults = {'panel_width': 900, 'panel_height': 600}

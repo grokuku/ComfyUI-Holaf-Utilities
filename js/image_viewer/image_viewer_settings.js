@@ -18,7 +18,6 @@ export async function loadSettings(viewer) {
         if (allSettings.ImageViewerUI) {
             const fetchedSettings = allSettings.ImageViewerUI;
 
-            // --- MODIFICATION START: Explicitly convert all boolean-like strings to actual booleans ---
             const booleanKeys = [
                 'export_include_meta', 'panel_is_fullscreen', 'search_scope_name',
                 'search_scope_prompt', 'search_scope_workflow',
@@ -30,25 +29,22 @@ export async function loadSettings(viewer) {
                     fetchedSettings[key] = String(fetchedSettings[key]).toLowerCase() === 'true';
                 }
             }
-            // --- MODIFICATION END ---
 
             const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
             
-            const folderFilters = fetchedSettings.folder_filters;
-            const formatFilters = fetchedSettings.format_filters;
-
+            // The backend now provides `folder_filters` and `format_filters` as proper arrays.
+            // The spread assignment below handles them correctly. No more client-side parsing is needed.
             viewer.settings = { ...viewer.settings, ...fetchedSettings };
-
-            if (folderFilters !== undefined) {
-                try { viewer.settings.folder_filters = JSON.parse(folderFilters); }
-                catch (e) { viewer.settings.folder_filters = undefined; }
-            }
-             if (formatFilters !== undefined) {
-                try { viewer.settings.format_filters = JSON.parse(formatFilters); }
-                catch (e) { viewer.settings.format_filters = undefined; }
-            }
             
             if (!validTheme) viewer.settings.theme = HOLAF_THEMES[0].name;
+
+            // Defensive check: ensure filter settings are arrays, in case of bad data from config.
+            if (!Array.isArray(viewer.settings.folder_filters)) {
+                viewer.settings.folder_filters = undefined;
+            }
+            if (!Array.isArray(viewer.settings.format_filters)) {
+                viewer.settings.format_filters = undefined;
+            }
         }
     } catch (e) {
         console.error("[Holaf ImageViewer] Could not load settings:", e);

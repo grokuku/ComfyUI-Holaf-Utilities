@@ -454,9 +454,21 @@ async def image_viewer_save_ui_settings_route(request: web.Request):
             if height is not None: cp.set(s, 'panel_height', str(int(height)))
             
             # Handle other specific settings
-            for key in ['panel_is_fullscreen', 'thumbnail_fit', 'thumbnail_size', 'theme', 'startDate', 'endDate', 'export_format', 'export_include_meta', 'export_meta_method']:
+            keys_to_save = [
+                'panel_is_fullscreen', 'thumbnail_fit', 'thumbnail_size', 'theme', 
+                'export_format', 'export_include_meta', 'export_meta_method',
+                'search_text', 'search_scope_name', 'search_scope_prompt', 'search_scope_workflow',
+                'workflow_filter_internal', 'workflow_filter_external'
+            ]
+            for key in keys_to_save:
                 if key in data:
                     cp.set(s, key, str(data[key]))
+
+            # Handle date keys separately for case consistency (JS: startDate, INI: startdate)
+            if 'startDate' in data:
+                cp.set(s, 'startdate', str(data['startDate']))
+            if 'endDate' in data:
+                cp.set(s, 'enddate', str(data['endDate']))
             
             # Handle list-type settings
             if 'folder_filters' in data and isinstance(data['folder_filters'], list):
