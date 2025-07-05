@@ -17,12 +17,12 @@ import * as Gallery from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
-import { ImageEditor } from './image_viewer/image_viewer_editor.js'; // --- MODIFICATION: Import ImageEditor
+import { ImageEditor } from './image_viewer/image_viewer_editor.js';
 
-const STATS_REFRESH_INTERVAL_MS = 2000; // Refresh stats every 2 seconds
-const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunk size for downloads
-const SEARCH_DEBOUNCE_MS = 400; // Debounce search input to avoid excessive API calls
-const FILTER_REFRESH_INTERVAL_MS = 5000; // --- MODIFICATION: How often to check for new folders/files
+const STATS_REFRESH_INTERVAL_MS = 2000;
+const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
+const SEARCH_DEBOUNCE_MS = 400;
+const FILTER_REFRESH_INTERVAL_MS = 5000;
 
 const holafImageViewer = {
     // State Properties
@@ -39,14 +39,14 @@ const holafImageViewer = {
     metadataAbortController: null,
     fullscreenElements: null,
     refreshIntervalId: null,
-    editor: null, // --- MODIFICATION: Add editor property
+    editor: null,
     _fullscreenSourceView: null,
     _lastFolderFilterState: null,
     searchDebounceTimeout: null,
-    filterRefreshIntervalId: null, // --- MODIFICATION: ID for the new interval
-    lastDbUpdateTime: 0, // --- MODIFICATION: Timestamp of the last known DB state
-    workflowFilterState: { internal: true, external: true }, // Session-only state
-    searchScopeState: { name: true, prompt: true, workflow: true }, // Session-only state
+    filterRefreshIntervalId: null,
+    lastDbUpdateTime: 0,
+    
+    // --- MODIFICATION: All filter states are now part of settings for persistence ---
     settings: {
         theme: "Graphite Orange",
         panel_x: null, panel_y: null,
@@ -54,7 +54,6 @@ const holafImageViewer = {
         panel_is_fullscreen: false,
         folder_filters: undefined,
         format_filters: undefined,
-        // workflow_filter is no longer saved
         search_text: '',
         thumbnail_fit: 'cover',
         thumbnail_size: 150,
@@ -63,6 +62,12 @@ const holafImageViewer = {
         export_format: 'png',
         export_include_meta: true,
         export_meta_method: 'embed',
+        // New persistent filter states
+        search_scope_name: true,
+        search_scope_prompt: true,
+        search_scope_workflow: true,
+        workflow_filter_internal: true,
+        workflow_filter_external: true,
     },
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
@@ -83,7 +88,7 @@ const holafImageViewer = {
         currentFileName: '',
         currentFileProgress: 0,
     },
-    exportStatusRaf: null, // ADDED: To hold the requestAnimationFrame ID
+    exportStatusRaf: null,
     conflictQueue: [],
     isProcessingConflicts: false,
 
@@ -111,10 +116,6 @@ const holafImageViewer = {
             this.createPanel();
         }
 
-        // Reset non-persistent filters to default every time the panel is shown
-        this.workflowFilterState = { internal: true, external: true };
-        this.searchScopeState = { name: true, prompt: true, workflow: true };
-
         const panelIsVisible = this.panelElements?.panelEl && this.panelElements.panelEl.style.display === "flex";
         if (panelIsVisible) {
             this.hide();
@@ -123,17 +124,16 @@ const holafImageViewer = {
 
         if (this.panelElements?.panelEl) {
             this.applyPanelSettings();
-            this._updateWorkflowButtonStates(); // Set button state before showing
+            this._updateWorkflowButtonStates();
             this._updateSearchScopeButtonStates();
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
             this.loadAndPopulateFilters();
             if (!this.isInitialized) {
-                this.editor = new ImageEditor(this); // --- MODIFICATION: Initialize the editor
+                this.editor = new ImageEditor(this);
                 this.isInitialized = true;
             }
             this._updateViewerActivity(true);
-            // --- MODIFICATION: Start the filter refresh interval ---
             if (this.filterRefreshIntervalId) clearInterval(this.filterRefreshIntervalId);
             this.filterRefreshIntervalId = setInterval(() => this.checkForUpdates(), FILTER_REFRESH_INTERVAL_MS);
         }
@@ -147,7 +147,7 @@ const holafImageViewer = {
                 this.refreshIntervalId = null;
             }
             if (this.backgroundRenderHandle) {
-                cancelAnimationFrame(this.backgroundRenderHandle); // MODIFICATION: Use cancelAnimationFrame
+                cancelAnimationFrame(this.backgroundRenderHandle);
                 this.backgroundRenderHandle = null;
             }
             clearTimeout(this.prioritizeTimeoutId);
@@ -156,7 +156,6 @@ const holafImageViewer = {
                 clearInterval(this.statsRefreshIntervalId);
                 this.statsRefreshIntervalId = null;
             }
-            // --- MODIFICATION: Stop the filter refresh interval ---
             if (this.filterRefreshIntervalId) {
                 clearInterval(this.filterRefreshIntervalId);
                 this.filterRefreshIntervalId = null;
@@ -246,14 +245,23 @@ const holafImageViewer = {
         contentEl.style.flexDirection = 'column';
         contentEl.innerHTML = UI.getPanelHTML();
 
+        const onFilterChange = () => {
+            this._saveCurrentFilterState();
+            this.loadFilteredImages();
+        };
+
+        // Reset Button
+        contentEl.querySelector('#holaf-viewer-btn-reset-filters').onclick = (e) => {
+            e.preventDefault();
+            this._resetFilters();
+        };
+        
         // Search Input
         const searchInputEl = contentEl.querySelector('#holaf-viewer-search-input');
         searchInputEl.value = this.settings.search_text || '';
         searchInputEl.oninput = () => {
             clearTimeout(this.searchDebounceTimeout);
-            this.searchDebounceTimeout = setTimeout(() => {
-                this.loadFilteredImages();
-            }, SEARCH_DEBOUNCE_MS);
+            this.searchDebounceTimeout = setTimeout(onFilterChange, SEARCH_DEBOUNCE_MS);
         };
 
         // Search Scope Buttons
@@ -261,32 +269,34 @@ const holafImageViewer = {
         const promptScopeBtn = contentEl.querySelector('#holaf-search-scope-prompt');
         const workflowScopeBtn = contentEl.querySelector('#holaf-search-scope-workflow');
 
-        const createScopeClickHandler = (scope) => () => {
-            this.searchScopeState[scope] = !this.searchScopeState[scope];
+        const createScopeClickHandler = (scopeKey) => () => {
+            this.settings[scopeKey] = !this.settings[scopeKey];
             this._updateSearchScopeButtonStates();
-            // Only trigger a new search if there is text in the search bar
+            // Trigger a search only if there's text, otherwise just save the button state
             if (searchInputEl.value.trim() !== "") {
-                this.loadFilteredImages();
+                onFilterChange();
+            } else {
+                this.saveSettings({ [scopeKey]: this.settings[scopeKey] });
             }
         };
 
-        nameScopeBtn.onclick = createScopeClickHandler('name');
-        promptScopeBtn.onclick = createScopeClickHandler('prompt');
-        workflowScopeBtn.onclick = createScopeClickHandler('workflow');
+        nameScopeBtn.onclick = createScopeClickHandler('search_scope_name');
+        promptScopeBtn.onclick = createScopeClickHandler('search_scope_prompt');
+        workflowScopeBtn.onclick = createScopeClickHandler('search_scope_workflow');
 
         // Workflow Filter Buttons
         const internalBtn = contentEl.querySelector('#holaf-workflow-filter-internal');
         const externalBtn = contentEl.querySelector('#holaf-workflow-filter-external');
 
         internalBtn.onclick = () => {
-            this.workflowFilterState.internal = !this.workflowFilterState.internal;
+            this.settings.workflow_filter_internal = !this.settings.workflow_filter_internal;
             this._updateWorkflowButtonStates();
-            this.loadFilteredImages();
+            onFilterChange();
         };
         externalBtn.onclick = () => {
-            this.workflowFilterState.external = !this.workflowFilterState.external;
+            this.settings.workflow_filter_external = !this.settings.workflow_filter_external;
             this._updateWorkflowButtonStates();
-            this.loadFilteredImages();
+            onFilterChange();
         };
 
         // Folder Select/Deselect All Buttons
@@ -295,14 +305,14 @@ const holafImageViewer = {
             contentEl.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
                 if (!cb.disabled) cb.checked = true;
             });
-            this.loadFilteredImages();
+            onFilterChange();
         };
         contentEl.querySelector('#holaf-viewer-folders-select-none').onclick = (e) => {
             e.preventDefault();
             contentEl.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
                 if (!cb.disabled) cb.checked = false;
             });
-            this.loadFilteredImages();
+            onFilterChange();
         };
 
         // Attach listeners for other elements
@@ -310,8 +320,8 @@ const holafImageViewer = {
         const dateEndEl = contentEl.querySelector('#holaf-viewer-date-end');
         dateStartEl.value = this.settings.startDate || '';
         dateEndEl.value = this.settings.endDate || '';
-        dateStartEl.onchange = () => this.loadFilteredImages();
-        dateEndEl.onchange = () => this.loadFilteredImages();
+        dateStartEl.onchange = onFilterChange;
+        dateEndEl.onchange = onFilterChange;
 
         const thumbFitToggle = contentEl.querySelector('#holaf-viewer-thumb-fit-toggle');
         thumbFitToggle.checked = this.settings.thumbnail_fit === 'contain';
@@ -379,7 +389,6 @@ const holafImageViewer = {
                         message: result.message || "The trashcan has been successfully emptied.",
                         buttons: [{ text: "OK", value: true }]
                     });
-                    // Refresh filters and image list completely
                     this.loadAndPopulateFilters();
                 } else {
                     HolafPanelManager.createDialog({
@@ -402,7 +411,7 @@ const holafImageViewer = {
     // --- Data Loading & Filtering ---
 
     async checkForUpdates() {
-        if (this.isLoading) return; // Don't check if a filter load is already in progress
+        if (this.isLoading) return;
         try {
             const response = await fetch('/holaf/images/last-update-time', { cache: 'no-store' });
             if (!response.ok) return;
@@ -411,26 +420,79 @@ const holafImageViewer = {
             if (data.last_update > this.lastDbUpdateTime) {
                 console.log("[Holaf ImageViewer] New data detected on server, refreshing filters.");
                 this.lastDbUpdateTime = data.last_update;
-                await this.loadAndPopulateFilters(false, true); // Refresh filters without reloading gallery
+                await this.loadAndPopulateFilters(false, true);
             }
         } catch (e) {
             console.error("[Holaf ImageViewer] Error checking for updates:", e);
         }
     },
+    
+    _resetFilters() {
+        // 1. Reset settings state to defaults
+        this.settings.search_text = '';
+        this.settings.startDate = '';
+        this.settings.endDate = '';
+        this.settings.search_scope_name = true;
+        this.settings.search_scope_prompt = true;
+        this.settings.search_scope_workflow = true;
+        this.settings.workflow_filter_internal = true;
+        this.settings.workflow_filter_external = true;
+        
+        // 2. Update UI elements to match the new state
+        document.getElementById('holaf-viewer-search-input').value = '';
+        document.getElementById('holaf-viewer-date-start').value = '';
+        document.getElementById('holaf-viewer-date-end').value = '';
+        
+        this._updateSearchScopeButtonStates();
+        this._updateWorkflowButtonStates();
+        
+        document.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]').forEach(cb => {
+            cb.disabled = false;
+            cb.checked = true;
+        });
+        document.querySelectorAll('#holaf-viewer-formats-filter input[type="checkbox"]').forEach(cb => cb.checked = true);
+        
+        const trashCheckbox = document.getElementById('folder-filter-trashcan');
+        if (trashCheckbox) trashCheckbox.checked = false;
+        
+        // 3. Save the new default state and reload the gallery
+        this._saveCurrentFilterState();
+        this.loadFilteredImages();
+    },
 
+    _saveCurrentFilterState() {
+        const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
+        const selectedFormats = [...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''));
+        const startDate = document.getElementById('holaf-viewer-date-start').value;
+        const endDate = document.getElementById('holaf-viewer-date-end').value;
+        const searchText = document.getElementById('holaf-viewer-search-input').value;
+
+        this.saveSettings({
+            folder_filters: selectedFolders,
+            format_filters: selectedFormats,
+            startDate,
+            endDate,
+            search_text: searchText,
+            // The button states are already saved in their onclick handlers, but we can re-save for consistency
+            search_scope_name: this.settings.search_scope_name,
+            search_scope_prompt: this.settings.search_scope_prompt,
+            search_scope_workflow: this.settings.search_scope_workflow,
+            workflow_filter_internal: this.settings.workflow_filter_internal,
+            workflow_filter_external: this.settings.workflow_filter_external,
+        });
+    },
+    
     async loadAndPopulateFilters(isInitialLoad = false, isUpdate = false) {
         try {
             const response = await fetch('/holaf/images/filter-options', { cache: 'no-store' });
             if (!response.ok) throw new Error(`HTTP error ${response.status}`);
             const data = await response.json();
 
-            // --- MODIFICATION: Set the last update time on load ---
             this.lastDbUpdateTime = data.last_update_time || this.lastDbUpdateTime;
 
             const useSavedFolderFilters = this.settings.folder_filters !== undefined && !isUpdate;
             const useSavedFormatFilters = this.settings.format_filters !== undefined && !isUpdate;
 
-            // --- MODIFICATION: Preserve current filter state during an update ---
             const currentSelectedFolders = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''))) : null;
             const currentSelectedFormats = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''))) : null;
 
@@ -442,13 +504,18 @@ const holafImageViewer = {
             const formatsEl = document.getElementById('holaf-viewer-formats-filter');
             foldersEl.innerHTML = '';
             formatsEl.innerHTML = '';
+            
+            const onFilterChange = () => {
+                this._saveCurrentFilterState();
+                this.loadFilteredImages();
+            };
 
             const createFolderCheckbox = (folder, isRoot = false) => {
                 const id = isRoot ? 'root' : folder;
                 let isChecked = true;
                 if (isUpdate) { isChecked = currentSelectedFolders.has(id); }
                 else if (useSavedFolderFilters) { isChecked = this.settings.folder_filters.includes(id); }
-                return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, () => this.loadFilteredImages());
+                return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, onFilterChange);
             };
 
             if (data.has_root) foldersEl.appendChild(createFolderCheckbox(null, true));
@@ -475,7 +542,7 @@ const holafImageViewer = {
                         }
                     });
                 }
-                this.loadFilteredImages();
+                onFilterChange();
             });
 
             const trashContainer = trashCheckboxItem;
@@ -499,10 +566,9 @@ const holafImageViewer = {
                 let isChecked = true;
                 if (isUpdate) { isChecked = currentSelectedFormats.has(format); }
                 else if (useSavedFormatFilters) { isChecked = this.settings.format_filters.includes(format); }
-                formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, isChecked, () => this.loadFilteredImages()));
+                formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, isChecked, onFilterChange));
             });
 
-            // --- MODIFICATION: Only load images if it's not a background filter update ---
             if (!isUpdate) {
                 this.loadFilteredImages(isInitialLoad);
             }
@@ -512,37 +578,29 @@ const holafImageViewer = {
         }
     },
 
-
     async _fetchFilteredImages() {
         const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
         const selectedFormats = [...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''));
-        const startDate = document.getElementById('holaf-viewer-date-start').value;
-        const endDate = document.getElementById('holaf-viewer-date-end').value;
-        const searchText = document.getElementById('holaf-viewer-search-input').value;
+        
+        const { startDate, endDate, search_text, 
+                workflow_filter_internal, workflow_filter_external,
+                search_scope_name, search_scope_prompt, search_scope_workflow } = this.settings;
 
-        // Determine workflow filter string from state
         let workflowFilter = 'all';
-        const { internal, external } = this.workflowFilterState;
-        if (internal && external) {
+        if (workflow_filter_internal && workflow_filter_external) {
             workflowFilter = 'present';
-        } else if (internal) {
+        } else if (workflow_filter_internal) {
             workflowFilter = 'internal';
-        } else if (external) {
+        } else if (workflow_filter_external) {
             workflowFilter = 'external';
         } else {
             workflowFilter = 'none';
         }
 
-        // Determine active search scopes
-        const searchScopes = Object.keys(this.searchScopeState).filter(key => this.searchScopeState[key]);
-
-        this.saveSettings({
-            folder_filters: selectedFolders,
-            format_filters: selectedFormats,
-            startDate,
-            endDate,
-            search_text: searchText
-        });
+        const searchScopes = [];
+        if (search_scope_name) searchScopes.push('name');
+        if (search_scope_prompt) searchScopes.push('prompt');
+        if (search_scope_workflow) searchScopes.push('workflow');
 
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
@@ -553,7 +611,7 @@ const holafImageViewer = {
                 startDate,
                 endDate,
                 workflow_filter: workflowFilter,
-                search_text: searchText,
+                search_text,
                 search_scopes: searchScopes
             })
         });
@@ -672,7 +730,7 @@ const holafImageViewer = {
 
     // --- Download Queue Processing ---
     _startStatusAnimation() {
-        if (this.exportStatusRaf) return; // Already running
+        if (this.exportStatusRaf) return;
         const loop = () => {
             this.updateStatusBar();
             this.exportStatusRaf = requestAnimationFrame(loop);
@@ -691,7 +749,7 @@ const holafImageViewer = {
         if (this.exportDownloadQueue.length === 0) {
             this._stopStatusAnimation();
             this.isExporting = false;
-            this.updateStatusBar(); // Final update to clear the status
+            this.updateStatusBar();
             if (this.exportStats.totalFiles > 0) {
                 HolafPanelManager.createDialog({ title: "Export Complete", message: `Successfully exported ${this.exportStats.totalFiles} file(s).`, buttons: [{ text: "OK" }] });
             }
@@ -758,14 +816,14 @@ const holafImageViewer = {
     _updateWorkflowButtonStates() {
         const internalBtn = document.getElementById('holaf-workflow-filter-internal');
         const externalBtn = document.getElementById('holaf-workflow-filter-external');
-        if (internalBtn) internalBtn.classList.toggle('active', this.workflowFilterState.internal);
-        if (externalBtn) externalBtn.classList.toggle('active', this.workflowFilterState.external);
+        if (internalBtn) internalBtn.classList.toggle('active', this.settings.workflow_filter_internal);
+        if (externalBtn) externalBtn.classList.toggle('active', this.settings.workflow_filter_external);
     },
 
     _updateSearchScopeButtonStates() {
-        document.getElementById('holaf-search-scope-filename')?.classList.toggle('active', this.searchScopeState.name);
-        document.getElementById('holaf-search-scope-prompt')?.classList.toggle('active', this.searchScopeState.prompt);
-        document.getElementById('holaf-search-scope-workflow')?.classList.toggle('active', this.searchScopeState.workflow);
+        document.getElementById('holaf-search-scope-filename')?.classList.toggle('active', this.settings.search_scope_name);
+        document.getElementById('holaf-search-scope-prompt')?.classList.toggle('active', this.settings.search_scope_prompt);
+        document.getElementById('holaf-search-scope-workflow')?.classList.toggle('active', this.settings.search_scope_workflow);
     },
 
     _updateActiveThumbnail(navIndex) {

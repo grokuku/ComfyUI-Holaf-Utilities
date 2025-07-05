@@ -18,13 +18,17 @@ export async function loadSettings(viewer) {
         if (allSettings.ImageViewerUI) {
             const fetchedSettings = allSettings.ImageViewerUI;
 
-            // --- MODIFICATION START ---
-            // Explicitly convert string representations of booleans to actual booleans
-            if (fetchedSettings.export_include_meta !== undefined) {
-                fetchedSettings.export_include_meta = String(fetchedSettings.export_include_meta).toLowerCase() === 'true';
-            }
-            if (fetchedSettings.panel_is_fullscreen !== undefined) {
-                fetchedSettings.panel_is_fullscreen = String(fetchedSettings.panel_is_fullscreen).toLowerCase() === 'true';
+            // --- MODIFICATION START: Explicitly convert all boolean-like strings to actual booleans ---
+            const booleanKeys = [
+                'export_include_meta', 'panel_is_fullscreen', 'search_scope_name',
+                'search_scope_prompt', 'search_scope_workflow',
+                'workflow_filter_internal', 'workflow_filter_external'
+            ];
+
+            for (const key of booleanKeys) {
+                if (fetchedSettings[key] !== undefined) {
+                    fetchedSettings[key] = String(fetchedSettings[key]).toLowerCase() === 'true';
+                }
             }
             // --- MODIFICATION END ---
 

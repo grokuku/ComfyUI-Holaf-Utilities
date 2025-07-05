@@ -47,6 +47,12 @@ export function getPanelHTML() {
                     </div>
                 </div>
 
+                <!-- MODIFICATION: Added a header with a reset button for all filters -->
+                <div class="holaf-viewer-filter-header-main">
+                    <h4>Filters</h4>
+                    <a href="#" id="holaf-viewer-btn-reset-filters" class="holaf-viewer-reset-link" title="Reset all filters">Reset</a>
+                </div>
+
                 <div class="holaf-viewer-filter-group">
                     <h4>Date Range</h4>
                     <div id="holaf-viewer-date-filter" class="holaf-viewer-date-range-container">

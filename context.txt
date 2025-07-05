@@ -42,6 +42,7 @@ FILE_TREE_ANALYSIS:
     📄 export_routes.py
       > Prepares and serves image export packages.
       @ POST /holaf/images/prepare-export
+      -> FE_PAYLOAD: {paths_canon:[str], export_format:str, include_meta:bool, meta_method:str}
       @ GET /holaf/images/export-chunk
       -> logic.py (for applying edits), holaf_utils
     📄 file_ops_routes.py
@@ -111,13 +112,13 @@ FILE_TREE_ANALYSIS:
       > [DEPRECATED/MERGED] Old monolithic CSS. Now split into component files but might be referenced.
   📁 image_viewer/
     > Modular JS for the Image Viewer.
-    📄 image_viewer_actions.js -> holaf_panel_manager
-    📄 image_viewer_editor.js -> holaf_panel_manager
-    📄 image_viewer_gallery.js -> image_viewer_navigation.js
-    📄 image_viewer_infopane.js -> holaf_panel_manager
-    📄 image_viewer_navigation.js -> image_viewer_actions.js
-    📄 image_viewer_settings.js -> holaf_panel_manager
-    📄 image_viewer_ui.js -> holaf_panel_manager
+    📄 image_viewer_actions.js -> User actions (delete, export) & their dialogs.
+    📄 image_viewer_editor.js -> Controller for the Image Editor sub-panel.
+    📄 image_viewer_gallery.js -> Gallery rendering, thumbnail loading, intersection observer.
+    📄 image_viewer_infopane.js -> Logic for the right-side info panel.
+    📄 image_viewer_navigation.js -> Keyboard/mouse navigation, zoom/pan, fullscreen logic.
+    📄 image_viewer_settings.js -> Manages settings object, load/save API calls, theme application.
+    📄 image_viewer_ui.js -> Generates static HTML structure for the panel.
   📁 model_manager/
     > Modular JS for the Model Manager.
     📄 model_manager_actions.js -> holaf_panel_manager
@@ -127,7 +128,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules.
+    > [CRITICAL] Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules. Manages main state including settings, filteredImages, and event listeners for filters.
     -> holaf_panel_manager, image_viewer/*
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point. Creates top menu, loads all CSS, handles restart logic.
@@ -139,7 +140,7 @@ FILE_TREE_ANALYSIS:
     > Controller for the System Monitor overlay.
     -> chart.min.js
   📄 holaf_nodes_manager.js
-    > Main controller for the Nodes Manager.
+    > Controller for the Nodes Manager.
     -> holaf_panel_manager
   📄 holaf_panel_manager.js
     > [CRITICAL] Core FE utility. Creates draggable, resizable panels and modals. Exports `HOLAF_THEMES`.
@@ -197,11 +198,8 @@ PROJECT_STATE:
   # Source: README.md, image_editor_plan.md
   ACTIVE_BUGS:
     ImageViewer:
-      - [critical, export_workflow_save_fails] # Exporting an image does not save the workflow (embed or sidecar).
-      - [major, filter_persistence_fails] # Selected filters are not correctly saved/restored between sessions.
-      - [minor, css, editor_pane_layout_overlap] # Image Editor panel overlaps info pane instead of docking below it.
-      - [minor, css, edit_icon_position] # Edit icon (✎) on thumbnail appears top-left instead of top-right.
-      - [minor, css, edit_icon_style_inactive] # Edit icon color does not change to accent when active.
+      - [regression, css/js, image_viewer_thumbnail_icons_broken] # Hover and 'has-edits' icons are not displayed on thumbnails.
+    ImageViewer:
   ROADMAP:
     Global:
       - [ui, toasts_notification_system] # Replace blocking alerts with non-blocking "toast" notifications.
@@ -227,3 +225,6 @@ PROJECT_STATE:
     - [image_viewer_metadata_tools]
     - [image_editor_initial_bugfixes]
     - [thumbnail_cache_system]
+    - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch and added fallback logic.
+    - [fix, filter_persistence_fails] # Refactored state management for full filter persistence.
+    - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.
