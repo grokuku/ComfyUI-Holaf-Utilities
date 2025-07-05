@@ -494,6 +494,7 @@ export function handleExport(viewer) {
         const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
         const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
 
+        // Settings for user preference persistence (uses export_ prefix)
         const newExportSettings = {
             export_format: format,
             export_include_meta: includeMeta,
@@ -501,10 +502,17 @@ export function handleExport(viewer) {
         };
         viewer.saveSettings(newExportSettings);
         
+        // --- BUG FIX START ---
+        // Payload for the API (uses correct keys without prefix)
         const payload = {
-            ...newExportSettings,
-            paths_canon: Array.from(viewer.selectedImages).map(img => img.path_canon)
+            paths_canon: Array.from(viewer.selectedImages).map(img => img.path_canon),
+            export_format: format,
+            include_meta: includeMeta,
+            meta_method: metaMethod
         };
+        // Log the payload to the browser console for debugging
+        console.log('[Holaf Export Debug] Payload sent to server:', payload);
+        // --- BUG FIX END ---
         
         overlay.remove();
         

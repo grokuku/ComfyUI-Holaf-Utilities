@@ -81,38 +81,36 @@ async def prepare_export_route(request: web.Request):
             dest_abs_path = os.path.join(dest_subfolder_abs_path, dest_filename)
 
             try:
-                # --- MODIFICATION START: Handle edits and metadata ---
                 prompt_data, workflow_data = None, None
+                
+                effective_meta_method = meta_method
+                if include_meta and effective_meta_method == 'embed' and export_format != 'png':
+                    effective_meta_method = 'sidecar'
+                    errors.append({"path": path_canon, "error": f"Embed not supported for .{export_format}, fell back to sidecar."})
+                
                 if include_meta:
                     metadata = await loop.run_in_executor(None, logic._extract_image_metadata_blocking, source_abs_path)
                     if metadata and not metadata.get("error"):
                         prompt_data = metadata.get("prompt")
                         workflow_data = metadata.get("workflow")
                 
-                # Check for and load edit file
                 edit_file_path = os.path.join(os.path.dirname(source_abs_path), f"{base_name}.edt")
                 edit_data = None
-                # CORRECTED: Check if file exists and is not empty before parsing
                 if os.path.isfile(edit_file_path) and os.path.getsize(edit_file_path) > 0:
                     try:
-                        with open(edit_file_path, 'r', encoding='utf-8') as f:
-                            edit_data = json.load(f)
+                        with open(edit_file_path, 'r', encoding='utf-8') as f: edit_data = json.load(f)
                     except Exception as e:
                         print(f"🟡 [Holaf-Export] Warning: Could not read or parse edit file {edit_file_path}: {e}")
                         errors.append({"path": path_canon, "error": f"Failed to apply edits: {e}"})
 
                 with Image.open(source_abs_path) as img:
                     img_to_save = img.copy()
-                    
-                    # Apply edits if they were loaded successfully
-                    if edit_data:
-                        img_to_save = _apply_pil_edits(img_to_save, edit_data)
-
+                    if edit_data: img_to_save = _apply_pil_edits(img_to_save, edit_data)
                     save_params = {}
 
-                    if export_format == 'png' and include_meta and meta_method == 'embed':
+                    if export_format == 'png' and include_meta and effective_meta_method == 'embed':
                         png_info = logic.PngImagePlugin.PngInfo()
-                        if prompt_data: png_info.add_text("prompt", prompt_data)
+                        if prompt_data: png_info.add_text("prompt", json.dumps(prompt_data))
                         if workflow_data: png_info.add_text("workflow", json.dumps(workflow_data))
                         if png_info.chunks: save_params['pnginfo'] = png_info
                     
@@ -123,12 +121,11 @@ async def prepare_export_route(request: web.Request):
                         save_params['compression'] = 'tiff_lzw'
 
                     img_to_save.save(dest_abs_path, format='JPEG' if export_format == 'jpg' else export_format.upper(), **save_params)
-                # --- MODIFICATION END ---
-
+                
                 rel_path = os.path.join(subfolder, dest_filename).replace(os.sep, '/')
                 manifest.append({'path': rel_path, 'size': os.path.getsize(dest_abs_path)})
                 
-                if include_meta and meta_method == 'sidecar':
+                if include_meta and effective_meta_method == 'sidecar':
                     if prompt_data:
                         txt_path = os.path.join(dest_subfolder_abs_path, f"{base_name}.txt")
                         async with aiofiles.open(txt_path, 'w', encoding='utf-8') as f: await f.write(prompt_data)
@@ -139,7 +136,7 @@ async def prepare_export_route(request: web.Request):
                         async with aiofiles.open(json_path, 'w', encoding='utf-8') as f: await f.write(json.dumps(workflow_data, indent=2))
                         json_rel_path = os.path.join(subfolder, f"{base_name}.json").replace(os.sep, '/')
                         manifest.append({'path': json_rel_path, 'size': os.path.getsize(json_path)})
-
+                
             except Exception as e:
                 errors.append({"path": path_canon, "error": f"Failed to process: {str(e)}"})
                 traceback.print_exc()
@@ -155,7 +152,7 @@ async def prepare_export_route(request: web.Request):
 async def download_export_chunk_route(request: web.Request):
     try:
         export_id = holaf_utils.sanitize_upload_id(request.query.get("export_id"))
-        file_path_rel = request.query.get("file_path") # Not sanitized here, path is relative to export_id dir
+        file_path_rel = request.query.get("file_path")
         chunk_index = int(request.query.get("chunk_index"))
         chunk_size = int(request.query.get("chunk_size"))
 
