@@ -4,7 +4,7 @@
  *
  * This module handles the logic for user actions like deleting, restoring,
  * and managing metadata for selected images.
- * MODIFICATION: Forced dialogs to attach to document.body to fix z-index issues.
+ * MODIFICATION: Replaced export dialogs with the new ToastManager for non-blocking notifications.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
@@ -494,27 +494,34 @@ export function handleExport(viewer) {
         const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
         const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
 
-        // Settings for user preference persistence (uses export_ prefix)
-        const newExportSettings = {
+        const toastId = `export-${Date.now()}`;
+        
+        overlay.remove();
+        
+        // MODIFICATION: Only create one persistent toast if one isn't already active
+        if (!viewer.isExporting) {
+            window.holaf.toastManager.show({
+                id: toastId,
+                message: `Preparing to export ${imageCount} image(s)...`,
+                type: 'info',
+                duration: 0, 
+                progress: true
+            });
+            viewer.activeExportToastId = toastId;
+        }
+        
+        viewer.saveSettings({
             export_format: format,
             export_include_meta: includeMeta,
             export_meta_method: metaMethod
-        };
-        viewer.saveSettings(newExportSettings);
+        });
         
-        // --- BUG FIX START ---
-        // Payload for the API (uses correct keys without prefix)
         const payload = {
             paths_canon: Array.from(viewer.selectedImages).map(img => img.path_canon),
             export_format: format,
             include_meta: includeMeta,
             meta_method: metaMethod
         };
-        // Log the payload to the browser console for debugging
-        console.log('[Holaf Export Debug] Payload sent to server:', payload);
-        // --- BUG FIX END ---
-        
-        overlay.remove();
         
         try {
             const response = await fetch('/holaf/images/prepare-export', {
@@ -527,8 +534,10 @@ export function handleExport(viewer) {
             if (!response.ok || result.status !== 'ok') {
                 throw new Error(result.message || 'Failed to prepare export on server.');
             }
+            
             if (result.errors && result.errors.length > 0) {
-                 HolafPanelManager.createDialog({ title: "Preparation Errors", message: `Some files could not be prepared:\n${result.errors.map(e => `- ${e.path}: ${e.error}`).join('\n')}`, parentElement: document.body });
+                 const errorMessage = `Some files could not be prepared:\n${result.errors.map(e => `- ${e.path.split('/').pop()}: ${e.error}`).join('\n')}`;
+                 window.holaf.toastManager.show({ message: errorMessage, type: 'error', duration: 0 });
             }
 
             const manifestUrl = `/holaf/images/export-chunk?export_id=${result.export_id}&file_path=manifest.json&chunk_index=0&chunk_size=1000000`;
@@ -537,9 +546,19 @@ export function handleExport(viewer) {
 
             if (manifest && manifest.length > 0) {
                 const newFiles = manifest.map(file => ({ ...file, export_id: result.export_id }));
+                
+                // Add files to queue and update totals
                 viewer.exportDownloadQueue.push(...newFiles);
                 viewer.exportStats.totalFiles += newFiles.length;
 
+                // Update the toast with an "added to queue" message
+                if (viewer.activeExportToastId) {
+                    window.holaf.toastManager.update(viewer.activeExportToastId, {
+                        message: `Added ${newFiles.length} file(s) to queue. Starting download...`,
+                        type: 'info'
+                    });
+                }
+                
                 if (!viewer.isExporting) {
                     viewer.isExporting = true;
                     viewer.updateStatusBar();
@@ -548,13 +567,28 @@ export function handleExport(viewer) {
                     viewer.updateStatusBar();
                 }
             } else {
+                 if (viewer.activeExportToastId) {
+                     window.holaf.toastManager.update(viewer.activeExportToastId, {
+                        message: "No new files were added to the export queue.",
+                        type: 'info',
+                        progress: 100
+                     });
+                     setTimeout(() => window.holaf.toastManager.hide(viewer.activeExportToastId), 5000);
+                 }
                  if (!viewer.isExporting) viewer.updateStatusBar();
-                 HolafPanelManager.createDialog({ title: "Export Warning", message: "No new files were added to the export queue.", parentElement: document.body });
             }
 
         } catch (error) {
             console.error('[Holaf ImageViewer] Export preparation failed:', error);
-            HolafPanelManager.createDialog({ title: "Export Error", message: `Error adding to export queue: ${error.message}`, parentElement: document.body });
+            if (viewer.activeExportToastId) {
+                window.holaf.toastManager.update(viewer.activeExportToastId, {
+                    message: `<strong>Export Failed:</strong><br>${error.message}`,
+                    type: 'error',
+                    progress: 100
+                });
+            } else { // If toast wasn't even created
+                window.holaf.toastManager.show({ message: `Export Failed: ${error.message}`, type: 'error', duration: 0 });
+            }
         }
     });
 

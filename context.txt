@@ -1,30 +1,3 @@
-# Gemini/LLM Project Context
-# Project: ComfyUI-Holaf-Utilities
-# Format: High-density, low-token, non-human-readable.
-
-META_CONTEXT:
-  LLM_OPERATING_RULES:
-    1.  [MISSING_FILES]: If a file is needed but not provided, state it is missing and request it. Do not invent.
-    2.  [MODIFICATION_FORMAT]:
-        - Provide a single-line `sed` command for Git Bash for simple patches (`sed -i '...' file`).
-        - If `sed` is risky or complex, provide the full modified file content instead. No other tools.
-    3.  [SEQUENTIAL_WORKFLOW]: After providing a modification, await explicit user approval before proceeding.
-    4.  [LEAST_INTERVENTION]: Do not modify code unless explicitly requested or strictly necessary for the current task.
-    5.  [VERIFICATION_SUGGESTION]: After a change, briefly suggest what to check or test to verify functionality.
-  LLM_START_INSTRUCTION:
-    - After analysis, signal readiness by stating: "Analyse terminée. J'ai examiné... Je suis prêt à commencer et j'attends votre première instruction."
-  PROJECT_ID: ComfyUI-Holaf-Utilities
-  TECH_STACK: Python (aiohttp, psutil, sqlite3), JS (vanilla, modular), xterm.js, Chart.js, CSS (variables)
-
-PROJECT_ARCHITECTURE:
-  core: ComfyUI custom extension.
-  backend: Python server module integrated with ComfyUI's aiohttp server.
-  frontend: Modular vanilla JavaScript, dynamically creating UI panels.
-  database: Single SQLite file `holaf_utilities.sqlite`.
-  components: [Terminal, ModelManager, NodesManager, ImageViewer, SystemMonitor, Settings].
-  comms: REST API (@) and WebSockets (WS).
-  styling: CSS variables for theming, multiple themes defined in `holaf_themes.css`.
-
 FILE_TREE_ANALYSIS:
 # --- Root Directory ---
 📁 holaf_image_viewer_backend/
@@ -108,11 +81,16 @@ FILE_TREE_ANALYSIS:
       > Styles for the Terminal panel (login/setup screens).
     📄 holaf_themes.css
       > [CRITICAL] Defines all themes via CSS variables. All other CSS files use these variables.
+    📄 holaf_toasts.css
+      > [NEW] Styles for the non-blocking toast notification system. Uses theme variables.
     📄 holaf_utilities.css
       > [DEPRECATED/MERGED] Old monolithic CSS. Now split into component files but might be referenced.
   📁 image_viewer/
     > Modular JS for the Image Viewer.
-    📄 image_viewer_actions.js -> User actions (delete, export) & their dialogs.
+    📄 image_viewer_actions.js
+      > Handles user actions (delete, export).
+      > § Initiates toast notifications for long-running tasks like export.
+      -> HolafPanelManager, window.holaf.toastManager
     📄 image_viewer_editor.js -> Controller for the Image Editor sub-panel.
     📄 image_viewer_gallery.js -> Gallery rendering, thumbnail loading, intersection observer.
     📄 image_viewer_infopane.js -> Logic for the right-side info panel.
@@ -128,11 +106,15 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [CRITICAL] Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules. Manages main state including settings, filteredImages, and event listeners for filters.
+    > [CRITICAL] Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules.
+    > § Manages main state including settings, filteredImages, and event listeners for filters.
+    > § Manages the export download queue and updates toast progress.
     -> holaf_panel_manager, image_viewer/*
   📄 holaf_main.js
-    > [CRITICAL] Main FE entry point. Creates top menu, loads all CSS, handles restart logic.
-    -> holaf_panel_manager, holaf_terminal, holaf_model_manager, etc.
+    > [CRITICAL] Main FE entry point.
+    > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
+    > § Initializes and exposes `window.holaf.toastManager`.
+    -> holaf_toast_manager, holaf_panel_manager, holaf_terminal, etc.
   📄 holaf_model_manager.js
     > Main controller for the Model Manager.
     -> holaf_panel_manager, model_manager/*
@@ -147,6 +129,10 @@ FILE_TREE_ANALYSIS:
   📄 holaf_settings_manager.js
     > Controller for the global Settings panel.
     -> holaf_panel_manager
+  📄 holaf_toast_manager.js
+    > [NEW & CRITICAL] Manages creation and lifecycle of toast notifications.
+    > § Exposes a global `window.holaf.toastManager`.
+    > § Designed to be theme-aware, but currently has a bug.
   📄 holaf_terminal.js
     > Main controller for the Terminal.
     -> holaf_panel_manager, xterm.js, xterm-addon-fit.js
@@ -197,12 +183,11 @@ FILE_TREE_ANALYSIS:
 PROJECT_STATE:
   # Source: README.md, image_editor_plan.md
   ACTIVE_BUGS:
-    ImageViewer:
-      - [regression, css/js, image_viewer_thumbnail_icons_broken] # Hover and 'has-edits' icons are not displayed on thumbnails.
-    ImageViewer:
+    - [high, css/js, toast_background_transparent] # Toast notifications have a transparent background, making them unreadable. Theming variables are not being applied correctly.
+    - [high, js, image_viewer_filters_not_persisting] # Image viewer filters are reset after a ComfyUI reboot. Settings are likely not being saved to the config file correctly.
+  IN_PROGRESS:
   ROADMAP:
     Global:
-      - [ui, toasts_notification_system] # Replace blocking alerts with non-blocking "toast" notifications.
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
       - [backend, periodic_maintenance_worker] # Hourly worker to clean DB and cache.
     ImageViewer:
@@ -219,6 +204,7 @@ PROJECT_STATE:
       - [feature, feature_watermark_overlay]
       - [ui, operations_tab(copy,paste,import,export_edt,toggle)]
   COMPLETED_FEATURES:
+    - [feature, ui, toasts_notification_system_base] # Initial implementation of the non-blocking toast system.
     - [major_refactor_backend_frontend]
     - [image_editor_base_architecture]
     - [image_viewer_trashcan]

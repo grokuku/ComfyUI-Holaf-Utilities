@@ -430,9 +430,6 @@
     opacity: 1;
 }
 
-.holaf-viewer-thumbnail-placeholder:has(> .holaf-viewer-thumb-checkbox:checked) .holaf-viewer-fullscreen-icon {
-    opacity: 0;
-}
 
 #holaf-viewer-zoom-view {
     position: absolute;
@@ -995,8 +992,5 @@
     color: var(--holaf-accent-color);
 }
 
-.holaf-viewer-thumbnail-placeholder:has(> .holaf-viewer-thumb-checkbox:checked) .holaf-viewer-edit-icon {
-    opacity: 0;
-}
 
 /* --- END EDIT ICON STYLES --- */

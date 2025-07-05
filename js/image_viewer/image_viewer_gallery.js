@@ -6,6 +6,7 @@
  * virtual/infinite scrolling, thumbnail loading, and prioritization.
  * MODIFICATION: Added shift-click and ctrl-shift-click range selection logic.
  * MODIFICATION: Replaced setTimeout with requestAnimationFrame for non-blocking rendering.
+ * CORRECTION: Replaced destructive 'innerHTML' with surgical DOM manipulation to fix disappearing icons.
  */
 
 import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
@@ -68,17 +69,17 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
     img.loading = "lazy";
 
     img.onload = () => {
-        const currentCheckbox = placeholder.querySelector('.holaf-viewer-thumb-checkbox');
-        const currentFsIcon = placeholder.querySelector('.holaf-viewer-fullscreen-icon');
-        const currentEditIcon = placeholder.querySelector('.holaf-viewer-edit-icon'); // Keep edit icon
-        placeholder.innerHTML = '';
+        // CORRECTION START: Non-destructive DOM update for success
+        // Non-destructively clean up placeholder from any previous error state
         placeholder.classList.remove('error');
+        const errorContent = placeholder.querySelector('.holaf-viewer-error-overlay');
+        const retryButton = placeholder.querySelector('.holaf-viewer-retry-button');
+        if (errorContent) errorContent.remove();
+        if (retryButton) retryButton.remove();
 
-        if (currentCheckbox) placeholder.appendChild(currentCheckbox);
-        if (currentEditIcon) placeholder.appendChild(currentEditIcon); // Re-append edit icon
-
-        const fsIcon = currentFsIcon || document.createElement('div');
-        if (!currentFsIcon) {
+        // Ensure fullscreen icon exists (it's added on successful load)
+        if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
+            const fsIcon = document.createElement('div');
             fsIcon.className = 'holaf-viewer-fullscreen-icon';
             fsIcon.innerHTML = '⛶';
             fsIcon.title = 'View fullscreen';
@@ -86,12 +87,27 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
                 e.stopPropagation();
                 showFullscreenView(viewer, image);
             });
+            placeholder.appendChild(fsIcon);
         }
-        placeholder.appendChild(fsIcon);
+
+        // Prepend the image itself. This preserves the existing checkbox and edit icon.
         placeholder.prepend(img);
+        // CORRECTION END
     };
     img.onerror = async () => {
-        const currentCheckbox = placeholder.querySelector('.holaf-viewer-thumb-checkbox');
+        // CORRECTION START: Non-destructive DOM update for error
+        // Surgical cleanup: remove image and fullscreen icon if they exist from a prior success
+        const existingImg = placeholder.querySelector('img');
+        if (existingImg) existingImg.remove();
+        const existingFsIcon = placeholder.querySelector('.holaf-viewer-fullscreen-icon');
+        if (existingFsIcon) existingFsIcon.remove();
+
+        // Clear previous error messages
+        const oldError = placeholder.querySelector('.holaf-viewer-error-overlay');
+        const oldRetry = placeholder.querySelector('.holaf-viewer-retry-button');
+        if (oldError) oldError.remove();
+        if (oldRetry) oldRetry.remove();
+
         placeholder.classList.add('error');
         placeholder.dataset.thumbnailLoadingOrLoaded = "error";
 
@@ -111,10 +127,11 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
             placeholder.dataset.thumbnailLoadingOrLoaded = "";
             loadSpecificThumbnail(viewer, placeholder, image, true);
         };
-        placeholder.innerHTML = '';
-        if (currentCheckbox) placeholder.appendChild(currentCheckbox);
+        
+        // Append error elements. This preserves checkbox and edit icon.
         placeholder.appendChild(errorOverlay);
         placeholder.appendChild(retryButton);
+        // CORRECTION END
     };
 }
 

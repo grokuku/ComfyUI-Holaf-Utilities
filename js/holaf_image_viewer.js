@@ -5,6 +5,7 @@
  * This script provides the client-side logic for the Holaf Image Viewer.
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
+ * CORRECTION: Refactored export queue processing to use and update toasts dynamically.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -46,7 +47,6 @@ const holafImageViewer = {
     filterRefreshIntervalId: null,
     lastDbUpdateTime: 0,
     
-    // --- MODIFICATION: All filter states are now part of settings for persistence ---
     settings: {
         theme: "Graphite Orange",
         panel_x: null, panel_y: null,
@@ -62,7 +62,6 @@ const holafImageViewer = {
         export_format: 'png',
         export_include_meta: true,
         export_meta_method: 'embed',
-        // New persistent filter states
         search_scope_name: true,
         search_scope_prompt: true,
         search_scope_workflow: true,
@@ -88,6 +87,7 @@ const holafImageViewer = {
         currentFileName: '',
         currentFileProgress: 0,
     },
+    activeExportToastId: null, // <-- ADDED: To track the current export toast
     exportStatusRaf: null,
     conflictQueue: [],
     isProcessingConflicts: false,
@@ -473,7 +473,6 @@ const holafImageViewer = {
             startDate,
             endDate,
             search_text: searchText,
-            // The button states are already saved in their onclick handlers, but we can re-save for consistency
             search_scope_name: this.settings.search_scope_name,
             search_scope_prompt: this.settings.search_scope_prompt,
             search_scope_workflow: this.settings.search_scope_workflow,
@@ -750,9 +749,22 @@ const holafImageViewer = {
             this._stopStatusAnimation();
             this.isExporting = false;
             this.updateStatusBar();
-            if (this.exportStats.totalFiles > 0) {
-                HolafPanelManager.createDialog({ title: "Export Complete", message: `Successfully exported ${this.exportStats.totalFiles} file(s).`, buttons: [{ text: "OK" }] });
+
+            // MODIFICATION: Use toast for completion message instead of dialog
+            if (this.activeExportToastId && this.exportStats.completedFiles > 0) {
+                window.holaf.toastManager.update(this.activeExportToastId, {
+                    message: `<strong>Export Queue Complete:</strong><br>${this.exportStats.completedFiles} file(s) downloaded.`,
+                    type: 'success',
+                    progress: 100
+                });
+                setTimeout(() => window.holaf.toastManager.hide(this.activeExportToastId), 5000);
+            } else if (this.activeExportToastId) {
+                // Hide info toast if nothing was actually downloaded
+                window.holaf.toastManager.hide(this.activeExportToastId);
             }
+            this.activeExportToastId = null;
+            // CORRECTION: Reset stats for next export batch
+            this.exportStats = { totalFiles: 0, completedFiles: 0, currentFileName: '', currentFileProgress: 0 };
             return;
         }
 
@@ -804,7 +816,15 @@ const holafImageViewer = {
 
         } catch (error) {
             console.error(`[Holaf ImageViewer] Failed to download file ${filename}:`, error);
-            HolafPanelManager.createDialog({ title: "Export Error", message: `Failed to download file: ${filename}\n\n${error.message}`, buttons: [{ text: "OK" }] });
+            // MODIFICATION: Use toast for error message
+            if (this.activeExportToastId) {
+                window.holaf.toastManager.update(this.activeExportToastId, {
+                    message: `<strong>Download Failed:</strong><br>${filename}<br><small>${error.message}</small>`,
+                    type: 'error',
+                    progress: 100
+                });
+                this.activeExportToastId = null; // Stop further updates to this toast
+            }
             this._stopStatusAnimation();
             this.isExporting = false;
             this.updateStatusBar();
@@ -857,9 +877,18 @@ const holafImageViewer = {
         const statusBarEl = document.getElementById('holaf-viewer-statusbar');
         if (!statusBarEl) return;
 
+        // MODIFICATION: Update status bar AND dynamic toast
         if (this.isExporting) {
-            let progress = this.exportStats.currentFileProgress.toFixed(1);
-            statusBarEl.textContent = `Exporting (${this.exportStats.completedFiles + 1}/${this.exportStats.totalFiles}): ${this.exportStats.currentFileName} [${progress}%]`;
+            const progress = this.exportStats.currentFileProgress.toFixed(1);
+            const text = `Exporting (${this.exportStats.completedFiles + 1}/${this.exportStats.totalFiles}): ${this.exportStats.currentFileName}`;
+            statusBarEl.textContent = `${text} [${progress}%]`;
+            
+            if (this.activeExportToastId) {
+                window.holaf.toastManager.update(this.activeExportToastId, {
+                    message: text,
+                    progress: this.exportStats.currentFileProgress
+                });
+            }
             return;
         }
 

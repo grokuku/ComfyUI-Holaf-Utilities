@@ -13,9 +13,11 @@
  * MODIFICATION: Added "Toggle Monitor" menu item.
  * REFACTOR CSS: Modified loadSharedCss to load multiple split CSS files.
  * REFACTOR RESTART: Implemented a new multi-stage restart sequence with fixed dialog size.
+ * MODIFICATION: Integrated the new HolafToastManager for non-blocking notifications.
  */
 
 import { app } from "../../../scripts/app.js";
+import { HolafToastManager } from "./holaf_toast_manager.js";
 
 // We can't import the other modules here without creating circular dependencies or race conditions.
 // We rely on the fact that ComfyUI loads all JS files, making the handler objects available globally.
@@ -70,10 +72,10 @@ const HolafModal = {
 
         const closeModal = () => {
              // Clean up any intervals that might have been created by a process within the modal
-            if (window.holafRestartMonitorInterval) clearInterval(window.holafRestartMonitorInterval);
-            if (window.holafRestartTimerInterval) clearInterval(window.holafRestartTimerInterval);
-            delete window.holafRestartMonitorInterval;
-            delete window.holafRestartTimerInterval;
+            if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
+            if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
+            delete window.holaf.restartMonitorInterval;
+            delete window.holaf.restartTimerInterval;
             overlay.remove();
         }
 
@@ -102,7 +104,14 @@ const HolafUtilitiesMenu = {
     dropdownMenuEl: null, // Référence au menu déroulant
 
     init() {
-        this.loadSharedCss(); // This will now load multiple CSS files
+        this.loadSharedCss();
+
+        // --- NEW: Initialize global Holaf namespace and Toast Manager ---
+        if (!window.holaf) {
+            window.holaf = {};
+        }
+        window.holaf.toastManager = new HolafToastManager();
+        // --- END NEW ---
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
         if (menuContainer) {
@@ -187,10 +196,10 @@ const HolafUtilitiesMenu = {
                         const cleanupAndClose = () => {
                              const overlay = document.getElementById("holaf-modal-overlay");
                              if(overlay) overlay.remove();
-                             if (window.holafRestartMonitorInterval) clearInterval(window.holafRestartMonitorInterval);
-                             if (window.holafRestartTimerInterval) clearInterval(window.holafRestartTimerInterval);
-                             delete window.holafRestartMonitorInterval;
-                             delete window.holafRestartTimerInterval;
+                             if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
+                             if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
+                             delete window.holaf.restartMonitorInterval;
+                             delete window.holaf.restartTimerInterval;
                         }
 
                         dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
@@ -209,7 +218,7 @@ const HolafUtilitiesMenu = {
                                 messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
                                 
                                 let seconds = 0;
-                                window.holafRestartTimerInterval = setInterval(() => {
+                                window.holaf.restartTimerInterval = setInterval(() => {
                                     seconds++;
                                     if(timerEl) timerEl.textContent = seconds;
                                 }, 1000);
@@ -220,10 +229,10 @@ const HolafUtilitiesMenu = {
                                         .then(() => {
                                             if (serverIsDown) {
                                                 // --- Stage 3: Server is back online ---
-                                                clearInterval(window.holafRestartMonitorInterval);
-                                                clearInterval(window.holafRestartTimerInterval);
-                                                delete window.holafRestartMonitorInterval;
-                                                delete window.holafRestartTimerInterval;
+                                                clearInterval(window.holaf.restartMonitorInterval);
+                                                clearInterval(window.holaf.restartTimerInterval);
+                                                delete window.holaf.restartMonitorInterval;
+                                                delete window.holaf.restartTimerInterval;
                                                 
                                                 if (!messageEl || !refreshBtn) return;
 
@@ -244,7 +253,7 @@ const HolafUtilitiesMenu = {
                                         });
                                 };
                                 
-                                window.holafRestartMonitorInterval = setInterval(checkServerStatus, 2000);
+                                window.holaf.restartMonitorInterval = setInterval(checkServerStatus, 2000);
                             })
                             .catch(err => {
                                 console.error("[Holaf Utilities] Failed to send restart command:", err);
@@ -352,10 +361,11 @@ const HolafUtilitiesMenu = {
             "holaf_nodes_manager_styles.css",
             "holaf_settings_panel_styles.css",
             "holaf_system_monitor_styles.css",
-            "holaf_image_viewer_styles.css" // Keep this for potential panel-specific styles for Image Viewer
+            "holaf_image_viewer_styles.css",
+            "holaf_toasts.css" // <-- Added this line
         ];
 
-        const basePath = "extensions/ComfyUI-Holaf-Utilities/css/";
+        const basePath = "extensions/ComfyUI-Holaf-Utilities/css/"; // Corrected base path
 
         cssFiles.forEach(fileName => {
             const cssId = `holaf-css-${fileName.replace('.css', '')}`;
