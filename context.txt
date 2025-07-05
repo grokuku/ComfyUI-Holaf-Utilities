@@ -1,3 +1,21 @@
+RÈGLES OPÉRATIONNELLES :
+
+1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
+
+2.  **Format des modifications de fichiers :**
+    *   Lorsqu'une modification est apportée à un fichier, fournis une commande `sed` pour Git Bash, **en une seule ligne**, permettant d'appliquer ce patch. (encapsuler l'argument de la commande sed dans des guillemets simples (') au lieu de guillemets doubles)
+    *   **Condition :** Ne fournis cette commande `sed` que si elle est basique et ne risque pas de generer une erreur.
+    *   Dans ce cas (commande `sed` sans risque), ne montre pas les blocs de code modifiés, donne uniquement la commande `sed`.
+    *   **Restriction d'outil :** N'utilise que `sed` pour ces commandes de patch. N'utilise jamais d'autres outils (comme `patch`, `awk`, `tee`, etc.) pour générer la commande de modification.
+    *   **Alternative :** Si la commande `sed` requise (en respectant la contrainte d'une seule ligne) risquerait de ne pas fonctionner correctement, ou si une commande `sed` en une seule ligne n'est pas réalisable pour la modification demandée, ne fournis pas de commande. À la place, donne-moi le contenu intégral du fichier modifié.
+
+3.  **Flux de travail séquentiel :** Après avoir proposé une modification (commande `sed` ou fichier complet) pour un fichier, attends explicitement l'accord de l'utilisateur (et non du LLM) avant de proposer des modifications pour un fichier suivant ou de continuer sur une autre tâche.
+
+4.  **Principe de moindre intervention :** Ne fais jamais de zèle. Ne modifie pas des sections de code qui fonctionnent correctement si cela n'est pas explicitement demandé ou absolument nécessaire pour la tâche en cours.
+
+5.  **Anticipation des erreurs et suggestion de vérification :** N'assume pas que les modifications proposées fonctionneront parfaitement du premier coup. Après avoir proposé une modification, suggère brièvement les points clés que je devrais vérifier ou les tests simples que je pourrais effectuer pour m'assurer du bon fonctionnement.
+
+---
 FILE_TREE_ANALYSIS:
 # --- Root Directory ---
 📁 holaf_image_viewer_backend/
@@ -95,7 +113,8 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_gallery.js -> Gallery rendering, thumbnail loading, intersection observer.
     📄 image_viewer_infopane.js -> Logic for the right-side info panel.
     📄 image_viewer_navigation.js -> Keyboard/mouse navigation, zoom/pan, fullscreen logic.
-    📄 image_viewer_settings.js -> Manages settings object, load/save API calls, theme application.
+    📄 image_viewer_settings.js
+      > Manages the viewer's 'settings' object. Handles load/save API calls (via debounced save) and applies themes. Interacts closely with holaf_config.py logic.
     📄 image_viewer_ui.js -> Generates static HTML structure for the panel.
   📁 model_manager/
     > Modular JS for the Model Manager.
@@ -130,9 +149,7 @@ FILE_TREE_ANALYSIS:
     > Controller for the global Settings panel.
     -> holaf_panel_manager
   📄 holaf_toast_manager.js
-    > [NEW & CRITICAL] Manages creation and lifecycle of toast notifications.
-    > § Exposes a global `window.holaf.toastManager`.
-    > § Designed to be theme-aware, but currently has a bug.
+    > [NEW & CRITICAL] Manages creation and lifecycle of toast notifications. Exposes global `window.holaf.toastManager`. Applies a default theme to its container to ensure readability.
   📄 holaf_terminal.js
     > Main controller for the Terminal.
     -> holaf_panel_manager, xterm.js, xterm-addon-fit.js
@@ -151,7 +168,7 @@ FILE_TREE_ANALYSIS:
   > [CRITICAL] Main extension entry point.
   > § Imports all BE modules.
   > § Initializes DB, Config.
-  > § Registers all API routes (@).
+  > § Registers all API routes (@), including critical UI state saving endpoints like `/holaf/image-viewer/save-settings`.
   > § Patches ComfyUI's `SaveImage` node for live updates.
   > § Starts background worker threads (thumbnailing, DB sync).
   > § Dynamically loads custom nodes from the `nodes/` directory.
@@ -160,7 +177,7 @@ FILE_TREE_ANALYSIS:
 📄 deepscan.txt
   > Documentation/plan for the "Deep Scan" feature. Not code.
 📄 holaf_config.py
-  > Manages `config.ini` file (reading/writing settings).
+  > Manages `config.ini` file. Reads/writes settings, including complex ones like filter arrays as JSON strings.
 📄 holaf_database.py
   > Manages the single `holaf_utilities.sqlite` database file, including schema creation and migration.
 📄 holaf_server_management.py
@@ -180,11 +197,11 @@ FILE_TREE_ANALYSIS:
 📄 requirements.txt
   > Python package dependencies (`psutil`, `pywinpty`, `aiofiles`).
 
+---
 PROJECT_STATE:
   # Source: README.md, image_editor_plan.md
   ACTIVE_BUGS:
-    - [high, css/js, toast_background_transparent] # Toast notifications have a transparent background, making them unreadable. Theming variables are not being applied correctly.
-    - [high, js, image_viewer_filters_not_persisting] # Image viewer filters are reset after a ComfyUI reboot. Settings are likely not being saved to the config file correctly.
+    # (None currently active)
   IN_PROGRESS:
   ROADMAP:
     Global:
@@ -204,6 +221,8 @@ PROJECT_STATE:
       - [feature, feature_watermark_overlay]
       - [ui, operations_tab(copy,paste,import,export_edt,toggle)]
   COMPLETED_FEATURES:
+    - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters and fixed FE data parsing.
+    - [fix, toast_theming_and_readability] # Corrected toast manager to apply a theme directly, fixing transparent background issue.
     - [feature, ui, toasts_notification_system_base] # Initial implementation of the non-blocking toast system.
     - [major_refactor_backend_frontend]
     - [image_editor_base_architecture]
@@ -212,5 +231,4 @@ PROJECT_STATE:
     - [image_editor_initial_bugfixes]
     - [thumbnail_cache_system]
     - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch and added fallback logic.
-    - [fix, filter_persistence_fails] # Refactored state management for full filter persistence.
     - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.

@@ -4,7 +4,7 @@
  *
  * Manages the lifecycle of non-blocking toast notifications.
  * Can be used globally via window.holaf.toastManager
- * CORRECTION: Use MutationObserver to dynamically sync with body theme changes.
+ * CORRECTION: Removed flawed MutationObserver logic and now applies a default theme directly.
  */
 
 export class HolafToastManager {
@@ -12,6 +12,10 @@ export class HolafToastManager {
         this.container = null;
         this.activeToasts = new Map();
         this._initContainer();
+        
+        // Apply a default theme to ensure toasts are always readable.
+        // The theme can be changed later if a global theme-switching mechanism is introduced.
+        this.setTheme('holaf-theme-graphite-orange'); 
     }
 
     _initContainer() {
@@ -22,35 +26,29 @@ export class HolafToastManager {
         this.container = document.createElement('div');
         this.container.id = 'holaf-toast-container';
         document.body.appendChild(this.container);
-
-        // --- ROBUST THEME SYNCHRONIZATION ---
-
-        // 1. Function to sync the theme
-        const syncTheme = () => {
-            const currentTheme = document.body.className.match(/holaf-theme-\S+/)?.[0];
-            // Reset class list, keeping only the ID
-            this.container.className = '';
-            if (currentTheme) {
-                this.container.classList.add(currentTheme);
-            }
-        };
-
-        // 2. Set the initial theme immediately
-        syncTheme();
-
-        // 3. Create an observer to watch for future theme changes on the body
-        const observer = new MutationObserver((mutationsList) => {
-            for (const mutation of mutationsList) {
-                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                    syncTheme();
-                    break; // No need to check other mutations
-                }
-            }
-        });
-
-        // 4. Start observing the body for class attribute changes
-        observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     }
+    
+    /**
+     * Applies a specific theme class to the toast container.
+     * @param {string} themeClassName - The CSS class name of the theme to apply (e.g., 'holaf-theme-midnight-purple').
+     */
+    setTheme(themeClassName) {
+        if (!this.container) return;
+        
+        // Remove any existing theme classes
+        const classList = Array.from(this.container.classList);
+        for (const cls of classList) {
+            if (cls.startsWith('holaf-theme-')) {
+                this.container.classList.remove(cls);
+            }
+        }
+        
+        // Add the new theme class
+        if (themeClassName) {
+            this.container.classList.add(themeClassName);
+        }
+    }
+
 
     /**
      * Shows a new toast notification.
