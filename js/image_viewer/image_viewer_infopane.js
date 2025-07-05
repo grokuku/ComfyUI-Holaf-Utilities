@@ -4,10 +4,16 @@
  *
  * This module is responsible for fetching and displaying detailed
  * image information and metadata in the right-hand side pane.
+ * REFACTOR: Subscribes to imageViewerState to update automatically.
  */
 
 import { app } from "../../../scripts/app.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
+import { imageViewerState } from './image_viewer_state.js';
+
+// Module-level variables to manage state
+let abortController = null;
+let lastProcessedPath = null;
 
 /**
  * Copies text to the user's clipboard.
@@ -40,20 +46,22 @@ function copyTextToClipboard(text) {
 
 /**
  * Fetches and displays metadata for a given image in the info pane.
- * @param {object} viewer - The main image viewer instance.
  * @param {object|null} image - The image data object, or null to clear the pane.
  */
-export async function updateInfoPane(viewer, image) {
+async function displayInfoForImage(image) {
     const infoContentEl = document.getElementById('holaf-viewer-info-content');
     if (!infoContentEl) return;
+
+    if (abortController) {
+        abortController.abort();
+    }
+    abortController = new AbortController();
+    const signal = abortController.signal;
+
     if (!image) {
          infoContentEl.innerHTML = `<p class="holaf-viewer-message">Select an image to see details.</p>`;
          return;
     }
-
-    if (viewer.metadataAbortController) viewer.metadataAbortController.abort();
-    viewer.metadataAbortController = new AbortController();
-    const signal = viewer.metadataAbortController.signal;
 
     const sizeInMB = (image.size_bytes / 1048576).toFixed(2);
     let originalPathInfo = '';
@@ -69,6 +77,8 @@ export async function updateInfoPane(viewer, image) {
         metadataUrl.search = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || '' });
 
         const response = await fetch(metadataUrl.href, { signal, cache: 'no-store' });
+        if (signal.aborted) return;
+
         const metadataContainer = document.getElementById('holaf-metadata-container');
         if (!metadataContainer) return;
 
@@ -79,6 +89,11 @@ export async function updateInfoPane(viewer, image) {
         }
 
         const data = await response.json();
+        if (signal.aborted) return;
+        
+        const finalMetadataContainer = document.getElementById('holaf-metadata-container');
+        if (!finalMetadataContainer) return;
+
         const resolutionContainer = document.getElementById('holaf-resolution-container');
         if (resolutionContainer) {
             let resolutionHTML = '';
@@ -88,7 +103,7 @@ export async function updateInfoPane(viewer, image) {
         }
 
         const getSourceLabel = (s) => ({ "external_txt": "(from .txt)", "external_json": "(from .json)", "internal_png": "(from PNG)" }[s] || "");
-        metadataContainer.innerHTML = '';
+        finalMetadataContainer.innerHTML = '';
 
         const createButton = (txt, cb, dis = false) => {
             const b = document.createElement('button');
@@ -99,7 +114,7 @@ export async function updateInfoPane(viewer, image) {
             return b;
         };
 
-        metadataContainer.innerHTML += `<p><span class="holaf-viewer-metadata-label">Prompt:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.prompt_source)}</span></p>`;
+        finalMetadataContainer.innerHTML += `<p><span class="holaf-viewer-metadata-label">Prompt:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.prompt_source)}</span></p>`;
         const promptActions = document.createElement('div');
         promptActions.className = 'holaf-viewer-info-actions';
         promptActions.appendChild(createButton('📋 Copy Prompt', (e) => {
@@ -112,18 +127,18 @@ export async function updateInfoPane(viewer, image) {
                 setTimeout(() => e.target.textContent = '📋 Copy Prompt', 2000);
             });
         }, !data.prompt));
-        metadataContainer.appendChild(promptActions);
+        finalMetadataContainer.appendChild(promptActions);
 
         if (data.prompt) {
             const promptBox = document.createElement('div');
             promptBox.className = 'holaf-viewer-metadata-box';
             promptBox.textContent = data.prompt;
-            metadataContainer.appendChild(promptBox);
+            finalMetadataContainer.appendChild(promptBox);
         } else {
-            metadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
+            finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
         }
 
-        metadataContainer.innerHTML += `<p style="margin-top:15px;"><span class="holaf-viewer-metadata-label">Workflow:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.workflow_source)}</span></p>`;
+        finalMetadataContainer.innerHTML += `<p style="margin-top:15px;"><span class="holaf-viewer-metadata-label">Workflow:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.workflow_source)}</span></p>`;
         const workflowActions = document.createElement('div');
         workflowActions.className = 'holaf-viewer-info-actions';
         workflowActions.appendChild(createButton('⚡ Load Workflow', async () => {
@@ -133,24 +148,38 @@ export async function updateInfoPane(viewer, image) {
                     buttons: [{ text: 'Cancel', value: false }, { text: 'Load', value: true }]
                 })) app.loadGraphData(data.workflow);
         }, !data.workflow || !!data.workflow.error));
-        metadataContainer.appendChild(workflowActions);
+        finalMetadataContainer.appendChild(workflowActions);
 
         if (data.workflow && !data.workflow.error) {
             const workflowBox = document.createElement('div');
             workflowBox.className = 'holaf-viewer-metadata-box';
             workflowBox.textContent = JSON.stringify(data.workflow, null, 2);
-            metadataContainer.appendChild(workflowBox);
+            finalMetadataContainer.appendChild(workflowBox);
         } else if (data.workflow && data.workflow.error) {
-            metadataContainer.innerHTML += `<p class="holaf-viewer-message error"><em>Error: ${data.workflow.error}</em></p>`;
+            finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message error"><em>Error: ${data.workflow.error}</em></p>`;
         } else {
-            metadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>No workflow found.</em></p>`;
+            finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>No workflow found.</em></p>`;
         }
     } catch (err) {
-        const m = document.getElementById('holaf-metadata-container');
-        if (err.name === 'AbortError') return;
-        console.error("Metadata fetch error:", err);
-        if (m) m.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> Failed to fetch metadata.</p>`;
-    } finally {
-        viewer.metadataAbortController = null;
+        if (err.name !== 'AbortError') {
+            console.error("Metadata fetch error:", err);
+            const m = document.getElementById('holaf-metadata-container');
+            if (m) m.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> Failed to fetch metadata.</p>`;
+        }
     }
+}
+
+/**
+ * Initializes the info pane to subscribe to state changes.
+ */
+export function setupInfoPane() {
+    imageViewerState.subscribe(newState => {
+        const activeImage = newState.activeImage;
+        const activeImagePath = activeImage ? activeImage.path_canon : null;
+
+        if (activeImagePath !== lastProcessedPath) {
+            lastProcessedPath = activeImagePath;
+            displayInfoForImage(activeImage);
+        }
+    });
 }

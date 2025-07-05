@@ -1,3 +1,5 @@
+--- START OF FILE context.txt ---
+
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -106,15 +108,18 @@ FILE_TREE_ANALYSIS:
   📁 image_viewer/
     > Modular JS for the Image Viewer.
     📄 image_viewer_actions.js
-      > Handles user actions (delete, export).
-      > § Initiates toast notifications for long-running tasks like export.
-      -> HolafPanelManager, window.holaf.toastManager
+      > [REFACTORED] Handles user actions (delete, export). Reads from central state instead of passed `viewer` object. -> image_viewer_state, HolafPanelManager
     📄 image_viewer_editor.js -> Controller for the Image Editor sub-panel.
-    📄 image_viewer_gallery.js -> Gallery rendering, thumbnail loading, intersection observer.
-    📄 image_viewer_infopane.js -> Logic for the right-side info panel.
-    📄 image_viewer_navigation.js -> Keyboard/mouse navigation, zoom/pan, fullscreen logic.
+    📄 image_viewer_gallery.js
+      > [REFACTORED & FIXED] Gallery rendering, thumbnail loading, and selection logic. Now fully state-driven.
+    📄 image_viewer_infopane.js
+      > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
+    📄 image_viewer_navigation.js
+      > [REFACTORED] Keyboard/mouse navigation, zoom/pan, fullscreen logic. Reads from central state.
     📄 image_viewer_settings.js
-      > Manages the viewer's 'settings' object. Handles load/save API calls (via debounced save) and applies themes. Interacts closely with holaf_config.py logic.
+      > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
+    📄 image_viewer_state.js
+      > [NEW & CRITICAL] Manages the central state for the Image Viewer (filters, selection, etc.) using a pub/sub model. Core of the new state-driven architecture.
     📄 image_viewer_ui.js -> Generates static HTML structure for the panel.
   📁 model_manager/
     > Modular JS for the Model Manager.
@@ -125,10 +130,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [CRITICAL] Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules.
-    > § Manages main state including settings, filteredImages, and event listeners for filters.
-    > § Manages the export download queue and updates toast progress.
-    -> holaf_panel_manager, image_viewer/*
+    > [REFACTOR IN PROGRESS] Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules. Transitioning from managing its own state to delegating to `image_viewer_state.js`. Many legacy state properties still exist for compatibility during the refactor. -> holaf_panel_manager, image_viewer/*
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -199,16 +201,22 @@ FILE_TREE_ANALYSIS:
 
 ---
 PROJECT_STATE:
-  # Source: README.md, image_editor_plan.md
   ACTIVE_BUGS:
-    # (None currently active)
+    # (None currently identified)
   IN_PROGRESS:
+    - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
+      - [DONE] Creation of `js/image_viewer/image_viewer_state.js`.
+      - [DONE] Refactor of `settings`, `actions`, `navigation` modules to use the central state.
+      - [DONE] Refactor of `gallery` module (selection bug fixed).
+      - [DONE] Refactor of `infopane` module.
+      - [TODO] Refactor `ui` module.
+      - [TODO] Refactor `editor` module.
+      - [TODO] Final cleanup of `holaf_image_viewer.js` to remove all legacy state properties.
   ROADMAP:
     Global:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
       - [backend, periodic_maintenance_worker] # Hourly worker to clean DB and cache.
     ImageViewer:
-      - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
       - [feature, realtime_file_monitoring] # Replace periodic scan with `watchdog` for instant updates.
       - [feature, corrupted_file_management] # Auto-move unreadable images to `output/corrupted`.
       - [ui, folder_filter_enhancements(invert,lock)] # Add "Invert" and "Lock" to folder filter UI.
@@ -221,6 +229,8 @@ PROJECT_STATE:
       - [feature, feature_watermark_overlay]
       - [ui, operations_tab(copy,paste,import,export_edt,toggle)]
   COMPLETED_FEATURES:
+    - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state, removing manual updates and making it reactive.
+    - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven and fixed a critical bug in the state manager (getState) that was corrupting Set objects.
     - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters and fixed FE data parsing.
     - [fix, toast_theming_and_readability] # Corrected toast manager to apply a theme directly, fixing transparent background issue.
     - [feature, ui, toasts_notification_system_base] # Initial implementation of the non-blocking toast system.

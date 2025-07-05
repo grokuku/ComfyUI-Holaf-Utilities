@@ -6,10 +6,14 @@
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
  * CORRECTION: Refactored export queue processing to use and update toasts dynamically.
+ * REFACTOR: Started migration to state-driven architecture using image_viewer_state.
  */
 
 import { app } from "../../../scripts/app.js";
 import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
+
+// Import State Manager
+import { imageViewerState } from './image_viewer/image_viewer_state.js';
 
 // Import modularized functionalities
 import * as Settings from './image_viewer/image_viewer_settings.js';
@@ -26,18 +30,15 @@ const SEARCH_DEBOUNCE_MS = 400;
 const FILTER_REFRESH_INTERVAL_MS = 5000;
 
 const holafImageViewer = {
-    // State Properties
+    // --- Legacy State & Properties (to be phased out) ---
     panelElements: null,
     isInitialized: false,
     areSettingsLoaded: false,
-    isLoading: false,
-    filteredImages: [],
+    settings: {}, 
     renderedCount: 0,
-    activeImage: null,
-    currentNavIndex: -1,
     galleryObserver: null,
     backgroundRenderHandle: null,
-    metadataAbortController: null,
+    // metadataAbortController is now managed inside infopane.js
     fullscreenElements: null,
     refreshIntervalId: null,
     editor: null,
@@ -45,29 +46,6 @@ const holafImageViewer = {
     _lastFolderFilterState: null,
     searchDebounceTimeout: null,
     filterRefreshIntervalId: null,
-    lastDbUpdateTime: 0,
-    
-    settings: {
-        theme: "Graphite Orange",
-        panel_x: null, panel_y: null,
-        panel_width: 1200, panel_height: 800,
-        panel_is_fullscreen: false,
-        folder_filters: undefined,
-        format_filters: undefined,
-        search_text: '',
-        thumbnail_fit: 'cover',
-        thumbnail_size: 150,
-        startDate: '',
-        endDate: '',
-        export_format: 'png',
-        export_include_meta: true,
-        export_meta_method: 'embed',
-        search_scope_name: true,
-        search_scope_prompt: true,
-        search_scope_workflow: true,
-        workflow_filter_internal: true,
-        workflow_filter_external: true,
-    },
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
     visiblePlaceholdersToPrioritize: new Set(),
@@ -76,22 +54,12 @@ const holafImageViewer = {
     allThumbnailsGenerated: false,
     currentFilteredCount: 0,
     currentTotalDbCount: 0,
-    lastClickedIndex: -1,
+    // lastClickedIndex is now deprecated
     lastThumbStats: null,
-    selectedImages: new Set(),
-    isExporting: false,
-    exportDownloadQueue: [],
-    exportStats: {
-        totalFiles: 0,
-        completedFiles: 0,
-        currentFileName: '',
-        currentFileProgress: 0,
-    },
-    activeExportToastId: null, // <-- ADDED: To track the current export toast
     exportStatusRaf: null,
     conflictQueue: [],
     isProcessingConflicts: false,
-
+    
     // --- Initialization & Core Lifecycle ---
 
     init() {
@@ -170,8 +138,8 @@ const holafImageViewer = {
     saveSettings: function (newSettings) { return Settings.saveSettings(this, newSettings); },
     setTheme: function (themeName, doSave = true) { return Settings.setTheme(this, themeName, doSave); },
     applyPanelSettings: function () { return Settings.applyPanelSettings(this); },
-    _applyThumbnailFit: function () { return Settings.applyThumbnailFit(this.settings.thumbnail_fit); },
-    _applyThumbnailSize: function () { return Settings.applyThumbnailSize(this.settings.thumbnail_size); },
+    _applyThumbnailFit: function () { return Settings.applyThumbnailFit(imageViewerState.getState().ui.thumbnail_fit); },
+    _applyThumbnailSize: function () { return Settings.applyThumbnailSize(imageViewerState.getState().ui.thumbnail_size); },
 
     // --- UI Creation & Population (partially delegated) ---
 
@@ -197,6 +165,8 @@ const holafImageViewer = {
 
     createPanel() {
         if (this.panelElements && this.panelElements.panelEl) return;
+        
+        const state = imageViewerState.getState();
         const headerControls = document.createElement("div");
         headerControls.className = "holaf-header-button-group";
         const themeButtonContainer = document.createElement("div");
@@ -223,13 +193,14 @@ const holafImageViewer = {
                 id: "holaf-viewer-panel",
                 title: "Holaf Image Viewer",
                 headerContent: headerControls,
-                defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
-                defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
+                defaultSize: { width: state.panel_width, height: state.panel_height },
+                defaultPosition: { x: state.panel_x, y: state.panel_y },
                 onClose: () => this.hide(),
                 onStateChange: (newState) => this.saveSettings(newState),
                 onFullscreenToggle: (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }),
             });
             this.populatePanelContent();
+            InfoPane.setupInfoPane(); // CORRECT: Initialize the self-updating infopane.
             this.applyPanelSettings();
             this._createFullscreenOverlay();
             this._attachActionListeners();
@@ -241,6 +212,7 @@ const holafImageViewer = {
 
     populatePanelContent() {
         const contentEl = this.panelElements.contentEl;
+        const state = imageViewerState.getState();
         contentEl.style.display = 'flex';
         contentEl.style.flexDirection = 'column';
         contentEl.innerHTML = UI.getPanelHTML();
@@ -250,33 +222,33 @@ const holafImageViewer = {
             this.loadFilteredImages();
         };
 
-        // Reset Button
         contentEl.querySelector('#holaf-viewer-btn-reset-filters').onclick = (e) => {
             e.preventDefault();
             this._resetFilters();
         };
         
-        // Search Input
         const searchInputEl = contentEl.querySelector('#holaf-viewer-search-input');
-        searchInputEl.value = this.settings.search_text || '';
+        searchInputEl.value = state.filters.search_text || '';
         searchInputEl.oninput = () => {
             clearTimeout(this.searchDebounceTimeout);
             this.searchDebounceTimeout = setTimeout(onFilterChange, SEARCH_DEBOUNCE_MS);
         };
 
-        // Search Scope Buttons
         const nameScopeBtn = contentEl.querySelector('#holaf-search-scope-filename');
         const promptScopeBtn = contentEl.querySelector('#holaf-search-scope-prompt');
         const workflowScopeBtn = contentEl.querySelector('#holaf-search-scope-workflow');
 
         const createScopeClickHandler = (scopeKey) => () => {
-            this.settings[scopeKey] = !this.settings[scopeKey];
-            this._updateSearchScopeButtonStates();
-            // Trigger a search only if there's text, otherwise just save the button state
+            const currentFilters = imageViewerState.getState().filters;
+            const newScopeState = { [scopeKey]: !currentFilters[scopeKey] };
+            
             if (searchInputEl.value.trim() !== "") {
+                this.saveSettings(newScopeState);
                 onFilterChange();
             } else {
-                this.saveSettings({ [scopeKey]: this.settings[scopeKey] });
+                this.saveSettings(newScopeState);
+                imageViewerState.setState({ filters: newScopeState });
+                this._updateSearchScopeButtonStates();
             }
         };
 
@@ -284,22 +256,22 @@ const holafImageViewer = {
         promptScopeBtn.onclick = createScopeClickHandler('search_scope_prompt');
         workflowScopeBtn.onclick = createScopeClickHandler('search_scope_workflow');
 
-        // Workflow Filter Buttons
         const internalBtn = contentEl.querySelector('#holaf-workflow-filter-internal');
         const externalBtn = contentEl.querySelector('#holaf-workflow-filter-external');
 
         internalBtn.onclick = () => {
-            this.settings.workflow_filter_internal = !this.settings.workflow_filter_internal;
+            const currentFilters = imageViewerState.getState().filters;
+            this.saveSettings({ workflow_filter_internal: !currentFilters.workflow_filter_internal });
             this._updateWorkflowButtonStates();
             onFilterChange();
         };
         externalBtn.onclick = () => {
-            this.settings.workflow_filter_external = !this.settings.workflow_filter_external;
+            const currentFilters = imageViewerState.getState().filters;
+            this.saveSettings({ workflow_filter_external: !currentFilters.workflow_filter_external });
             this._updateWorkflowButtonStates();
             onFilterChange();
         };
 
-        // Folder Select/Deselect All Buttons
         contentEl.querySelector('#holaf-viewer-folders-select-all').onclick = (e) => {
             e.preventDefault();
             contentEl.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
@@ -315,16 +287,15 @@ const holafImageViewer = {
             onFilterChange();
         };
 
-        // Attach listeners for other elements
         const dateStartEl = contentEl.querySelector('#holaf-viewer-date-start');
         const dateEndEl = contentEl.querySelector('#holaf-viewer-date-end');
-        dateStartEl.value = this.settings.startDate || '';
-        dateEndEl.value = this.settings.endDate || '';
+        dateStartEl.value = state.filters.startDate || '';
+        dateEndEl.value = state.filters.endDate || '';
         dateStartEl.onchange = onFilterChange;
         dateEndEl.onchange = onFilterChange;
 
         const thumbFitToggle = contentEl.querySelector('#holaf-viewer-thumb-fit-toggle');
-        thumbFitToggle.checked = this.settings.thumbnail_fit === 'contain';
+        thumbFitToggle.checked = state.ui.thumbnail_fit === 'contain';
         thumbFitToggle.onchange = (e) => {
             this.saveSettings({ thumbnail_fit: e.target.checked ? 'contain' : 'cover' });
             this._applyThumbnailFit();
@@ -332,8 +303,8 @@ const holafImageViewer = {
 
         const thumbSizeSlider = contentEl.querySelector('#holaf-viewer-thumb-size-slider');
         const thumbSizeValue = contentEl.querySelector('#holaf-viewer-thumb-size-value');
-        thumbSizeSlider.value = this.settings.thumbnail_size;
-        thumbSizeValue.textContent = `${this.settings.thumbnail_size}px`;
+        thumbSizeSlider.value = state.ui.thumbnail_size;
+        thumbSizeValue.textContent = `${state.ui.thumbnail_size}px`;
         thumbSizeSlider.oninput = (e) => {
             thumbSizeValue.textContent = `${e.target.value}px`;
         };
@@ -347,10 +318,11 @@ const holafImageViewer = {
         const zoomImage = zoomView.querySelector('img');
         const zoomFullscreenBtn = contentEl.querySelector('.holaf-viewer-zoom-fullscreen-icon');
         zoomCloseBtn.onclick = () => this._hideZoomedView();
-        zoomImage.ondblclick = () => this._showFullscreenView(this.activeImage);
+        zoomImage.ondblclick = () => this._showFullscreenView(imageViewerState.getState().activeImage);
         zoomImage.onclick = (e) => e.stopPropagation();
         zoomFullscreenBtn.onclick = () => {
-            if (this.activeImage) this._showFullscreenView(this.activeImage);
+            const currentActiveImage = imageViewerState.getState().activeImage;
+            if (currentActiveImage) this._showFullscreenView(currentActiveImage);
         };
 
         Navigation.setupZoomAndPan(this.zoomViewState, zoomView, zoomImage);
@@ -411,15 +383,16 @@ const holafImageViewer = {
     // --- Data Loading & Filtering ---
 
     async checkForUpdates() {
-        if (this.isLoading) return;
+        const state = imageViewerState.getState();
+        if (state.status.isLoading) return;
         try {
             const response = await fetch('/holaf/images/last-update-time', { cache: 'no-store' });
             if (!response.ok) return;
             const data = await response.json();
 
-            if (data.last_update > this.lastDbUpdateTime) {
+            if (data.last_update > state.status.lastDbUpdateTime) {
                 console.log("[Holaf ImageViewer] New data detected on server, refreshing filters.");
-                this.lastDbUpdateTime = data.last_update;
+                imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update }});
                 await this.loadAndPopulateFilters(false, true);
             }
         } catch (e) {
@@ -428,17 +401,18 @@ const holafImageViewer = {
     },
     
     _resetFilters() {
-        // 1. Reset settings state to defaults
-        this.settings.search_text = '';
-        this.settings.startDate = '';
-        this.settings.endDate = '';
-        this.settings.search_scope_name = true;
-        this.settings.search_scope_prompt = true;
-        this.settings.search_scope_workflow = true;
-        this.settings.workflow_filter_internal = true;
-        this.settings.workflow_filter_external = true;
+        const newFilters = {
+            search_text: '',
+            startDate: '',
+            endDate: '',
+            search_scope_name: true,
+            search_scope_prompt: true,
+            search_scope_workflow: true,
+            workflow_filter_internal: true,
+            workflow_filter_external: true,
+        };
+        this.saveSettings(newFilters);
         
-        // 2. Update UI elements to match the new state
         document.getElementById('holaf-viewer-search-input').value = '';
         document.getElementById('holaf-viewer-date-start').value = '';
         document.getElementById('holaf-viewer-date-end').value = '';
@@ -455,7 +429,6 @@ const holafImageViewer = {
         const trashCheckbox = document.getElementById('folder-filter-trashcan');
         if (trashCheckbox) trashCheckbox.checked = false;
         
-        // 3. Save the new default state and reload the gallery
         this._saveCurrentFilterState();
         this.loadFilteredImages();
     },
@@ -473,11 +446,6 @@ const holafImageViewer = {
             startDate,
             endDate,
             search_text: searchText,
-            search_scope_name: this.settings.search_scope_name,
-            search_scope_prompt: this.settings.search_scope_prompt,
-            search_scope_workflow: this.settings.search_scope_workflow,
-            workflow_filter_internal: this.settings.workflow_filter_internal,
-            workflow_filter_external: this.settings.workflow_filter_external,
         });
     },
     
@@ -486,11 +454,12 @@ const holafImageViewer = {
             const response = await fetch('/holaf/images/filter-options', { cache: 'no-store' });
             if (!response.ok) throw new Error(`HTTP error ${response.status}`);
             const data = await response.json();
+            
+            const state = imageViewerState.getState();
+            imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update_time || state.status.lastDbUpdateTime }});
 
-            this.lastDbUpdateTime = data.last_update_time || this.lastDbUpdateTime;
-
-            const useSavedFolderFilters = this.settings.folder_filters !== undefined && !isUpdate;
-            const useSavedFormatFilters = this.settings.format_filters !== undefined && !isUpdate;
+            const useSavedFolderFilters = state.filters.folder_filters && state.filters.folder_filters.length > 0 && !isUpdate;
+            const useSavedFormatFilters = state.filters.format_filters && state.filters.format_filters.length > 0 && !isUpdate;
 
             const currentSelectedFolders = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''))) : null;
             const currentSelectedFormats = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''))) : null;
@@ -513,7 +482,7 @@ const holafImageViewer = {
                 const id = isRoot ? 'root' : folder;
                 let isChecked = true;
                 if (isUpdate) { isChecked = currentSelectedFolders.has(id); }
-                else if (useSavedFolderFilters) { isChecked = this.settings.folder_filters.includes(id); }
+                else if (useSavedFolderFilters) { isChecked = state.filters.folder_filters.includes(id); }
                 return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, onFilterChange);
             };
 
@@ -526,7 +495,7 @@ const holafImageViewer = {
 
             let isTrashChecked = false;
             if (isUpdate) { isTrashChecked = currentSelectedFolders.has('trashcan'); }
-            else if (useSavedFolderFilters) { isTrashChecked = this.settings.folder_filters.includes('trashcan'); }
+            else if (useSavedFolderFilters) { isTrashChecked = state.filters.folder_filters.includes('trashcan'); }
 
             const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
                 const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
@@ -564,7 +533,7 @@ const holafImageViewer = {
             data.formats.forEach(format => {
                 let isChecked = true;
                 if (isUpdate) { isChecked = currentSelectedFormats.has(format); }
-                else if (useSavedFormatFilters) { isChecked = this.settings.format_filters.includes(format); }
+                else if (useSavedFormatFilters) { isChecked = state.filters.format_filters.includes(format); }
                 formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, isChecked, onFilterChange));
             });
 
@@ -578,12 +547,10 @@ const holafImageViewer = {
     },
 
     async _fetchFilteredImages() {
-        const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
-        const selectedFormats = [...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''));
-        
-        const { startDate, endDate, search_text, 
+        const { filters } = imageViewerState.getState();
+        const { folder_filters, format_filters, startDate, endDate, search_text, 
                 workflow_filter_internal, workflow_filter_external,
-                search_scope_name, search_scope_prompt, search_scope_workflow } = this.settings;
+                search_scope_name, search_scope_prompt, search_scope_workflow } = filters;
 
         let workflowFilter = 'all';
         if (workflow_filter_internal && workflow_filter_external) {
@@ -605,8 +572,8 @@ const holafImageViewer = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                folder_filters: selectedFolders,
-                format_filters: selectedFormats,
+                folder_filters,
+                format_filters,
                 startDate,
                 endDate,
                 workflow_filter: workflowFilter,
@@ -619,8 +586,8 @@ const holafImageViewer = {
     },
 
     async loadFilteredImages(isInitialLoad = false) {
-        if (this.isLoading) return;
-        this.isLoading = true;
+        if (imageViewerState.getState().status.isLoading) return;
+        imageViewerState.setState({ status: { isLoading: true } });
 
         const galleryEl = document.getElementById("holaf-viewer-gallery");
 
@@ -630,37 +597,44 @@ const holafImageViewer = {
             this.setLoadingState("Applying filters...");
         }
 
-        const currentSelectedPaths = new Set(Array.from(this.selectedImages).map(img => img.path_canon));
-        const activeImageCanonPath = this.activeImage ? this.activeImage.path_canon : null;
-        this.selectedImages.clear();
+        const currentState = imageViewerState.getState();
+        const currentSelectedPaths = new Set(Array.from(currentState.selectedImages).map(img => img.path_canon));
+        const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
+        
+        imageViewerState.setState({ selectedImages: new Set() });
 
         try {
             const data = await this._fetchFilteredImages();
-            this.filteredImages = data.images || [];
-
+            const newImages = data.images || [];
+            
+            const newSelectedImages = new Set();
             if (currentSelectedPaths.size > 0) {
-                this.filteredImages.forEach(img => {
-                    if (currentSelectedPaths.has(img.path_canon)) {
-                        this.selectedImages.add(img);
+                newImages.forEach(img => {
+                    const itemInSelection = Array.from(currentSelectedPaths).find(path => path === img.path_canon);
+                    if (itemInSelection) {
+                        newSelectedImages.add(img);
                     }
                 });
             }
 
+            imageViewerState.setState({ images: newImages, selectedImages: newSelectedImages });
+            
             this.renderGallery();
             this.updateStatusBar(data, true);
 
+            let newActiveImage = null;
+            let newNavIndex = -1;
+
             if (activeImageCanonPath) {
-                const newIndex = this.filteredImages.findIndex(img => img.path_canon === activeImageCanonPath);
-                if (newIndex > -1) {
-                    this.currentNavIndex = newIndex;
-                    this.activeImage = this.filteredImages[newIndex];
-                    setTimeout(() => this._updateActiveThumbnail(newIndex), 100);
-                } else {
-                    this.activeImage = null; this.currentNavIndex = -1; this.updateInfoPane(null);
+                newNavIndex = newImages.findIndex(img => img.path_canon === activeImageCanonPath);
+                if (newNavIndex > -1) {
+                    newActiveImage = newImages[newNavIndex];
+                    setTimeout(() => this._updateActiveThumbnail(newNavIndex), 100);
                 }
-            } else {
-                this.activeImage = null; this.currentNavIndex = -1; this.updateInfoPane(null);
             }
+            
+            imageViewerState.setState({ activeImage: newActiveImage, currentNavIndex: newNavIndex });
+            // CORRECT: The manual call to updateInfoPane is removed. It updates automatically.
 
             if (data.total_db_count > 0 && data.generated_thumbnails_count < data.total_db_count) {
                 this.allThumbnailsGenerated = false;
@@ -675,9 +649,10 @@ const holafImageViewer = {
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load images:", e);
             this.setLoadingState(`Error: ${e.message}`);
-            this.filteredImages = []; this.activeImage = null; this.currentNavIndex = -1; this.updateInfoPane(null);
+            imageViewerState.setState({ images: [], activeImage: null, currentNavIndex: -1, status: { error: e.message } });
+            // CORRECT: The manual call to updateInfoPane is removed.
         } finally {
-            this.isLoading = false;
+            imageViewerState.setState({ status: { isLoading: false } });
             if (galleryEl) {
                 galleryEl.classList.remove("loading-overlay");
             }
@@ -694,8 +669,7 @@ const holafImageViewer = {
     loadSpecificThumbnail: function (placeholder, image, forceRegen = false) { return Gallery.loadSpecificThumbnail(this, placeholder, image, forceRegen); },
 
     // --- Info Pane (delegated) ---
-
-    updateInfoPane: function (image) { return InfoPane.updateInfoPane(this, image); },
+    // CORRECT: The manual delegation is removed.
 
     // --- Navigation & Interaction (delegated) ---
 
@@ -745,37 +719,45 @@ const holafImageViewer = {
     },
 
     async processExportDownloadQueue() {
-        if (this.exportDownloadQueue.length === 0) {
+        let state = imageViewerState.getState();
+        if (state.exporting.queue.length === 0) {
             this._stopStatusAnimation();
-            this.isExporting = false;
-            this.updateStatusBar();
+            
+            const newExportStats = { totalFiles: 0, completedFiles: 0, currentFileName: '', currentFileProgress: 0 };
+            imageViewerState.setState({ 
+                status: { isExporting: false },
+                exporting: { stats: newExportStats, activeToastId: null }
+            });
 
-            // MODIFICATION: Use toast for completion message instead of dialog
-            if (this.activeExportToastId && this.exportStats.completedFiles > 0) {
-                window.holaf.toastManager.update(this.activeExportToastId, {
-                    message: `<strong>Export Queue Complete:</strong><br>${this.exportStats.completedFiles} file(s) downloaded.`,
+            if (state.exporting.activeToastId && state.exporting.stats.completedFiles > 0) {
+                window.holaf.toastManager.update(state.exporting.activeToastId, {
+                    message: `<strong>Export Queue Complete:</strong><br>${state.exporting.stats.completedFiles} file(s) downloaded.`,
                     type: 'success',
                     progress: 100
                 });
-                setTimeout(() => window.holaf.toastManager.hide(this.activeExportToastId), 5000);
-            } else if (this.activeExportToastId) {
-                // Hide info toast if nothing was actually downloaded
-                window.holaf.toastManager.hide(this.activeExportToastId);
+                setTimeout(() => window.holaf.toastManager.hide(state.exporting.activeToastId), 5000);
+            } else if (state.exporting.activeToastId) {
+                window.holaf.toastManager.hide(state.exporting.activeToastId);
             }
-            this.activeExportToastId = null;
-            // CORRECTION: Reset stats for next export batch
-            this.exportStats = { totalFiles: 0, completedFiles: 0, currentFileName: '', currentFileProgress: 0 };
+            this.updateStatusBar();
             return;
         }
 
         this._startStatusAnimation();
 
-        const fileToDownload = this.exportDownloadQueue.shift();
+        const newQueue = [...state.exporting.queue];
+        const fileToDownload = newQueue.shift();
         const { export_id, path, size } = fileToDownload;
         const filename = path.split('/').pop();
 
-        this.exportStats.currentFileName = filename;
-        this.exportStats.currentFileProgress = 0;
+        imageViewerState.setState({
+            exporting: {
+                queue: newQueue,
+                stats: { ...state.exporting.stats, currentFileName: filename, currentFileProgress: 0 }
+            }
+        });
+        
+        state = imageViewerState.getState();
 
         let receivedBytes = 0;
         const chunks = [];
@@ -798,7 +780,15 @@ const holafImageViewer = {
                 const chunk = await response.arrayBuffer();
                 chunks.push(chunk);
                 receivedBytes += chunk.byteLength;
-                this.exportStats.currentFileProgress = (receivedBytes / size) * 100;
+                
+                imageViewerState.setState({
+                    exporting: {
+                        stats: {
+                            ...imageViewerState.getState().exporting.stats,
+                            currentFileProgress: (receivedBytes / size) * 100
+                        }
+                    }
+                });
             }
 
             const blob = new Blob(chunks);
@@ -810,23 +800,24 @@ const holafImageViewer = {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(blobUrl);
-
-            this.exportStats.completedFiles++;
+            
+            const currentCompleted = imageViewerState.getState().exporting.stats.completedFiles;
+            imageViewerState.setState({ exporting: { stats: { completedFiles: currentCompleted + 1 } } });
+            
             setTimeout(() => this.processExportDownloadQueue(), 100);
 
         } catch (error) {
             console.error(`[Holaf ImageViewer] Failed to download file ${filename}:`, error);
-            // MODIFICATION: Use toast for error message
-            if (this.activeExportToastId) {
-                window.holaf.toastManager.update(this.activeExportToastId, {
+            const activeToastId = imageViewerState.getState().exporting.activeToastId;
+            if (activeToastId) {
+                window.holaf.toastManager.update(activeToastId, {
                     message: `<strong>Download Failed:</strong><br>${filename}<br><small>${error.message}</small>`,
                     type: 'error',
                     progress: 100
                 });
-                this.activeExportToastId = null; // Stop further updates to this toast
             }
             this._stopStatusAnimation();
-            this.isExporting = false;
+            imageViewerState.setState({ status: { isExporting: false }, exporting: { activeToastId: null } });
             this.updateStatusBar();
         }
     },
@@ -834,22 +825,24 @@ const holafImageViewer = {
     // --- Status & Helpers ---
 
     _updateWorkflowButtonStates() {
+        const filters = imageViewerState.getState().filters;
         const internalBtn = document.getElementById('holaf-workflow-filter-internal');
         const externalBtn = document.getElementById('holaf-workflow-filter-external');
-        if (internalBtn) internalBtn.classList.toggle('active', this.settings.workflow_filter_internal);
-        if (externalBtn) externalBtn.classList.toggle('active', this.settings.workflow_filter_external);
+        if (internalBtn) internalBtn.classList.toggle('active', filters.workflow_filter_internal);
+        if (externalBtn) externalBtn.classList.toggle('active', filters.workflow_filter_external);
     },
 
     _updateSearchScopeButtonStates() {
-        document.getElementById('holaf-search-scope-filename')?.classList.toggle('active', this.settings.search_scope_name);
-        document.getElementById('holaf-search-scope-prompt')?.classList.toggle('active', this.settings.search_scope_prompt);
-        document.getElementById('holaf-search-scope-workflow')?.classList.toggle('active', this.settings.search_scope_workflow);
+        const filters = imageViewerState.getState().filters;
+        document.getElementById('holaf-search-scope-filename')?.classList.toggle('active', filters.search_scope_name);
+        document.getElementById('holaf-search-scope-prompt')?.classList.toggle('active', filters.search_scope_prompt);
+        document.getElementById('holaf-search-scope-workflow')?.classList.toggle('active', filters.search_scope_workflow);
     },
 
     _updateActiveThumbnail(navIndex) {
         const currentActive = document.querySelector('.holaf-viewer-thumbnail-placeholder.active');
         if (currentActive) currentActive.classList.remove('active');
-        if (navIndex < 0 || navIndex >= this.filteredImages.length) return;
+        if (navIndex < 0 || navIndex >= imageViewerState.getState().images.length) return;
         const newActiveThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${navIndex}"]`);
         if (newActiveThumbnail) {
             newActiveThumbnail.classList.add('active');
@@ -876,17 +869,17 @@ const holafImageViewer = {
     updateStatusBar(data, isFullUpdate = true) {
         const statusBarEl = document.getElementById('holaf-viewer-statusbar');
         if (!statusBarEl) return;
+        const state = imageViewerState.getState();
 
-        // MODIFICATION: Update status bar AND dynamic toast
-        if (this.isExporting) {
-            const progress = this.exportStats.currentFileProgress.toFixed(1);
-            const text = `Exporting (${this.exportStats.completedFiles + 1}/${this.exportStats.totalFiles}): ${this.exportStats.currentFileName}`;
+        if (state.status.isExporting) {
+            const progress = state.exporting.stats.currentFileProgress.toFixed(1);
+            const text = `Exporting (${state.exporting.stats.completedFiles + 1}/${state.exporting.stats.totalFiles}): ${state.exporting.stats.currentFileName}`;
             statusBarEl.textContent = `${text} [${progress}%]`;
             
-            if (this.activeExportToastId) {
-                window.holaf.toastManager.update(this.activeExportToastId, {
+            if (state.exporting.activeToastId) {
+                window.holaf.toastManager.update(state.exporting.activeToastId, {
                     message: text,
-                    progress: this.exportStats.currentFileProgress
+                    progress: state.exporting.stats.currentFileProgress
                 });
             }
             return;
@@ -907,8 +900,8 @@ const holafImageViewer = {
             ? data.total_db_count
             : (this.lastThumbStats ? this.lastThumbStats.total_db_count : this.currentTotalDbCount);
 
-        if (this.exportDownloadQueue.length > 0) {
-            statusText += ` | Export Queue: ${this.exportDownloadQueue.length} file(s)`;
+        if (state.exporting.queue.length > 0) {
+            statusText += ` | Export Queue: ${state.exporting.queue.length} file(s)`;
         } else if (totalForThumbs > 0) {
             const percentage = ((generatedCount / totalForThumbs) * 100).toFixed(1);
             statusText += ` | Thumbnails: ${generatedCount}/${totalForThumbs} (${percentage}%)`;
@@ -917,8 +910,8 @@ const holafImageViewer = {
             statusText += ` | Thumbnails: N/A`; this.allThumbnailsGenerated = true;
         }
 
-        if (this.selectedImages.size > 0) {
-            statusText += ` | Selected: ${this.selectedImages.size}`;
+        if (state.selectedImages.length > 0) {
+            statusText += ` | Selected: ${state.selectedImages.length}`;
         }
         statusBarEl.textContent = statusText;
     },

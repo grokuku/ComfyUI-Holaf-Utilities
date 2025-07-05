@@ -4,16 +4,12 @@
  *
  * This module handles all user navigation, including keyboard controls,
  * zoomed view, fullscreen view, and pan/zoom interactions.
- * MODIFICATION: Corrected state synchronization after deleting from zoomed/fullscreen views.
+ * REFACTOR: Updated to use the central imageViewerState.
  */
 
+import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
 
-/**
- * Resets the transformation (zoom/pan) state of a view.
- * @param {object} state - The view state object (e.g., zoomViewState).
- * @param {HTMLImageElement} imageEl - The image element to reset.
- */
 function resetTransform(state, imageEl) {
     state.scale = 1;
     state.tx = 0;
@@ -22,25 +18,17 @@ function resetTransform(state, imageEl) {
     imageEl.style.cursor = 'grab';
 }
 
-/**
- * Preloads the next image in the list for faster navigation.
- * @param {object} viewer - The main image viewer instance.
- * @param {number} currentIndex - The index of the currently active image.
- */
-function preloadNextImage(viewer, currentIndex) {
-    if (currentIndex < 0 || (currentIndex + 1) >= viewer.filteredImages.length) return;
-    const next = viewer.filteredImages[currentIndex + 1];
-    if (next) {
-        const p = new Image();
-        p.src = getFullImageUrl(next);
+function preloadNextImage(viewer) {
+    const state = imageViewerState.getState();
+    if (state.currentNavIndex < 0 || (state.currentNavIndex + 1) >= state.images.length) return;
+    
+    const nextImage = state.images[state.currentNavIndex + 1];
+    if (nextImage) {
+        const preloader = new Image();
+        preloader.src = getFullImageUrl(nextImage);
     }
 }
 
-/**
- * Constructs the full URL for viewing an image.
- * @param {object} image - The image data object.
- * @returns {string} The full URL.
- */
 export function getFullImageUrl(image) {
     if (!image) return "";
     const url = new URL(window.location.origin);
@@ -53,21 +41,17 @@ export function getFullImageUrl(image) {
     return url.href;
 }
 
-/**
- * Shows the zoomed-in image view within the panel.
- * @param {object} viewer - The main image viewer instance.
- * @param {object} image - The image to display.
- */
 export function showZoomedView(viewer, image) {
-    const idx = viewer.filteredImages.findIndex(i => i.path_canon === image.path_canon);
+    const state = imageViewerState.getState();
+    const idx = state.images.findIndex(i => i.path_canon === image.path_canon);
     if (idx === -1) return;
 
-    viewer.activeImage = viewer.filteredImages[idx];
-    viewer.currentNavIndex = idx;
+    const activeImage = state.images[idx];
+    imageViewerState.setState({ activeImage: activeImage, currentNavIndex: idx });
 
     const v = document.getElementById('holaf-viewer-zoom-view');
     const i = v.querySelector('img');
-    const u = getFullImageUrl(viewer.activeImage);
+    const u = getFullImageUrl(activeImage);
 
     const l = new Image();
     l.onload = () => {
@@ -79,37 +63,30 @@ export function showZoomedView(viewer, image) {
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
 
-    viewer.updateInfoPane(viewer.activeImage);
+    viewer.updateInfoPane(activeImage);
     viewer._updateActiveThumbnail(idx);
-    preloadNextImage(viewer, idx);
+    preloadNextImage(viewer);
 }
 
-/**
- * Hides the zoomed-in image view and shows the gallery.
- */
 export function hideZoomedView() {
     document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
     document.getElementById('holaf-viewer-gallery').style.display = 'flex';
 }
 
-/**
- * Shows the fullscreen image overlay.
- * @param {object} viewer - The main image viewer instance.
- * @param {object} image - The image to display.
- */
 export function showFullscreenView(viewer, image) {
     if (!image) return;
-    const idx = viewer.filteredImages.findIndex(i => i.path_canon === image.path_canon);
+    const state = imageViewerState.getState();
+    const idx = state.images.findIndex(i => i.path_canon === image.path_canon);
     if (idx === -1) return;
 
-    viewer.activeImage = viewer.filteredImages[idx];
-    viewer.currentNavIndex = idx;
+    const activeImage = state.images[idx];
+    imageViewerState.setState({ activeImage: activeImage, currentNavIndex: idx });
     viewer._fullscreenSourceView = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex' ? 'zoomed' : 'gallery';
 
     if (viewer._fullscreenSourceView === 'zoomed') hideZoomedView();
 
     const { img: fImg, overlay: fOv } = viewer.fullscreenElements;
-    const u = getFullImageUrl(viewer.activeImage);
+    const u = getFullImageUrl(activeImage);
     const l = new Image();
     l.onload = () => {
         resetTransform(viewer.fullscreenViewState, fImg);
@@ -119,16 +96,11 @@ export function showFullscreenView(viewer, image) {
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
 
-    viewer.updateInfoPane(viewer.activeImage);
+    viewer.updateInfoPane(activeImage);
     viewer._updateActiveThumbnail(idx);
-    preloadNextImage(viewer, idx);
+    preloadNextImage(viewer);
 }
 
-/**
- * Hides the fullscreen overlay.
- * @param {object} viewer - The main image viewer instance.
- * @returns {string|null} The view ('zoomed' or 'gallery') that was active before fullscreen.
- */
 export function hideFullscreenView(viewer) {
     viewer.fullscreenElements.overlay.style.display = 'none';
     const s = viewer._fullscreenSourceView;
@@ -136,26 +108,23 @@ export function hideFullscreenView(viewer) {
     return s;
 }
 
-/**
- * Navigates to the next or previous image.
- * @param {object} viewer - The main image viewer instance.
- * @param {number} direction - 1 for next, -1 for previous.
- */
 export function navigate(viewer, direction) {
-    if (viewer.filteredImages.length === 0) return;
-    let newIndex = (viewer.currentNavIndex === -1) ? 0 : viewer.currentNavIndex + direction;
-    const clampedIndex = Math.max(0, Math.min(newIndex, viewer.filteredImages.length - 1));
+    const state = imageViewerState.getState();
+    if (state.images.length === 0) return;
+    
+    let newIndex = (state.currentNavIndex === -1) ? 0 : state.currentNavIndex + direction;
+    const clampedIndex = Math.max(0, Math.min(newIndex, state.images.length - 1));
 
-    if (clampedIndex === viewer.currentNavIndex && viewer.currentNavIndex !== -1) return;
+    if (clampedIndex === state.currentNavIndex && state.currentNavIndex !== -1) return;
 
-    viewer.currentNavIndex = clampedIndex;
-    viewer.activeImage = viewer.filteredImages[clampedIndex];
+    const newActiveImage = state.images[clampedIndex];
+    imageViewerState.setState({ currentNavIndex: clampedIndex, activeImage: newActiveImage });
 
     viewer._updateActiveThumbnail(clampedIndex);
-    viewer.updateInfoPane(viewer.activeImage);
-    preloadNextImage(viewer, clampedIndex);
+    viewer.updateInfoPane(newActiveImage);
+    preloadNextImage(viewer);
 
-    const newImageUrl = getFullImageUrl(viewer.activeImage);
+    const newImageUrl = getFullImageUrl(newActiveImage);
     const loader = new Image();
     loader.onload = () => {
         const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
@@ -174,13 +143,10 @@ export function navigate(viewer, direction) {
     loader.src = newImageUrl;
 }
 
-/**
- * Navigates up or down in the thumbnail grid.
- * @param {object} viewer - The main image viewer instance.
- * @param {number} direction - 1 for down, -1 for up.
- */
 export function navigateGrid(viewer, direction) {
-    if (viewer.filteredImages.length === 0) return;
+    const state = imageViewerState.getState();
+    if (state.images.length === 0) return;
+    
     const g = document.getElementById('holaf-viewer-gallery');
     const f = g?.querySelector('.holaf-viewer-thumbnail-placeholder');
     if (!g || !f) return;
@@ -189,34 +155,27 @@ export function navigateGrid(viewer, direction) {
     const w = f.offsetWidth + parseFloat(s.marginLeft) + parseFloat(s.marginRight);
     const n = Math.max(1, Math.floor(g.clientWidth / w));
 
-    let newIndex = (viewer.currentNavIndex === -1) ? 0 : viewer.currentNavIndex + (direction * n);
-    const clampedIndex = Math.max(0, Math.min(newIndex, viewer.filteredImages.length - 1));
-    if (clampedIndex === viewer.currentNavIndex && viewer.currentNavIndex !== -1) return;
+    let newIndex = (state.currentNavIndex === -1) ? 0 : state.currentNavIndex + (direction * n);
+    const clampedIndex = Math.max(0, Math.min(newIndex, state.images.length - 1));
+    if (clampedIndex === state.currentNavIndex && state.currentNavIndex !== -1) return;
 
-    viewer.currentNavIndex = clampedIndex;
-    viewer.activeImage = viewer.filteredImages[clampedIndex];
+    const newActiveImage = state.images[clampedIndex];
+    imageViewerState.setState({ currentNavIndex: clampedIndex, activeImage: newActiveImage });
+
     viewer._updateActiveThumbnail(clampedIndex);
-    viewer.updateInfoPane(viewer.activeImage);
+    viewer.updateInfoPane(newActiveImage);
 }
 
-/**
- * Handles the Escape key press to close views.
- * @param {object} viewer - The main image viewer instance.
- */
 export function handleEscape(viewer) {
+    const state = imageViewerState.getState();
     if (viewer.fullscreenElements?.overlay.style.display === 'flex') {
         const sourceView = hideFullscreenView(viewer);
-        if (sourceView === 'zoomed' && viewer.activeImage) showZoomedView(viewer, viewer.activeImage);
+        if (sourceView === 'zoomed' && state.activeImage) showZoomedView(viewer, state.activeImage);
     } else if (document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex') {
         hideZoomedView();
     }
 }
 
-/**
- * Main keydown event handler for the viewer.
- * @param {object} viewer - The main image viewer instance.
- * @param {KeyboardEvent} e - The keyboard event.
- */
 export async function handleKeyDown(viewer, e) {
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
     
@@ -226,48 +185,41 @@ export async function handleKeyDown(viewer, e) {
     const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
     const isFullscreen = viewer.fullscreenElements?.overlay.style.display === 'flex';
     const galleryEl = document.getElementById('holaf-viewer-gallery');
+    
+    let state = imageViewerState.getState();
 
     switch (e.key) {
         case 'Delete': {
             e.preventDefault();
             const isPermanent = e.shiftKey;
             
-            // --- MODIFIED: Reworked logic for zoomed/fullscreen deletion ---
-            if ((isZoomed || isFullscreen) && viewer.activeImage) {
-                const originalIndex = viewer.currentNavIndex;
+            if ((isZoomed || isFullscreen) && state.activeImage) {
+                const originalIndex = state.currentNavIndex;
                 
-                const success = await handleDeletion(viewer, isPermanent, [viewer.activeImage]);
+                const success = await handleDeletion(viewer, isPermanent, [state.activeImage]);
                 
                 if (success) {
-                    // We must fully reload the image list from the server to get the new state
                     await viewer.loadFilteredImages();
+                    
+                    // After reloading, the state is new
+                    const newState = imageViewerState.getState();
 
-                    if (viewer.filteredImages.length === 0) {
-                        // If the list is empty, close the views and return to the gallery
+                    if (newState.images.length === 0) {
                         if (isFullscreen) hideFullscreenView(viewer);
                         if (isZoomed) hideZoomedView();
-                        viewer.activeImage = null;
-                        viewer.currentNavIndex = -1;
+                        imageViewerState.setState({ activeImage: null, currentNavIndex: -1 });
                         viewer.updateInfoPane(null);
                     } else {
-                        // Calculate the new index. It should be the one before the deleted image.
-                        // Clamp the index to stay within the bounds of the new, shorter list.
-                        const newIndex = Math.min(originalIndex, viewer.filteredImages.length - 1);
-
-                        // Set currentNavIndex to one *after* our target, so navigate(-1) lands on it.
-                        // This reuses the navigation logic to update the UI correctly.
-                        viewer.currentNavIndex = newIndex + 1;
+                        const newIndex = Math.min(originalIndex, newState.images.length - 1);
+                        imageViewerState.setState({ currentNavIndex: newIndex + 1 });
                         navigate(viewer, -1);
                     }
                 }
-            } else if (viewer.selectedImages.size > 0) {
-                // This logic is for deleting from the gallery view
+            } else if (state.selectedImages.length > 0) {
                 const success = await handleDeletion(viewer, isPermanent, null);
                 if (success) {
-                    viewer.selectedImages.clear();
-                    viewer.activeImage = null;
-                    viewer.currentNavIndex = -1;
-                    await viewer.loadFilteredImages(); // Reload the gallery
+                    imageViewerState.setState({ selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });
+                    await viewer.loadFilteredImages();
                 }
             }
             break;
@@ -281,29 +233,31 @@ export async function handleKeyDown(viewer, e) {
             break;
         case 'Home':
         case 'End':
-            if (!isZoomed && !isFullscreen && viewer.filteredImages.length > 0) {
+            if (!isZoomed && !isFullscreen && state.images.length > 0) {
                 e.preventDefault();
+                let targetIndex;
                 if (e.key === 'Home') {
-                    navigate(viewer, 0 - viewer.currentNavIndex);
+                    targetIndex = 0;
                 } else {
                     if (viewer.backgroundRenderHandle) clearTimeout(viewer.backgroundRenderHandle);
-                    while (viewer.renderedCount < viewer.filteredImages.length) viewer.renderImageBatch(true);
-                    navigate(viewer, viewer.filteredImages.length - 1 - viewer.currentNavIndex);
+                    while (viewer.renderedCount < state.images.length) viewer.renderImageBatch(true);
+                    targetIndex = state.images.length - 1;
                 }
+                const direction = targetIndex - state.currentNavIndex;
+                navigate(viewer, direction);
             }
             break;
         case 'Enter':
             e.preventDefault();
-            if (viewer.currentNavIndex === -1 && viewer.filteredImages.length > 0) viewer.currentNavIndex = 0;
-            if (viewer.currentNavIndex === -1 || !viewer.filteredImages[viewer.currentNavIndex]) return;
-
-            const imgToView = viewer.filteredImages[viewer.currentNavIndex];
-            if (e.shiftKey) {
-                if (!isFullscreen) showFullscreenView(viewer, imgToView);
-            } else {
-                if (isZoomed) showFullscreenView(viewer, imgToView);
-                else if (!isFullscreen) showFullscreenView(viewer, imgToView);
+            if (state.currentNavIndex === -1 && state.images.length > 0) {
+                imageViewerState.setState({ currentNavIndex: 0 });
+                state = imageViewerState.getState();
             }
+            if (state.currentNavIndex === -1 || !state.images[state.currentNavIndex]) return;
+
+            const imgToView = state.images[state.currentNavIndex];
+            if (!isFullscreen) showFullscreenView(viewer, imgToView);
+
             break;
         case 'ArrowRight':
         case 'ArrowLeft':
@@ -324,12 +278,6 @@ export async function handleKeyDown(viewer, e) {
     }
 }
 
-/**
- * Sets up pan and zoom functionality on a view container.
- * @param {object} state - The view state object (e.g., zoomViewState).
- * @param {HTMLElement} container - The container element for the view.
- * @param {HTMLImageElement} imageEl - The image element to transform.
- */
 export function setupZoomAndPan(state, container, imageEl) {
     const updateTransform = () => { imageEl.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; };
     container.addEventListener('wheel', (e) => {

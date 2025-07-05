@@ -3,49 +3,95 @@
  * Holaf Utilities - Image Viewer Settings Module
  *
  * This module manages loading, saving, and applying user settings for the image viewer.
+ * REFACTOR: Simplified to robustly map between flat server settings and structured state.
  */
 
 import { HolafPanelManager, HOLAF_THEMES } from "../holaf_panel_manager.js";
+import { imageViewerState } from "./image_viewer_state.js";
+
+let saveTimeout;
+const DEBOUNCE_DELAY = 750;
 
 /**
- * Loads settings from the server.
- * @param {object} viewer - The main image viewer instance.
+ * Collecte les données de l'état, les aplatit et les envoie au serveur.
+ * @private
+ */
+function _debouncedSave() {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        const state = imageViewerState.getState();
+
+        // Aplatir l'état structuré en un objet simple pour le backend
+        const settingsToSave = {
+            ...state.filters,
+            ...state.ui,
+            panel_x: state.panel_x,
+            panel_y: state.panel_y,
+            panel_width: state.panel_width,
+            panel_height: state.panel_height,
+            panel_is_fullscreen: state.panel_is_fullscreen,
+        };
+
+        fetch("/holaf/image-viewer/save-settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(settingsToSave),
+        }).catch(error => console.error("[Holaf ImageViewer] Error saving settings:", error));
+    }, DEBOUNCE_DELAY);
+}
+
+/**
+ * Charge les paramètres du serveur et initialise l'état.
+ * @param {object} viewer - The main image viewer instance (for compatibility).
  */
 export async function loadSettings(viewer) {
     try {
         const response = await fetch('/holaf/utilities/settings');
+        if (!response.ok) return;
+
         const allSettings = await response.json();
-        if (allSettings.ImageViewerUI) {
-            const fetchedSettings = allSettings.ImageViewerUI;
+        const fetchedSettings = allSettings.ImageViewerUI || {};
 
-            const booleanKeys = [
-                'export_include_meta', 'panel_is_fullscreen', 'search_scope_name',
-                'search_scope_prompt', 'search_scope_workflow',
-                'workflow_filter_internal', 'workflow_filter_external'
-            ];
+        // Fonctions de validation
+        const toBoolean = (val, def) => val !== undefined ? String(val).toLowerCase() === 'true' : def;
+        const toArray = (val, def) => Array.isArray(val) ? val : def;
+        const toString = (val, def) => val !== undefined ? String(val) : def;
+        const toNumber = (val, def) => !isNaN(parseInt(val)) ? parseInt(val) : def;
+        
+        const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
+        
+        // Mettre à jour l'état centralisé avec les données validées
+        imageViewerState.setState({
+            filters: {
+                folder_filters: toArray(fetchedSettings.folder_filters, []),
+                format_filters: toArray(fetchedSettings.format_filters, []),
+                search_text: toString(fetchedSettings.search_text, ''),
+                startDate: toString(fetchedSettings.startDate, ''),
+                endDate: toString(fetchedSettings.endDate, ''),
+                search_scope_name: toBoolean(fetchedSettings.search_scope_name, true),
+                search_scope_prompt: toBoolean(fetchedSettings.search_scope_prompt, true),
+                search_scope_workflow: toBoolean(fetchedSettings.search_scope_workflow, true),
+                workflow_filter_internal: toBoolean(fetchedSettings.workflow_filter_internal, true),
+                workflow_filter_external: toBoolean(fetchedSettings.workflow_filter_external, true),
+            },
+            ui: {
+                theme: validTheme ? fetchedSettings.theme : HOLAF_THEMES[0].name,
+                thumbnail_fit: toString(fetchedSettings.thumbnail_fit, 'cover'),
+                thumbnail_size: toNumber(fetchedSettings.thumbnail_size, 150),
+                export_format: toString(fetchedSettings.export_format, 'png'),
+                export_include_meta: toBoolean(fetchedSettings.export_include_meta, true),
+                export_meta_method: toString(fetchedSettings.export_meta_method, 'embed'),
+            },
+            panel_x: fetchedSettings.panel_x,
+            panel_y: fetchedSettings.panel_y,
+            panel_width: toNumber(fetchedSettings.panel_width, 1200),
+            panel_height: toNumber(fetchedSettings.panel_height, 800),
+            panel_is_fullscreen: toBoolean(fetchedSettings.panel_is_fullscreen, false)
+        });
+        
+        // Synchronisation temporaire de l'ancien objet `viewer.settings`
+        Object.assign(viewer.settings, fetchedSettings);
 
-            for (const key of booleanKeys) {
-                if (fetchedSettings[key] !== undefined) {
-                    fetchedSettings[key] = String(fetchedSettings[key]).toLowerCase() === 'true';
-                }
-            }
-
-            const validTheme = HOLAF_THEMES.find(t => t.name === fetchedSettings.theme);
-            
-            // The backend now provides `folder_filters` and `format_filters` as proper arrays.
-            // The spread assignment below handles them correctly. No more client-side parsing is needed.
-            viewer.settings = { ...viewer.settings, ...fetchedSettings };
-            
-            if (!validTheme) viewer.settings.theme = HOLAF_THEMES[0].name;
-
-            // Defensive check: ensure filter settings are arrays, in case of bad data from config.
-            if (!Array.isArray(viewer.settings.folder_filters)) {
-                viewer.settings.folder_filters = undefined;
-            }
-            if (!Array.isArray(viewer.settings.format_filters)) {
-                viewer.settings.format_filters = undefined;
-            }
-        }
     } catch (e) {
         console.error("[Holaf ImageViewer] Could not load settings:", e);
     }
@@ -53,45 +99,47 @@ export async function loadSettings(viewer) {
 }
 
 /**
- * Saves settings to the server, with debouncing.
- * @param {object} viewer - The main image viewer instance.
+ * Met à jour l'état et déclenche une sauvegarde (avec debounce).
+ * @param {object} viewer - The main image viewer instance (for compatibility).
  * @param {object} newSettings - The new settings to merge and save.
  */
 export function saveSettings(viewer, newSettings) {
-    if (newSettings.x !== undefined) newSettings.panel_x = newSettings.x;
-    if (newSettings.y !== undefined) newSettings.panel_y = newSettings.y;
-    if (newSettings.width !== undefined) newSettings.panel_width = newSettings.width;
-    if (newSettings.height !== undefined) newSettings.panel_height = newSettings.height;
-    delete newSettings.x;
-    delete newSettings.y;
-    delete newSettings.width;
-    delete newSettings.height;
+    const stateUpdate = {};
+    const filtersUpdate = {};
+    const uiUpdate = {};
+    const panelUpdate = {};
 
-    Object.assign(viewer.settings, newSettings);
+    const currentState = imageViewerState.getState();
 
-    if (viewer.settings.folder_filters !== undefined && !Array.isArray(viewer.settings.folder_filters)) viewer.settings.folder_filters = [];
-    if (viewer.settings.format_filters !== undefined && !Array.isArray(viewer.settings.format_filters)) viewer.settings.format_filters = [];
-
-    if (!viewer.debouncedSave) {
-        viewer.debouncedSave = (() => {
-            let timeout;
-            return (settingsToSave) => {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => {
-                     fetch("/holaf/image-viewer/save-settings", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(settingsToSave),
-                    }).catch(error => console.error("[Holaf ImageViewer] Error saving settings:", error));
-                }, 750);
-            };
-        })();
+    for (const key in newSettings) {
+        if (key in currentState.filters) {
+            filtersUpdate[key] = newSettings[key];
+        } else if (key in currentState.ui) {
+            uiUpdate[key] = newSettings[key];
+        } else if (['x', 'y', 'width', 'height', 'panel_is_fullscreen'].includes(key)) {
+            if (key === 'x') panelUpdate.panel_x = newSettings.x;
+            else if (key === 'y') panelUpdate.panel_y = newSettings.y;
+            else if (key === 'width') panelUpdate.panel_width = newSettings.width;
+            else if (key === 'height') panelUpdate.panel_height = newSettings.height;
+            else panelUpdate[key] = newSettings[key];
+        }
     }
-    viewer.debouncedSave(viewer.settings);
+    
+    if (Object.keys(filtersUpdate).length > 0) stateUpdate.filters = filtersUpdate;
+    if (Object.keys(uiUpdate).length > 0) stateUpdate.ui = uiUpdate;
+    if (Object.keys(panelUpdate).length > 0) Object.assign(stateUpdate, panelUpdate);
+
+    if (Object.keys(stateUpdate).length > 0) {
+        imageViewerState.setState(stateUpdate);
+        _debouncedSave();
+    }
+    
+    // Synchronisation temporaire
+    Object.assign(viewer.settings, newSettings);
 }
 
 /**
- * Applies a theme to the panel.
+ * Applique un thème au panneau.
  * @param {object} viewer - The main image viewer instance.
  * @param {string} themeName - The name of the theme to apply.
  * @param {boolean} [doSave=true] - Whether to save the setting change.
@@ -106,6 +154,7 @@ export function setTheme(viewer, themeName, doSave = true) {
     if (doSave) {
         saveSettings(viewer, { theme: themeName });
     } else {
+        imageViewerState.setState({ ui: { theme: themeName } });
         viewer.settings.theme = themeName;
     }
 
@@ -121,25 +170,25 @@ export function setTheme(viewer, themeName, doSave = true) {
  */
 export function applyPanelSettings(viewer) {
     if (!viewer.panelElements || !viewer.panelElements.panelEl) return;
+    
+    const state = imageViewerState.getState();
 
-    setTheme(viewer, viewer.settings.theme, false);
+    setTheme(viewer, state.ui.theme, false);
 
-    const isFullscreen = viewer.settings.panel_is_fullscreen;
+    const isFullscreen = state.panel_is_fullscreen;
     const panelIsFullscreen = viewer.panelElements.panelEl.classList.contains("holaf-panel-fullscreen");
 
-    if (isFullscreen && !panelIsFullscreen) {
-        HolafPanelManager.toggleFullscreen(viewer.panelElements.panelEl, (isFs) => saveSettings(viewer, { panel_is_fullscreen: isFs }));
-    } else if (!isFullscreen && panelIsFullscreen) {
+    if (isFullscreen !== panelIsFullscreen) {
         HolafPanelManager.toggleFullscreen(viewer.panelElements.panelEl, (isFs) => saveSettings(viewer, { panel_is_fullscreen: isFs }));
     }
 
-    if (!viewer.settings.panel_is_fullscreen) {
-        viewer.panelElements.panelEl.style.width = `${viewer.settings.panel_width}px`;
-        viewer.panelElements.panelEl.style.height = `${viewer.settings.panel_height}px`;
+    if (!state.panel_is_fullscreen) {
+        viewer.panelElements.panelEl.style.width = `${state.panel_width}px`;
+        viewer.panelElements.panelEl.style.height = `${state.panel_height}px`;
 
-        if (viewer.settings.panel_x !== null && viewer.settings.panel_y !== null) {
-            viewer.panelElements.panelEl.style.left = `${viewer.settings.panel_x}px`;
-            viewer.panelElements.panelEl.style.top = `${viewer.settings.panel_y}px`;
+        if (state.panel_x !== null && state.panel_y !== null) {
+            viewer.panelElements.panelEl.style.left = `${state.panel_x}px`;
+            viewer.panelElements.panelEl.style.top = `${state.panel_y}px`;
             viewer.panelElements.panelEl.style.transform = 'none';
         } else {
             viewer.panelElements.panelEl.style.left = '50%';
@@ -148,8 +197,8 @@ export function applyPanelSettings(viewer) {
         }
     }
 
-    applyThumbnailFit(viewer.settings.thumbnail_fit);
-    applyThumbnailSize(viewer.settings.thumbnail_size);
+    applyThumbnailFit(state.ui.thumbnail_fit);
+    applyThumbnailSize(state.ui.thumbnail_size);
 }
 
 /**

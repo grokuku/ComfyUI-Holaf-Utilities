@@ -4,15 +4,15 @@
  *
  * This module manages the core gallery rendering logic, including
  * virtual/infinite scrolling, thumbnail loading, and prioritization.
- * MODIFICATION: Added shift-click and ctrl-shift-click range selection logic.
- * MODIFICATION: Replaced setTimeout with requestAnimationFrame for non-blocking rendering.
- * CORRECTION: Replaced destructive 'innerHTML' with surgical DOM manipulation to fix disappearing icons.
+ * REFACTOR: Updated to use the central imageViewerState.
+ * FIX: Corrected selection logic to be fully state-driven and reliable.
  */
 
-import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
+import { imageViewerState } from "./image_viewer_state.js";
+import { showFullscreenView } from './image_viewer_navigation.js';
 
-const RENDER_BATCH_SIZE = 50;   // How many placeholders to render when the scroll sentinel is hit.
-const RENDER_CHUNK_SIZE = 10;   // How many placeholders to render per frame during background rendering.
+const RENDER_BATCH_SIZE = 50;
+const RENDER_CHUNK_SIZE = 10;
 const PRIORITIZE_BATCH_SIZE = 50;
 const PRIORITIZE_DEBOUNCE_MS = 500;
 
@@ -69,15 +69,12 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
     img.loading = "lazy";
 
     img.onload = () => {
-        // CORRECTION START: Non-destructive DOM update for success
-        // Non-destructively clean up placeholder from any previous error state
         placeholder.classList.remove('error');
         const errorContent = placeholder.querySelector('.holaf-viewer-error-overlay');
         const retryButton = placeholder.querySelector('.holaf-viewer-retry-button');
         if (errorContent) errorContent.remove();
         if (retryButton) retryButton.remove();
 
-        // Ensure fullscreen icon exists (it's added on successful load)
         if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
             const fsIcon = document.createElement('div');
             fsIcon.className = 'holaf-viewer-fullscreen-icon';
@@ -89,20 +86,14 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
             });
             placeholder.appendChild(fsIcon);
         }
-
-        // Prepend the image itself. This preserves the existing checkbox and edit icon.
         placeholder.prepend(img);
-        // CORRECTION END
     };
     img.onerror = async () => {
-        // CORRECTION START: Non-destructive DOM update for error
-        // Surgical cleanup: remove image and fullscreen icon if they exist from a prior success
         const existingImg = placeholder.querySelector('img');
         if (existingImg) existingImg.remove();
         const existingFsIcon = placeholder.querySelector('.holaf-viewer-fullscreen-icon');
         if (existingFsIcon) existingFsIcon.remove();
 
-        // Clear previous error messages
         const oldError = placeholder.querySelector('.holaf-viewer-error-overlay');
         const oldRetry = placeholder.querySelector('.holaf-viewer-retry-button');
         if (oldError) oldError.remove();
@@ -128,10 +119,8 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
             loadSpecificThumbnail(viewer, placeholder, image, true);
         };
         
-        // Append error elements. This preserves checkbox and edit icon.
         placeholder.appendChild(errorOverlay);
         placeholder.appendChild(retryButton);
-        // CORRECTION END
     };
 }
 
@@ -147,114 +136,90 @@ export function createPlaceholder(viewer, image, index) {
     placeholder.className = 'holaf-viewer-thumbnail-placeholder';
     placeholder.dataset.index = index;
 
-    // --- MODIFICATION: Add Edit Icon ---
     const editIcon = document.createElement('div');
     editIcon.className = 'holaf-viewer-edit-icon';
-    editIcon.innerHTML = '✎'; // Pencil icon
+    editIcon.innerHTML = '✎';
     editIcon.title = "Edit image";
     if (image.has_edit_file) {
         editIcon.classList.add('active');
     }
     editIcon.onclick = (e) => {
-        e.stopPropagation(); // Prevent grid click event
-        viewer._showZoomedView(image); // This will open the editor
+        e.stopPropagation();
+        viewer._showZoomedView(image);
     };
     placeholder.appendChild(editIcon);
-    // --- END MODIFICATION ---
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'holaf-viewer-thumb-checkbox';
-
-    checkbox.checked = Array.from(viewer.selectedImages).some(selImg => selImg.path_canon === image.path_canon);
+    
+    const { selectedImages } = imageViewerState.getState();
+    const isSelected = selectedImages.some(selImg => selImg.path_canon === image.path_canon);
+    checkbox.checked = isSelected;
     checkbox.title = "Select image";
-
-    checkbox.onclick = (e) => { e.stopPropagation(); };
-    checkbox.onchange = (e) => {
-        e.stopPropagation();
-        const imgData = viewer.filteredImages[index];
-        if (e.target.checked) {
-            viewer.selectedImages.add(imgData);
-        } else {
-            const itemToRemove = Array.from(viewer.selectedImages).find(selImg => selImg.path_canon === imgData.path_canon);
-            if (itemToRemove) viewer.selectedImages.delete(itemToRemove);
-        }
-        viewer._updateActionButtonsState();
-    };
     placeholder.appendChild(checkbox);
 
     placeholder.addEventListener('click', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.classList.contains('holaf-viewer-edit-icon')) return;
-
-        const imgData = viewer.filteredImages[index];
-        const hasAnchor = viewer.lastClickedIndex > -1;
-
-        // --- MODIFIED: Reordered and added Ctrl+Shift logic ---
-
-        // Case 1: Ctrl + Shift + Click (additive range selection)
-        if (e.ctrlKey && e.shiftKey && hasAnchor) {
-            const start = Math.min(viewer.lastClickedIndex, index);
-            const end = Math.max(viewer.lastClickedIndex, index);
-
-            // Add all items in the range to the current selection
-            for (let i = start; i <= end; i++) {
-                const imageInRange = viewer.filteredImages[i];
-                viewer.selectedImages.add(imageInRange);
-                const thumbInRange = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${i}"]`);
-                if (thumbInRange) {
-                    const checkboxInRange = thumbInRange.querySelector('.holaf-viewer-thumb-checkbox');
-                    if (checkboxInRange) checkboxInRange.checked = true;
-                }
-            }
-            // Case 2: Shift + Click (exclusive range selection)
-        } else if (e.shiftKey && hasAnchor) {
-            const start = Math.min(viewer.lastClickedIndex, index);
-            const end = Math.max(viewer.lastClickedIndex, index);
-
-            // Clear previous selection and select only the new range
-            document.querySelectorAll('.holaf-viewer-thumb-checkbox:checked').forEach(cb => cb.checked = false);
-            viewer.selectedImages.clear();
-
-            for (let i = start; i <= end; i++) {
-                const imageInRange = viewer.filteredImages[i];
-                viewer.selectedImages.add(imageInRange);
-                const thumbInRange = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${i}"]`);
-                if (thumbInRange) {
-                    const checkboxInRange = thumbInRange.querySelector('.holaf-viewer-thumb-checkbox');
-                    if (checkboxInRange) checkboxInRange.checked = true;
-                }
-            }
-            // Case 3: Ctrl + Click (toggle single item)
-        } else if (e.ctrlKey) {
-            checkbox.checked = !checkbox.checked;
-            if (checkbox.checked) {
-                viewer.selectedImages.add(imgData);
-            } else {
-                const itemToRemove = Array.from(viewer.selectedImages).find(selImg => selImg.path_canon === imgData.path_canon);
-                if (itemToRemove) viewer.selectedImages.delete(itemToRemove);
-            }
-            // A ctrl-click sets the anchor for the next shift-click
-            viewer.lastClickedIndex = index;
-            // Case 4: Simple Click (select single item)
-        } else {
-            document.querySelectorAll('.holaf-viewer-thumb-checkbox:checked').forEach(cb => cb.checked = false);
-            viewer.selectedImages.clear();
-            checkbox.checked = true;
-            viewer.selectedImages.add(imgData);
-            // A simple click also sets the anchor
-            viewer.lastClickedIndex = index;
+        if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon')) {
+            return;
         }
 
-        // Update the 'active' image regardless of selection type
-        viewer.activeImage = imgData;
-        viewer.currentNavIndex = index;
-        viewer._updateActiveThumbnail(viewer.currentNavIndex);
-        viewer.updateInfoPane(imgData);
+        const state = imageViewerState.getState();
+        const clickedImageData = state.images[index];
+        const anchorIndex = state.currentNavIndex > -1 ? state.currentNavIndex : index;
+        const selectedPaths = new Set(state.selectedImages.map(img => img.path_canon));
+
+        if (e.shiftKey) {
+            if (!e.ctrlKey) {
+                selectedPaths.clear();
+            }
+            const start = Math.min(anchorIndex, index);
+            const end = Math.max(anchorIndex, index);
+            for (let i = start; i <= end; i++) {
+                if (state.images[i]) {
+                    selectedPaths.add(state.images[i].path_canon);
+                }
+            }
+        } else if (e.ctrlKey || e.target.tagName === 'INPUT') {
+            if (selectedPaths.has(clickedImageData.path_canon)) {
+                selectedPaths.delete(clickedImageData.path_canon);
+            } else {
+                selectedPaths.add(clickedImageData.path_canon);
+            }
+        } else {
+            selectedPaths.clear();
+            selectedPaths.add(clickedImageData.path_canon);
+        }
+        
+        const newSelectedImages = new Set(
+            state.images.filter(img => selectedPaths.has(img.path_canon))
+        );
+
+        imageViewerState.setState({ 
+            selectedImages: newSelectedImages,
+            activeImage: clickedImageData,
+            currentNavIndex: index
+        });
+        
+        // --- Legacy UI Updates ---
+        document.querySelectorAll('.holaf-viewer-thumbnail-placeholder').forEach(ph => {
+            const phIndex = parseInt(ph.dataset.index);
+            if (state.images[phIndex]) {
+                 const phImg = state.images[phIndex];
+                 const phCheckbox = ph.querySelector('.holaf-viewer-thumb-checkbox');
+                 if (phCheckbox) {
+                     phCheckbox.checked = selectedPaths.has(phImg.path_canon);
+                 }
+            }
+        });
+
+        viewer._updateActiveThumbnail(index);
+        // CORRECT: The manual call to updateInfoPane is removed. It updates automatically.
         viewer._updateActionButtonsState();
     });
 
     placeholder.addEventListener('dblclick', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.classList.contains('holaf-viewer-edit-icon')) return;
+        if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon, .holaf-viewer-thumb-checkbox')) return;
         viewer._showZoomedView(image);
     });
     return placeholder;
@@ -272,10 +237,10 @@ export function renderGallery(viewer) {
     galleryEl.innerHTML = '';
     viewer.renderedCount = 0;
     viewer.visiblePlaceholdersToPrioritize.clear();
-    viewer.lastClickedIndex = -1;
+    
+    const { images } = imageViewerState.getState();
 
-
-    if (!viewer.filteredImages || viewer.filteredImages.length === 0) {
+    if (!images || images.length === 0) {
         viewer.setLoadingState("No images match the current filters.");
         viewer._updateActionButtonsState();
         return;
@@ -294,7 +259,7 @@ export function renderGallery(viewer) {
                 renderImageBatch(viewer);
             } else {
                 const imageIndex = parseInt(placeholder.dataset.index);
-                const image = viewer.filteredImages[imageIndex];
+                const image = imageViewerState.getState().images[imageIndex];
                 if (image) {
                     if (!placeholder.dataset.thumbnailLoadingOrLoaded) {
                         viewer.visiblePlaceholdersToPrioritize.add(image.path_canon);
@@ -307,7 +272,7 @@ export function renderGallery(viewer) {
         });
     }, { root: galleryEl, rootMargin: "400px 0px" });
 
-    renderImageBatch(viewer); // Render initial batch
+    renderImageBatch(viewer);
     viewer.galleryObserver.observe(sentinel);
     viewer._updateActionButtonsState();
 }
@@ -321,17 +286,17 @@ export function renderImageBatch(viewer) {
     const sentinel = document.getElementById('holaf-viewer-load-sentinel');
     if (!galleryEl) return;
 
-    // Stop any existing background rendering, as the user has scrolled manually
     if (viewer.backgroundRenderHandle) {
         cancelAnimationFrame(viewer.backgroundRenderHandle);
         viewer.backgroundRenderHandle = null;
     }
 
+    const { images } = imageViewerState.getState();
     const fragment = document.createDocumentFragment();
-    const nextRenderLimit = Math.min(viewer.renderedCount + RENDER_BATCH_SIZE, viewer.filteredImages.length);
+    const nextRenderLimit = Math.min(viewer.renderedCount + RENDER_BATCH_SIZE, images.length);
 
     for (let i = viewer.renderedCount; i < nextRenderLimit; i++) {
-        const placeholder = createPlaceholder(viewer, viewer.filteredImages[i], i);
+        const placeholder = createPlaceholder(viewer, images[i], i);
         fragment.appendChild(placeholder);
         viewer.galleryObserver.observe(placeholder);
     }
@@ -343,8 +308,7 @@ export function renderImageBatch(viewer) {
     }
     viewer.renderedCount = nextRenderLimit;
 
-    // After a manual scroll/batch render, restart the non-blocking background rendering
-    if (viewer.renderedCount < viewer.filteredImages.length) {
+    if (viewer.renderedCount < images.length) {
         startBackgroundRendering(viewer);
     } else {
         if (sentinel) sentinel.remove();
@@ -363,20 +327,21 @@ export function startBackgroundRendering(viewer) {
     const galleryEl = document.getElementById("holaf-viewer-gallery");
     const sentinel = document.getElementById('holaf-viewer-load-sentinel');
     if (!galleryEl) return;
+    
+    const { images } = imageViewerState.getState();
 
     const renderNextChunk = () => {
-        // Stop if all images are rendered
-        if (viewer.renderedCount >= viewer.filteredImages.length) {
+        if (viewer.renderedCount >= images.length) {
             if (sentinel) sentinel.remove();
             viewer.backgroundRenderHandle = null;
             return;
         }
 
         const fragment = document.createDocumentFragment();
-        const nextRenderLimit = Math.min(viewer.renderedCount + RENDER_CHUNK_SIZE, viewer.filteredImages.length);
+        const nextRenderLimit = Math.min(viewer.renderedCount + RENDER_CHUNK_SIZE, images.length);
 
         for (let i = viewer.renderedCount; i < nextRenderLimit; i++) {
-            const placeholder = createPlaceholder(viewer, viewer.filteredImages[i], i);
+            const placeholder = createPlaceholder(viewer, images[i], i);
             fragment.appendChild(placeholder);
             viewer.galleryObserver.observe(placeholder);
         }
@@ -388,10 +353,8 @@ export function startBackgroundRendering(viewer) {
         }
         viewer.renderedCount = nextRenderLimit;
 
-        // Queue up the next chunk for the next animation frame
         viewer.backgroundRenderHandle = requestAnimationFrame(renderNextChunk);
     };
 
-    // Start the non-blocking render loop
     viewer.backgroundRenderHandle = requestAnimationFrame(renderNextChunk);
 }

@@ -4,10 +4,11 @@
  *
  * This module handles the logic for user actions like deleting, restoring,
  * and managing metadata for selected images.
- * MODIFICATION: Replaced export dialogs with the new ToastManager for non-blocking notifications.
+ * REFACTOR: Updated to use the central imageViewerState.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
+import { imageViewerState } from "./image_viewer_state.js";
 
 /**
  * Attaches click listeners to the main action buttons.
@@ -33,6 +34,9 @@ export function attachActionListeners(viewer) {
  * @param {object} viewer - The main image viewer instance.
  */
 export function updateActionButtonsState(viewer) {
+    const state = imageViewerState.getState();
+    const selectedImages = state.selectedImages; // This is an array from getState()
+
     const btnDelete = document.getElementById('holaf-viewer-btn-delete');
     const btnRestore = document.getElementById('holaf-viewer-btn-restore');
     const btnExtract = document.getElementById('holaf-viewer-btn-extract');
@@ -40,14 +44,14 @@ export function updateActionButtonsState(viewer) {
     const btnExport = document.getElementById('holaf-viewer-btn-export');
     const btnImport = document.getElementById('holaf-viewer-btn-import');
 
-    const hasSelection = viewer.selectedImages.size > 0;
-    const hasPngSelection = hasSelection && Array.from(viewer.selectedImages).some(img => img.format.toLowerCase() === 'png');
+    const hasSelection = selectedImages.length > 0;
+    const hasPngSelection = hasSelection && selectedImages.some(img => img.format.toLowerCase() === 'png');
 
     let canRestore = false;
     if (hasSelection) {
-        canRestore = Array.from(viewer.selectedImages).every(img => img.is_trashed);
+        canRestore = selectedImages.every(img => img.is_trashed);
     }
-    const canPerformNonTrashActions = hasSelection && Array.from(viewer.selectedImages).every(img => !img.is_trashed);
+    const canPerformNonTrashActions = hasSelection && selectedImages.every(img => !img.is_trashed);
 
     if (btnDelete) btnDelete.disabled = !canPerformNonTrashActions;
     if (btnRestore) btnRestore.disabled = !canRestore;
@@ -61,11 +65,11 @@ export function updateActionButtonsState(viewer) {
  * Handles deletion of selected images, with an option for permanent deletion.
  * @param {object} viewer - The main image viewer instance.
  * @param {boolean} [permanent=false] - If true, permanently deletes files.
- * @param {object[]|null} [imagesToProcess=null] - Specific images to delete. If null, uses viewer.selectedImages.
+ * @param {object[]|null} [imagesToProcess=null] - Specific images to delete. If null, uses selected images from state.
  * @returns {Promise<boolean>} True if the operation was successful, otherwise false.
  */
 export async function handleDeletion(viewer, permanent = false, imagesToProcess = null) {
-    const imagesForDeletion = imagesToProcess || Array.from(viewer.selectedImages);
+    const imagesForDeletion = imagesToProcess || imageViewerState.getState().selectedImages;
     if (imagesForDeletion.length === 0) return false;
     
     const isAnyFileTrashed = imagesForDeletion.some(img => img.is_trashed);
@@ -74,7 +78,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
             title: "Action Not Allowed",
             message: "This action cannot be performed on items already in the trash. Use 'Restore' or 'Empty Trash'.",
             buttons: [{ text: "OK" }],
-            parentElement: document.body // Ensure it's on top
+            parentElement: document.body
         });
         return false;
     }
@@ -93,7 +97,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
             { text: "Cancel", value: false, type: "cancel" },
             { text: confirmButtonText, value: true, type: "danger" }
         ],
-        parentElement: document.body // CORE FIX: Attach dialog to body
+        parentElement: document.body
     });
 
     if (!confirmed) return false;
@@ -114,7 +118,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
                 title: "Delete Error",
                 message: `Failed to delete images: ${result.message || 'Unknown server error.'}`,
                 buttons: [{ text: "OK", value: true }],
-                parentElement: document.body // Ensure it's on top
+                parentElement: document.body
             });
             return false; // FAILURE
         }
@@ -124,7 +128,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
             title: "API Error",
             message: `Error communicating with server for delete operation: ${error.message}`,
             buttons: [{ text: "OK", value: true }],
-            parentElement: document.body // Ensure it's on top
+            parentElement: document.body
         });
         return false; // FAILURE
     }
@@ -136,9 +140,11 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
  */
 export async function handleDelete(viewer) {
     if (await handleDeletion(viewer, false)) {
-        viewer.selectedImages.clear();
-        viewer.activeImage = null;
-        viewer.currentNavIndex = -1;
+        imageViewerState.setState({
+            selectedImages: new Set(),
+            activeImage: null,
+            currentNavIndex: -1
+        });
         viewer.loadFilteredImages();
     }
 }
@@ -148,18 +154,18 @@ export async function handleDelete(viewer) {
  * @param {object} viewer - The main image viewer instance.
  */
 export async function handleRestore(viewer) {
-    if (viewer.selectedImages.size === 0) return;
-    const imagesToRestore = Array.from(viewer.selectedImages);
-    const pathsToRestore = imagesToRestore.map(img => img.path_canon);
+    const selectedImages = imageViewerState.getState().selectedImages;
+    if (selectedImages.length === 0) return;
+    const pathsToRestore = selectedImages.map(img => img.path_canon);
 
     if (await HolafPanelManager.createDialog({
         title: "Confirm Restore",
-        message: `Are you sure you want to restore ${imagesToRestore.length} image(s) from the trashcan?`,
+        message: `Are you sure you want to restore ${selectedImages.length} image(s) from the trashcan?`,
         buttons: [
             { text: "Cancel", value: false, type: "cancel" },
             { text: "Restore", value: true, type: "confirm" }
         ],
-        parentElement: document.body // Ensure it's on top
+        parentElement: document.body
     })) {
         try {
             const response = await fetch("/holaf/images/restore", {
@@ -174,18 +180,20 @@ export async function handleRestore(viewer) {
                     title: "Restore Operation",
                     message: result.message || "Restore operation processed.",
                     buttons: [{ text: "OK", value: true }],
-                    parentElement: document.body // Ensure it's on top
+                    parentElement: document.body
                 });
-                viewer.selectedImages.clear();
-                viewer.activeImage = null;
-                viewer.currentNavIndex = -1;
+                imageViewerState.setState({
+                    selectedImages: new Set(),
+                    activeImage: null,
+                    currentNavIndex: -1
+                });
                 viewer.loadFilteredImages();
             } else {
                 HolafPanelManager.createDialog({
                     title: "Restore Error",
                     message: `Failed to restore images: ${result.message || 'Unknown server error.'}`,
                     buttons: [{ text: "OK", value: true }],
-                    parentElement: document.body // Ensure it's on top
+                    parentElement: document.body
                 });
             }
         } catch (error) {
@@ -194,7 +202,7 @@ export async function handleRestore(viewer) {
                 title: "API Error",
                 message: `Error communicating with server for restore operation: ${error.message}`,
                 buttons: [{ text: "OK", value: true }],
-                parentElement: document.body // Ensure it's on top
+                parentElement: document.body
             });
         }
     }
@@ -235,7 +243,6 @@ async function processNextConflict(viewer, operation) {
     });
 
     if (choice === 'overwrite') {
-        // Re-call the API for this single file with force=true
         try {
             const apiUrl = `/holaf/images/${operation}-metadata`;
             const response = await fetch(apiUrl, {
@@ -254,8 +261,6 @@ async function processNextConflict(viewer, operation) {
     } else if (choice === 'cancel_all') {
         viewer.conflictQueue = [];
     }
-
-    // Process the next item in the queue recursively
     await processNextConflict(viewer, operation);
 }
 
@@ -270,7 +275,7 @@ export async function handleExtractMetadata(viewer) {
         return;
     }
 
-    const pngImages = Array.from(viewer.selectedImages).filter(img => img.format.toLowerCase() === 'png');
+    const pngImages = imageViewerState.getState().selectedImages.filter(img => img.format.toLowerCase() === 'png');
 
     if (pngImages.length === 0) {
         HolafPanelManager.createDialog({
@@ -292,53 +297,41 @@ export async function handleExtractMetadata(viewer) {
         });
         const result = await response.json();
 
-        if (!response.ok) {
-            throw new Error(result.message || `Server returned status ${response.status}`);
-        }
+        if (!response.ok) throw new Error(result.message || `Server returned status ${response.status}`);
         
-        // Initialize or clear conflict state
-        viewer.conflictQueue = [];
+        viewer.conflictQueue = result.results?.conflicts || [];
         viewer.isProcessingConflicts = false;
 
         const successes = result.results?.successes || [];
         const failures = result.results?.failures || [];
-        const conflicts = result.results?.conflicts || [];
-
-        // Report failures immediately
+        
         if (failures.length > 0) {
             const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
             HolafPanelManager.createDialog({
                 title: "Extraction Errors",
                 message: `Could not extract metadata for the following files:\n${failureMessage}`,
-                buttons: [{ text: "OK" }],
-                parentElement: document.body
+                buttons: [{ text: "OK" }], parentElement: document.body
             });
         }
         
-        // Start processing conflicts if any, otherwise finish up.
-        if (conflicts.length > 0) {
-            viewer.conflictQueue = conflicts;
+        if (viewer.conflictQueue.length > 0) {
             processNextConflict(viewer, 'extract');
         } else {
-            // No conflicts, just successes and/or failures.
             if (successes.length > 0 && failures.length === 0) {
                  HolafPanelManager.createDialog({
                     title: "Extraction Complete",
                     message: `Successfully extracted metadata for ${successes.length} image(s).`,
-                    buttons: [{ text: "OK" }],
-                    parentElement: document.body
+                    buttons: [{ text: "OK" }], parentElement: document.body
                 });
             }
-            viewer.loadFilteredImages(); // Refresh
+            viewer.loadFilteredImages();
         }
-
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling extract API:", error);
         HolafPanelManager.createDialog({
             title: "API Error",
             message: `Error communicating with server for extract operation: ${error.message}`,
-            buttons: [{ text: "OK" }],
-            parentElement: document.body
+            buttons: [{ text: "OK" }], parentElement: document.body
         });
     }
 }
@@ -353,14 +346,13 @@ export async function handleInjectMetadata(viewer) {
         return;
     }
 
-    const pngImages = Array.from(viewer.selectedImages).filter(img => img.format.toLowerCase() === 'png');
+    const pngImages = imageViewerState.getState().selectedImages.filter(img => img.format.toLowerCase() === 'png');
 
     if (pngImages.length === 0) {
         HolafPanelManager.createDialog({
             title: "Invalid Selection",
             message: "The 'Inject' action only works on PNG images. Please select one or more PNG files.",
-            buttons: [{ text: "OK" }],
-            parentElement: document.body
+            buttons: [{ text: "OK" }], parentElement: document.body
         });
         return;
     }
@@ -375,44 +367,34 @@ export async function handleInjectMetadata(viewer) {
         });
         const result = await response.json();
 
-        if (!response.ok) {
-            throw new Error(result.message || `Server returned status ${response.status}`);
-        }
-
-        // Initialize or clear conflict state
-        viewer.conflictQueue = [];
+        if (!response.ok) throw new Error(result.message || `Server returned status ${response.status}`);
+        
+        viewer.conflictQueue = result.results?.conflicts || [];
         viewer.isProcessingConflicts = false;
 
         const successes = result.results?.successes || [];
         const failures = result.results?.failures || [];
-        const conflicts = result.results?.conflicts || [];
 
-        // Report failures immediately
         if (failures.length > 0) {
             const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
             HolafPanelManager.createDialog({
                 title: "Injection Errors",
                 message: `Could not inject metadata for the following files:\n${failureMessage}`,
-                buttons: [{ text: "OK" }],
-                parentElement: document.body
+                buttons: [{ text: "OK" }], parentElement: document.body
             });
         }
         
-        // Start processing conflicts if any, otherwise finish up.
-        if (conflicts.length > 0) {
-            viewer.conflictQueue = conflicts;
+        if (viewer.conflictQueue.length > 0) {
             processNextConflict(viewer, 'inject');
         } else {
-            // No conflicts, just successes and/or failures.
             if (successes.length > 0 && failures.length === 0) {
                  HolafPanelManager.createDialog({
                     title: "Injection Complete",
                     message: `Successfully injected metadata into ${successes.length} image(s).`,
-                    buttons: [{ text: "OK" }],
-                    parentElement: document.body
+                    buttons: [{ text: "OK" }], parentElement: document.body
                 });
             }
-            viewer.loadFilteredImages(); // Refresh
+            viewer.loadFilteredImages();
         }
 
     } catch (error) {
@@ -420,8 +402,7 @@ export async function handleInjectMetadata(viewer) {
         HolafPanelManager.createDialog({
             title: "API Error",
             message: `Error communicating with server for inject operation: ${error.message}`,
-            buttons: [{ text: "OK" }],
-            parentElement: document.body
+            buttons: [{ text: "OK" }], parentElement: document.body
         });
     }
 }
@@ -431,12 +412,15 @@ export async function handleInjectMetadata(viewer) {
  * @param {object} viewer - The main image viewer instance.
  */
 export function handleExport(viewer) {
-    if (viewer.selectedImages.size === 0) return;
+    const state = imageViewerState.getState();
+    const selectedImages = state.selectedImages;
+    if (selectedImages.length === 0) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'holaf-viewer-export-dialog-overlay';
     
-    const imageCount = viewer.selectedImages.size;
+    const imageCount = selectedImages.length;
+    // Note: export settings are not yet in the state manager, reading from legacy object for now.
     const savedSettings = viewer.settings;
 
     overlay.innerHTML = `
@@ -478,13 +462,11 @@ export function handleExport(viewer) {
 
     const includeMetaCheckbox = overlay.querySelector('#holaf-export-include-meta');
     const metaMethodGroup = overlay.querySelector('#holaf-export-meta-method-group');
-
     const toggleMetaMethod = () => {
         const isEnabled = includeMetaCheckbox.checked;
         metaMethodGroup.style.opacity = isEnabled ? '1' : '0.5';
         metaMethodGroup.style.pointerEvents = isEnabled ? 'auto' : 'none';
     };
-
     includeMetaCheckbox.addEventListener('change', toggleMetaMethod);
 
     overlay.querySelector('#holaf-export-cancel-btn').addEventListener('click', () => overlay.remove());
@@ -498,16 +480,12 @@ export function handleExport(viewer) {
         
         overlay.remove();
         
-        // MODIFICATION: Only create one persistent toast if one isn't already active
-        if (!viewer.isExporting) {
+        if (!imageViewerState.getState().status.isExporting) {
             window.holaf.toastManager.show({
-                id: toastId,
-                message: `Preparing to export ${imageCount} image(s)...`,
-                type: 'info',
-                duration: 0, 
-                progress: true
+                id: toastId, message: `Preparing to export ${imageCount} image(s)...`,
+                type: 'info', duration: 0, progress: true
             });
-            viewer.activeExportToastId = toastId;
+            imageViewerState.setState({ exporting: { activeToastId: toastId } });
         }
         
         viewer.saveSettings({
@@ -517,7 +495,7 @@ export function handleExport(viewer) {
         });
         
         const payload = {
-            paths_canon: Array.from(viewer.selectedImages).map(img => img.path_canon),
+            paths_canon: imageViewerState.getState().selectedImages.map(img => img.path_canon),
             export_format: format,
             include_meta: includeMeta,
             meta_method: metaMethod
@@ -525,8 +503,7 @@ export function handleExport(viewer) {
         
         try {
             const response = await fetch('/holaf/images/prepare-export', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             const result = await response.json();
@@ -547,46 +524,46 @@ export function handleExport(viewer) {
             if (manifest && manifest.length > 0) {
                 const newFiles = manifest.map(file => ({ ...file, export_id: result.export_id }));
                 
-                // Add files to queue and update totals
-                viewer.exportDownloadQueue.push(...newFiles);
-                viewer.exportStats.totalFiles += newFiles.length;
+                const oldState = imageViewerState.getState();
+                const newQueue = [...oldState.exporting.queue, ...newFiles];
+                const newTotalFiles = oldState.exporting.stats.totalFiles + newFiles.length;
+                imageViewerState.setState({ exporting: { queue: newQueue, stats: { ...oldState.exporting.stats, totalFiles: newTotalFiles }}});
 
-                // Update the toast with an "added to queue" message
-                if (viewer.activeExportToastId) {
-                    window.holaf.toastManager.update(viewer.activeExportToastId, {
+                const activeToastId = imageViewerState.getState().exporting.activeToastId;
+                if (activeToastId) {
+                    window.holaf.toastManager.update(activeToastId, {
                         message: `Added ${newFiles.length} file(s) to queue. Starting download...`,
                         type: 'info'
                     });
                 }
                 
-                if (!viewer.isExporting) {
-                    viewer.isExporting = true;
+                if (!imageViewerState.getState().status.isExporting) {
+                    imageViewerState.setState({ status: { isExporting: true }});
                     viewer.updateStatusBar();
                     viewer.processExportDownloadQueue();
                 } else {
                     viewer.updateStatusBar();
                 }
             } else {
-                 if (viewer.activeExportToastId) {
-                     window.holaf.toastManager.update(viewer.activeExportToastId, {
+                 const activeToastId = imageViewerState.getState().exporting.activeToastId;
+                 if (activeToastId) {
+                     window.holaf.toastManager.update(activeToastId, {
                         message: "No new files were added to the export queue.",
-                        type: 'info',
-                        progress: 100
+                        type: 'info', progress: 100
                      });
-                     setTimeout(() => window.holaf.toastManager.hide(viewer.activeExportToastId), 5000);
+                     setTimeout(() => window.holaf.toastManager.hide(activeToastId), 5000);
                  }
-                 if (!viewer.isExporting) viewer.updateStatusBar();
+                 if (!imageViewerState.getState().status.isExporting) viewer.updateStatusBar();
             }
-
         } catch (error) {
             console.error('[Holaf ImageViewer] Export preparation failed:', error);
-            if (viewer.activeExportToastId) {
-                window.holaf.toastManager.update(viewer.activeExportToastId, {
+            const activeToastId = imageViewerState.getState().exporting.activeToastId;
+            if (activeToastId) {
+                window.holaf.toastManager.update(activeToastId, {
                     message: `<strong>Export Failed:</strong><br>${error.message}`,
-                    type: 'error',
-                    progress: 100
+                    type: 'error', progress: 100
                 });
-            } else { // If toast wasn't even created
+            } else {
                 window.holaf.toastManager.show({ message: `Export Failed: ${error.message}`, type: 'error', duration: 0 });
             }
         }
