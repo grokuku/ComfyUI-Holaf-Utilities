@@ -481,6 +481,9 @@ async def image_viewer_save_ui_settings_route(request: web.Request):
                 cp.set(s, 'folder_filters', json.dumps(data['folder_filters'])) # Store as JSON string
             if 'format_filters' in data and isinstance(data['format_filters'], list):
                 cp.set(s, 'format_filters', json.dumps(data['format_filters'])) # Store as JSON string
+            # --- CORRECTIF : Ajouter la sauvegarde de locked_folders ---
+            if 'locked_folders' in data and isinstance(data['locked_folders'], list):
+                cp.set(s, 'locked_folders', json.dumps(data['locked_folders'])) # Store as JSON string
 
             with open(holaf_config.get_config_path(), 'w') as cf: cp.write(cf)
         reload_global_config() # Reload to reflect changes in the live CONFIG

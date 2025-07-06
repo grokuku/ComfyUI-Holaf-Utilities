@@ -1,5 +1,3 @@
---- START OF FILE context.txt ---
-
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -85,7 +83,7 @@ FILE_TREE_ANALYSIS:
     📄 holaf_image_viewer_styles.css
       > Specific styles for the Image Viewer panel (placeholder).
     📄 holaf_image_viewer.css
-      > Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`) for the differential gallery rendering. [MODIFIED] Contains gallery layout styles, including the `flex-grow: 0` fix for thumbnails.
+      > [MODIFIED] Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`), gallery layout styles, the `flex-grow: 0` fix for thumbnails, and styles for folder lock icons.
     📄 holaf_main_button.css
       > Styles for the main "Holaf's Utilities" button in the ComfyUI menu.
     📄 holaf_model_manager_styles.css
@@ -113,7 +111,7 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_editor.js
       > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
-      > [MODIFIED] Manages gallery view with differential rendering (`syncGallery`). Contains `initGallery` to listen for refresh events. Handles lazy loading.
+      > [MODIFIED] Manages gallery view with differential rendering (`syncGallery`). Contains `initGallery` to listen for refresh events. Handles lazy loading. Corrected selection bug logic.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
@@ -121,9 +119,9 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_settings.js
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
-      > [NEW & CRITICAL] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture.
+      > [MODIFIED] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture. Includes per-folder lock state (`locked_folders`).
     📄 image_viewer_ui.js
-      > [MODIFIED] Builds the main panel UI structure. Contains listeners for UI controls like thumbnail size/fit toggles. Subscribes to `imageViewerState`.
+      > [MODIFIED] Builds the main panel UI structure. Contains listeners for UI controls like thumbnail size/fit toggles. Subscribes to `imageViewerState`. Updated UI for Reset button position & folder actions (added Invert, per-folder SVG lock icons).
   📁 model_manager/
     > Modular JS for the Model Manager.
     📄 model_manager_actions.js -> holaf_panel_manager
@@ -133,7 +131,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [CRITICAL] Main orchestrator. Initializes all modules (UI, Editor, Gallery, etc.) and wires them together. Manages the non-blocking filter request queue (`isLoading`/`isDirty`).
+    > [MODIFIED] Main orchestrator. Initializes all modules (UI, Editor, Gallery, etc.). Manages the non-blocking filter request queue (`isLoading`/`isDirty`). Handles per-folder lock state and UI logic, including the advanced reset dialog.
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -203,7 +201,9 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    # (None currently identified)
+    - [bug, state, folder_lock_persistence] # L'état de verrouillage des dossiers n'est pas sauvegardé et restauré après un redémarrage de ComfyUI.
+    - [bug, ui, scope_buttons_unresponsive] # Les boutons de portée de recherche ('Name'/'Prompt'/'Workflow') ne déclenchent pas de rafraîchissement de la galerie si la barre de recherche est vide, ce qui les fait paraître non fonctionnels.
+    - [bug, ui, filter_label_position] # Le titre de la section 'Filters' est mal positionné, en dessous de la barre de recherche au lieu d'être au-dessus.
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -213,7 +213,6 @@ PROJECT_STATE:
     ImageViewer:
       - [feature, realtime_file_monitoring] # Replace periodic scan with `watchdog` for instant updates.
       - [feature, corrupted_file_management] # Auto-move unreadable images to `output/corrupted`.
-      - [ui, folder_filter_enhancements(invert,lock)] # Add "Invert" and "Lock" to folder filter UI.
       - [define, define_edit_button_action] # Define the action for the "Edit" button (e.g., rename, tag).
       - [feature, implement_slideshow] # Implement a slideshow mode.
     ImageEditor:
@@ -224,6 +223,8 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran/zoom pour qu'ils affichent toujours les effets de l'image active.
+    - [feature, ui, folder_filter_enhancements] # Added folder filter enhancements: "Invert" action, per-folder SVG lock icons, and an advanced reset dialog that respects locked folders' state.
     - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails to prevent stretching.
     - [fix, ui, thumbnail_fit_toggle_immediate_update] # The "Contained" thumbnail view option now applies instantly.
     - [feature, ui, spacebar_to_toggle_selection_in_gallery] # Pressing spacebar on an active thumbnail now toggles its selection state.
@@ -252,5 +253,4 @@ PROJECT_STATE:
     - [thumbnail_cache_system]
     - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch and added fallback logic.
     - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.
-
---- END OF FILE context.txt ---
+    - [fix, ui, thumbnail_size_realtime_update] # Thumbnail size slider now updates gallery size instantly.

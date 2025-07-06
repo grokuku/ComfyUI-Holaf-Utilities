@@ -54,7 +54,20 @@ export async function loadSettings(viewer) {
 
         // Fonctions de validation
         const toBoolean = (val, def) => val !== undefined ? String(val).toLowerCase() === 'true' : def;
-        const toArray = (val, def) => Array.isArray(val) ? val : def;
+        
+        // CORRECTIF : Rendre la conversion en tableau plus robuste.
+        // Elle gère maintenant les tableaux natifs et les chaînes JSON.
+        const toArray = (val, def) => {
+            if (Array.isArray(val)) return val;
+            if (typeof val === 'string' && val.startsWith('[') && val.endsWith(']')) {
+                try {
+                    const parsed = JSON.parse(val);
+                    return Array.isArray(parsed) ? parsed : def;
+                } catch(e) { return def; }
+            }
+            return def;
+        };
+
         const toString = (val, def) => val !== undefined ? String(val) : def;
         const toNumber = (val, def) => !isNaN(parseInt(val)) ? parseInt(val) : def;
         
@@ -65,6 +78,8 @@ export async function loadSettings(viewer) {
             filters: {
                 folder_filters: toArray(fetchedSettings.folder_filters, []),
                 format_filters: toArray(fetchedSettings.format_filters, []),
+                // CORRECTIF : Ajout de la restauration de `locked_folders`.
+                locked_folders: toArray(fetchedSettings.locked_folders, []),
                 search_text: toString(fetchedSettings.search_text, ''),
                 startDate: toString(fetchedSettings.startDate, ''),
                 endDate: toString(fetchedSettings.endDate, ''),

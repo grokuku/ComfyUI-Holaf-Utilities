@@ -95,7 +95,7 @@
 .holaf-viewer-filter-item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px; /* MODIFIED: was 8px for compactness */
     font-size: 13px;
     cursor: pointer;
     user-select: none;
@@ -145,6 +145,8 @@
 .holaf-viewer-filter-item input[type="checkbox"] {
     accent-color: var(--holaf-accent-color);
     cursor: pointer;
+    margin-left: 0; /* MODIFIED: Reset margin for compactness */
+    margin-right: 0;
 }
 
 .holaf-viewer-actions-group h4 {
@@ -1009,3 +1011,28 @@
 
 
 /* --- END EDIT ICON STYLES --- */
+
+/* --- START FOLDER LOCK STYLES (SVG VERSION) --- */
+.holaf-folder-lock-icon {
+    text-decoration: none;
+    color: var(--holaf-text-secondary);
+    opacity: 0.3; /* Visible but faded when unlocked */
+    transition: opacity 0.2s, color 0.2s;
+    cursor: pointer;
+    display: flex; /* Helps with vertical alignment */
+    align-items: center;
+}
+
+.holaf-folder-lock-icon svg {
+    vertical-align: middle; /* Better alignment with text */
+}
+
+.holaf-viewer-filter-item:hover .holaf-folder-lock-icon {
+    opacity: 1;
+}
+
+.holaf-folder-lock-icon.locked {
+    opacity: 1;
+    color: var(--holaf-accent-color);
+}
+/* --- END FOLDER LOCK STYLES --- */

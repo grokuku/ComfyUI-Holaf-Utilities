@@ -82,9 +82,8 @@ class ImageViewerUI {
                     <button id="holaf-search-scope-workflow" class="holaf-viewer-toggle-button">Workflow</button>
                 </div>
             </div>
-            <div class="holaf-viewer-filter-header-main">
+            <div class="holaf-viewer-filter-group">
                 <h4>Filters</h4>
-                <a href="#" id="holaf-viewer-btn-reset-filters" class="holaf-viewer-reset-link" title="Reset all filters">Reset</a>
             </div>
             <div class="holaf-viewer-filter-group">
                 <h4>Date Range</h4>
@@ -104,7 +103,7 @@ class ImageViewerUI {
                 <div class="holaf-viewer-filter-header">
                     <h4>Folders</h4>
                     <div class="holaf-viewer-folder-actions">
-                        <a href="#" id="holaf-viewer-folders-select-all">All</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-none">None</a>
+                        <a href="#" id="holaf-viewer-folders-select-all">All</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-none">None</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-invert">Invert</a>
                     </div>
                 </div>
                 <div id="holaf-viewer-folders-filter" class="holaf-viewer-filter-list"><p class="holaf-viewer-message"><em>Loading...</em></p></div>
@@ -127,7 +126,7 @@ class ImageViewerUI {
                         </div>
                          <div class="holaf-viewer-action-button-row">
                             <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="Export selected images">📤 Export</button>
-                            <button id="holaf-viewer-btn-edit" class="holaf-viewer-action-button" disabled title="Edit selected image">✏️ Edit</button>
+                            <button id="holaf-viewer-btn-reset-filters" class="holaf-viewer-action-button" title="Reset all filters to their default values">🔄 Reset</button>
                         </div>
                     </div>
                 </div>
@@ -181,8 +180,9 @@ class ImageViewerUI {
         const viewer = this.callbacks.getViewer();
 
         // --- Left Pane Listeners ---
+        
+        // Find the new reset button in the Actions section
         this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = (e) => {
-            e.preventDefault();
             this.callbacks.onResetFilters();
         };
 
@@ -222,12 +222,35 @@ class ImageViewerUI {
         
         this.elements.leftPane.querySelector('#holaf-viewer-folders-select-all').onclick = (e) => {
             e.preventDefault();
-            this.elements.leftPane.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => { if (!cb.disabled) cb.checked = true; });
+            const { locked_folders } = imageViewerState.getState().filters;
+            this.elements.leftPane.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
+                const folderId = cb.closest('.holaf-viewer-filter-item')?.dataset.folderId;
+                if (!cb.disabled && !locked_folders.includes(folderId)) {
+                    cb.checked = true;
+                }
+            });
             this.callbacks.onFilterChange();
         };
         this.elements.leftPane.querySelector('#holaf-viewer-folders-select-none').onclick = (e) => {
             e.preventDefault();
-            this.elements.leftPane.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => { if (!cb.disabled) cb.checked = false; });
+            const { locked_folders } = imageViewerState.getState().filters;
+            this.elements.leftPane.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
+                const folderId = cb.closest('.holaf-viewer-filter-item')?.dataset.folderId;
+                if (!cb.disabled && !locked_folders.includes(folderId)) {
+                    cb.checked = false;
+                }
+            });
+            this.callbacks.onFilterChange();
+        };
+        this.elements.leftPane.querySelector('#holaf-viewer-folders-select-invert').onclick = (e) => {
+            e.preventDefault();
+            const { locked_folders } = imageViewerState.getState().filters;
+            this.elements.leftPane.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
+                const folderId = cb.closest('.holaf-viewer-filter-item')?.dataset.folderId;
+                if (!cb.disabled && !locked_folders.includes(folderId)) {
+                    cb.checked = !cb.checked;
+                }
+            });
             this.callbacks.onFilterChange();
         };
         
@@ -245,11 +268,12 @@ class ImageViewerUI {
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
         this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
         this.elements.thumbSizeSlider.oninput = (e) => {
-            this.elements.thumbSizeValue.textContent = `${e.target.value}px`;
+            const newSize = parseInt(e.target.value);
+            this.elements.thumbSizeValue.textContent = `${newSize}px`;
+            viewer.saveSettings({ thumbnail_size: newSize });
+            viewer._applyThumbnailSize(); // CORRECTIF : Appel de la fonction pour appliquer le style
         };
-        this.elements.thumbSizeSlider.onchange = (e) => {
-            viewer.saveSettings({ thumbnail_size: parseInt(e.target.value) });
-        };
+        // L'ancien `onchange` est maintenant redondant et a été supprimé.
 
         // --- Center Pane (Zoom View) Listeners ---
         const zoomView = this.elements.centerPane.querySelector('#holaf-viewer-zoom-view');

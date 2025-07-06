@@ -41,9 +41,20 @@ export class ImageEditor {
         const shouldBeVisible = state.activeImage && state.ui.view_mode === 'zoom';
         const isActuallyVisible = this.panelEl && this.panelEl.style.display !== 'none';
 
+        // If the active image in the global state is different from the one the editor is tracking...
+        if (state.activeImage && (state.activeImage.path_canon !== this.activeImage?.path_canon)) {
+            // ...we must load the new image's edit data to keep the preview state correct for all views.
+            this._show(state.activeImage);
+        } else if (!state.activeImage && this.activeImage) {
+            // The image was deselected globally, clear our state too.
+            this._hide();
+        }
+
+        // Now, separately, handle the panel's visibility based on the view mode.
+        // This ensures the panel only shows in zoom view, even if _show() was just called to load data.
         if (shouldBeVisible) {
-            if (!isActuallyVisible || (state.activeImage.path_canon !== this.activeImage?.path_canon)) {
-                 this._show(state.activeImage);
+            if (!isActuallyVisible) {
+                this.panelEl.style.display = 'block';
             }
         } else {
             if (isActuallyVisible) {

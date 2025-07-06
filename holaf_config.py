@@ -73,6 +73,10 @@ def load_all_configs():
         format_filters = json.loads(config_parser_obj.get('ImageViewerUI', 'format_filters', fallback='[]'))
     except json.JSONDecodeError:
         format_filters = []
+    try:
+        locked_folders = json.loads(config_parser_obj.get('ImageViewerUI', 'locked_folders', fallback='[]'))
+    except json.JSONDecodeError:
+        locked_folders = []
 
     ui_settings_image_viewer.update({
         'folder_filters': folder_filters,

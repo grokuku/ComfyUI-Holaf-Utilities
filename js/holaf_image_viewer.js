@@ -36,6 +36,12 @@ const STATS_REFRESH_INTERVAL_MS = 2000;
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
 const FILTER_REFRESH_INTERVAL_MS = 5000;
 
+// SVG icons for folder locks for better compatibility than emojis
+const ICONS = {
+    locked: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`,
+    unlocked: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>`
+};
+
 const holafImageViewer = {
     // --- State & Properties ---
     editor: null,
@@ -312,7 +318,7 @@ const holafImageViewer = {
         }
     },
     
-    _resetFilters() {
+    _performFullReset(resetLocks) {
         const newFilters = {
             search_text: '',
             startDate: '',
@@ -323,23 +329,77 @@ const holafImageViewer = {
             workflow_filter_internal: true,
             workflow_filter_external: true,
         };
+        if (resetLocks) {
+            newFilters.locked_folders = [];
+        }
         this.saveSettings(newFilters);
         
         this._applyFilterStateToInputs();
-        
         this._updateSearchScopeButtonStates();
         this._updateWorkflowButtonStates();
         
+        const { locked_folders } = imageViewerState.getState().filters;
         document.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]').forEach(cb => {
+            const item = cb.closest('.holaf-viewer-filter-item');
+            const folderId = item ? item.dataset.folderId : null;
+            
             cb.disabled = false;
-            cb.checked = true;
+
+            // If we are not resetting locks AND the current folder is locked, preserve its state.
+            if (!resetLocks && folderId && locked_folders.includes(folderId)) {
+                // Do nothing to cb.checked
+            } else {
+                cb.checked = true; // Otherwise, reset to default (checked)
+            }
         });
+
         document.querySelectorAll('#holaf-viewer-formats-filter input[type="checkbox"]').forEach(cb => cb.checked = true);
         
+        if (resetLocks) {
+            document.querySelectorAll('.holaf-folder-lock-icon.locked').forEach(icon => {
+                icon.classList.remove('locked');
+                icon.innerHTML = ICONS.unlocked;
+                icon.title = 'Lock this folder (prevents changes from All/None/Invert)';
+            });
+        }
+        
         const trashCheckbox = document.getElementById('folder-filter-trashcan');
-        if (trashCheckbox) trashCheckbox.checked = false;
+        if (trashCheckbox) {
+            trashCheckbox.checked = false;
+        }
         
         this.triggerFilterChange();
+    },
+
+    async _resetFilters() {
+        const { locked_folders } = imageViewerState.getState().filters;
+
+        if (locked_folders.length === 0) {
+            this._performFullReset(true);
+            return;
+        }
+
+        const choice = await HolafPanelManager.createDialog({
+            title: "Reset Filters Confirmation",
+            message: "You have locked folders. How would you like to proceed?",
+            buttons: [
+                { text: "Cancel", value: "cancel", type: "cancel" },
+                { text: "Reset (Keep Locks)", value: "reset_keep_locks" },
+                { text: "Unlock & Reset All", value: "unlock_and_reset", type: "confirm" }
+            ]
+        });
+
+        switch (choice) {
+            case "unlock_and_reset":
+                this._performFullReset(true);
+                break;
+            case "reset_keep_locks":
+                this._performFullReset(false);
+                break;
+            case "cancel":
+            default:
+                return;
+        }
     },
 
     _saveCurrentFilterState() {
@@ -349,12 +409,14 @@ const holafImageViewer = {
         const endDate = document.getElementById('holaf-viewer-date-end').value;
         const searchText = document.getElementById('holaf-viewer-search-input').value;
 
+        // locked_folders are saved via their own event handler, no need to read from DOM here.
         this.saveSettings({
             folder_filters: selectedFolders,
             format_filters: selectedFormats,
             startDate,
             endDate,
             search_text: searchText,
+            locked_folders: imageViewerState.getState().filters.locked_folders,
         });
     },
     
@@ -389,7 +451,8 @@ const holafImageViewer = {
                 let isChecked = true;
                 if (isUpdate) { isChecked = currentSelectedFolders.has(id); }
                 else if (useSavedFolderFilters) { isChecked = state.filters.folder_filters.includes(id); }
-                return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, onFilterChange);
+                // Pass the folder ID to create the lock icon
+                return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, onFilterChange, id);
             };
 
             if (data.has_root) foldersEl.appendChild(createFolderCheckbox(null, true));
@@ -826,15 +889,61 @@ const holafImageViewer = {
         statusBarEl.textContent = statusText;
     },
 
-    createFilterItem(id, label, isChecked, onChange) {
+    createFilterItem(id, label, isChecked, onChange, folderId = null) {
         const container = document.createElement('div');
         container.className = 'holaf-viewer-filter-item';
+        
         const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox'; checkbox.id = id; checkbox.checked = isChecked;
+        checkbox.type = 'checkbox'; 
+        checkbox.id = id; 
+        checkbox.checked = isChecked;
         checkbox.onchange = onChange;
+        
         const labelEl = document.createElement('label');
-        labelEl.htmlFor = id; labelEl.textContent = label;
-        container.append(checkbox, labelEl);
+        labelEl.htmlFor = id; 
+        labelEl.textContent = label;
+        
+        const elementsToAppend = [];
+    
+        if (folderId) {
+            container.dataset.folderId = folderId;
+            const lockIcon = document.createElement('a');
+            lockIcon.href = '#';
+            lockIcon.className = 'holaf-folder-lock-icon';
+            
+            const { locked_folders } = imageViewerState.getState().filters;
+            const isLocked = locked_folders.includes(folderId);
+            
+            lockIcon.innerHTML = isLocked ? ICONS.locked : ICONS.unlocked;
+            lockIcon.title = isLocked ? 'Unlock this folder' : 'Lock this folder (prevents changes from All/None/Invert)';
+            lockIcon.classList.toggle('locked', isLocked);
+    
+            lockIcon.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+    
+                const currentState = imageViewerState.getState();
+                let currentLocked = [...currentState.filters.locked_folders];
+                const isCurrentlyLocked = currentLocked.includes(folderId);
+                
+                if (isCurrentlyLocked) {
+                    currentLocked = currentLocked.filter(f => f !== folderId);
+                } else {
+                    currentLocked.push(folderId);
+                }
+                
+                this.saveSettings({ locked_folders: currentLocked });
+                
+                lockIcon.innerHTML = !isCurrentlyLocked ? ICONS.locked : ICONS.unlocked;
+                lockIcon.title = !isCurrentlyLocked ? 'Unlock this folder' : 'Lock this folder (prevents changes from All/None/Invert)';
+                lockIcon.classList.toggle('locked', !isCurrentlyLocked);
+            };
+            elementsToAppend.push(lockIcon);
+        }
+        
+        elementsToAppend.push(checkbox, labelEl);
+        container.append(...elementsToAppend);
+        
         return container;
     },
 

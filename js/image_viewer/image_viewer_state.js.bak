@@ -25,7 +25,6 @@ class ImageViewerState {
                 search_scope_workflow: true,
                 workflow_filter_internal: true,
                 workflow_filter_external: true,
- locked_folders: [],
             },
 
             // État de l'interface et des préférences
