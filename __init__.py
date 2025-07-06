@@ -425,6 +425,12 @@ async def iv_set_viewer_activity_route(r): return await holaf_image_viewer_backe
 @routes.post("/holaf/images/prioritize-thumbnails")
 async def iv_prioritize_thumbnails_route(r): return await holaf_image_viewer_backend.prioritize_thumbnails_route(r)
 
+# <-- MODIFICATION START: Nouvelle route pour la régénération de miniature -->
+@routes.post('/holaf/images/regenerate-thumbnail')
+async def iv_regenerate_thumbnail_route(r):
+    return await holaf_image_viewer_backend.regenerate_thumbnail_route(r)
+# <-- MODIFICATION END -->
+
 @routes.get("/holaf/images/thumbnail-stats")
 async def iv_thumbnail_stats_route(r): return await holaf_image_viewer_backend.iv_get_thumbnail_stats_route(r)
 

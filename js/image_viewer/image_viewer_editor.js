@@ -21,7 +21,8 @@ export class ImageEditor {
         this.panelEl = null;
         this.activeImage = null;
         this.currentState = { ...DEFAULT_EDIT_STATE };
-        this.isDirty = false; // Tracks if there are unsaved changes
+        this.originalState = { ...DEFAULT_EDIT_STATE };
+        this.isDirty = false;
     }
 
     /**
@@ -37,17 +38,14 @@ export class ImageEditor {
      * @param {object} state - The new state from imageViewerState.
      */
     _handleStateChange(state) {
-        // FIX: The editor should only be visible when an image is active AND the view mode is 'zoom'.
         const shouldBeVisible = state.activeImage && state.ui.view_mode === 'zoom';
         const isActuallyVisible = this.panelEl && this.panelEl.style.display !== 'none';
 
         if (shouldBeVisible) {
-            // If the panel should be visible but isn't, or if the active image has changed, show/reload it.
             if (!isActuallyVisible || (state.activeImage.path_canon !== this.activeImage?.path_canon)) {
                  this._show(state.activeImage);
             }
         } else {
-            // If the panel should not be visible but is, hide it.
             if (isActuallyVisible) {
                 this._hide();
             }
@@ -60,7 +58,7 @@ export class ImageEditor {
     createPanel() {
         const editorContainer = document.createElement('div');
         editorContainer.id = 'holaf-viewer-editor-pane';
-        editorContainer.style.display = 'none'; // Initially hidden
+        editorContainer.style.display = 'none';
         editorContainer.innerHTML = this._getPanelHTML();
 
         const rightColumn = document.getElementById('holaf-viewer-right-column');
@@ -83,7 +81,7 @@ export class ImageEditor {
         this.isDirty = false;
 
         await this._loadEditsForCurrentImage();
-        this._updateSaveButtonState();
+        this._updateButtonStates();
     }
 
     /**
@@ -93,14 +91,12 @@ export class ImageEditor {
         if (this.panelEl) {
             this.panelEl.style.display = 'none';
         }
-        // When hiding, we might still have an active image (e.g., in fullscreen),
-        // so we must reset the preview filters on all potential views.
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
         if(zoomedImg) zoomedImg.style.filter = 'none';
         if(fullscreenImg) fullscreenImg.style.filter = 'none';
         
-        this.activeImage = null; // Clear internal reference when hidden.
+        this.activeImage = null;
     }
 
     /**
@@ -109,7 +105,6 @@ export class ImageEditor {
     async _loadEditsForCurrentImage() {
         if (!this.activeImage) return;
 
-        // Reset to default state before loading
         this.currentState = { ...DEFAULT_EDIT_STATE };
 
         if (this.activeImage.has_edit_file) {
@@ -125,8 +120,12 @@ export class ImageEditor {
                 console.error("[Holaf Editor] Failed to load edits:", e);
             }
         }
+        this.originalState = { ...this.currentState };
+        this.isDirty = false;
+        
         this._updateUIFromState();
         this.applyPreview();
+        this._updateButtonStates();
     }
 
     /**
@@ -136,20 +135,61 @@ export class ImageEditor {
         if (!this.activeImage) return;
         
         const currentViewMode = imageViewerState.getState().ui.view_mode;
-        // Only apply filters if we are in zoom mode.
         if (currentViewMode !== 'zoom') return;
 
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
+        const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
         const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
 
         if (zoomedImg) zoomedImg.style.filter = filterValue;
+        if (fullscreenImg) fullscreenImg.style.filter = filterValue;
+    }
+
+    /**
+     * Public method to check for unsaved changes.
+     * @returns {boolean} True if there are unsaved changes.
+     */
+    hasUnsavedChanges() {
+        return this.isDirty;
+    }
+
+    /**
+     * Calls the backend to regenerate the thumbnail and forces a visual refresh in the gallery.
+     */
+    async _triggerThumbnailRegeneration() {
+        if (!this.activeImage) return;
+        try {
+            console.log(`[Holaf Editor] Triggering thumbnail regeneration for ${this.activeImage.path_canon}`);
+            const response = await fetch('/holaf/images/regenerate-thumbnail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path_canon: this.activeImage.path_canon })
+            });
+            if (response.ok) {
+                const galleryItem = document.querySelector(`.holaf-image-viewer-gallery-item[data-path-canon="${this.activeImage.path_canon}"]`);
+                if (galleryItem) {
+                    const thumb = galleryItem.querySelector('img.holaf-image-viewer-thumbnail');
+                    if (thumb && thumb.src) {
+                        const newUrl = new URL(thumb.src, window.location.origin);
+                        newUrl.searchParams.set('t', Date.now());
+                        const newThumb = thumb.cloneNode(true);
+                        newThumb.src = newUrl.toString();
+                        thumb.parentNode.replaceChild(newThumb, thumb);
+                    }
+                }
+            } else {
+                console.error("[Holaf Editor] Failed to trigger thumbnail regeneration.", await response.json());
+            }
+        } catch(e) {
+            console.error("[Holaf Editor] Error calling thumbnail regeneration API:", e);
+        }
     }
 
     /**
      * Saves the current edit state to the backend.
      */
     async _saveEdits() {
-        if (!this.activeImage) return;
+        if (!this.activeImage || !this.isDirty) return;
 
         try {
             const response = await fetch('/holaf/images/save-edits', {
@@ -170,7 +210,8 @@ export class ImageEditor {
 
             if (result.status === 'ok') {
                 this.isDirty = false;
-                this._updateSaveButtonState();
+                this.originalState = { ...this.currentState }; 
+                this._updateButtonStates();
                 
                 const state = imageViewerState.getState();
                 let newActiveImage = null;
@@ -187,6 +228,9 @@ export class ImageEditor {
                 } else { 
                     imageViewerState.setState({ images: updatedImages });
                 }
+                
+                await this._triggerThumbnailRegeneration();
+
             } else {
                 HolafPanelManager.createDialog({ title: "Save Error", message: `Could not save edits: ${result.message || 'Unknown error from server.'}` });
             }
@@ -194,6 +238,18 @@ export class ImageEditor {
             console.error("[Holaf Editor] Error saving edits:", e);
             HolafPanelManager.createDialog({ title: "API Error", message: `Failed to save edits. The server response might not be valid. Details: ${e.message}` });
         }
+    }
+    
+    /**
+     * Discards any unsaved changes by reverting to the original state.
+     */
+    _cancelEdits() {
+        if (!this.isDirty) return;
+        this.currentState = { ...this.originalState };
+        this.isDirty = false;
+        this._updateUIFromState();
+        this.applyPreview();
+        this._updateButtonStates();
     }
 
     /**
@@ -224,6 +280,7 @@ export class ImageEditor {
 
             if (result.status === 'ok') {
                 this.currentState = { ...DEFAULT_EDIT_STATE };
+                this.originalState = { ...DEFAULT_EDIT_STATE };
                 this.isDirty = false;
                 this._updateUIFromState();
                 this.applyPreview();
@@ -244,7 +301,10 @@ export class ImageEditor {
                     imageViewerState.setState({ images: updatedImages });
                 }
 
-                this._updateSaveButtonState();
+                this._updateButtonStates();
+                
+                await this._triggerThumbnailRegeneration();
+
             } else {
                 HolafPanelManager.createDialog({ title: "Reset Error", message: `Could not reset edits: ${result.message || 'Unknown error from server.'}` });
             }
@@ -267,12 +327,16 @@ export class ImageEditor {
     }
 
     /**
-     * Enables/disables the save button based on the `isDirty` flag.
+     * Enables/disables the save and cancel buttons based on the `isDirty` flag.
      */
-    _updateSaveButtonState() {
+    _updateButtonStates() {
         const saveBtn = this.panelEl.querySelector('#holaf-editor-save-btn');
+        const cancelBtn = this.panelEl.querySelector('#holaf-editor-cancel-btn');
         if (saveBtn) {
             saveBtn.disabled = !this.isDirty;
+        }
+        if (cancelBtn) {
+            cancelBtn.disabled = !this.isDirty;
         }
     }
 
@@ -288,7 +352,7 @@ export class ImageEditor {
                 this.currentState[key] = defaultValue;
 
                 this.isDirty = true;
-                this._updateSaveButtonState();
+                this._updateButtonStates();
                 this._updateUIFromState();
                 this.applyPreview();
             });
@@ -302,7 +366,7 @@ export class ImageEditor {
                     if (valueEl) valueEl.textContent = e.target.value;
 
                     this.isDirty = true;
-                    this._updateSaveButtonState();
+                    this._updateButtonStates();
                     this.applyPreview();
                 });
             }
@@ -310,8 +374,11 @@ export class ImageEditor {
 
         const saveBtn = this.panelEl.querySelector('#holaf-editor-save-btn');
         const resetBtn = this.panelEl.querySelector('#holaf-editor-reset-btn');
+        const cancelBtn = this.panelEl.querySelector('#holaf-editor-cancel-btn');
+
         if (saveBtn) saveBtn.onclick = () => this._saveEdits();
         if (resetBtn) resetBtn.onclick = () => this._resetEdits();
+        if (cancelBtn) cancelBtn.onclick = () => this._cancelEdits();
     }
 
     /**
@@ -344,6 +411,7 @@ export class ImageEditor {
                 </div>
                 <div class="holaf-editor-footer">
                     <button id="holaf-editor-reset-btn" class="comfy-button" title="Reset all edits for this image">Reset</button>
+                    <button id="holaf-editor-cancel-btn" class="comfy-button" title="Discard unsaved changes" disabled>Cancel</button>
                     <button id="holaf-editor-save-btn" class="comfy-button" title="Save changes to .edt file" disabled>Save</button>
                 </div>
             </div>

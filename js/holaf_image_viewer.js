@@ -29,7 +29,8 @@ const SEARCH_DEBOUNCE_MS = 400; // Note: This is now referenced inside UI.js but
 const FILTER_REFRESH_INTERVAL_MS = 5000;
 
 const holafImageViewer = {
-    // --- Legacy State & Properties (REMOVED or MIGRATED to imageViewerState) ---
+    // --- State & Properties ---
+    editor: null, // <-- MODIFICATION: Add property to hold the editor instance
     panelElements: null,
     isInitialized: false,
     areSettingsLoaded: false,
@@ -38,7 +39,7 @@ const holafImageViewer = {
     galleryObserver: null,
     backgroundRenderHandle: null,
     fullscreenElements: null,
-    _fullscreenSourceView: null, // Managed by Navigation module
+    _fullscreenSourceView: null,
     _lastFolderFilterState: null,
     searchDebounceTimeout: null,
     filterRefreshIntervalId: null,
@@ -47,8 +48,6 @@ const holafImageViewer = {
     visiblePlaceholdersToPrioritize: new Set(),
     prioritizeTimeoutId: null,
     statsRefreshIntervalId: null,
-    // allThumbnailsGenerated is now in imageViewerState.status
-    // lastThumbStats is now in imageViewerState.status
     exportStatusRaf: null,
     
     // --- Initialization & Core Lifecycle ---
@@ -91,8 +90,9 @@ const holafImageViewer = {
             if (!this.isInitialized) {
                 // Initialize all state-driven components once.
                 InfoPane.setupInfoPane();
-                const editor = new ImageEditor();
-                editor.init(); // editor now self-manages its container
+                // <-- MODIFICATION: Store editor instance on `this` -->
+                this.editor = new ImageEditor();
+                this.editor.init(); // editor now self-manages its container
                 this.isInitialized = true;
             }
             this._updateViewerActivity(true);

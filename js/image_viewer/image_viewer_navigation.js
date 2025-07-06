@@ -9,6 +9,44 @@
 
 import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
+// <-- MODIFICATION: Import HolafPanelManager to create dialogs -->
+import { HolafPanelManager } from '../holaf_panel_manager.js';
+
+// <-- MODIFICATION START: New helper function for unsaved changes -->
+/**
+ * Checks if the editor has unsaved changes and prompts the user if so.
+ * @param {object} viewer The main viewer instance.
+ * @returns {Promise<string>} 'proceed' if navigation should continue, 'cancel' otherwise.
+ */
+async function _handleUnsavedChanges(viewer) {
+    if (!viewer.editor || !viewer.editor.hasUnsavedChanges()) {
+        return 'proceed'; // No unsaved changes, continue immediately.
+    }
+
+    const choice = await HolafPanelManager.createDialog({
+        title: "Unsaved Changes",
+        message: "You have unsaved edits. What would you like to do?",
+        buttons: [
+            { text: "Cancel Navigation", value: 'cancel', type: 'cancel' },
+            { text: "Discard Changes", value: 'discard', type: 'danger' },
+            { text: "Save & Continue", value: 'save', type: 'primary' }
+        ]
+    });
+
+    switch (choice) {
+        case 'save':
+            await viewer.editor._saveEdits();
+            return 'proceed';
+        case 'discard':
+            viewer.editor._cancelEdits(); // This resets the dirty state
+            return 'proceed';
+        case 'cancel':
+        default:
+            return 'cancel';
+    }
+}
+// <-- MODIFICATION END -->
+
 
 function resetTransform(state, imageEl) {
     state.scale = 1;
@@ -106,7 +144,11 @@ export function hideFullscreenView(viewer) {
     return viewer._fullscreenSourceView;
 }
 
-export function navigate(viewer, direction) {
+// <-- MODIFICATION: Function is now async and handles unsaved changes -->
+export async function navigate(viewer, direction) {
+    const action = await _handleUnsavedChanges(viewer);
+    if (action === 'cancel') return;
+    
     const state = imageViewerState.getState();
     if (state.images.length === 0) return;
     
@@ -162,25 +204,27 @@ export function navigateGrid(viewer, direction) {
     viewer._updateActiveThumbnail(clampedIndex);
 }
 
-export function handleEscape(viewer) {
-    // REFACTOR: This is now the primary state manager for "going back".
+// <-- MODIFICATION: Function is now async and handles unsaved changes -->
+export async function handleEscape(viewer) {
     const state = imageViewerState.getState();
     const currentMode = state.ui.view_mode;
 
     if (currentMode === 'fullscreen') {
-        const sourceView = hideFullscreenView(viewer); // Hides DOM, returns 'zoom' or 'gallery'
+        const sourceView = hideFullscreenView(viewer);
         const targetMode = sourceView === 'zoom' ? 'zoom' : 'gallery';
         imageViewerState.setState({ ui: { view_mode: targetMode } });
         
-        // Manually restore the zoom view's visibility if needed.
         if (targetMode === 'zoom') {
             document.getElementById('holaf-viewer-zoom-view').style.display = 'flex';
         }
     } else if (currentMode === 'zoom') {
-        hideZoomedView(); // Hides DOM and sets state to 'gallery'
+        const action = await _handleUnsavedChanges(viewer);
+        if (action === 'cancel') return;
+        hideZoomedView();
     }
 }
 
+// <-- MODIFICATION: Function is now async to await navigation calls -->
 export async function handleKeyDown(viewer, e) {
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
     
@@ -205,15 +249,14 @@ export async function handleKeyDown(viewer, e) {
                     const newState = imageViewerState.getState();
 
                     if (newState.images.length === 0) {
-                        // FIX: Explicitly clear active image and set mode to gallery
                         if (currentMode === 'fullscreen') hideFullscreenView(viewer);
                         document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
                         document.getElementById('holaf-viewer-gallery').style.display = 'flex';
                         imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
                     } else {
                         const newIndex = Math.min(originalIndex, newState.images.length - 1);
-                        imageViewerState.setState({ currentNavIndex: newIndex + 1 }); // Set to item after deleted one
-                        navigate(viewer, -1); // Navigate back to the item at the new index
+                        imageViewerState.setState({ currentNavIndex: newIndex + 1 });
+                        await navigate(viewer, -1);
                     }
                 }
             } else if (state.selectedImages.length > 0) {
@@ -245,13 +288,12 @@ export async function handleKeyDown(viewer, e) {
                     targetIndex = state.images.length - 1;
                 }
                 const direction = targetIndex - state.currentNavIndex;
-                navigate(viewer, direction);
+                await navigate(viewer, direction);
             }
             break;
         case 'Enter':
             e.preventDefault();
             if (state.currentNavIndex === -1 && state.images.length > 0) {
-                // Select the first image if none is active
                 imageViewerState.setState({ activeImage: state.images[0], currentNavIndex: 0 });
             }
             
@@ -263,7 +305,7 @@ export async function handleKeyDown(viewer, e) {
         case 'ArrowRight':
         case 'ArrowLeft':
             e.preventDefault();
-            navigate(viewer, e.key === 'ArrowRight' ? 1 : -1);
+            await navigate(viewer, e.key === 'ArrowRight' ? 1 : -1);
             break;
         case 'ArrowUp':
         case 'ArrowDown':
@@ -274,7 +316,7 @@ export async function handleKeyDown(viewer, e) {
             break;
         case 'Escape':
             e.preventDefault();
-            handleEscape(viewer);
+            await handleEscape(viewer);
             break;
     }
 }

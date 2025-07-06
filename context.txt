@@ -64,6 +64,7 @@ FILE_TREE_ANALYSIS:
       @ GET /holaf/images/thumbnail
       @ POST /holaf/images/prioritize-thumbnails
       @ GET /holaf/images/thumbnail-stats
+      @ POST /holaf/images/regenerate-thumbnail
       -> logic.py, holaf_database, holaf_utils
     📄 utility_routes.py
       > Misc utility routes for the viewer.
@@ -73,7 +74,7 @@ FILE_TREE_ANALYSIS:
     > Exposes BE functions and routes to the main `__init__.py`. An interface file.
     -> .logic, .routes.*, .worker
   📄 logic.py
-    > Core image viewer logic (DB sync, metadata extraction, thumbnail creation).
+    > Core image viewer logic (DB sync, metadata extraction, thumbnail creation). Includes `apply_edits_to_image`.
     -> holaf_database, holaf_utils
   📄 routes.py
     > [DEPRECATED] Kept for import safety, but logic is moved to `routes/` subdir.
@@ -195,8 +196,6 @@ FILE_TREE_ANALYSIS:
   > BE for the Terminal. Handles password auth and WebSocket (WS) PTY sessions.
 📄 holaf_utils.py
   > Shared Python utility functions (sanitization, file chunking, temp dirs).
-📄 image_editor_plan.md
-  > Documentation/plan for the Image Editor feature. Not code.
 📄 model_types.json
   > Configuration file defining known model types, their folders, and formats. Used by `holaf_model_manager.py`.
 📄 README.md
@@ -207,7 +206,8 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    # (None currently identified)
+    - [bug, ui, editor_thumbnail_refresh_fails] # Thumbnail in gallery does not update visually after Save/Reset, requires page refresh. Cache-busting attempts (timestamp, element replacement) have failed.
+    - [bug, ui, editor_fullscreen_no_edits] # Live edit previews are not applied to the image in fullscreen mode.
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -221,18 +221,21 @@ PROJECT_STATE:
       - [define, define_edit_button_action] # Define the action for the "Edit" button (e.g., rename, tag).
       - [feature, implement_slideshow] # Implement a slideshow mode.
     ImageEditor:
+      - [feature, ui, export_unsaved_changes_dialog] # On export, if edits are unsaved, prompt user: [Save & Export, Export without Saving, Don't Export, Cancel].
+      - [feature, ui, editor_operations_tab(toggle_preview,copy_paste)] # Implement the "Operations" tab with toggle preview and copy/paste settings.
       - [feature, feature_crop_expand(canvas,Pillow_backend)]
       - [feature, feature_white_balance_rgb(canvas,Pillow_backend)]
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
-      - [ui, operations_tab(copy,paste,import,export_edt,toggle)]
   COMPLETED_FEATURES:
+    - [feature, ui, editor_save_cancel_and_unsaved_warning] # Implemented Save/Cancel buttons and a warning dialog for unsaved changes during navigation.
+    - [feature, backend, thumbnail_regeneration_with_edits] # Implemented backend logic to regenerate thumbnails with edits applied after Save/Reset actions.
     - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
-    - [refactor, fix, image_viewer_editor_and_navigation_state] # Decoupled the Editor and Navigation modules from the main controller. They now subscribe to and update a central state (`activeImage`, `ui.view_mode`), which fixed critical visibility bugs with the editor panel.
-    - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state, removing manual updates and making it reactive.
-    - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven and fixed a critical bug in the state manager (getState) that was corrupting Set objects.
+    - [refactor, fix, image_viewer_editor_and_navigation_state] # Decoupled the Editor and Navigation modules from the main controller.
+    - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state.
+    - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven and fixed a critical bug in the state manager.
     - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters and fixed FE data parsing.
-    - [fix, toast_theming_and_readability] # Corrected toast manager to apply a theme directly, fixing transparent background issue.
+    - [fix, toast_theming_and_readability] # Corrected toast manager to apply a theme directly.
     - [feature, ui, toasts_notification_system_base] # Initial implementation of the non-blocking toast system.
     - [major_refactor_backend_frontend]
     - [image_editor_base_architecture]

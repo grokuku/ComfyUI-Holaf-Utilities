@@ -139,6 +139,71 @@ async def get_thumbnail_route(request: web.Request):
         if conn_info_read: holaf_database.close_db_connection(exception=current_exception)
 
 
+# <-- MODIFICATION START: Nouvelle route pour la régénération de miniature -->
+async def regenerate_thumbnail_route(request: web.Request):
+    """
+    Regenerates a thumbnail for a given image, applying .edt file adjustments if present.
+    """
+    try:
+        data = await request.json()
+        path_canon = data.get("path_canon")
+        if not path_canon:
+            return web.json_response({"status": "error", "message": "'path_canon' is required"}, status=400)
+
+        output_dir = folder_paths.get_output_directory()
+        
+        # Validate and get original image path
+        safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
+        if safe_path_canon != path_canon:
+             return web.json_response({"status": "error", "message": "Invalid path specified"}, status=403)
+        original_abs_path = os.path.normpath(os.path.join(output_dir, safe_path_canon))
+        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+            return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
+        if not os.path.isfile(original_abs_path):
+            return web.json_response({"status": "error", "message": "Original image not found"}, status=404)
+
+        # Determine thumbnail path
+        path_hash = hashlib.sha1(safe_path_canon.encode('utf-8')).hexdigest()
+        thumb_filename = f"{path_hash}.jpg"
+        thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
+
+        # Load edit data if it exists
+        edit_data = None
+        base_path, _ = os.path.splitext(safe_path_canon)
+        edit_file_rel_path = f"{base_path}.edt"
+        edit_file_abs_path = os.path.normpath(os.path.join(output_dir, edit_file_rel_path))
+        if os.path.isfile(edit_file_abs_path):
+            try:
+                async with aiofiles.open(edit_file_abs_path, 'r', encoding='utf-8') as f:
+                    content = await f.read()
+                    edit_data = json.loads(content)
+            except Exception as e:
+                print(f"🟡 [IV-RegenThumb] Warning: Could not read or parse edit file {edit_file_abs_path}: {e}")
+
+        # Run blocking thumbnail creation in an executor thread
+        loop = asyncio.get_event_loop()
+        gen_success = await loop.run_in_executor(
+            None, 
+            logic._create_thumbnail_blocking, 
+            original_abs_path, 
+            thumb_path_abs, 
+            safe_path_canon, # path_canon for DB update
+            edit_data        # The edit data
+        )
+
+        if gen_success:
+            return web.json_response({"status": "ok", "message": "Thumbnail regenerated successfully."})
+        else:
+            return web.json_response({"status": "error", "message": "Thumbnail generation failed in backend logic."}, status=500)
+
+    except json.JSONDecodeError:
+        return web.json_response({"status": "error", "message": "Invalid JSON in request"}, status=400)
+    except Exception as e:
+        traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+# <-- MODIFICATION END -->
+
+
 async def prioritize_thumbnails_route(request: web.Request):
     conn = None
     current_exception = None

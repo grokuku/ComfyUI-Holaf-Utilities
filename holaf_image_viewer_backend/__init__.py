@@ -26,6 +26,7 @@ from .routes.metadata_routes import (
 from .routes.thumbnail_routes import (
     get_thumbnail_route,
     prioritize_thumbnails_route,
+    regenerate_thumbnail_route, # <-- MODIFICATION: Ajout de la nouvelle route
     get_thumbnail_stats_route as iv_get_thumbnail_stats_route # Alias to avoid name collision
 )
 from .routes.export_routes import (
@@ -68,6 +69,7 @@ __all__ = [
     # Thumbnails
     'get_thumbnail_route',
     'prioritize_thumbnails_route',
+    'regenerate_thumbnail_route', # <-- MODIFICATION: Ajout de la nouvelle route
     'iv_get_thumbnail_stats_route',
 
     # Export

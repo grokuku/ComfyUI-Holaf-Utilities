@@ -7,39 +7,16 @@ import uuid
 
 import aiofiles
 from aiohttp import web
-from PIL import Image, ImageEnhance
+from PIL import Image # <-- MODIFICATION: ImageEnhance n'est plus nécessaire ici
 import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
 from ... import holaf_utils
 
-# --- Helper Function to Apply Edits ---
-def _apply_pil_edits(image, edit_data):
-    """
-    Applies edits from a dictionary to a PIL Image object.
-    Returns the modified image.
-    """
-    if not isinstance(edit_data, dict):
-        return image
-
-    # Phase 1: Basic adjustments
-    if 'brightness' in edit_data:
-        enhancer = ImageEnhance.Brightness(image)
-        image = enhancer.enhance(float(edit_data['brightness']))
-    
-    if 'contrast' in edit_data:
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(float(edit_data['contrast']))
-        
-    if 'saturation' in edit_data:
-        # Note: Pillow calls this "Color"
-        enhancer = ImageEnhance.Color(image)
-        image = enhancer.enhance(float(edit_data['saturation']))
-        
-    # Placeholder for future edits like crop, etc.
-    
-    return image
+# --- MODIFICATION START: La fonction _apply_pil_edits a été déplacée dans logic.py ---
+# (L'ancienne fonction a été supprimée de ce fichier)
+# --- MODIFICATION END ---
 
 
 # --- API Route Handlers ---
@@ -105,7 +82,8 @@ async def prepare_export_route(request: web.Request):
 
                 with Image.open(source_abs_path) as img:
                     img_to_save = img.copy()
-                    if edit_data: img_to_save = _apply_pil_edits(img_to_save, edit_data)
+                    # --- MODIFICATION: Utilisation de la fonction centralisée de logic.py ---
+                    if edit_data: img_to_save = logic.apply_edits_to_image(img_to_save, edit_data)
                     save_params = {}
 
                     if export_format == 'png' and include_meta and effective_meta_method == 'embed':

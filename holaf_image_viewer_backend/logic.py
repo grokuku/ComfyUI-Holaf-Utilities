@@ -10,8 +10,8 @@ import uuid
 import shutil
 from PIL import PngImagePlugin
 
-from PIL import Image, ImageOps, UnidentifiedImageError
-import folder_paths # ComfyUI global
+from PIL import Image, ImageOps, UnidentifiedImageError, ImageEnhance
+import folder_paths
 
 # Relative imports to sibling modules in the main package
 from .. import holaf_database
@@ -318,9 +318,49 @@ def _extract_image_metadata_blocking(image_path_abs):
     # print(f"✅ [Holaf-ImageViewer-Debug] Finished metadata extraction for: {filename}") # DEBUG
     return result
 
+# --- MODIFICATION START: Ajout de la fonction centralisée ---
+def apply_edits_to_image(image, edit_data):
+    """
+    Applies non-destructive edits from a dictionary to a Pillow Image object.
+    
+    Args:
+        image (PIL.Image.Image): The source image.
+        edit_data (dict): A dictionary containing edit parameters.
+                          e.g., {'brightness': 1.2, 'contrast': 1.1, 'saturation': 1.5}
+
+    Returns:
+        PIL.Image.Image: The modified image.
+    """
+    if not isinstance(edit_data, dict):
+        return image
+
+    # Phase 1: Basic adjustments
+    if 'brightness' in edit_data:
+        enhancer = ImageEnhance.Brightness(image)
+        image = enhancer.enhance(float(edit_data['brightness']))
+    
+    if 'contrast' in edit_data:
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(float(edit_data['contrast']))
+        
+    if 'saturation' in edit_data:
+        # Note: Pillow calls this "Color"
+        enhancer = ImageEnhance.Color(image)
+        image = enhancer.enhance(float(edit_data['saturation']))
+        
+    # Placeholder for future edits like crop, etc.
+    
+    return image
+# --- MODIFICATION END ---
+
+
 # --- Thumbnail Generation ---
-def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_canon_for_db_update=None):
-    """ Returns True on success, False on failure. Handles its own DB updates and error logging. """
+# <-- MODIFICATION START: Modification de la fonction de création de miniature -->
+def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_canon_for_db_update=None, edit_data=None):
+    """ 
+    Returns True on success, False on failure. Handles its own DB updates and error logging.
+    Can now apply edits before thumbnailing if edit_data is provided.
+    """
     conn_update_db = None
     update_exception = None
     try:
@@ -332,6 +372,11 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
 
         with Image.open(original_path_abs) as img:
             img_copy = img.copy()
+
+            # Apply edits if they are provided, before resizing
+            if edit_data:
+                img_copy = apply_edits_to_image(img_copy, edit_data)
+
             target_thumb_dim_config = holaf_utils.THUMBNAIL_SIZE
             target_dim_w, target_dim_h = target_thumb_dim_config if isinstance(target_thumb_dim_config, tuple) else (target_thumb_dim_config, target_thumb_dim_config)
             original_width, original_height = img_copy.size
@@ -394,6 +439,7 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
     finally:
         if conn_update_db:
             holaf_database.close_db_connection(exception=update_exception)
+# <-- MODIFICATION END -->
 
 
 # --- Metadata Management Logic ---
