@@ -88,7 +88,7 @@ FILE_TREE_ANALYSIS:
     📄 holaf_image_viewer_styles.css
       > Specific styles for the Image Viewer panel (placeholder).
     📄 holaf_image_viewer.css
-      > Main stylesheet for the Image Viewer's internal layout (gallery, panes).
+      > Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`) for the differential gallery rendering.
     📄 holaf_main_button.css
       > Styles for the main "Holaf's Utilities" button in the ComfyUI menu.
     📄 holaf_model_manager_styles.css
@@ -116,7 +116,7 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_editor.js
       > [REFACTORED] Controller for the Image Editor sub-panel. Fully state-driven, subscribes to `imageViewerState` and reacts to `activeImage` and `ui.view_mode`.
     📄 image_viewer_gallery.js
-      > [REFACTORED & FIXED] Gallery rendering, thumbnail loading, and selection logic. Now fully state-driven.
+      > [REFACTORED & FIXED] Manages gallery view with a **differential rendering** engine (`syncGallery`). Instead of redrawing, it calculates changes (add/remove) for a fluid, non-blocking UI. Uses `data-path-canon` as the unique key for thumbnails. Also handles thumbnail loading (`loadSpecificThumbnail`) and refresh logic (`refreshThumbnail`).
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
@@ -136,7 +136,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [REFACTORED] Main orchestrator for the Image Viewer. Delegates all state management to `image_viewer_state.js`. Orchestrates `image_viewer/*` modules. Most legacy state properties have been removed. -> holaf_panel_manager, image_viewer/*
+    > [REFACTORED] Main orchestrator for the Image Viewer. **Manages the non-blocking filter request queue (`isLoading`/`isDirty`)** to ensure UI responsiveness. Orchestrates all `image_viewer/*` modules. Delegates state changes to `imageViewerState`.
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -206,7 +206,6 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, ui, editor_thumbnail_refresh_fails] # Thumbnail in gallery does not update visually after Save/Reset, requires page refresh. Cache-busting attempts (timestamp, element replacement) have failed.
     - [bug, ui, editor_fullscreen_no_edits] # Live edit previews are not applied to the image in fullscreen mode.
   IN_PROGRESS:
     # (None currently identified)
@@ -228,6 +227,12 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [refactor, ui, gallery_differential_rendering] # Replaced full gallery redraws with a non-blocking, differential rendering engine for fluid filter changes.
+    - [fix, ui, editor_thumbnail_refresh_fails] # Thumbnail in gallery now updates instantly after an edit is saved via `refreshSingleThumbnail`.
+    - [fix, ui, filter_race_condition] # Implemented a non-blocking request queue (`isLoading`/`isDirty`) to handle rapid filter changes without losing state.
+    - [fix, ui, gallery_selection_bug] # Corrected a bug where clicking a thumbnail selected the wrong image after a filter change.
+    - [fix, ui, filter_persistence_partial] # Text search and date range filters now correctly restore their state when the panel is reopened.
+    - [feature, ui, gallery_empty_on_no_folder_selection] # The gallery now displays no images when no folders are selected, for a more intuitive UX.
     - [feature, ui, editor_save_cancel_and_unsaved_warning] # Implemented Save/Cancel buttons and a warning dialog for unsaved changes during navigation.
     - [feature, backend, thumbnail_regeneration_with_edits] # Implemented backend logic to regenerate thumbnails with edits applied after Save/Reset actions.
     - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.

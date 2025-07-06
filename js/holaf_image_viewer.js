@@ -6,6 +6,15 @@
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
  * REFACTOR: Final cleanup complete. All state is now managed by imageViewerState.
+ * MODIFICATION: Reworked to use the new differential gallery rendering (`syncGallery`)
+ * for a non-blocking, fluid UX when filtering. The loading overlay is now removed.
+ * FIX: Added `refreshSingleThumbnail` to be called by the editor, fixing the
+ * bug where a thumbnail would not update visually after being saved with edits.
+ * FIX: Implemented a robust, non-blocking request queue using `isLoading` and
+ * `isDirty` flags. This prevents race conditions from rapid filter clicks without
+ * locking the UI, ensuring the final view always matches the latest filter state.
+ * FEATURE: If no folder filters are selected, the gallery is now cleared instead
+ * of showing all images, providing a more intuitive user experience.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -16,8 +25,8 @@ import { imageViewerState } from './image_viewer/image_viewer_state.js';
 
 // Import modularized functionalities
 import * as Settings from './image_viewer/image_viewer_settings.js';
-import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js'; // <-- CORRECTED IMPORT
-import * as Gallery from './image_viewer/image_viewer_gallery.js';
+import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
+import { syncGallery, refreshThumbnail } from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
@@ -25,23 +34,19 @@ import { ImageEditor } from './image_viewer/image_viewer_editor.js';
 
 const STATS_REFRESH_INTERVAL_MS = 2000;
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
-const SEARCH_DEBOUNCE_MS = 400; // Note: This is now referenced inside UI.js but kept here for context
 const FILTER_REFRESH_INTERVAL_MS = 5000;
 
 const holafImageViewer = {
     // --- State & Properties ---
-    editor: null, // <-- MODIFICATION: Add property to hold the editor instance
+    editor: null,
     panelElements: null,
     isInitialized: false,
     areSettingsLoaded: false,
     settings: {}, 
-    renderedCount: 0,
     galleryObserver: null,
-    backgroundRenderHandle: null,
     fullscreenElements: null,
     _fullscreenSourceView: null,
     _lastFolderFilterState: null,
-    searchDebounceTimeout: null,
     filterRefreshIntervalId: null,
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
@@ -49,6 +54,10 @@ const holafImageViewer = {
     prioritizeTimeoutId: null,
     statsRefreshIntervalId: null,
     exportStatusRaf: null,
+
+    // --- Robust Filtering State ---
+    isLoading: false, // Is a fetch request currently in flight?
+    isDirty: false,   // Has a filter changed since the last fetch started?
     
     // --- Initialization & Core Lifecycle ---
 
@@ -84,15 +93,15 @@ const holafImageViewer = {
             this.applyPanelSettings();
             this._updateWorkflowButtonStates();
             this._updateSearchScopeButtonStates();
+            this._applyFilterStateToInputs();
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
             this.loadAndPopulateFilters();
             if (!this.isInitialized) {
                 // Initialize all state-driven components once.
                 InfoPane.setupInfoPane();
-                // <-- MODIFICATION: Store editor instance on `this` -->
-                this.editor = new ImageEditor();
-                this.editor.init(); // editor now self-manages its container
+                this.editor = new ImageEditor(this);
+                this.editor.init();
                 this.isInitialized = true;
             }
             this._updateViewerActivity(true);
@@ -104,10 +113,6 @@ const holafImageViewer = {
     hide() {
         if (this.panelElements?.panelEl) {
             this.panelElements.panelEl.style.display = "none";
-            if (this.backgroundRenderHandle) {
-                cancelAnimationFrame(this.backgroundRenderHandle);
-                this.backgroundRenderHandle = null;
-            }
             clearTimeout(this.prioritizeTimeoutId);
             this.visiblePlaceholdersToPrioritize.clear();
             if (this.statsRefreshIntervalId) {
@@ -117,6 +122,9 @@ const holafImageViewer = {
             if (this.filterRefreshIntervalId) {
                 clearInterval(this.filterRefreshIntervalId);
                 this.filterRefreshIntervalId = null;
+            }
+            if (this.galleryObserver) {
+                this.galleryObserver.disconnect();
             }
             this._updateViewerActivity(false);
         }
@@ -166,7 +174,7 @@ const holafImageViewer = {
         themeButton.title = "Change Theme";
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
 
-        const themeMenu = createThemeMenu((themeName) => this.setTheme(themeName)); // <-- CORRECTED FUNCTION CALL
+        const themeMenu = createThemeMenu((themeName) => this.setTheme(themeName));
         themeButton.onclick = (e) => {
             e.stopPropagation();
             themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
@@ -199,22 +207,15 @@ const holafImageViewer = {
         }
     },
 
-    // REFACTORED: This function is now drastically simplified.
     populatePanelContent() {
         const contentEl = this.panelElements.contentEl;
 
-        // The new UI module now handles its own HTML and listeners.
-        // We initialize it and pass the necessary callbacks from the main viewer instance.
         UI.init(contentEl, {
             getViewer: () => this,
-            onFilterChange: () => {
-                this._saveCurrentFilterState();
-                this.loadFilteredImages();
-            },
+            onFilterChange: () => this.triggerFilterChange(),
             onResetFilters: () => this._resetFilters(),
         });
 
-        // This remains necessary to enable/disable buttons like Delete, Export, etc., based on the current selection state.
         this._updateActionButtonsState();
     },
 
@@ -271,14 +272,35 @@ const holafImageViewer = {
 
     // --- Data Loading & Filtering ---
 
-    async checkForUpdates() {
+    triggerFilterChange() {
+        this._saveCurrentFilterState();
+        if (this.isLoading) {
+            this.isDirty = true;
+            return;
+        }
+        this.loadFilteredImages();
+    },
+    
+    _applyFilterStateToInputs() {
         const state = imageViewerState.getState();
-        if (state.status.isLoading) return;
+        const searchInput = document.getElementById('holaf-viewer-search-input');
+        if (searchInput) searchInput.value = state.filters.search_text || '';
+        
+        const startDateInput = document.getElementById('holaf-viewer-date-start');
+        if (startDateInput) startDateInput.value = state.filters.startDate || '';
+
+        const endDateInput = document.getElementById('holaf-viewer-date-end');
+        if (endDateInput) endDateInput.value = state.filters.endDate || '';
+    },
+
+    async checkForUpdates() {
+        if (this.isLoading) return;
         try {
             const response = await fetch('/holaf/images/last-update-time', { cache: 'no-store' });
             if (!response.ok) return;
             const data = await response.json();
 
+            const state = imageViewerState.getState();
             if (data.last_update > state.status.lastDbUpdateTime) {
                 console.log("[Holaf ImageViewer] New data detected on server, refreshing filters.");
                 imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update }});
@@ -302,9 +324,7 @@ const holafImageViewer = {
         };
         this.saveSettings(newFilters);
         
-        document.getElementById('holaf-viewer-search-input').value = '';
-        document.getElementById('holaf-viewer-date-start').value = '';
-        document.getElementById('holaf-viewer-date-end').value = '';
+        this._applyFilterStateToInputs();
         
         this._updateSearchScopeButtonStates();
         this._updateWorkflowButtonStates();
@@ -318,8 +338,7 @@ const holafImageViewer = {
         const trashCheckbox = document.getElementById('folder-filter-trashcan');
         if (trashCheckbox) trashCheckbox.checked = false;
         
-        this._saveCurrentFilterState();
-        this.loadFilteredImages();
+        this.triggerFilterChange();
     },
 
     _saveCurrentFilterState() {
@@ -362,10 +381,7 @@ const holafImageViewer = {
             foldersEl.innerHTML = '';
             formatsEl.innerHTML = '';
             
-            const onFilterChange = () => {
-                this._saveCurrentFilterState();
-                this.loadFilteredImages();
-            };
+            const onFilterChange = () => this.triggerFilterChange();
 
             const createFolderCheckbox = (folder, isRoot = false) => {
                 const id = isRoot ? 'root' : folder;
@@ -475,32 +491,45 @@ const holafImageViewer = {
     },
 
     async loadFilteredImages(isInitialLoad = false) {
-        if (imageViewerState.getState().status.isLoading) return;
-        imageViewerState.setState({ status: { isLoading: true } });
+        const { filters } = imageViewerState.getState();
 
-        const galleryEl = document.getElementById("holaf-viewer-gallery");
-
-        if (!isInitialLoad && galleryEl) {
-            galleryEl.classList.add("loading-overlay");
-        } else {
-            this.setLoadingState("Applying filters...");
+        // FEATURE: If no folders are selected, show nothing.
+        if (!filters.folder_filters || filters.folder_filters.length === 0) {
+            imageViewerState.setState({ 
+                images: [], 
+                selectedImages: new Set(),
+                activeImage: null, 
+                currentNavIndex: -1 
+            });
+            this.syncGallery();
+            this.updateStatusBar(0, imageViewerState.getState().status.totalImageCount);
+            this._updateActionButtonsState();
+            this.isLoading = false;
+            this.isDirty = false;
+            return;
         }
 
-        const currentState = imageViewerState.getState();
-        const currentSelectedPaths = new Set(Array.from(currentState.selectedImages).map(img => img.path_canon));
-        const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
+        this.isLoading = true;
+        this.isDirty = false;
         
-        imageViewerState.setState({ selectedImages: new Set() });
-
         try {
+            if (isInitialLoad) {
+                this.setLoadingState("Applying filters...");
+            }
+
+            const currentState = imageViewerState.getState();
+            const currentSelectedPaths = new Set(Array.from(currentState.selectedImages).map(img => img.path_canon));
+            const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
+            
+            imageViewerState.setState({ selectedImages: new Set() });
+
             const data = await this._fetchFilteredImages();
             const newImages = data.images || [];
             
             const newSelectedImages = new Set();
             if (currentSelectedPaths.size > 0) {
                 newImages.forEach(img => {
-                    const itemInSelection = Array.from(currentSelectedPaths).find(path => path === img.path_canon);
-                    if (itemInSelection) {
+                    if (currentSelectedPaths.has(img.path_canon)) {
                         newSelectedImages.add(img);
                     }
                 });
@@ -523,7 +552,7 @@ const holafImageViewer = {
                 currentNavIndex: newNavIndex
             });
             
-            this.renderGallery();
+            this.syncGallery();
             this.updateStatusBar(data.filtered_count, data.total_db_count);
             setTimeout(() => this._updateActiveThumbnail(newNavIndex), 100);
 
@@ -544,30 +573,28 @@ const holafImageViewer = {
             this.setLoadingState(`Error: ${e.message}`);
             imageViewerState.setState({ images: [], activeImage: null, currentNavIndex: -1, status: { error: e.message } });
         } finally {
-            imageViewerState.setState({ status: { isLoading: false } });
-            if (galleryEl) {
-                galleryEl.classList.remove("loading-overlay");
+            if (this.isDirty) {
+                // A new change happened while we were loading. Re-trigger the load.
+                this.loadFilteredImages();
+            } else {
+                // No new changes, we can stop loading.
+                this.isLoading = false;
             }
             this._updateActionButtonsState();
         }
     },
 
     // --- Gallery & Thumbnail Rendering (delegated) ---
-
-    renderGallery: function () { return Gallery.renderGallery(this); },
-    renderImageBatch: function (isBackground = false) { return Gallery.renderImageBatch(this, isBackground); },
-    startBackgroundRendering: function () { return Gallery.startBackgroundRendering(this); },
-    createPlaceholder: function (image, index) { return Gallery.createPlaceholder(this, image, index); },
-    loadSpecificThumbnail: function (placeholder, image, forceRegen = false) { return Gallery.loadSpecificThumbnail(this, placeholder, image, forceRegen); },
+    syncGallery: function () { return syncGallery(this); },
+    refreshSingleThumbnail: function (path_canon) { return refreshThumbnail(this, path_canon); },
 
     // --- Navigation & Interaction (delegated) ---
     _handleKeyDown: function (e) { return Navigation.handleKeyDown(this, e); },
     _navigate: function (direction) { return Navigation.navigate(this, direction); },
     _navigateGrid: function (direction) { return Navigation.navigateGrid(this, direction); },
     _handleEscape: function () { return Navigation.handleEscape(this); },
-    _showZoomedView: function () { 
-        const { activeImage } = imageViewerState.getState();
-        if (activeImage) Navigation.showZoomedView(this, activeImage);
+    _showZoomedView: function (image) { 
+        if (image) Navigation.showZoomedView(this, image);
     },
     _hideZoomedView: function () { return Navigation.hideZoomedView(); },
     _showFullscreenView: function () { 
@@ -718,7 +745,11 @@ const holafImageViewer = {
         const currentActive = document.querySelector('.holaf-viewer-thumbnail-placeholder.active');
         if (currentActive) currentActive.classList.remove('active');
         if (navIndex < 0 || navIndex >= imageViewerState.getState().images.length) return;
-        const newActiveThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-index="${navIndex}"]`);
+        
+        const activeImage = imageViewerState.getState().images[navIndex];
+        if (!activeImage) return;
+
+        const newActiveThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-path-canon="${activeImage.path_canon}"]`);
         if (newActiveThumbnail) {
             newActiveThumbnail.classList.add('active');
             newActiveThumbnail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -726,6 +757,7 @@ const holafImageViewer = {
     },
 
     async fetchAndUpdateThumbnailStats() {
+        if (this.isLoading) return; // Don't check stats during a load
         const state = imageViewerState.getState();
         if (state.status.allThumbnailsGenerated && this.statsRefreshIntervalId) {
             clearInterval(this.statsRefreshIntervalId); this.statsRefreshIntervalId = null; return;
@@ -769,7 +801,7 @@ const holafImageViewer = {
             return;
         }
 
-        const currentFilteredCount = filteredCount !== undefined ? filteredCount : state.status.filteredImageCount;
+        const currentFilteredCount = filteredCount !== undefined ? filteredCount : state.images.length;
         const currentTotalDbCount = totalCount !== undefined ? totalCount : state.status.totalImageCount;
 
         if (filteredCount !== undefined) imageViewerState.setState({ status: { filteredImageCount: filteredCount }});
@@ -786,8 +818,9 @@ const holafImageViewer = {
             statusText += ` | Thumbnails: N/A`;
         }
 
-        if (state.selectedImages.length > 0) {
-            statusText += ` | Selected: ${state.selectedImages.length}`;
+        const selectedCount = imageViewerState.getState().selectedImages.size;
+        if (selectedCount > 0) {
+            statusText += ` | Selected: ${selectedCount}`;
         }
         statusBarEl.textContent = statusText;
     },

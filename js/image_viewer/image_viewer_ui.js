@@ -188,8 +188,7 @@ class ImageViewerUI {
 
         const searchInputEl = this.elements.leftPane.querySelector('#holaf-viewer-search-input');
         searchInputEl.oninput = () => {
-            clearTimeout(viewer.searchDebounceTimeout);
-            viewer.searchDebounceTimeout = setTimeout(this.callbacks.onFilterChange, 400);
+            this.callbacks.onFilterChange();
         };
 
         const createScopeClickHandler = (scopeKey) => () => {

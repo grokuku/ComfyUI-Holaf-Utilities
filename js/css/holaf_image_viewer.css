@@ -13,6 +13,7 @@
  * MODIFICATION: Made UI more compact by reducing margins, gaps, and title font sizes.
  * CORRECTION: Fixed missing scrollbar on the right info pane when the editor is open.
  * MODIFICATION: Added a loading overlay effect for non-blocking filter changes.
+ * MODIFICATION: Added fade-in/out transitions for differential gallery rendering.
  */
 
 #holaf-viewer-panel .holaf-viewer-container {
@@ -318,9 +319,22 @@
     border-radius: 4px;
     overflow: hidden;
     border: 2px solid transparent;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, opacity 0.3s ease-out, transform 0.3s ease-out;
     background-color: var(--holaf-input-background);
 }
+
+/* --- MODIFICATION START: Styles for gallery diffing animations --- */
+.holaf-viewer-thumbnail-placeholder.entering {
+    opacity: 0;
+    transform: scale(0.9);
+}
+
+.holaf-viewer-thumbnail-placeholder.exiting {
+    opacity: 0;
+    transform: scale(0.9);
+    pointer-events: none; /* Prevent interaction during exit animation */
+}
+/* --- MODIFICATION END --- */
 
 .holaf-viewer-thumbnail-placeholder:hover {
     border-color: var(--holaf-accent-color);
