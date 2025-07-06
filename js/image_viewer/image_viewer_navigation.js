@@ -4,7 +4,7 @@
  *
  * This module handles all user navigation, including keyboard controls,
  * zoomed view, fullscreen view, and pan/zoom interactions.
- * REFACTOR: Updated to use the central imageViewerState.
+ * REFACTOR: Updated to use and manage ui.view_mode in the central state.
  */
 
 import { imageViewerState } from './image_viewer_state.js';
@@ -42,16 +42,12 @@ export function getFullImageUrl(image) {
 }
 
 export function showZoomedView(viewer, image) {
-    const state = imageViewerState.getState();
-    const idx = state.images.findIndex(i => i.path_canon === image.path_canon);
-    if (idx === -1) return;
-
-    const activeImage = state.images[idx];
-    imageViewerState.setState({ activeImage: activeImage, currentNavIndex: idx });
+    // REFACTOR: This function now just sets the view mode. The active image should already be set.
+    imageViewerState.setState({ ui: { view_mode: 'zoom' } });
 
     const v = document.getElementById('holaf-viewer-zoom-view');
     const i = v.querySelector('img');
-    const u = getFullImageUrl(activeImage);
+    const u = getFullImageUrl(image);
 
     const l = new Image();
     l.onload = () => {
@@ -63,30 +59,34 @@ export function showZoomedView(viewer, image) {
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
 
-    viewer.updateInfoPane(activeImage);
-    viewer._updateActiveThumbnail(idx);
+    viewer._updateActiveThumbnail(imageViewerState.getState().currentNavIndex);
     preloadNextImage(viewer);
 }
 
 export function hideZoomedView() {
+    // REFACTOR: This function's primary role is to set the state back to 'gallery'.
+    imageViewerState.setState({ ui: { view_mode: 'gallery' } });
     document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
     document.getElementById('holaf-viewer-gallery').style.display = 'flex';
 }
 
 export function showFullscreenView(viewer, image) {
     if (!image) return;
-    const state = imageViewerState.getState();
-    const idx = state.images.findIndex(i => i.path_canon === image.path_canon);
-    if (idx === -1) return;
+    
+    // REFACTOR: Determine source view *before* changing state.
+    viewer._fullscreenSourceView = imageViewerState.getState().ui.view_mode;
+    
+    // REFACTOR: Atomically set the new state.
+    imageViewerState.setState({ ui: { view_mode: 'fullscreen' } });
 
-    const activeImage = state.images[idx];
-    imageViewerState.setState({ activeImage: activeImage, currentNavIndex: idx });
-    viewer._fullscreenSourceView = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex' ? 'zoomed' : 'gallery';
-
-    if (viewer._fullscreenSourceView === 'zoomed') hideZoomedView();
+    // FIX: Manually hide the zoomed view's DOM element without calling hideZoomedView,
+    // which would incorrectly change the state to 'gallery'.
+    if (viewer._fullscreenSourceView === 'zoom') {
+        document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
+    }
 
     const { img: fImg, overlay: fOv } = viewer.fullscreenElements;
-    const u = getFullImageUrl(activeImage);
+    const u = getFullImageUrl(image);
     const l = new Image();
     l.onload = () => {
         resetTransform(viewer.fullscreenViewState, fImg);
@@ -96,16 +96,14 @@ export function showFullscreenView(viewer, image) {
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
 
-    viewer.updateInfoPane(activeImage);
-    viewer._updateActiveThumbnail(idx);
+    viewer._updateActiveThumbnail(imageViewerState.getState().currentNavIndex);
     preloadNextImage(viewer);
 }
 
 export function hideFullscreenView(viewer) {
     viewer.fullscreenElements.overlay.style.display = 'none';
-    const s = viewer._fullscreenSourceView;
-    viewer._fullscreenSourceView = null;
-    return s;
+    // REFACTOR: This function should only manage the DOM. The caller manages state.
+    return viewer._fullscreenSourceView;
 }
 
 export function navigate(viewer, direction) {
@@ -121,19 +119,18 @@ export function navigate(viewer, direction) {
     imageViewerState.setState({ currentNavIndex: clampedIndex, activeImage: newActiveImage });
 
     viewer._updateActiveThumbnail(clampedIndex);
-    viewer.updateInfoPane(newActiveImage);
     preloadNextImage(viewer);
 
     const newImageUrl = getFullImageUrl(newActiveImage);
     const loader = new Image();
     loader.onload = () => {
-        const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-        const isFullscreen = viewer.fullscreenElements.overlay.style.display === 'flex';
-        if (isZoomed) {
+        // This logic correctly updates the image within the current view mode. No changes needed.
+        const currentViewMode = imageViewerState.getState().ui.view_mode;
+        if (currentViewMode === 'zoom') {
             const zImg = document.querySelector('#holaf-viewer-zoom-view img');
             resetTransform(viewer.zoomViewState, zImg);
             zImg.src = newImageUrl;
-        } else if (isFullscreen) {
+        } else if (currentViewMode === 'fullscreen') {
             const fImg = viewer.fullscreenElements.img;
             resetTransform(viewer.fullscreenViewState, fImg);
             fImg.src = newImageUrl;
@@ -163,16 +160,24 @@ export function navigateGrid(viewer, direction) {
     imageViewerState.setState({ currentNavIndex: clampedIndex, activeImage: newActiveImage });
 
     viewer._updateActiveThumbnail(clampedIndex);
-    viewer.updateInfoPane(newActiveImage);
 }
 
 export function handleEscape(viewer) {
+    // REFACTOR: This is now the primary state manager for "going back".
     const state = imageViewerState.getState();
-    if (viewer.fullscreenElements?.overlay.style.display === 'flex') {
-        const sourceView = hideFullscreenView(viewer);
-        if (sourceView === 'zoomed' && state.activeImage) showZoomedView(viewer, state.activeImage);
-    } else if (document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex') {
-        hideZoomedView();
+    const currentMode = state.ui.view_mode;
+
+    if (currentMode === 'fullscreen') {
+        const sourceView = hideFullscreenView(viewer); // Hides DOM, returns 'zoom' or 'gallery'
+        const targetMode = sourceView === 'zoom' ? 'zoom' : 'gallery';
+        imageViewerState.setState({ ui: { view_mode: targetMode } });
+        
+        // Manually restore the zoom view's visibility if needed.
+        if (targetMode === 'zoom') {
+            document.getElementById('holaf-viewer-zoom-view').style.display = 'flex';
+        }
+    } else if (currentMode === 'zoom') {
+        hideZoomedView(); // Hides DOM and sets state to 'gallery'
     }
 }
 
@@ -181,38 +186,34 @@ export async function handleKeyDown(viewer, e) {
     
     const isInputFocused = ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase());
     if (isInputFocused && e.key !== 'Escape' && e.key !== 'Delete') return;
-
-    const isZoomed = document.getElementById('holaf-viewer-zoom-view')?.style.display === 'flex';
-    const isFullscreen = viewer.fullscreenElements?.overlay.style.display === 'flex';
-    const galleryEl = document.getElementById('holaf-viewer-gallery');
     
-    let state = imageViewerState.getState();
+    const state = imageViewerState.getState();
+    const currentMode = state.ui.view_mode;
+    const galleryEl = document.getElementById('holaf-viewer-gallery');
 
     switch (e.key) {
         case 'Delete': {
             e.preventDefault();
             const isPermanent = e.shiftKey;
             
-            if ((isZoomed || isFullscreen) && state.activeImage) {
+            if (currentMode !== 'gallery' && state.activeImage) {
                 const originalIndex = state.currentNavIndex;
-                
                 const success = await handleDeletion(viewer, isPermanent, [state.activeImage]);
                 
                 if (success) {
                     await viewer.loadFilteredImages();
-                    
-                    // After reloading, the state is new
                     const newState = imageViewerState.getState();
 
                     if (newState.images.length === 0) {
-                        if (isFullscreen) hideFullscreenView(viewer);
-                        if (isZoomed) hideZoomedView();
-                        imageViewerState.setState({ activeImage: null, currentNavIndex: -1 });
-                        viewer.updateInfoPane(null);
+                        // FIX: Explicitly clear active image and set mode to gallery
+                        if (currentMode === 'fullscreen') hideFullscreenView(viewer);
+                        document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
+                        document.getElementById('holaf-viewer-gallery').style.display = 'flex';
+                        imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
                     } else {
                         const newIndex = Math.min(originalIndex, newState.images.length - 1);
-                        imageViewerState.setState({ currentNavIndex: newIndex + 1 });
-                        navigate(viewer, -1);
+                        imageViewerState.setState({ currentNavIndex: newIndex + 1 }); // Set to item after deleted one
+                        navigate(viewer, -1); // Navigate back to the item at the new index
                     }
                 }
             } else if (state.selectedImages.length > 0) {
@@ -226,14 +227,14 @@ export async function handleKeyDown(viewer, e) {
         }
         case 'PageUp':
         case 'PageDown':
-            if (!isZoomed && !isFullscreen && galleryEl) {
+            if (currentMode === 'gallery' && galleryEl) {
                 e.preventDefault();
                 galleryEl.scrollBy({ top: (e.key === 'PageDown' ? 1 : -1) * galleryEl.clientHeight * 0.9, behavior: 'smooth' });
             }
             break;
         case 'Home':
         case 'End':
-            if (!isZoomed && !isFullscreen && state.images.length > 0) {
+            if (currentMode === 'gallery' && state.images.length > 0) {
                 e.preventDefault();
                 let targetIndex;
                 if (e.key === 'Home') {
@@ -250,14 +251,14 @@ export async function handleKeyDown(viewer, e) {
         case 'Enter':
             e.preventDefault();
             if (state.currentNavIndex === -1 && state.images.length > 0) {
-                imageViewerState.setState({ currentNavIndex: 0 });
-                state = imageViewerState.getState();
+                // Select the first image if none is active
+                imageViewerState.setState({ activeImage: state.images[0], currentNavIndex: 0 });
             }
-            if (state.currentNavIndex === -1 || !state.images[state.currentNavIndex]) return;
-
-            const imgToView = state.images[state.currentNavIndex];
-            if (!isFullscreen) showFullscreenView(viewer, imgToView);
-
+            
+            const currentState = imageViewerState.getState();
+            if (currentState.currentNavIndex !== -1 && currentState.activeImage) {
+                showFullscreenView(viewer, currentState.activeImage);
+            }
             break;
         case 'ArrowRight':
         case 'ArrowLeft':
@@ -266,7 +267,7 @@ export async function handleKeyDown(viewer, e) {
             break;
         case 'ArrowUp':
         case 'ArrowDown':
-            if (!isZoomed && !isFullscreen) {
+            if (currentMode === 'gallery') {
                 e.preventDefault();
                 navigateGrid(viewer, e.key === 'ArrowDown' ? 1 : -1);
             }

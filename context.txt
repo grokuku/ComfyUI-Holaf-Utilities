@@ -1,3 +1,6 @@
+CONTENU DES FICHIERS FOURNIS :
+
+--- context.txt ---
 --- START OF FILE context.txt ---
 
 RÈGLES OPÉRATIONNELLES :
@@ -109,17 +112,18 @@ FILE_TREE_ANALYSIS:
     > Modular JS for the Image Viewer.
     📄 image_viewer_actions.js
       > [REFACTORED] Handles user actions (delete, export). Reads from central state instead of passed `viewer` object. -> image_viewer_state, HolafPanelManager
-    📄 image_viewer_editor.js -> Controller for the Image Editor sub-panel.
+    📄 image_viewer_editor.js
+      > [REFACTORED] Controller for the Image Editor sub-panel. Fully state-driven, subscribes to `imageViewerState` and reacts to `activeImage` and `ui.view_mode`.
     📄 image_viewer_gallery.js
       > [REFACTORED & FIXED] Gallery rendering, thumbnail loading, and selection logic. Now fully state-driven.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
-      > [REFACTORED] Keyboard/mouse navigation, zoom/pan, fullscreen logic. Reads from central state.
+      > [REFACTORED] Keyboard/mouse navigation, zoom/pan, fullscreen logic. Reads from and **updates** `ui.view_mode` in the central state.
     📄 image_viewer_settings.js
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
-      > [NEW & CRITICAL] Manages the central state for the Image Viewer (filters, selection, etc.) using a pub/sub model. Core of the new state-driven architecture.
+      > [NEW & CRITICAL] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture.
     📄 image_viewer_ui.js -> Generates static HTML structure for the panel.
   📁 model_manager/
     > Modular JS for the Model Manager.
@@ -130,7 +134,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [REFACTOR IN PROGRESS] Main controller for the Image Viewer. Orchestrates all `image_viewer/` modules. Transitioning from managing its own state to delegating to `image_viewer_state.js`. Many legacy state properties still exist for compatibility during the refactor. -> holaf_panel_manager, image_viewer/*
+    > [REFACTORED] Main orchestrator for the Image Viewer. Delegates all state management to `image_viewer_state.js`. Orchestrates `image_viewer/*` modules. Most legacy state properties have been removed. -> holaf_panel_manager, image_viewer/*
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -210,8 +214,8 @@ PROJECT_STATE:
       - [DONE] Refactor of `gallery` module (selection bug fixed).
       - [DONE] Refactor of `infopane` module.
       - [TODO] Refactor `ui` module.
-      - [TODO] Refactor `editor` module.
-      - [TODO] Final cleanup of `holaf_image_viewer.js` to remove all legacy state properties.
+      - [DONE] Refactor `editor` module.
+      - [DONE] Final cleanup of `holaf_image_viewer.js` to remove all legacy state properties.
   ROADMAP:
     Global:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
@@ -229,6 +233,7 @@ PROJECT_STATE:
       - [feature, feature_watermark_overlay]
       - [ui, operations_tab(copy,paste,import,export_edt,toggle)]
   COMPLETED_FEATURES:
+    - [refactor, fix, image_viewer_editor_and_navigation_state] # Decoupled the Editor and Navigation modules from the main controller. They now subscribe to and update a central state (`activeImage`, `ui.view_mode`), which fixed critical visibility bugs with the editor panel.
     - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state, removing manual updates and making it reactive.
     - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven and fixed a critical bug in the state manager (getState) that was corrupting Set objects.
     - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters and fixed FE data parsing.
@@ -242,3 +247,5 @@ PROJECT_STATE:
     - [thumbnail_cache_system]
     - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch and added fallback logic.
     - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.
+
+--- END OF FILE context.txt ---

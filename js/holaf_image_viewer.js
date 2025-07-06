@@ -5,8 +5,7 @@
  * This script provides the client-side logic for the Holaf Image Viewer.
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
- * CORRECTION: Refactored export queue processing to use and update toasts dynamically.
- * REFACTOR: Started migration to state-driven architecture using image_viewer_state.
+ * REFACTOR: Final cleanup complete. All state is now managed by imageViewerState.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -30,7 +29,7 @@ const SEARCH_DEBOUNCE_MS = 400;
 const FILTER_REFRESH_INTERVAL_MS = 5000;
 
 const holafImageViewer = {
-    // --- Legacy State & Properties (to be phased out) ---
+    // --- Legacy State & Properties (REMOVED or MIGRATED to imageViewerState) ---
     panelElements: null,
     isInitialized: false,
     areSettingsLoaded: false,
@@ -38,11 +37,8 @@ const holafImageViewer = {
     renderedCount: 0,
     galleryObserver: null,
     backgroundRenderHandle: null,
-    // metadataAbortController is now managed inside infopane.js
     fullscreenElements: null,
-    refreshIntervalId: null,
-    editor: null,
-    _fullscreenSourceView: null,
+    _fullscreenSourceView: null, // Managed by Navigation module
     _lastFolderFilterState: null,
     searchDebounceTimeout: null,
     filterRefreshIntervalId: null,
@@ -51,14 +47,9 @@ const holafImageViewer = {
     visiblePlaceholdersToPrioritize: new Set(),
     prioritizeTimeoutId: null,
     statsRefreshIntervalId: null,
-    allThumbnailsGenerated: false,
-    currentFilteredCount: 0,
-    currentTotalDbCount: 0,
-    // lastClickedIndex is now deprecated
-    lastThumbStats: null,
+    // allThumbnailsGenerated is now in imageViewerState.status
+    // lastThumbStats is now in imageViewerState.status
     exportStatusRaf: null,
-    conflictQueue: [],
-    isProcessingConflicts: false,
     
     // --- Initialization & Core Lifecycle ---
 
@@ -98,7 +89,10 @@ const holafImageViewer = {
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
             this.loadAndPopulateFilters();
             if (!this.isInitialized) {
-                this.editor = new ImageEditor(this);
+                // Initialize all state-driven components once.
+                InfoPane.setupInfoPane();
+                const editor = new ImageEditor();
+                editor.init();
                 this.isInitialized = true;
             }
             this._updateViewerActivity(true);
@@ -110,10 +104,6 @@ const holafImageViewer = {
     hide() {
         if (this.panelElements?.panelEl) {
             this.panelElements.panelEl.style.display = "none";
-            if (this.refreshIntervalId) {
-                clearInterval(this.refreshIntervalId);
-                this.refreshIntervalId = null;
-            }
             if (this.backgroundRenderHandle) {
                 cancelAnimationFrame(this.backgroundRenderHandle);
                 this.backgroundRenderHandle = null;
@@ -200,7 +190,6 @@ const holafImageViewer = {
                 onFullscreenToggle: (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }),
             });
             this.populatePanelContent();
-            InfoPane.setupInfoPane(); // CORRECT: Initialize the self-updating infopane.
             this.applyPanelSettings();
             this._createFullscreenOverlay();
             this._attachActionListeners();
@@ -318,12 +307,9 @@ const holafImageViewer = {
         const zoomImage = zoomView.querySelector('img');
         const zoomFullscreenBtn = contentEl.querySelector('.holaf-viewer-zoom-fullscreen-icon');
         zoomCloseBtn.onclick = () => this._hideZoomedView();
-        zoomImage.ondblclick = () => this._showFullscreenView(imageViewerState.getState().activeImage);
+        zoomImage.ondblclick = () => this._showFullscreenView();
         zoomImage.onclick = (e) => e.stopPropagation();
-        zoomFullscreenBtn.onclick = () => {
-            const currentActiveImage = imageViewerState.getState().activeImage;
-            if (currentActiveImage) this._showFullscreenView(currentActiveImage);
-        };
+        zoomFullscreenBtn.onclick = () => this._showFullscreenView();
 
         Navigation.setupZoomAndPan(this.zoomViewState, zoomView, zoomImage);
         this._updateActionButtonsState();
@@ -617,11 +603,6 @@ const holafImageViewer = {
                 });
             }
 
-            imageViewerState.setState({ images: newImages, selectedImages: newSelectedImages });
-            
-            this.renderGallery();
-            this.updateStatusBar(data, true);
-
             let newActiveImage = null;
             let newNavIndex = -1;
 
@@ -629,28 +610,36 @@ const holafImageViewer = {
                 newNavIndex = newImages.findIndex(img => img.path_canon === activeImageCanonPath);
                 if (newNavIndex > -1) {
                     newActiveImage = newImages[newNavIndex];
-                    setTimeout(() => this._updateActiveThumbnail(newNavIndex), 100);
                 }
             }
-            
-            imageViewerState.setState({ activeImage: newActiveImage, currentNavIndex: newNavIndex });
-            // CORRECT: The manual call to updateInfoPane is removed. It updates automatically.
 
-            if (data.total_db_count > 0 && data.generated_thumbnails_count < data.total_db_count) {
-                this.allThumbnailsGenerated = false;
-                if (!this.statsRefreshIntervalId) {
-                    this.statsRefreshIntervalId = setInterval(() => this.fetchAndUpdateThumbnailStats(), STATS_REFRESH_INTERVAL_MS);
-                }
-            } else {
-                this.allThumbnailsGenerated = true;
-                if (this.statsRefreshIntervalId) { clearInterval(this.statsRefreshIntervalId); this.statsRefreshIntervalId = null; }
+            imageViewerState.setState({ 
+                images: newImages, 
+                selectedImages: newSelectedImages,
+                activeImage: newActiveImage, 
+                currentNavIndex: newNavIndex
+            });
+            
+            this.renderGallery();
+            this.updateStatusBar(data.filtered_count, data.total_db_count);
+            setTimeout(() => this._updateActiveThumbnail(newNavIndex), 100);
+
+            const allThumbsGenerated = data.total_db_count > 0 && data.generated_thumbnails_count >= data.total_db_count;
+            imageViewerState.setState({ status: { 
+                allThumbnailsGenerated: allThumbsGenerated,
+                generatedThumbnailsCount: data.generated_thumbnails_count || 0,
+            }});
+
+            if (!allThumbsGenerated && !this.statsRefreshIntervalId) {
+                this.statsRefreshIntervalId = setInterval(() => this.fetchAndUpdateThumbnailStats(), STATS_REFRESH_INTERVAL_MS);
+            } else if (allThumbsGenerated && this.statsRefreshIntervalId) {
+                clearInterval(this.statsRefreshIntervalId); this.statsRefreshIntervalId = null;
             }
 
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load images:", e);
             this.setLoadingState(`Error: ${e.message}`);
             imageViewerState.setState({ images: [], activeImage: null, currentNavIndex: -1, status: { error: e.message } });
-            // CORRECT: The manual call to updateInfoPane is removed.
         } finally {
             imageViewerState.setState({ status: { isLoading: false } });
             if (galleryEl) {
@@ -668,38 +657,21 @@ const holafImageViewer = {
     createPlaceholder: function (image, index) { return Gallery.createPlaceholder(this, image, index); },
     loadSpecificThumbnail: function (placeholder, image, forceRegen = false) { return Gallery.loadSpecificThumbnail(this, placeholder, image, forceRegen); },
 
-    // --- Info Pane (delegated) ---
-    // CORRECT: The manual delegation is removed.
-
     // --- Navigation & Interaction (delegated) ---
-
     _handleKeyDown: function (e) { return Navigation.handleKeyDown(this, e); },
     _navigate: function (direction) { return Navigation.navigate(this, direction); },
     _navigateGrid: function (direction) { return Navigation.navigateGrid(this, direction); },
     _handleEscape: function () { return Navigation.handleEscape(this); },
-    _showZoomedView: function (image) {
-        if (this.editor) this.editor.show(image);
-        return Navigation.showZoomedView(this, image);
+    _showZoomedView: function () { 
+        const { activeImage } = imageViewerState.getState();
+        if (activeImage) Navigation.showZoomedView(this, activeImage);
     },
-    _hideZoomedView: function () {
-        if (this.editor) this.editor.hide();
-        const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
-        if (zoomedImg) zoomedImg.style.filter = 'none';
-        return Navigation.hideZoomedView();
+    _hideZoomedView: function () { return Navigation.hideZoomedView(); },
+    _showFullscreenView: function () { 
+        const { activeImage } = imageViewerState.getState();
+        if (activeImage) Navigation.showFullscreenView(this, activeImage);
     },
-    _showFullscreenView: function (image) {
-        if (this.editor) this.editor.show(image);
-        return Navigation.showFullscreenView(this, image);
-    },
-    _hideFullscreenView: function () {
-        const fullscreenImg = this.fullscreenElements?.img;
-        if (fullscreenImg) fullscreenImg.style.filter = 'none';
-
-        if (this._fullscreenSourceView !== 'zoomed') {
-            if (this.editor) this.editor.hide();
-        }
-        return Navigation.hideFullscreenView(this);
-    },
+    _hideFullscreenView: function () { return Navigation.hideFullscreenView(this); },
 
     // --- Download Queue Processing ---
     _startStatusAnimation() {
@@ -851,22 +823,31 @@ const holafImageViewer = {
     },
 
     async fetchAndUpdateThumbnailStats() {
-        if (this.allThumbnailsGenerated && this.statsRefreshIntervalId) {
+        const state = imageViewerState.getState();
+        if (state.status.allThumbnailsGenerated && this.statsRefreshIntervalId) {
             clearInterval(this.statsRefreshIntervalId); this.statsRefreshIntervalId = null; return;
         }
         try {
             const response = await fetch('/holaf/images/thumbnail-stats');
             if (!response.ok) return;
             const stats = await response.json();
-            this.lastThumbStats = stats;
-            this.updateStatusBar(stats, false);
-            if (stats.generated_thumbnails_count >= stats.total_db_count && this.statsRefreshIntervalId) {
+            
+            const allGenerated = stats.generated_thumbnails_count >= stats.total_db_count;
+            imageViewerState.setState({ status: {
+                allThumbnailsGenerated: allGenerated,
+                generatedThumbnailsCount: stats.generated_thumbnails_count,
+                totalImageCount: stats.total_db_count
+            }});
+            
+            this.updateStatusBar();
+
+            if (allGenerated && this.statsRefreshIntervalId) {
                 clearInterval(this.statsRefreshIntervalId); this.statsRefreshIntervalId = null;
             }
         } catch (e) { /* silent fail */ }
     },
 
-    updateStatusBar(data, isFullUpdate = true) {
+    updateStatusBar(filteredCount, totalCount) {
         const statusBarEl = document.getElementById('holaf-viewer-statusbar');
         if (!statusBarEl) return;
         const state = imageViewerState.getState();
@@ -885,29 +866,21 @@ const holafImageViewer = {
             return;
         }
 
-        if (isFullUpdate && data) {
-            this.currentFilteredCount = data.filtered_count !== undefined ? data.filtered_count : this.currentFilteredCount;
-            this.currentTotalDbCount = data.total_db_count !== undefined ? data.total_db_count : this.currentTotalDbCount;
-        }
+        const currentFilteredCount = filteredCount !== undefined ? filteredCount : state.status.filteredImageCount;
+        const currentTotalDbCount = totalCount !== undefined ? totalCount : state.status.totalImageCount;
 
-        let statusText = `Displaying ${this.currentFilteredCount} of ${this.currentTotalDbCount} total images.`;
+        if (filteredCount !== undefined) imageViewerState.setState({ status: { filteredImageCount: filteredCount }});
+        if (totalCount !== undefined) imageViewerState.setState({ status: { totalImageCount: totalCount }});
 
-        const generatedCount = (data && data.generated_thumbnails_count !== undefined)
-            ? data.generated_thumbnails_count
-            : (this.lastThumbStats ? this.lastThumbStats.generated_thumbnails_count : 0);
-
-        const totalForThumbs = (data && data.total_db_count !== undefined)
-            ? data.total_db_count
-            : (this.lastThumbStats ? this.lastThumbStats.total_db_count : this.currentTotalDbCount);
+        let statusText = `Displaying ${currentFilteredCount} of ${currentTotalDbCount} total images.`;
 
         if (state.exporting.queue.length > 0) {
             statusText += ` | Export Queue: ${state.exporting.queue.length} file(s)`;
-        } else if (totalForThumbs > 0) {
-            const percentage = ((generatedCount / totalForThumbs) * 100).toFixed(1);
-            statusText += ` | Thumbnails: ${generatedCount}/${totalForThumbs} (${percentage}%)`;
-            this.allThumbnailsGenerated = (generatedCount >= totalForThumbs);
-        } else {
-            statusText += ` | Thumbnails: N/A`; this.allThumbnailsGenerated = true;
+        } else if (currentTotalDbCount > 0 && !state.status.allThumbnailsGenerated) {
+            const percentage = ((state.status.generatedThumbnailsCount / currentTotalDbCount) * 100).toFixed(1);
+            statusText += ` | Thumbnails: ${state.status.generatedThumbnailsCount}/${currentTotalDbCount} (${percentage}%)`;
+        } else if (currentTotalDbCount === 0) {
+            statusText += ` | Thumbnails: N/A`;
         }
 
         if (state.selectedImages.length > 0) {

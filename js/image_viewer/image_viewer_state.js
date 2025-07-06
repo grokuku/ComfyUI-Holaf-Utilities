@@ -35,6 +35,7 @@ class ImageViewerState {
                 export_format: 'png',
                 export_include_meta: true,
                 export_meta_method: 'embed',
+                view_mode: 'gallery',
             },
             
             // Statut de l'application
@@ -45,6 +46,8 @@ class ImageViewerState {
                 error: null,
                 totalImageCount: 0,
                 filteredImageCount: 0,
+                allThumbnailsGenerated: false,
+                generatedThumbnailsCount: 0,
             },
 
             // État spécifique à l'exportation (processus en cours)
