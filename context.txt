@@ -124,7 +124,8 @@ FILE_TREE_ANALYSIS:
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
       > [NEW & CRITICAL] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture.
-    📄 image_viewer_ui.js -> Generates static HTML structure for the panel.
+    📄 image_viewer_ui.js
+      > [REFACTORED & ACTIVE] Builds the main panel UI structure. Now an active, state-aware component that subscribes to `imageViewerState`.
   📁 model_manager/
     > Modular JS for the Model Manager.
     📄 model_manager_actions.js -> holaf_panel_manager
@@ -208,14 +209,7 @@ PROJECT_STATE:
   ACTIVE_BUGS:
     # (None currently identified)
   IN_PROGRESS:
-    - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
-      - [DONE] Creation of `js/image_viewer/image_viewer_state.js`.
-      - [DONE] Refactor of `settings`, `actions`, `navigation` modules to use the central state.
-      - [DONE] Refactor of `gallery` module (selection bug fixed).
-      - [DONE] Refactor of `infopane` module.
-      - [TODO] Refactor `ui` module.
-      - [DONE] Refactor `editor` module.
-      - [DONE] Final cleanup of `holaf_image_viewer.js` to remove all legacy state properties.
+    # (None currently identified)
   ROADMAP:
     Global:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
@@ -233,6 +227,7 @@ PROJECT_STATE:
       - [feature, feature_watermark_overlay]
       - [ui, operations_tab(copy,paste,import,export_edt,toggle)]
   COMPLETED_FEATURES:
+    - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
     - [refactor, fix, image_viewer_editor_and_navigation_state] # Decoupled the Editor and Navigation modules from the main controller. They now subscribe to and update a central state (`activeImage`, `ui.view_mode`), which fixed critical visibility bugs with the editor panel.
     - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state, removing manual updates and making it reactive.
     - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven and fixed a critical bug in the state manager (getState) that was corrupting Set objects.

@@ -16,7 +16,7 @@ import { imageViewerState } from './image_viewer/image_viewer_state.js';
 
 // Import modularized functionalities
 import * as Settings from './image_viewer/image_viewer_settings.js';
-import * as UI from './image_viewer/image_viewer_ui.js';
+import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js'; // <-- CORRECTED IMPORT
 import * as Gallery from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
@@ -25,7 +25,7 @@ import { ImageEditor } from './image_viewer/image_viewer_editor.js';
 
 const STATS_REFRESH_INTERVAL_MS = 2000;
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
-const SEARCH_DEBOUNCE_MS = 400;
+const SEARCH_DEBOUNCE_MS = 400; // Note: This is now referenced inside UI.js but kept here for context
 const FILTER_REFRESH_INTERVAL_MS = 5000;
 
 const holafImageViewer = {
@@ -92,7 +92,7 @@ const holafImageViewer = {
                 // Initialize all state-driven components once.
                 InfoPane.setupInfoPane();
                 const editor = new ImageEditor();
-                editor.init();
+                editor.init(); // editor now self-manages its container
                 this.isInitialized = true;
             }
             this._updateViewerActivity(true);
@@ -166,7 +166,7 @@ const holafImageViewer = {
         themeButton.title = "Change Theme";
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
 
-        const themeMenu = UI.createThemeMenu((themeName) => this.setTheme(themeName));
+        const themeMenu = createThemeMenu((themeName) => this.setTheme(themeName)); // <-- CORRECTED FUNCTION CALL
         themeButton.onclick = (e) => {
             e.stopPropagation();
             themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
@@ -199,119 +199,22 @@ const holafImageViewer = {
         }
     },
 
+    // REFACTORED: This function is now drastically simplified.
     populatePanelContent() {
         const contentEl = this.panelElements.contentEl;
-        const state = imageViewerState.getState();
-        contentEl.style.display = 'flex';
-        contentEl.style.flexDirection = 'column';
-        contentEl.innerHTML = UI.getPanelHTML();
 
-        const onFilterChange = () => {
-            this._saveCurrentFilterState();
-            this.loadFilteredImages();
-        };
+        // The new UI module now handles its own HTML and listeners.
+        // We initialize it and pass the necessary callbacks from the main viewer instance.
+        UI.init(contentEl, {
+            getViewer: () => this,
+            onFilterChange: () => {
+                this._saveCurrentFilterState();
+                this.loadFilteredImages();
+            },
+            onResetFilters: () => this._resetFilters(),
+        });
 
-        contentEl.querySelector('#holaf-viewer-btn-reset-filters').onclick = (e) => {
-            e.preventDefault();
-            this._resetFilters();
-        };
-        
-        const searchInputEl = contentEl.querySelector('#holaf-viewer-search-input');
-        searchInputEl.value = state.filters.search_text || '';
-        searchInputEl.oninput = () => {
-            clearTimeout(this.searchDebounceTimeout);
-            this.searchDebounceTimeout = setTimeout(onFilterChange, SEARCH_DEBOUNCE_MS);
-        };
-
-        const nameScopeBtn = contentEl.querySelector('#holaf-search-scope-filename');
-        const promptScopeBtn = contentEl.querySelector('#holaf-search-scope-prompt');
-        const workflowScopeBtn = contentEl.querySelector('#holaf-search-scope-workflow');
-
-        const createScopeClickHandler = (scopeKey) => () => {
-            const currentFilters = imageViewerState.getState().filters;
-            const newScopeState = { [scopeKey]: !currentFilters[scopeKey] };
-            
-            if (searchInputEl.value.trim() !== "") {
-                this.saveSettings(newScopeState);
-                onFilterChange();
-            } else {
-                this.saveSettings(newScopeState);
-                imageViewerState.setState({ filters: newScopeState });
-                this._updateSearchScopeButtonStates();
-            }
-        };
-
-        nameScopeBtn.onclick = createScopeClickHandler('search_scope_name');
-        promptScopeBtn.onclick = createScopeClickHandler('search_scope_prompt');
-        workflowScopeBtn.onclick = createScopeClickHandler('search_scope_workflow');
-
-        const internalBtn = contentEl.querySelector('#holaf-workflow-filter-internal');
-        const externalBtn = contentEl.querySelector('#holaf-workflow-filter-external');
-
-        internalBtn.onclick = () => {
-            const currentFilters = imageViewerState.getState().filters;
-            this.saveSettings({ workflow_filter_internal: !currentFilters.workflow_filter_internal });
-            this._updateWorkflowButtonStates();
-            onFilterChange();
-        };
-        externalBtn.onclick = () => {
-            const currentFilters = imageViewerState.getState().filters;
-            this.saveSettings({ workflow_filter_external: !currentFilters.workflow_filter_external });
-            this._updateWorkflowButtonStates();
-            onFilterChange();
-        };
-
-        contentEl.querySelector('#holaf-viewer-folders-select-all').onclick = (e) => {
-            e.preventDefault();
-            contentEl.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
-                if (!cb.disabled) cb.checked = true;
-            });
-            onFilterChange();
-        };
-        contentEl.querySelector('#holaf-viewer-folders-select-none').onclick = (e) => {
-            e.preventDefault();
-            contentEl.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
-                if (!cb.disabled) cb.checked = false;
-            });
-            onFilterChange();
-        };
-
-        const dateStartEl = contentEl.querySelector('#holaf-viewer-date-start');
-        const dateEndEl = contentEl.querySelector('#holaf-viewer-date-end');
-        dateStartEl.value = state.filters.startDate || '';
-        dateEndEl.value = state.filters.endDate || '';
-        dateStartEl.onchange = onFilterChange;
-        dateEndEl.onchange = onFilterChange;
-
-        const thumbFitToggle = contentEl.querySelector('#holaf-viewer-thumb-fit-toggle');
-        thumbFitToggle.checked = state.ui.thumbnail_fit === 'contain';
-        thumbFitToggle.onchange = (e) => {
-            this.saveSettings({ thumbnail_fit: e.target.checked ? 'contain' : 'cover' });
-            this._applyThumbnailFit();
-        };
-
-        const thumbSizeSlider = contentEl.querySelector('#holaf-viewer-thumb-size-slider');
-        const thumbSizeValue = contentEl.querySelector('#holaf-viewer-thumb-size-value');
-        thumbSizeSlider.value = state.ui.thumbnail_size;
-        thumbSizeValue.textContent = `${state.ui.thumbnail_size}px`;
-        thumbSizeSlider.oninput = (e) => {
-            thumbSizeValue.textContent = `${e.target.value}px`;
-        };
-        thumbSizeSlider.onchange = (e) => {
-            this.saveSettings({ thumbnail_size: parseInt(e.target.value) });
-            this._applyThumbnailSize();
-        };
-
-        const zoomView = contentEl.querySelector('#holaf-viewer-zoom-view');
-        const zoomCloseBtn = contentEl.querySelector('.holaf-viewer-zoom-close');
-        const zoomImage = zoomView.querySelector('img');
-        const zoomFullscreenBtn = contentEl.querySelector('.holaf-viewer-zoom-fullscreen-icon');
-        zoomCloseBtn.onclick = () => this._hideZoomedView();
-        zoomImage.ondblclick = () => this._showFullscreenView();
-        zoomImage.onclick = (e) => e.stopPropagation();
-        zoomFullscreenBtn.onclick = () => this._showFullscreenView();
-
-        Navigation.setupZoomAndPan(this.zoomViewState, zoomView, zoomImage);
+        // This remains necessary to enable/disable buttons like Delete, Export, etc., based on the current selection state.
         this._updateActionButtonsState();
     },
 
