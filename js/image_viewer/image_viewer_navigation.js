@@ -9,10 +9,33 @@
 
 import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
-// <-- MODIFICATION: Import HolafPanelManager to create dialogs -->
 import { HolafPanelManager } from '../holaf_panel_manager.js';
 
-// <-- MODIFICATION START: New helper function for unsaved changes -->
+// --- NOUVEAU CORRECTIF : Helper pour appliquer les filtres de l'éditeur ---
+/**
+ * Applies the current editor's filter preview to a given image element.
+ * @param {object} viewer The main viewer instance which contains the editor.
+ * @param {HTMLImageElement} imageEl The image element to apply the filter to.
+ */
+function _applyEditorPreview(viewer, imageEl) {
+    if (!viewer.editor || !imageEl) return;
+    
+    // On s'assure que l'image n'est pas "vide" ou en cours de chargement
+    if (!imageEl.src || imageEl.src.endsWith('undefined')) {
+        imageEl.style.filter = 'none';
+        return;
+    }
+
+    const { currentState } = viewer.editor;
+    if (!currentState) {
+        imageEl.style.filter = 'none';
+        return;
+    }
+
+    const filterValue = `brightness(${currentState.brightness}) contrast(${currentState.contrast}) saturate(${currentState.saturation})`;
+    imageEl.style.filter = filterValue;
+}
+
 /**
  * Checks if the editor has unsaved changes and prompts the user if so.
  * @param {object} viewer The main viewer instance.
@@ -20,7 +43,7 @@ import { HolafPanelManager } from '../holaf_panel_manager.js';
  */
 async function _handleUnsavedChanges(viewer) {
     if (!viewer.editor || !viewer.editor.hasUnsavedChanges()) {
-        return 'proceed'; // No unsaved changes, continue immediately.
+        return 'proceed';
     }
 
     const choice = await HolafPanelManager.createDialog({
@@ -38,14 +61,13 @@ async function _handleUnsavedChanges(viewer) {
             await viewer.editor._saveEdits();
             return 'proceed';
         case 'discard':
-            viewer.editor._cancelEdits(); // This resets the dirty state
+            viewer.editor._cancelEdits();
             return 'proceed';
         case 'cancel':
         default:
             return 'cancel';
     }
 }
-// <-- MODIFICATION END -->
 
 
 function resetTransform(state, imageEl) {
@@ -80,7 +102,6 @@ export function getFullImageUrl(image) {
 }
 
 export function showZoomedView(viewer, image) {
-    // REFACTOR: This function now just sets the view mode. The active image should already be set.
     imageViewerState.setState({ ui: { view_mode: 'zoom' } });
 
     const v = document.getElementById('holaf-viewer-zoom-view');
@@ -93,6 +114,7 @@ export function showZoomedView(viewer, image) {
         i.src = u;
         v.style.display = 'flex';
         document.getElementById('holaf-viewer-gallery').style.display = 'none';
+        _applyEditorPreview(viewer, i); // CORRECTIF: Appliquer les filtres
     };
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
@@ -102,7 +124,6 @@ export function showZoomedView(viewer, image) {
 }
 
 export function hideZoomedView() {
-    // REFACTOR: This function's primary role is to set the state back to 'gallery'.
     imageViewerState.setState({ ui: { view_mode: 'gallery' } });
     document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
     document.getElementById('holaf-viewer-gallery').style.display = 'flex';
@@ -111,14 +132,9 @@ export function hideZoomedView() {
 export function showFullscreenView(viewer, image) {
     if (!image) return;
     
-    // REFACTOR: Determine source view *before* changing state.
     viewer._fullscreenSourceView = imageViewerState.getState().ui.view_mode;
-    
-    // REFACTOR: Atomically set the new state.
     imageViewerState.setState({ ui: { view_mode: 'fullscreen' } });
 
-    // FIX: Manually hide the zoomed view's DOM element without calling hideZoomedView,
-    // which would incorrectly change the state to 'gallery'.
     if (viewer._fullscreenSourceView === 'zoom') {
         document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
     }
@@ -130,6 +146,7 @@ export function showFullscreenView(viewer, image) {
         resetTransform(viewer.fullscreenViewState, fImg);
         fImg.src = u;
         fOv.style.display = 'flex';
+        _applyEditorPreview(viewer, fImg); // CORRECTIF: Appliquer les filtres
     };
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
@@ -140,11 +157,9 @@ export function showFullscreenView(viewer, image) {
 
 export function hideFullscreenView(viewer) {
     viewer.fullscreenElements.overlay.style.display = 'none';
-    // REFACTOR: This function should only manage the DOM. The caller manages state.
     return viewer._fullscreenSourceView;
 }
 
-// <-- MODIFICATION: Function is now async and handles unsaved changes -->
 export async function navigate(viewer, direction) {
     const action = await _handleUnsavedChanges(viewer);
     if (action === 'cancel') return;
@@ -166,16 +181,17 @@ export async function navigate(viewer, direction) {
     const newImageUrl = getFullImageUrl(newActiveImage);
     const loader = new Image();
     loader.onload = () => {
-        // This logic correctly updates the image within the current view mode. No changes needed.
         const currentViewMode = imageViewerState.getState().ui.view_mode;
         if (currentViewMode === 'zoom') {
             const zImg = document.querySelector('#holaf-viewer-zoom-view img');
             resetTransform(viewer.zoomViewState, zImg);
             zImg.src = newImageUrl;
+            _applyEditorPreview(viewer, zImg); // CORRECTIF: Appliquer les filtres en naviguant
         } else if (currentViewMode === 'fullscreen') {
             const fImg = viewer.fullscreenElements.img;
             resetTransform(viewer.fullscreenViewState, fImg);
-            fImg.src = newImageUrl;
+fImg.src = newImageUrl;
+            _applyEditorPreview(viewer, fImg); // CORRECTIF: Appliquer les filtres en naviguant
         }
     };
     loader.onerror = () => console.error(`Preload failed: ${newImageUrl}`);
@@ -204,7 +220,6 @@ export function navigateGrid(viewer, direction) {
     viewer._updateActiveThumbnail(clampedIndex);
 }
 
-// <-- MODIFICATION: Function is now async and handles unsaved changes -->
 export async function handleEscape(viewer) {
     const state = imageViewerState.getState();
     const currentMode = state.ui.view_mode;
@@ -216,6 +231,9 @@ export async function handleEscape(viewer) {
         
         if (targetMode === 'zoom') {
             document.getElementById('holaf-viewer-zoom-view').style.display = 'flex';
+            // CORRECTIF: S'assurer que les filtres sont ré-appliqués en sortant du plein écran vers le zoom
+            const zImg = document.querySelector('#holaf-viewer-zoom-view img');
+            _applyEditorPreview(viewer, zImg);
         }
     } else if (currentMode === 'zoom') {
         const action = await _handleUnsavedChanges(viewer);
@@ -224,7 +242,6 @@ export async function handleEscape(viewer) {
     }
 }
 
-// <-- MODIFICATION: Function is now async to await navigation calls -->
 export async function handleKeyDown(viewer, e) {
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
     
@@ -236,6 +253,34 @@ export async function handleKeyDown(viewer, e) {
     const galleryEl = document.getElementById('holaf-viewer-gallery');
 
     switch (e.key) {
+        case ' ': {
+            if (currentMode !== 'gallery' || !state.activeImage) break;
+            e.preventDefault();
+
+            const currentSelection = new Set([...state.selectedImages].map(img => img.path_canon));
+            const activeImagePath = state.activeImage.path_canon;
+
+            if (currentSelection.has(activeImagePath)) {
+                currentSelection.delete(activeImagePath);
+            } else {
+                currentSelection.add(activeImagePath);
+            }
+
+            const newSelectedImages = new Set(
+                state.images.filter(img => currentSelection.has(img.path_canon))
+            );
+
+            imageViewerState.setState({ selectedImages: newSelectedImages });
+
+            // Update checkbox state visually
+            const activeThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder.active`);
+            if (activeThumbnail) {
+                const checkbox = activeThumbnail.querySelector('.holaf-viewer-thumb-checkbox');
+                if(checkbox) checkbox.checked = currentSelection.has(activeImagePath);
+            }
+            viewer._updateActionButtonsState(); // Update action buttons as selection changed
+            break;
+        }
         case 'Delete': {
             e.preventDefault();
             const isPermanent = e.shiftKey;

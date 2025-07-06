@@ -5,10 +5,30 @@
  * This module handles the logic for user actions like deleting, restoring,
  * and managing metadata for selected images.
  * REFACTOR: Updated to use the central imageViewerState.
+ * CORRECTIF: Actions now correctly target the active image in zoom/fullscreen view.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from "./image_viewer_state.js";
+
+// --- CORRECTIF : Nouvelle fonction d'aide pour déterminer la cible des actions ---
+/**
+ * Determines the target images for an action based on the current view mode.
+ * @returns {object[]} An array of image objects to be processed.
+ */
+function _getTargets() {
+    const state = imageViewerState.getState();
+    const viewMode = state.ui.view_mode;
+
+    if (viewMode === 'zoom' || viewMode === 'fullscreen') {
+        // En vue zoom ou plein écran, la cible est l'image active.
+        return state.activeImage ? [state.activeImage] : [];
+    }
+    
+    // Sinon, en vue galerie, la cible est la sélection multiple.
+    return state.selectedImages;
+}
+
 
 /**
  * Attaches click listeners to the main action buttons.
@@ -34,8 +54,8 @@ export function attachActionListeners(viewer) {
  * @param {object} viewer - The main image viewer instance.
  */
 export function updateActionButtonsState(viewer) {
-    const state = imageViewerState.getState();
-    const selectedImages = state.selectedImages; // This is an array from getState()
+    // CORRECTIF : Utiliser _getTargets() pour obtenir les images concernées.
+    const targetImages = _getTargets();
 
     const btnDelete = document.getElementById('holaf-viewer-btn-delete');
     const btnRestore = document.getElementById('holaf-viewer-btn-restore');
@@ -44,14 +64,14 @@ export function updateActionButtonsState(viewer) {
     const btnExport = document.getElementById('holaf-viewer-btn-export');
     const btnImport = document.getElementById('holaf-viewer-btn-import');
 
-    const hasSelection = selectedImages.length > 0;
-    const hasPngSelection = hasSelection && selectedImages.some(img => img.format.toLowerCase() === 'png');
+    const hasSelection = targetImages.length > 0;
+    const hasPngSelection = hasSelection && targetImages.some(img => img.format.toLowerCase() === 'png');
 
     let canRestore = false;
     if (hasSelection) {
-        canRestore = selectedImages.every(img => img.is_trashed);
+        canRestore = targetImages.every(img => img.is_trashed);
     }
-    const canPerformNonTrashActions = hasSelection && selectedImages.every(img => !img.is_trashed);
+    const canPerformNonTrashActions = hasSelection && targetImages.every(img => !img.is_trashed);
 
     if (btnDelete) btnDelete.disabled = !canPerformNonTrashActions;
     if (btnRestore) btnRestore.disabled = !canRestore;
@@ -65,11 +85,12 @@ export function updateActionButtonsState(viewer) {
  * Handles deletion of selected images, with an option for permanent deletion.
  * @param {object} viewer - The main image viewer instance.
  * @param {boolean} [permanent=false] - If true, permanently deletes files.
- * @param {object[]|null} [imagesToProcess=null] - Specific images to delete. If null, uses selected images from state.
+ * @param {object[]|null} [imagesToProcess=null] - Specific images to delete. If null, uses context-aware targets.
  * @returns {Promise<boolean>} True if the operation was successful, otherwise false.
  */
 export async function handleDeletion(viewer, permanent = false, imagesToProcess = null) {
-    const imagesForDeletion = imagesToProcess || imageViewerState.getState().selectedImages;
+    // CORRECTIF : Le paramètre `imagesToProcess` a la priorité (utilisé par ex. par la touche Suppr), sinon on utilise _getTargets().
+    const imagesForDeletion = imagesToProcess || _getTargets();
     if (imagesForDeletion.length === 0) return false;
     
     const isAnyFileTrashed = imagesForDeletion.some(img => img.is_trashed);
@@ -154,13 +175,14 @@ export async function handleDelete(viewer) {
  * @param {object} viewer - The main image viewer instance.
  */
 export async function handleRestore(viewer) {
-    const selectedImages = imageViewerState.getState().selectedImages;
-    if (selectedImages.length === 0) return;
-    const pathsToRestore = selectedImages.map(img => img.path_canon);
+    // CORRECTIF : Utiliser _getTargets() pour obtenir les images concernées.
+    const imagesToRestore = _getTargets();
+    if (imagesToRestore.length === 0) return;
+    const pathsToRestore = imagesToRestore.map(img => img.path_canon);
 
     if (await HolafPanelManager.createDialog({
         title: "Confirm Restore",
-        message: `Are you sure you want to restore ${selectedImages.length} image(s) from the trashcan?`,
+        message: `Are you sure you want to restore ${imagesToRestore.length} image(s) from the trashcan?`,
         buttons: [
             { text: "Cancel", value: false, type: "cancel" },
             { text: "Restore", value: true, type: "confirm" }
@@ -275,7 +297,9 @@ export async function handleExtractMetadata(viewer) {
         return;
     }
 
-    const pngImages = imageViewerState.getState().selectedImages.filter(img => img.format.toLowerCase() === 'png');
+    // CORRECTIF : Utiliser _getTargets() pour obtenir les images concernées.
+    const targetImages = _getTargets();
+    const pngImages = targetImages.filter(img => img.format.toLowerCase() === 'png');
 
     if (pngImages.length === 0) {
         HolafPanelManager.createDialog({
@@ -346,7 +370,9 @@ export async function handleInjectMetadata(viewer) {
         return;
     }
 
-    const pngImages = imageViewerState.getState().selectedImages.filter(img => img.format.toLowerCase() === 'png');
+    // CORRECTIF : Utiliser _getTargets() pour obtenir les images concernées.
+    const targetImages = _getTargets();
+    const pngImages = targetImages.filter(img => img.format.toLowerCase() === 'png');
 
     if (pngImages.length === 0) {
         HolafPanelManager.createDialog({
@@ -412,15 +438,14 @@ export async function handleInjectMetadata(viewer) {
  * @param {object} viewer - The main image viewer instance.
  */
 export function handleExport(viewer) {
-    const state = imageViewerState.getState();
-    const selectedImages = state.selectedImages;
-    if (selectedImages.length === 0) return;
+    // CORRECTIF : Utiliser _getTargets() pour obtenir les images concernées.
+    const imagesToExport = _getTargets();
+    if (imagesToExport.length === 0) return;
 
     const overlay = document.createElement('div');
     overlay.id = 'holaf-viewer-export-dialog-overlay';
     
-    const imageCount = selectedImages.length;
-    // Note: export settings are not yet in the state manager, reading from legacy object for now.
+    const imageCount = imagesToExport.length;
     const savedSettings = viewer.settings;
 
     overlay.innerHTML = `
@@ -495,7 +520,8 @@ export function handleExport(viewer) {
         });
         
         const payload = {
-            paths_canon: imageViewerState.getState().selectedImages.map(img => img.path_canon),
+            // CORRECTIF : Utiliser les images ciblées et non plus la sélection de l'état.
+            paths_canon: imagesToExport.map(img => img.path_canon),
             export_format: format,
             include_meta: includeMeta,
             meta_method: metaMethod

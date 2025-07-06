@@ -26,7 +26,7 @@ import { imageViewerState } from './image_viewer/image_viewer_state.js';
 // Import modularized functionalities
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
-import { syncGallery, refreshThumbnail } from './image_viewer/image_viewer_gallery.js';
+import { initGallery, syncGallery } from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
@@ -103,6 +103,7 @@ const holafImageViewer = {
                 this.editor = new ImageEditor(this);
                 this.editor.init();
                 this.isInitialized = true;
+                initGallery(this);
             }
             this._updateViewerActivity(true);
             if (this.filterRefreshIntervalId) clearInterval(this.filterRefreshIntervalId);

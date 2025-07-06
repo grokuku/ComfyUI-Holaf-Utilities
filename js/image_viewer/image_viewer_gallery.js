@@ -21,6 +21,21 @@ const PRIORITIZE_BATCH_SIZE = 50;
 const PRIORITIZE_DEBOUNCE_MS = 500;
 const ANIMATION_DURATION_MS = 300; // Must match CSS transition duration
 
+// --- CORRECTIF : Nouvelle fonction d'initialisation pour attacher les écouteurs globaux ---
+/**
+ * Initializes the gallery module by setting up global event listeners.
+ * @param {object} viewer - The main image viewer instance.
+ */
+export function initGallery(viewer) {
+    document.addEventListener('holaf-refresh-thumbnail', (e) => {
+        const { path_canon } = e.detail;
+        if (path_canon) {
+            console.log(`[Holaf Gallery] Received holaf-refresh-thumbnail event for ${path_canon}`);
+            _refreshSingleThumbnail(viewer, path_canon);
+        }
+    });
+}
+
 /**
  * Schedules a debounced call to the thumbnail prioritization API.
  * @param {object} viewer - The main image viewer instance.
@@ -53,9 +68,9 @@ function schedulePrioritizeThumbnails(viewer) {
  * @param {object} viewer - The main image viewer instance.
  * @param {HTMLElement} placeholder - The placeholder element.
  * @param {object} image - The image data object.
- * @param {boolean} [forceRegen=false] - Whether to force regeneration of the thumbnail.
+ * @param {boolean} [forceReload=false] - Whether to force a cache bust for the thumbnail.
  */
-export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = false) {
+export function loadSpecificThumbnail(viewer, placeholder, image, forceReload = false) {
     // Clear any previous error state
     placeholder.classList.remove('error');
     const existingError = placeholder.querySelector('.holaf-viewer-error-overlay');
@@ -75,16 +90,18 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
         filename: image.filename,
         subfolder: image.subfolder,
         mtime: image.mtime,
-        // Cache-busting parameter for forced regeneration
-        t: forceRegen ? new Date().getTime() : '' 
+        // Cache-busting parameter for forced reload
+        t: forceReload ? new Date().getTime() : '' 
     };
-    if (forceRegen) params.force_regen = 'true';
+    // No need for force_regen here, the backend call is handled by the editor.
     imageUrl.search = new URLSearchParams(params);
 
     const img = document.createElement('img');
     img.src = imageUrl.href;
     img.alt = image.filename;
     img.loading = "lazy";
+    // --- CORRECTIF : Ajouter la classe thumbnail ---
+    img.className = "holaf-image-viewer-thumbnail";
 
     img.onload = () => {
         if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
@@ -128,7 +145,7 @@ export function loadSpecificThumbnail(viewer, placeholder, image, forceRegen = f
         retryButton.onclick = (e) => {
             e.stopPropagation();
             placeholder.dataset.thumbnailLoadingOrLoaded = "";
-            loadSpecificThumbnail(viewer, placeholder, image, true);
+            loadSpecificThumbnail(viewer, placeholder, image, true); // Retry with force regen
         };
         
         placeholder.appendChild(errorOverlay);
@@ -148,7 +165,6 @@ function createPlaceholder(viewer, image, index) {
     const placeholder = document.createElement('div');
     placeholder.className = 'holaf-viewer-thumbnail-placeholder';
     placeholder.dataset.index = index;
-    // CRITICAL: Add path_canon as a unique key for diffing.
     placeholder.dataset.pathCanon = image.path_canon;
 
     const editIcon = document.createElement('div');
@@ -169,7 +185,7 @@ function createPlaceholder(viewer, image, index) {
     checkbox.className = 'holaf-viewer-thumb-checkbox';
     
     const { selectedImages } = imageViewerState.getState();
-    const isSelected = selectedImages.some(selImg => selImg.path_canon === image.path_canon);
+    const isSelected = [...selectedImages].some(selImg => selImg.path_canon === image.path_canon);
     checkbox.checked = isSelected;
     checkbox.title = "Select image";
     placeholder.appendChild(checkbox);
@@ -180,15 +196,14 @@ function createPlaceholder(viewer, image, index) {
         }
 
         const state = imageViewerState.getState();
-        // FIX: Read index from the element's dataset AT CLICK TIME to avoid stale closure values.
         const clickedIndex = parseInt(e.currentTarget.dataset.index, 10);
-        if (isNaN(clickedIndex)) return; // Safety check
+        if (isNaN(clickedIndex)) return;
 
         const clickedImageData = state.images[clickedIndex];
-        if (!clickedImageData) return; // Safety check
+        if (!clickedImageData) return;
 
         const anchorIndex = state.currentNavIndex > -1 ? state.currentNavIndex : clickedIndex;
-        const selectedPaths = new Set(state.selectedImages.map(img => img.path_canon));
+        const selectedPaths = new Set([...state.selectedImages].map(img => img.path_canon));
 
         if (e.shiftKey) {
             if (!e.ctrlKey) {
@@ -223,13 +238,11 @@ function createPlaceholder(viewer, image, index) {
         });
         
         document.querySelectorAll('.holaf-viewer-thumbnail-placeholder').forEach(ph => {
-            const phImgData = state.images.find(img => img.path_canon === ph.dataset.pathCanon);
-            if (phImgData) {
-                 const phCheckbox = ph.querySelector('.holaf-viewer-thumb-checkbox');
-                 if (phCheckbox) {
-                     phCheckbox.checked = selectedPaths.has(phImgData.path_canon);
-                 }
-            }
+            const phPath = ph.dataset.pathCanon;
+             const phCheckbox = ph.querySelector('.holaf-viewer-thumb-checkbox');
+             if (phCheckbox) {
+                 phCheckbox.checked = selectedPaths.has(phPath);
+             }
         });
 
         viewer._updateActiveThumbnail(clickedIndex);
@@ -244,39 +257,37 @@ function createPlaceholder(viewer, image, index) {
     return placeholder;
 }
 
+// --- CORRECTIF : Nouvelle fonction interne pour le rafraîchissement ---
 /**
- * NEW: Forces a refresh of a single thumbnail, e.g., after an edit.
+ * Forces a refresh of a single thumbnail by its canonical path.
+ * This is called by the global event listener.
  * @param {object} viewer The main viewer instance.
  * @param {string} path_canon The unique path of the image to refresh.
  */
-export async function refreshThumbnail(viewer, path_canon) {
+function _refreshSingleThumbnail(viewer, path_canon) {
     const placeholder = document.querySelector(`.holaf-viewer-thumbnail-placeholder[data-path-canon="${path_canon}"]`);
-    if (!placeholder) return;
+    if (!placeholder) {
+        console.warn(`[Holaf Gallery] Could not find placeholder for ${path_canon} to refresh.`);
+        return;
+    }
     
     const image = imageViewerState.getState().images.find(img => img.path_canon === path_canon);
-    if (!image) return;
-
-    // Call backend to regenerate thumbnail with edits
-    await fetch("/holaf/images/regenerate-thumbnail", {
-        method: 'POST',
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path_canon: image.path_canon })
-    });
+    if (!image) {
+        console.warn(`[Holaf Gallery] Could not find image data for ${path_canon} in state.`);
+        return;
+    }
     
-    // Now, force-reload the thumbnail from the frontend
+    // Force-reload the thumbnail from the frontend with cache-busting
     loadSpecificThumbnail(viewer, placeholder, image, true);
 
     // Update the 'has_edit_file' status on the edit icon
     const editIcon = placeholder.querySelector('.holaf-viewer-edit-icon');
     if (editIcon) {
-       const edtResponse = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(path_canon)}`);
-       if(edtResponse.ok) {
-           editIcon.classList.add('active');
-       } else {
-           editIcon.classList.remove('active');
-       }
+        // We know an edit file exists because this event was just fired.
+        editIcon.classList.add('active');
     }
 }
+
 
 /**
  * REBUILT: Synchronizes the gallery view with the current state using differential rendering.
@@ -297,7 +308,6 @@ export function syncGallery(viewer) {
         return;
     }
     
-    // Clear any "no images" message
     const messageEl = galleryEl.querySelector('.holaf-viewer-message');
     if(messageEl) messageEl.remove();
 
@@ -307,7 +317,6 @@ export function syncGallery(viewer) {
             .map(el => [el.dataset.pathCanon, el])
     );
     
-    // 1. Remove placeholders that are no longer in the filtered list
     for (const [path, element] of existingPlaceholders.entries()) {
         if (!newImagePaths.has(path)) {
             element.classList.add('exiting');
@@ -316,20 +325,19 @@ export function syncGallery(viewer) {
         }
     }
 
-    // 2. Add/reorder placeholders
     const fragment = document.createDocumentFragment();
     images.forEach((image, index) => {
         let placeholder = existingPlaceholders.get(image.path_canon);
         if (placeholder) {
-            // It exists, just update its index and append to fragment to ensure order
             placeholder.dataset.index = index;
+            // CORRECTIF: Mettre à jour l'icône d'édition au cas où elle aurait changé
+            const editIcon = placeholder.querySelector('.holaf-viewer-edit-icon');
+            if(editIcon) editIcon.classList.toggle('active', image.has_edit_file);
         } else {
-            // It's a new image, create a new placeholder
             placeholder = createPlaceholder(viewer, image, index);
             placeholder.classList.add('entering');
-            // Defer removing the class to trigger the animation
             requestAnimationFrame(() => {
-                requestAnimationFrame(() => { // Double RAF for max compatibility
+                requestAnimationFrame(() => {
                     placeholder.classList.remove('entering');
                 });
             });
@@ -337,11 +345,9 @@ export function syncGallery(viewer) {
         fragment.appendChild(placeholder);
     });
 
-    // Replace the gallery content with the correctly ordered elements
     galleryEl.innerHTML = '';
     galleryEl.appendChild(fragment);
 
-    // 3. Set up IntersectionObserver for lazy loading images
     const placeholdersToObserve = galleryEl.querySelectorAll('.holaf-viewer-thumbnail-placeholder');
     viewer.galleryObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {

@@ -88,9 +88,17 @@ export class ImageEditor {
      * Hides the editor panel. (Internal)
      */
     _hide() {
+        if (this.isDirty) {
+            // If hiding with unsaved changes, revert the preview
+            this.currentState = { ...this.originalState };
+            this.applyPreview(); // Re-apply original filters
+            this.isDirty = false;
+        }
+
         if (this.panelEl) {
             this.panelEl.style.display = 'none';
         }
+
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
         if(zoomedImg) zoomedImg.style.filter = 'none';
@@ -132,10 +140,11 @@ export class ImageEditor {
      * Applies the current edit state to the zoomed/fullscreen image preview.
      */
     applyPreview() {
-        if (!this.activeImage) return;
-        
+        // CORRECTIF : On retire la garde `if (!this.activeImage)` qui causait la race condition.
+        // La fonction peut maintenant s'exécuter même si `_hide()` a été appelé juste avant,
+        // ce qui est crucial pour le passage en plein écran.
         const currentViewMode = imageViewerState.getState().ui.view_mode;
-        if (currentViewMode !== 'zoom') return;
+        if (currentViewMode !== 'zoom' && currentViewMode !== 'fullscreen') return;
 
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
@@ -155,28 +164,26 @@ export class ImageEditor {
 
     /**
      * Calls the backend to regenerate the thumbnail and forces a visual refresh in the gallery.
+     * @param {string} pathCanon - The canonical path of the image to refresh.
      */
-    async _triggerThumbnailRegeneration() {
-        if (!this.activeImage) return;
+    async _triggerThumbnailRegeneration(pathCanon) {
+        if (!pathCanon) return;
         try {
-            console.log(`[Holaf Editor] Triggering thumbnail regeneration for ${this.activeImage.path_canon}`);
+            console.log(`[Holaf Editor] Triggering thumbnail regeneration for ${pathCanon}`);
             const response = await fetch('/holaf/images/regenerate-thumbnail', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: this.activeImage.path_canon })
+                body: JSON.stringify({ path_canon: pathCanon })
             });
             if (response.ok) {
-                const galleryItem = document.querySelector(`.holaf-image-viewer-gallery-item[data-path-canon="${this.activeImage.path_canon}"]`);
-                if (galleryItem) {
-                    const thumb = galleryItem.querySelector('img.holaf-image-viewer-thumbnail');
-                    if (thumb && thumb.src) {
-                        const newUrl = new URL(thumb.src, window.location.origin);
-                        newUrl.searchParams.set('t', Date.now());
-                        const newThumb = thumb.cloneNode(true);
-                        newThumb.src = newUrl.toString();
-                        thumb.parentNode.replaceChild(newThumb, thumb);
-                    }
-                }
+                // CORRECTIF : Ne pas manipuler le DOM de la galerie.
+                // Envoyer un événement global pour que la galerie puisse l'intercepter et se mettre à jour elle-même.
+                const event = new CustomEvent('holaf-refresh-thumbnail', { 
+                    detail: { path_canon: pathCanon } 
+                });
+                document.dispatchEvent(event);
+                console.log(`[Holaf Editor] Dispatched holaf-refresh-thumbnail event for ${pathCanon}`);
+
             } else {
                 console.error("[Holaf Editor] Failed to trigger thumbnail regeneration.", await response.json());
             }
@@ -191,12 +198,14 @@ export class ImageEditor {
     async _saveEdits() {
         if (!this.activeImage || !this.isDirty) return;
 
+        const pathCanonToSave = this.activeImage.path_canon;
+
         try {
             const response = await fetch('/holaf/images/save-edits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    path_canon: this.activeImage.path_canon,
+                    path_canon: pathCanonToSave,
                     edits: this.currentState
                 })
             });
@@ -216,7 +225,7 @@ export class ImageEditor {
                 const state = imageViewerState.getState();
                 let newActiveImage = null;
                 const updatedImages = state.images.map(img => {
-                    if (img.path_canon === this.activeImage.path_canon) {
+                    if (img.path_canon === pathCanonToSave) {
                         newActiveImage = { ...img, has_edit_file: true };
                         return newActiveImage;
                     }
@@ -229,7 +238,7 @@ export class ImageEditor {
                     imageViewerState.setState({ images: updatedImages });
                 }
                 
-                await this._triggerThumbnailRegeneration();
+                await this._triggerThumbnailRegeneration(pathCanonToSave);
 
             } else {
                 HolafPanelManager.createDialog({ title: "Save Error", message: `Could not save edits: ${result.message || 'Unknown error from server.'}` });
@@ -258,6 +267,8 @@ export class ImageEditor {
     async _resetEdits() {
         if (!this.activeImage) return;
 
+        const pathCanonToReset = this.activeImage.path_canon;
+
         if (!await HolafPanelManager.createDialog({
             title: "Confirm Reset",
             message: "Are you sure you want to reset all edits for this image? This will delete the saved .edt file.",
@@ -268,7 +279,7 @@ export class ImageEditor {
             const response = await fetch('/holaf/images/delete-edits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: this.activeImage.path_canon })
+                body: JSON.stringify({ path_canon: pathCanonToReset })
             });
 
             if (!response.ok) {
@@ -288,7 +299,7 @@ export class ImageEditor {
                 const state = imageViewerState.getState();
                 let newActiveImage = null;
                 const updatedImages = state.images.map(img => {
-                    if (img.path_canon === this.activeImage.path_canon) {
+                    if (img.path_canon === pathCanonToReset) {
                         newActiveImage = { ...img, has_edit_file: false };
                         return newActiveImage;
                     }
@@ -303,7 +314,7 @@ export class ImageEditor {
 
                 this._updateButtonStates();
                 
-                await this._triggerThumbnailRegeneration();
+                await this._triggerThumbnailRegeneration(pathCanonToReset);
 
             } else {
                 HolafPanelManager.createDialog({ title: "Reset Error", message: `Could not reset edits: ${result.message || 'Unknown error from server.'}` });
@@ -344,6 +355,12 @@ export class ImageEditor {
      * Wires up all the event listeners for the editor controls.
      */
     _attachListeners() {
+        imageViewerState.subscribe((state, prevState) => {
+            if (prevState && state.ui.view_mode !== prevState.ui.view_mode) {
+                this.applyPreview();
+            }
+        });
+        
         ['brightness', 'contrast', 'saturation'].forEach(key => {
             const sliderContainer = this.panelEl.querySelector(`#holaf-editor-${key}-slider`).parentNode;
 
@@ -400,7 +417,7 @@ export class ImageEditor {
                     <button class="holaf-editor-tab active">Adjust</button>
                     <button class="holaf-editor-tab" disabled>Crop/Ratio</button>
                     <button class="holaf-editor-tab" disabled>Effects</button>
-                    <button class="holaf-editor-tab">Operations</button>
+                    <button class="holaf-editor-tab" disabled>Operations</button>
                 </div>
                 <div class="holaf-editor-tab-content">
                     <div class="holaf-editor-section">

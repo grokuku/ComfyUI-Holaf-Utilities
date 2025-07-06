@@ -1,6 +1,3 @@
-CONTENU DES FICHIERS FOURNIS :
-
---- context.txt ---
 --- START OF FILE context.txt ---
 
 RÈGLES OPÉRATIONNELLES :
@@ -88,7 +85,7 @@ FILE_TREE_ANALYSIS:
     📄 holaf_image_viewer_styles.css
       > Specific styles for the Image Viewer panel (placeholder).
     📄 holaf_image_viewer.css
-      > Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`) for the differential gallery rendering.
+      > Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`) for the differential gallery rendering. [MODIFIED] Contains gallery layout styles, including the `flex-grow: 0` fix for thumbnails.
     📄 holaf_main_button.css
       > Styles for the main "Holaf's Utilities" button in the ComfyUI menu.
     📄 holaf_model_manager_styles.css
@@ -112,21 +109,21 @@ FILE_TREE_ANALYSIS:
   📁 image_viewer/
     > Modular JS for the Image Viewer.
     📄 image_viewer_actions.js
-      > [REFACTORED] Handles user actions (delete, export). Reads from central state instead of passed `viewer` object. -> image_viewer_state, HolafPanelManager
+      > [MODIFIED] Handles user actions (delete, export). Now context-aware; uses a helper to target active image in zoom/fullscreen or gallery selection. -> image_viewer_state, HolafPanelManager
     📄 image_viewer_editor.js
-      > [REFACTORED] Controller for the Image Editor sub-panel. Fully state-driven, subscribes to `imageViewerState` and reacts to `activeImage` and `ui.view_mode`.
+      > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
-      > [REFACTORED & FIXED] Manages gallery view with a **differential rendering** engine (`syncGallery`). Instead of redrawing, it calculates changes (add/remove) for a fluid, non-blocking UI. Uses `data-path-canon` as the unique key for thumbnails. Also handles thumbnail loading (`loadSpecificThumbnail`) and refresh logic (`refreshThumbnail`).
+      > [MODIFIED] Manages gallery view with differential rendering (`syncGallery`). Contains `initGallery` to listen for refresh events. Handles lazy loading.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
-      > [REFACTORED] Keyboard/mouse navigation, zoom/pan, fullscreen logic. Reads from and **updates** `ui.view_mode` in the central state.
+      > [MODIFIED] Handles keyboard input (`handleKeyDown`, including spacebar selection). Applies editor filters to fullscreen/zoom views. Manages `ui.view_mode`.
     📄 image_viewer_settings.js
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
       > [NEW & CRITICAL] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture.
     📄 image_viewer_ui.js
-      > [REFACTORED & ACTIVE] Builds the main panel UI structure. Now an active, state-aware component that subscribes to `imageViewerState`.
+      > [MODIFIED] Builds the main panel UI structure. Contains listeners for UI controls like thumbnail size/fit toggles. Subscribes to `imageViewerState`.
   📁 model_manager/
     > Modular JS for the Model Manager.
     📄 model_manager_actions.js -> holaf_panel_manager
@@ -136,7 +133,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [REFACTORED] Main orchestrator for the Image Viewer. **Manages the non-blocking filter request queue (`isLoading`/`isDirty`)** to ensure UI responsiveness. Orchestrates all `image_viewer/*` modules. Delegates state changes to `imageViewerState`.
+    > [CRITICAL] Main orchestrator. Initializes all modules (UI, Editor, Gallery, etc.) and wires them together. Manages the non-blocking filter request queue (`isLoading`/`isDirty`).
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -206,7 +203,7 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, ui, editor_fullscreen_no_edits] # Live edit previews are not applied to the image in fullscreen mode.
+    # (None currently identified)
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -227,8 +224,13 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails to prevent stretching.
+    - [fix, ui, thumbnail_fit_toggle_immediate_update] # The "Contained" thumbnail view option now applies instantly.
+    - [feature, ui, spacebar_to_toggle_selection_in_gallery] # Pressing spacebar on an active thumbnail now toggles its selection state.
+    - [fix, ui, actions_target_active_image_in_zoom_view] # Toolbar actions (Delete, Export, etc.) now correctly target the active image in zoom/fullscreen view.
+    - [fix, ui, editor_previews_in_fullscreen] # Live edit previews are now correctly applied to the image in fullscreen mode.
+    - [fix, ui, thumbnail_refresh_on_edit_save] # Thumbnail in gallery now updates instantly after an edit is saved, using an event-driven approach.
     - [refactor, ui, gallery_differential_rendering] # Replaced full gallery redraws with a non-blocking, differential rendering engine for fluid filter changes.
-    - [fix, ui, editor_thumbnail_refresh_fails] # Thumbnail in gallery now updates instantly after an edit is saved via `refreshSingleThumbnail`.
     - [fix, ui, filter_race_condition] # Implemented a non-blocking request queue (`isLoading`/`isDirty`) to handle rapid filter changes without losing state.
     - [fix, ui, gallery_selection_bug] # Corrected a bug where clicking a thumbnail selected the wrong image after a filter change.
     - [fix, ui, filter_persistence_partial] # Text search and date range filters now correctly restore their state when the panel is reopened.

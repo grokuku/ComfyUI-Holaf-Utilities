@@ -237,7 +237,9 @@ class ImageViewerUI {
         // --- Display Options ---
         this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
         this.elements.thumbFitToggle.onchange = (e) => {
-            viewer.saveSettings({ thumbnail_fit: e.target.checked ? 'contain' : 'cover' });
+            const newFit = e.target.checked ? 'contain' : 'cover';
+            viewer.saveSettings({ thumbnail_fit: newFit });
+            viewer._applyThumbnailFit();
         };
         
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');

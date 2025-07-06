@@ -311,7 +311,8 @@
 
 .holaf-viewer-thumbnail-placeholder {
     flex-basis: var(--holaf-thumbnail-size);
-    flex-grow: 1;
+    /* CORRECTIF : Empêche les miniatures de grandir pour remplir l'espace. */
+    flex-grow: 0;
     max-width: calc(var(--holaf-thumbnail-size) * 1.8);
     position: relative;
     aspect-ratio: 1 / 1;
