@@ -4,6 +4,7 @@ import os
 import hashlib
 import json
 import traceback
+import logging
 
 import aiofiles
 from aiohttp import web
@@ -13,6 +14,8 @@ import folder_paths # ComfyUI global
 from .. import logic
 from ... import holaf_database
 from ... import holaf_utils
+
+logger = logging.getLogger('holaf.images.routes')
 
 # --- API Route Handlers ---
 async def get_thumbnail_route(request: web.Request):
@@ -117,7 +120,7 @@ async def get_thumbnail_route(request: web.Request):
                 return web.Response(body=content, content_type='image/jpeg')
             except Exception as e: current_exception = e; error_message_for_client = "ERR: Failed to read generated thumb at final stage."
         
-        print(f"🟡 [IV-Route] Final fallback for {original_rel_path}: Thumbnail not served. Reason: {error_message_for_client}")
+        logger.warning(f"Final fallback for {original_rel_path}: Thumbnail not served. Reason: {error_message_for_client}")
         return web.Response(status=500, text=error_message_for_client)
 
     except Exception as e_outer:
@@ -178,7 +181,7 @@ async def regenerate_thumbnail_route(request: web.Request):
                     content = await f.read()
                     edit_data = json.loads(content)
             except Exception as e:
-                print(f"🟡 [IV-RegenThumb] Warning: Could not read or parse edit file {edit_file_abs_path}: {e}")
+                logger.warning(f"Could not read or parse edit file {edit_file_abs_path}: {e}")
 
         # Run blocking thumbnail creation in an executor thread
         loop = asyncio.get_event_loop()
@@ -204,9 +207,43 @@ async def regenerate_thumbnail_route(request: web.Request):
 # <-- MODIFICATION END -->
 
 
-async def prioritize_thumbnails_route(request: web.Request):
+# --- NOUVEAU : Fonction pour traiter la priorisation en arrière-plan ---
+async def _background_prioritize_task(paths_canon):
+    """
+    Processes a list of paths to update their priority in the database.
+    This runs in the background.
+    """
     conn = None
     current_exception = None
+    try:
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        priority_score_for_visible = 10
+        
+        # Use a single UPDATE statement for efficiency
+        placeholders = ','.join(['?'] * len(paths_canon))
+        sql = f"""
+            UPDATE images
+            SET thumbnail_status = CASE thumbnail_status WHEN 0 THEN 1 ELSE thumbnail_status END,
+                thumbnail_priority_score = MIN(thumbnail_priority_score, ?)
+            WHERE path_canon IN ({placeholders}) AND thumbnail_status IN (0, 1)
+        """
+        
+        params = [priority_score_for_visible] + paths_canon
+        cursor.execute(sql, params)
+        conn.commit()
+        logger.info(f"Background prioritization updated {cursor.rowcount} of {len(paths_canon)} thumbnails.")
+        
+    except Exception as e:
+        current_exception = e
+        logger.error(f"Error in _background_prioritize_task: {e}", exc_info=True)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+
+# --- MODIFIÉ : Route de priorisation non-bloquante ---
+async def prioritize_thumbnails_route(request: web.Request):
     try:
         data = await request.json()
         paths_canon = data.get("paths_canon")
@@ -214,33 +251,19 @@ async def prioritize_thumbnails_route(request: web.Request):
         if not paths_canon or not isinstance(paths_canon, list):
             return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
 
-        conn = holaf_database.get_db_connection()
-        cursor = conn.cursor()
-        updated_count = 0
-        priority_score_for_visible = 10
+        # Lancer la tâche de mise à jour de la base de données en arrière-plan
+        loop = asyncio.get_event_loop()
+        loop.create_task(_background_prioritize_task(paths_canon))
 
-        for path_canon_str in paths_canon:
-            res = cursor.execute("""
-                UPDATE images
-                SET thumbnail_status = CASE thumbnail_status WHEN 0 THEN 1 ELSE thumbnail_status END,
-                    thumbnail_priority_score = MIN(thumbnail_priority_score, ?)
-                WHERE path_canon = ? AND thumbnail_status IN (0, 1)
-            """, (priority_score_for_visible, path_canon_str))
-            if res.rowcount > 0:
-                updated_count += 1
-        conn.commit()
-        return web.json_response({"status": "ok", "message": f"{updated_count} thumbnails prioritized."})
+        # Répondre immédiatement
+        return web.json_response({"status": "accepted", "message": "Prioritization task scheduled."}, status=202)
 
-    except json.JSONDecodeError as e_json:
-        current_exception = e_json
+    except json.JSONDecodeError:
         return web.json_response({"status": "error", "message": "Invalid JSON"}, status=400)
     except Exception as e:
-        current_exception = e
-        print(f"🔴 [Holaf-ImageViewer] Error in prioritize_thumbnails_route: {e}"); traceback.print_exc()
+        logger.error(f"Error scheduling prioritize_thumbnails_route: {e}", exc_info=True)
         return web.json_response({"status": "error", "message": str(e)}, status=500)
-    finally:
-        if conn:
-            holaf_database.close_db_connection(exception=current_exception)
+
 
 async def get_thumbnail_stats_route(request: web.Request):
     conn = None
@@ -263,7 +286,7 @@ async def get_thumbnail_stats_route(request: web.Request):
         })
     except Exception as e:
         current_exception = e
-        print(f"🔴 [Holaf-ImageViewer] Error getting thumbnail stats: {e}"); traceback.print_exc()
+        logger.error(f"Error getting thumbnail stats: {e}", exc_info=True)
         return web.json_response({"error": str(e), **default_response}, status=500)
     finally:
         if conn:

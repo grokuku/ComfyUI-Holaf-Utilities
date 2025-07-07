@@ -1,27 +1,18 @@
 /*
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Image Viewer Gallery Module
- *
- * This module manages the core gallery rendering logic, including
- * virtual/infinite scrolling, thumbnail loading, and prioritization.
- * REFACTOR: Rebuilt with a differential rendering approach. Instead of
- * replacing the entire gallery, it now calculates the difference between
- * the current view and the new state, then animates additions and removals.
- * This eliminates the "flash" on filter changes and provides a fluid UX.
- * FIX: The new `refreshThumbnail` function directly targets a thumbnail by its
- * `data-path-canon`, which solves the longstanding editor refresh bug.
- * FIX: Corrected selection bug by reading the element's `dataset.index` at click
- * time, preventing the use of a stale index from the event listener's closure.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
 import { showFullscreenView } from './image_viewer_navigation.js';
 
-const PRIORITIZE_BATCH_SIZE = 50;
-const PRIORITIZE_DEBOUNCE_MS = 500;
-const ANIMATION_DURATION_MS = 300; // Must match CSS transition duration
+const PROCESS_BATCH_SIZE = 50; 
+const PROCESS_DEBOUNCE_MS = 150; 
+const ANIMATION_DURATION_MS = 300; 
 
-// --- CORRECTIF : Nouvelle fonction d'initialisation pour attacher les écouteurs globaux ---
+// --- NOUVEAU : Un Set pour suivre UNIQUEMENT les placeholders actuellement visibles ---
+const currentlyVisiblePlaceholders = new Set();
+
 /**
  * Initializes the gallery module by setting up global event listeners.
  * @param {object} viewer - The main image viewer instance.
@@ -37,31 +28,51 @@ export function initGallery(viewer) {
 }
 
 /**
- * Schedules a debounced call to the thumbnail prioritization API.
+ * Schedules a debounced call to process visible thumbnails.
+ * It first tells the backend to prepare the thumbnails, then triggers the actual loading in the frontend.
  * @param {object} viewer - The main image viewer instance.
  */
-function schedulePrioritizeThumbnails(viewer) {
+function scheduleProcessVisibleThumbnails(viewer) {
     clearTimeout(viewer.prioritizeTimeoutId);
-    viewer.prioritizeTimeoutId = setTimeout(async () => {
-        if (viewer.visiblePlaceholdersToPrioritize.size === 0) return;
+    viewer.prioritizeTimeoutId = setTimeout(() => {
+        // --- MODIFIÉ : On ne traite que la liste des éléments actuellement visibles ---
+        const placeholdersToProcess = Array.from(currentlyVisiblePlaceholders);
+        if (placeholdersToProcess.length === 0) return;
 
-        const pathsToPrioritize = Array.from(viewer.visiblePlaceholdersToPrioritize);
-        viewer.visiblePlaceholdersToPrioritize.clear();
+        // On ne garde que les chemins des placeholders qui n'ont pas encore été chargés.
+        const pathsToProcess = placeholdersToProcess
+            .filter(p => !p.dataset.thumbnailLoadingOrLoaded)
+            .map(p => p.dataset.pathCanon);
+        
+        if (pathsToProcess.length === 0) return;
 
-        for (let i = 0; i < pathsToPrioritize.length; i += PRIORITIZE_BATCH_SIZE) {
-            const batch = pathsToPrioritize.slice(i, i + PRIORITIZE_BATCH_SIZE);
-            try {
-                await fetch('/holaf/images/prioritize-thumbnails', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ paths_canon: batch, context: "gallery_visible" })
-                });
-            } catch (e) {
-                console.error("[Holaf ImageViewer] Error prioritizing thumbnails batch:", e);
-            }
+        // 1. Tell backend to prepare/cache these thumbnails (fire-and-forget)
+        for (let i = 0; i < pathsToProcess.length; i += PROCESS_BATCH_SIZE) {
+            const batch = pathsToProcess.slice(i, i + PROCESS_BATCH_SIZE);
+            fetch('/holaf/images/prioritize-thumbnails', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths_canon: batch, context: "gallery_visible" })
+            }).catch(e => console.error("[Holaf ImageViewer] Error prioritizing thumbnails batch:", e));
         }
-    }, PRIORITIZE_DEBOUNCE_MS);
+
+        // 2. Now, trigger the actual load for each placeholder in the frontend
+        const allImages = imageViewerState.getState().images;
+        placeholdersToProcess.forEach(placeholder => {
+            if (!placeholder.dataset.thumbnailLoadingOrLoaded) {
+                const imageIndex = parseInt(placeholder.dataset.index, 10);
+                if (!isNaN(imageIndex)) {
+                    const image = allImages[imageIndex];
+                    if (image && image.path_canon === placeholder.dataset.pathCanon) {
+                         loadSpecificThumbnail(viewer, placeholder, image, false);
+                    }
+                }
+            }
+        });
+
+    }, PROCESS_DEBOUNCE_MS);
 }
+
 
 /**
  * Loads the actual thumbnail image for a given placeholder.
@@ -257,7 +268,6 @@ function createPlaceholder(viewer, image, index) {
     return placeholder;
 }
 
-// --- CORRECTIF : Nouvelle fonction interne pour le rafraîchissement ---
 /**
  * Forces a refresh of a single thumbnail by its canonical path.
  * This is called by the global event listener.
@@ -283,7 +293,7 @@ function _refreshSingleThumbnail(viewer, path_canon) {
     // Update the 'has_edit_file' status on the edit icon
     const editIcon = placeholder.querySelector('.holaf-viewer-edit-icon');
     if (editIcon) {
-        // We know an edit file exists because this event was just fired.
+        // We assume an edit file now exists because this event was just fired.
         editIcon.classList.add('active');
     }
 }
@@ -299,6 +309,9 @@ export function syncGallery(viewer) {
 
     if (viewer.galleryObserver) viewer.galleryObserver.disconnect();
     
+    // --- NOUVEAU : On vide la liste des visibles à chaque synchronisation ---
+    currentlyVisiblePlaceholders.clear();
+
     const { images } = imageViewerState.getState();
 
     if (!images || images.length === 0) {
@@ -349,22 +362,28 @@ export function syncGallery(viewer) {
     galleryEl.appendChild(fragment);
 
     const placeholdersToObserve = galleryEl.querySelectorAll('.holaf-viewer-thumbnail-placeholder');
+    
+    // --- LOGIQUE DE L'OBSERVER ENTIÈREMENT REVUE ---
     viewer.galleryObserver = new IntersectionObserver((entries) => {
+        let needsProcessing = false;
         entries.forEach(entry => {
-            if (!entry.isIntersecting) return;
             const placeholder = entry.target;
-            const imageIndex = parseInt(placeholder.dataset.index);
-            const image = imageViewerState.getState().images[imageIndex];
-            if (image) {
-                if (!placeholder.dataset.thumbnailLoadingOrLoaded) {
-                    viewer.visiblePlaceholdersToPrioritize.add(image.path_canon);
-                    schedulePrioritizeThumbnails(viewer);
-                }
-                viewer.galleryObserver.unobserve(placeholder);
-                loadSpecificThumbnail(viewer, placeholder, image, false);
+            // Si l'élément entre dans le viewport, on l'ajoute à la liste des visibles
+            if (entry.isIntersecting) {
+                currentlyVisiblePlaceholders.add(placeholder);
+                needsProcessing = true;
+            } else {
+            // Si l'élément sort, on le retire de la liste
+                currentlyVisiblePlaceholders.delete(placeholder);
             }
         });
+
+        // On déclenche le traitement seulement si la liste des visibles a changé.
+        if (needsProcessing) {
+            scheduleProcessVisibleThumbnails(viewer);
+        }
     }, { root: galleryEl, rootMargin: "400px 0px" });
+
 
     placeholdersToObserve.forEach(ph => viewer.galleryObserver.observe(ph));
     

@@ -55,11 +55,7 @@ FILE_TREE_ANALYSIS:
       @ POST /holaf/images/inject-metadata
       -> logic.py, holaf_database, holaf_utils
     📄 thumbnail_routes.py
-      > Serves and manages image thumbnails.
-      @ GET /holaf/images/thumbnail
-      @ POST /holaf/images/prioritize-thumbnails
-      @ GET /holaf/images/thumbnail-stats
-      @ POST /holaf/images/regenerate-thumbnail
+      > [MODIFIED] Manages thumbnail lifecycle. Serves individual thumbnails (`/get_thumbnail_route`), regenerates them (`/regenerate_thumbnail_route`), and accepts non-blocking batch prioritization requests (`/prioritize_thumbnails_route`) via background tasks to pre-warm the cache.
       -> logic.py, holaf_database, holaf_utils
     📄 utility_routes.py
       > Misc utility routes for the viewer.
@@ -111,7 +107,7 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_editor.js
       > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
-      > [MODIFIED] Manages gallery view with differential rendering (`syncGallery`). Contains `initGallery` to listen for refresh events. Handles lazy loading. Corrected selection bug logic.
+      > [MODIFIED] Manages the main gallery view. Implements differential rendering (`syncGallery`) and a highly optimized, debounced, non-blocking lazy loading system to handle thousands of images smoothly.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
@@ -219,6 +215,7 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, performance, gallery_scalability] # Optimized thumbnail loading for massive galleries. Replaced the immediate request-on-scroll with a debounced, non-blocking system that only loads currently visible thumbnails, preventing server overload and UI freezes.
     - [feature, ui, export_dialog_advanced_nav] # Amélioration de la boîte de dialogue d'exportation avec une navigation 2D complète au clavier (boutons radio, cases à cocher).
     - [feature, ui, dialog_keyboard_navigation] # Implémentation de la navigation au clavier (flèches, Entrée/Espace) pour tous les boutons des boîtes de dialogue.
     - [fix, ui, focus_steal_on_controls] # Correction du bug où un clic sur un contrôle de l'interface (slider, case à cocher) bloquait les raccourcis clavier de la galerie.
