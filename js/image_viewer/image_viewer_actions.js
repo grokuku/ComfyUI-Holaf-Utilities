@@ -7,9 +7,10 @@
  * REFACTOR: Updated to use the central imageViewerState.
  * CORRECTIF: Actions now correctly target the active image in zoom/fullscreen view.
  * FEATURE: Added a confirmation dialog for exporting when there are unsaved edits.
+ * MODIFICATION: Made the export dialog fully keyboard-navigable with 2D-aware controls.
  */
 
-import { HolafPanelManager } from "../holaf_panel_manager.js";
+import { HolafPanelManager, dialogState } from "../holaf_panel_manager.js";
 import { imageViewerState } from "./image_viewer_state.js";
 
 // --- CORRECTIF : Nouvelle fonction d'aide pour déterminer la cible des actions ---
@@ -440,6 +441,8 @@ export async function handleInjectMetadata(viewer) {
  * @param {object[]} imagesToExport - The array of image objects to export.
  */
 function _showExportOptionsDialog(viewer, imagesToExport) {
+    dialogState.isOpen = true; // Block main viewer keyboard shortcuts
+
     const overlay = document.createElement('div');
     overlay.id = 'holaf-viewer-export-dialog-overlay';
     
@@ -489,19 +492,150 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         const isEnabled = includeMetaCheckbox.checked;
         metaMethodGroup.style.opacity = isEnabled ? '1' : '0.5';
         metaMethodGroup.style.pointerEvents = isEnabled ? 'auto' : 'none';
+        setupKeyboardNavigation();
     };
     includeMetaCheckbox.addEventListener('change', toggleMetaMethod);
 
-    overlay.querySelector('#holaf-export-cancel-btn').addEventListener('click', () => overlay.remove());
+    // --- START: Keyboard Navigation Logic (v2 - 2D Aware) ---
+    let focusableElements = [];
+    let elementGrid = []; // A 2D array representing the layout
+    let currentFocusCoords = { row: -1, col: -1 };
+
+    const setupKeyboardNavigation = () => {
+        const query = 'input[name="export-format"], #holaf-export-include-meta, input[name="meta-method"], #holaf-export-cancel-btn, #holaf-export-start-btn';
+        const allElements = [...overlay.querySelectorAll(query)].filter(el => {
+            // Filter out disabled elements
+            const parentGroup = el.closest('#holaf-export-meta-method-group');
+            return !(parentGroup && parentGroup.style.pointerEvents === 'none');
+        });
+
+        // The element we want to apply style/focus to is the label or the button itself.
+        focusableElements = allElements.map(el => el.tagName === 'BUTTON' ? el : el.parentElement);
+
+        // Group elements by row
+        elementGrid = [];
+        if (focusableElements.length > 0) {
+            let currentRow = [];
+            let lastY = focusableElements[0].getBoundingClientRect().top;
+            focusableElements.forEach(el => {
+                const elY = el.getBoundingClientRect().top;
+                if (Math.abs(elY - lastY) > 10) { // Threshold for a new row
+                    elementGrid.push(currentRow);
+                    currentRow = [];
+                }
+                currentRow.push(el);
+                lastY = elY;
+            });
+            elementGrid.push(currentRow); // Add the last row
+        }
+
+        // If the current focus is now invalid, reset it
+        if (currentFocusCoords.row >= elementGrid.length || 
+            (elementGrid[currentFocusCoords.row] && currentFocusCoords.col >= elementGrid[currentFocusCoords.row].length)) {
+             const lastRow = elementGrid.length - 1;
+             const lastCol = elementGrid[lastRow].length - 1;
+             updateFocus(lastRow, lastCol);
+        }
+    };
+    
+    const updateFocus = (newRow, newCol) => {
+        // Remove focus from old element
+        if (currentFocusCoords.row > -1 && elementGrid[currentFocusCoords.row]?.[currentFocusCoords.col]) {
+            elementGrid[currentFocusCoords.row][currentFocusCoords.col].classList.remove('holaf-dialog-item-focused');
+        }
+        
+        // Clamp new coordinates and set focus
+        const clampedRow = Math.max(0, Math.min(newRow, elementGrid.length - 1));
+        const clampedCol = Math.max(0, Math.min(newCol, elementGrid[clampedRow].length - 1));
+        
+        const newFocusedEl = elementGrid[clampedRow][clampedCol];
+        newFocusedEl.classList.add('holaf-dialog-item-focused');
+        newFocusedEl.focus();
+        currentFocusCoords = { row: clampedRow, col: clampedCol };
+    };
+
+    const handleKeyDown = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const { row, col } = currentFocusCoords;
+
+        switch(e.key) {
+            case 'ArrowUp':
+                if (row > 0) {
+                    const currentElRect = elementGrid[row][col].getBoundingClientRect();
+                    const prevRow = elementGrid[row - 1];
+                    // Find the element in the previous row that's closest horizontally
+                    let closestCol = 0;
+                    let minDx = Infinity;
+                    prevRow.forEach((el, index) => {
+                        const dx = Math.abs(el.getBoundingClientRect().left - currentElRect.left);
+                        if (dx < minDx) {
+                            minDx = dx;
+                            closestCol = index;
+                        }
+                    });
+                    updateFocus(row - 1, closestCol);
+                }
+                break;
+            case 'ArrowDown':
+                if (row < elementGrid.length - 1) {
+                    const currentElRect = elementGrid[row][col].getBoundingClientRect();
+                    const nextRow = elementGrid[row + 1];
+                    let closestCol = 0;
+                    let minDx = Infinity;
+                    nextRow.forEach((el, index) => {
+                        const dx = Math.abs(el.getBoundingClientRect().left - currentElRect.left);
+                        if (dx < minDx) {
+                            minDx = dx;
+                            closestCol = index;
+                        }
+                    });
+                    updateFocus(row + 1, closestCol);
+                }
+                break;
+            case 'ArrowRight':
+                if (col < elementGrid[row].length - 1) {
+                    updateFocus(row, col + 1);
+                }
+                break;
+            case 'ArrowLeft':
+                if (col > 0) {
+                    updateFocus(row, col - 1);
+                }
+                break;
+            case ' ':
+            case 'Enter': {
+                const focusedEl = elementGrid[row][col];
+                if (focusedEl) {
+                    (focusedEl.querySelector('input') || focusedEl).click();
+                }
+                break;
+            }
+            case 'Escape':
+                cleanupAndClose();
+                break;
+        }
+    };
+
+    const cleanupAndClose = () => {
+        document.removeEventListener('keydown', handleKeyDown, true);
+        dialogState.isOpen = false;
+        if(overlay) overlay.remove();
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+
+    overlay.querySelector('#holaf-export-cancel-btn').addEventListener('click', cleanupAndClose);
 
     overlay.querySelector('#holaf-export-start-btn').addEventListener('click', async () => {
+        cleanupAndClose();
+
         const format = overlay.querySelector('input[name="export-format"]:checked').value;
         const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
         const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
 
         const toastId = `export-${Date.now()}`;
-        
-        overlay.remove();
         
         if (!imageViewerState.getState().status.isExporting) {
             window.holaf.toastManager.show({
@@ -593,6 +727,11 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     });
 
     toggleMetaMethod();
+    setupKeyboardNavigation();
+    const lastRow = elementGrid.length - 1;
+    const lastCol = elementGrid.length > 0 ? elementGrid[lastRow].length - 1 : 0;
+    updateFocus(lastRow, lastCol);
+    // --- END: Keyboard Navigation Logic (v2) ---
 }
 
 /**

@@ -9,7 +9,7 @@
 
 import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
-import { HolafPanelManager } from '../holaf_panel_manager.js';
+import { HolafPanelManager, dialogState } from '../holaf_panel_manager.js';
 
 // --- NOUVEAU CORRECTIF : Helper pour appliquer les filtres de l'éditeur ---
 /**
@@ -243,6 +243,7 @@ export async function handleEscape(viewer) {
 }
 
 export async function handleKeyDown(viewer, e) {
+    if (dialogState.isOpen) return;
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
     
     const isInputFocused = ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase());

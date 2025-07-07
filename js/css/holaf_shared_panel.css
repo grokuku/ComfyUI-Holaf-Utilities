@@ -258,6 +258,14 @@
 }
 
 
+/* --- MODIFICATION START: Style for focused dialog button --- */
+.holaf-utility-panel .comfy-button.dialog-button-focused, .holaf-dialog-item-focused.comfy-button, .holaf-dialog-item-focused label {
+    outline: 2px solid var(--holaf-accent-color) !important;
+    outline-offset: 2px !important;
+}
+/* --- MODIFICATION END --- */
+
+
 /* --- Fullscreen Panel Style --- */
 /* Applied to any .holaf-utility-panel that also gets .holaf-panel-fullscreen */
 .holaf-panel-fullscreen {

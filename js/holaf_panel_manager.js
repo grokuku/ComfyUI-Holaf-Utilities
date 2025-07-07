@@ -8,6 +8,7 @@
  * MODIFIED: Added a generic, promise-based `createDialog` function for custom modals.
  * MODIFIED: Added `bringToFront` on any panel mousedown, not just header.
  * MODIFIED: Added fullscreen toggling on header double-click.
+ * MODIFICATION: Added dialog keyboard navigation and global state.
  */
 
 export const HOLAF_THEMES = [
@@ -112,6 +113,11 @@ export const HOLAF_THEMES = [
         }
     }
 ];
+
+// MODIFICATION: Global state to track if a dialog is open
+export const dialogState = {
+    isOpen: false
+};
 
 const BASE_Z_INDEX = 1000;
 let currentMaxZIndex = BASE_Z_INDEX;
@@ -336,10 +342,12 @@ export const HolafPanelManager = {
 
     createDialog(options) {
         return new Promise((resolve) => {
+            dialogState.isOpen = true;
+
             const overlay = document.createElement("div");
             overlay.style.cssText = `
                 position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                background: rgba(0, 0, 0, 0.6); z-index: 110000; /* Higher than fullscreen overlay */
+                background: rgba(0, 0, 0, 0.6); z-index: 110000;
                 display: flex; align-items: center; justify-content: center;
             `;
             
@@ -380,7 +388,12 @@ export const HolafPanelManager = {
                 border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
             `;
 
+            const buttons = [];
+            let focusedButtonIndex = -1;
+
             const closeDialog = (value) => {
+                document.removeEventListener("keydown", handleDialogKeyDown);
+                dialogState.isOpen = false;
                 document.body.removeChild(overlay);
                 resolve(value);
             };
@@ -399,11 +412,54 @@ export const HolafPanelManager = {
                     closeDialog(btnInfo.value);
                 };
                 footer.appendChild(button);
+                buttons.push(button);
             });
+            
+            const updateFocusedButton = (newIndex) => {
+                if (focusedButtonIndex > -1) {
+                    buttons[focusedButtonIndex].classList.remove('dialog-button-focused');
+                }
+                buttons[newIndex].classList.add('dialog-button-focused');
+                buttons[newIndex].focus();
+                focusedButtonIndex = newIndex;
+            };
+
+            const handleDialogKeyDown = (e) => {
+                if (buttons.length === 0) return;
+
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    let newIndex = (focusedButtonIndex - 1 + buttons.length) % buttons.length;
+                    updateFocusedButton(newIndex);
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    let newIndex = (focusedButtonIndex + 1) % buttons.length;
+                    updateFocusedButton(newIndex);
+                } else if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (focusedButtonIndex > -1) {
+                        buttons[focusedButtonIndex].click();
+                    }
+                } else if (e.key === 'Escape') {
+                     e.preventDefault();
+                     const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
+                     if(cancelButton) {
+                        cancelButton.click();
+                     }
+                }
+            };
+            
+            document.addEventListener("keydown", handleDialogKeyDown);
 
             dialog.append(header, content, footer);
             overlay.appendChild(dialog);
             document.body.appendChild(overlay);
+            
+            // CORRECTIF : Déplacer cette logique APRÈS l'ajout au DOM
+            if (buttons.length > 0) {
+                // Focus the last button by default (usually the "confirm" action)
+                updateFocusedButton(buttons.length - 1);
+            }
         });
     }
 };

@@ -93,7 +93,7 @@ FILE_TREE_ANALYSIS:
     📄 holaf_settings_panel_styles.css
       > Styles for the global Settings panel.
     📄 holaf_shared_panel.css
-      > Core styles for ALL floating panels (drag, resize, header, close button, modals).
+      > [MODIFIED] Core styles for ALL floating panels (drag, resize, header, close button, modals). Includes styles for keyboard-focused dialog items.
     📄 holaf_system_monitor_styles.css
       > Styles for the system monitor overlay.
     📄 holaf_terminal_styles.css
@@ -107,7 +107,7 @@ FILE_TREE_ANALYSIS:
   📁 image_viewer/
     > Modular JS for the Image Viewer.
     📄 image_viewer_actions.js
-      > [MODIFIED] Handles user actions (delete, export). Now context-aware; uses a helper to target active image in zoom/fullscreen or gallery selection. -> image_viewer_state, HolafPanelManager
+      > [MODIFIED] Handles user actions (delete, export). Includes logic for the fully keyboard-navigable export dialog. -> image_viewer_state, HolafPanelManager
     📄 image_viewer_editor.js
       > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
@@ -115,7 +115,7 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
-      > [MODIFIED] Handles keyboard input (`handleKeyDown`, including spacebar selection). Applies editor filters to fullscreen/zoom views. Manages `ui.view_mode`.
+      > [MODIFIED] Handles keyboard input (`handleKeyDown`). Blocks main shortcuts when a dialog is open. Applies editor filters to fullscreen/zoom views. Manages `ui.view_mode`.
     📄 image_viewer_settings.js
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
@@ -131,7 +131,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [MODIFIED] Main orchestrator. Initializes all modules (UI, Editor, Gallery, etc.). Manages the non-blocking filter request queue (`isLoading`/`isDirty`). Handles per-folder lock state and UI logic, including the advanced reset dialog.
+    > [MODIFIED] Main orchestrator. Initializes all modules. Manages the non-blocking filter request queue. Contains global focus-release logic for UI controls to prevent keyboard shortcut blocking.
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -147,7 +147,7 @@ FILE_TREE_ANALYSIS:
     > Controller for the Nodes Manager.
     -> holaf_panel_manager
   📄 holaf_panel_manager.js
-    > [CRITICAL] Core FE utility. Creates draggable, resizable panels and modals. Exports `HOLAF_THEMES`.
+    > [MODIFIED] Core FE utility. Creates draggable panels and modals. Exports `HOLAF_THEMES`. Now manages a global dialog state (`dialogState`) and keyboard navigation for generic dialogs.
   📄 holaf_settings_manager.js
     > Controller for the global Settings panel.
     -> holaf_panel_manager
@@ -219,6 +219,10 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [feature, ui, export_dialog_advanced_nav] # Amélioration de la boîte de dialogue d'exportation avec une navigation 2D complète au clavier (boutons radio, cases à cocher).
+    - [feature, ui, dialog_keyboard_navigation] # Implémentation de la navigation au clavier (flèches, Entrée/Espace) pour tous les boutons des boîtes de dialogue.
+    - [fix, ui, focus_steal_on_controls] # Correction du bug où un clic sur un contrôle de l'interface (slider, case à cocher) bloquait les raccourcis clavier de la galerie.
+    - [fix, ui, dialog_z_index_fullscreen] # Correction du z-index des boîtes de dialogue pour qu'elles apparaissent toujours au-dessus de la vue plein écran.
     - [feature, ui, export_unsaved_changes_dialog] # Affiche un dialogue de confirmation pour sauvegarder les modifications avant d'exporter.
     - [fix, ui, search_scope_buttons_unresponsive] # Correction des boutons de portée de recherche (Name/Prompt/Workflow) qui ne répondaient plus au clic lorsqu'il y avait du texte dans la barre de recherche.
     - [fix, ui, editor_visibility_on_click] # Correction du bug qui affichait l'éditeur d'image un clic sur deux depuis la galerie.

@@ -254,8 +254,12 @@ class ImageViewerUI {
             this.callbacks.onFilterChange();
         };
 
-        this.elements.leftPane.querySelector('#holaf-viewer-date-start').onchange = this.callbacks.onFilterChange;
-        this.elements.leftPane.querySelector('#holaf-viewer-date-end').onchange = this.callbacks.onFilterChange;
+        this.elements.leftPane.querySelector('#holaf-viewer-date-start').onchange = (e) => {
+            this.callbacks.onFilterChange();
+        };
+        this.elements.leftPane.querySelector('#holaf-viewer-date-end').onchange = (e) => {
+            this.callbacks.onFilterChange();
+        };
 
         // --- Display Options ---
         this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
@@ -271,9 +275,11 @@ class ImageViewerUI {
             const newSize = parseInt(e.target.value);
             this.elements.thumbSizeValue.textContent = `${newSize}px`;
             viewer.saveSettings({ thumbnail_size: newSize });
-            viewer._applyThumbnailSize(); // CORRECTIF : Appel de la fonction pour appliquer le style
+            viewer._applyThumbnailSize();
         };
-        // L'ancien `onchange` est maintenant redondant et a été supprimé.
+        // MODIFICATION: Add onchange event to release focus after user finishes sliding
+        this.elements.thumbSizeSlider.onchange = (e) => {
+        };
 
         // --- Center Pane (Zoom View) Listeners ---
         const zoomView = this.elements.centerPane.querySelector('#holaf-viewer-zoom-view');

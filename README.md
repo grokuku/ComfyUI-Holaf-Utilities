@@ -118,6 +118,8 @@ This document tracks the project's evolution, planned features, and identified b
 
 ### ✅ Completed Features (Selection)
 
+*   `✅` **Dialog & Accessibility Overhaul:** All dialogs are now fully keyboard navigable. Simple dialogs use arrow keys for button selection, while the complex export dialog features advanced 2D-aware navigation for all controls.
+*   `✅` **UI & Focus Management:** Fixed a critical z-index bug causing dialogs to appear behind the fullscreen view. Corrected a major usability issue where clicking on UI controls (sliders, checkboxes) would improperly block main keyboard shortcuts.
 *   `✅` **Unsaved Changes Warning on Export:** The editor now prompts the user to save or discard changes before exporting an edited image, preventing accidental data loss.
 *   `✅` **UI Bug Squashing Spree:** Corrected bugs related to editor visibility, unresponsive filter buttons, and filter label positioning for a cleaner, more reliable interface.
 *   `✅` **State-Driven Architecture:** Major frontend refactor to use a central state manager, resulting in a highly responsive UI where filter changes are instant.

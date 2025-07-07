@@ -204,6 +204,16 @@ const holafImageViewer = {
                 onStateChange: (newState) => this.saveSettings(newState),
                 onFullscreenToggle: (isFullscreen) => this.saveSettings({ panel_is_fullscreen: isFullscreen }),
             });
+
+            // MODIFICATION: Add global focus manager to the entire panel.
+            const typesToKeepFocus = ['text', 'search', 'number', 'password', 'url', 'email'];
+            this.panelElements.panelEl.addEventListener('click', (e) => {
+                const target = e.target;
+                if (target.tagName === 'INPUT' && !typesToKeepFocus.includes(target.type)) {
+                    target.blur();
+                }
+            });
+
             this.populatePanelContent();
             this.applyPanelSettings();
             this._createFullscreenOverlay();
