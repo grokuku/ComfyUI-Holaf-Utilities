@@ -175,6 +175,14 @@ export class ImageEditor {
     }
 
     /**
+     * Public method to trigger a save.
+     * @returns {Promise<void>}
+     */
+    async save() {
+        await this._saveEdits();
+    }
+
+    /**
      * Calls the backend to regenerate the thumbnail and forces a visual refresh in the gallery.
      * @param {string} pathCanon - The canonical path of the image to refresh.
      */

@@ -211,16 +211,16 @@ PROJECT_STATE:
     ImageViewer:
       - [feature, realtime_file_monitoring] # Replace periodic scan with `watchdog` for instant updates.
       - [feature, corrupted_file_management] # Auto-move unreadable images to `output/corrupted`.
-      - [define, define_edit_button_action] # Define the action for the "Edit" button (e.g., rename, tag).
       - [feature, implement_slideshow] # Implement a slideshow mode.
     ImageEditor:
-      - [feature, ui, export_unsaved_changes_dialog] # On export, if edits are unsaved, prompt user: [Save & Export, Export without Saving, Don't Export, Cancel].
       - [feature, ui, editor_operations_tab(toggle_preview,copy_paste)] # Implement the "Operations" tab with toggle preview and copy/paste settings.
       - [feature, feature_crop_expand(canvas,Pillow_backend)]
       - [feature, feature_white_balance_rgb(canvas,Pillow_backend)]
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [feature, ui, export_unsaved_changes_dialog] # Affiche un dialogue de confirmation pour sauvegarder les modifications avant d'exporter.
+    - [fix, ui, search_scope_buttons_unresponsive] # Correction des boutons de portée de recherche (Name/Prompt/Workflow) qui ne répondaient plus au clic lorsqu'il y avait du texte dans la barre de recherche.
     - [fix, ui, editor_visibility_on_click] # Correction du bug qui affichait l'éditeur d'image un clic sur deux depuis la galerie.
     - [fix, ui, filter_label_cleanup] # Suppression du titre redondant "Filters" pour une interface plus épurée.
     - [fix, ui, scope_buttons_responsive] # Correction des boutons de portée de recherche pour qu'ils rafraîchissent toujours la galerie et mettent à jour leur état visuel.

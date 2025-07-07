@@ -6,6 +6,7 @@
  * and managing metadata for selected images.
  * REFACTOR: Updated to use the central imageViewerState.
  * CORRECTIF: Actions now correctly target the active image in zoom/fullscreen view.
+ * FEATURE: Added a confirmation dialog for exporting when there are unsaved edits.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
@@ -26,7 +27,7 @@ function _getTargets() {
     }
     
     // Sinon, en vue galerie, la cible est la sélection multiple.
-    return state.selectedImages;
+    return Array.from(state.selectedImages);
 }
 
 
@@ -434,14 +435,11 @@ export async function handleInjectMetadata(viewer) {
 }
 
 /**
- * Handles the "Export" action for selected images by opening an options dialog.
+ * Shows the export options dialog.
  * @param {object} viewer - The main image viewer instance.
+ * @param {object[]} imagesToExport - The array of image objects to export.
  */
-export function handleExport(viewer) {
-    // CORRECTIF : Utiliser _getTargets() pour obtenir les images concernées.
-    const imagesToExport = _getTargets();
-    if (imagesToExport.length === 0) return;
-
+function _showExportOptionsDialog(viewer, imagesToExport) {
     const overlay = document.createElement('div');
     overlay.id = 'holaf-viewer-export-dialog-overlay';
     
@@ -520,7 +518,6 @@ export function handleExport(viewer) {
         });
         
         const payload = {
-            // CORRECTIF : Utiliser les images ciblées et non plus la sélection de l'état.
             paths_canon: imagesToExport.map(img => img.path_canon),
             export_format: format,
             include_meta: includeMeta,
@@ -596,4 +593,50 @@ export function handleExport(viewer) {
     });
 
     toggleMetaMethod();
+}
+
+/**
+ * Handles the "Export" action, checking for unsaved changes first.
+ * @param {object} viewer - The main image viewer instance.
+ */
+export async function handleExport(viewer) {
+    const imagesToExport = _getTargets();
+    if (imagesToExport.length === 0) return;
+
+    const editor = viewer.editor;
+
+    // Check if the currently edited image (if any) is part of the export batch and has unsaved changes.
+    const activeImageHasUnsavedChanges = editor &&
+                                         editor.hasUnsavedChanges() &&
+                                         editor.activeImage &&
+                                         imagesToExport.some(img => img.path_canon === editor.activeImage.path_canon);
+
+    if (activeImageHasUnsavedChanges) {
+        const choice = await HolafPanelManager.createDialog({
+            title: "Unsaved Changes Detected",
+            message: "The active image has unsaved edits. How would you like to proceed with the export?",
+            buttons: [
+                { text: "Cancel", value: "cancel", type: "cancel" },
+                { text: "Export without Saving", value: "export_without_saving" },
+                { text: "Save & Export", value: "save_and_export", type: "confirm" }
+            ],
+            parentElement: viewer.panelElements.panelEl
+        });
+
+        switch (choice) {
+            case "save_and_export":
+                await editor.save(); // Await the save operation
+                _showExportOptionsDialog(viewer, imagesToExport);
+                break;
+            case "export_without_saving":
+                _showExportOptionsDialog(viewer, imagesToExport);
+                break;
+            case "cancel":
+            default:
+                return; // Do nothing
+        }
+    } else {
+        // No unsaved changes, or the unsaved image is not part of the export batch.
+        _showExportOptionsDialog(viewer, imagesToExport);
+    }
 }

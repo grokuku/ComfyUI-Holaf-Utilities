@@ -191,13 +191,16 @@ class ImageViewerUI {
         const createScopeClickHandler = (scopeKey) => () => {
             const currentFilters = imageViewerState.getState().filters;
             const newScopeState = { [scopeKey]: !currentFilters[scopeKey] };
+
+            // Save the setting, which also updates the central state
+            viewer.saveSettings(newScopeState);
+            
+            // Immediately update the button's visual state for instant feedback
+            viewer._updateSearchScopeButtonStates();
+
+            // Only trigger a full filter reload if there is text in the search bar
             if (searchInputEl.value.trim() !== "") {
-                viewer.saveSettings(newScopeState);
                 this.callbacks.onFilterChange();
-            } else {
-                viewer.saveSettings(newScopeState);
-                imageViewerState.setState({ filters: newScopeState });
-                viewer._updateSearchScopeButtonStates();
             }
         };
         this.elements.leftPane.querySelector('#holaf-search-scope-filename').onclick = createScopeClickHandler('search_scope_name');

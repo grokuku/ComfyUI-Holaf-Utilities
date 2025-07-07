@@ -107,12 +107,10 @@ This document tracks the project's evolution, planned features, and identified b
     *   During scans, automatically move unreadable images (and their `.txt`/`.json` files) to this folder.
     *   Display `Corrupted` as a special filter in the UI, with an "Empty" button to purge the folder.
 *   `💡` **Define Feature Actions:**
-    *   **"Edit" Button:** Define its primary action (e.g., rename, tag).
     *   **"Slideshow" Button:** Implement a slideshow mode.
 
 #### Image Editor
 
-*   `💡` **Export with Unsaved Changes Dialog:** On export, if edits are unsaved, prompt the user: [Save & Export, Export without Saving, Don't Export, Cancel].
 *   `💡` **"Operations" Tab:** Implement an "Operations" tab with "Toggle Preview" and "Copy/Paste Settings" functionality.
 *   `💡` **New Features:** Crop/Expand, White Balance, Vignette, Watermark Overlay.
 
@@ -120,6 +118,7 @@ This document tracks the project's evolution, planned features, and identified b
 
 ### ✅ Completed Features (Selection)
 
+*   `✅` **Unsaved Changes Warning on Export:** The editor now prompts the user to save or discard changes before exporting an edited image, preventing accidental data loss.
 *   `✅` **UI Bug Squashing Spree:** Corrected bugs related to editor visibility, unresponsive filter buttons, and filter label positioning for a cleaner, more reliable interface.
 *   `✅` **State-Driven Architecture:** Major frontend refactor to use a central state manager, resulting in a highly responsive UI where filter changes are instant.
 *   `✅` **Non-Blocking Toast Notifications:** Replaced blocking `alert()` and `confirm()` dialogs with a non-blocking, auto-hiding toast notification system.
