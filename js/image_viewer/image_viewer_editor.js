@@ -88,7 +88,8 @@ export class ImageEditor {
      */
     async _show(image) {
         this.activeImage = image;
-        this.panelEl.style.display = 'block';
+        // CORRECTIF : Ne plus gérer la visibilité ici pour éviter le bug de "stale state".
+        // this.panelEl.style.display = 'block'; 
         this.isDirty = false;
 
         await this._loadEditsForCurrentImage();
@@ -112,9 +113,9 @@ export class ImageEditor {
 
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
-        if(zoomedImg) zoomedImg.style.filter = 'none';
-        if(fullscreenImg) fullscreenImg.style.filter = 'none';
-        
+        if (zoomedImg) zoomedImg.style.filter = 'none';
+        if (fullscreenImg) fullscreenImg.style.filter = 'none';
+
         this.activeImage = null;
     }
 
@@ -141,7 +142,7 @@ export class ImageEditor {
         }
         this.originalState = { ...this.currentState };
         this.isDirty = false;
-        
+
         this._updateUIFromState();
         this.applyPreview();
         this._updateButtonStates();
@@ -189,8 +190,8 @@ export class ImageEditor {
             if (response.ok) {
                 // CORRECTIF : Ne pas manipuler le DOM de la galerie.
                 // Envoyer un événement global pour que la galerie puisse l'intercepter et se mettre à jour elle-même.
-                const event = new CustomEvent('holaf-refresh-thumbnail', { 
-                    detail: { path_canon: pathCanon } 
+                const event = new CustomEvent('holaf-refresh-thumbnail', {
+                    detail: { path_canon: pathCanon }
                 });
                 document.dispatchEvent(event);
                 console.log(`[Holaf Editor] Dispatched holaf-refresh-thumbnail event for ${pathCanon}`);
@@ -198,7 +199,7 @@ export class ImageEditor {
             } else {
                 console.error("[Holaf Editor] Failed to trigger thumbnail regeneration.", await response.json());
             }
-        } catch(e) {
+        } catch (e) {
             console.error("[Holaf Editor] Error calling thumbnail regeneration API:", e);
         }
     }
@@ -230,9 +231,9 @@ export class ImageEditor {
 
             if (result.status === 'ok') {
                 this.isDirty = false;
-                this.originalState = { ...this.currentState }; 
+                this.originalState = { ...this.currentState };
                 this._updateButtonStates();
-                
+
                 const state = imageViewerState.getState();
                 let newActiveImage = null;
                 const updatedImages = state.images.map(img => {
@@ -245,10 +246,10 @@ export class ImageEditor {
 
                 if (newActiveImage) {
                     imageViewerState.setState({ images: updatedImages, activeImage: newActiveImage });
-                } else { 
+                } else {
                     imageViewerState.setState({ images: updatedImages });
                 }
-                
+
                 await this._triggerThumbnailRegeneration(pathCanonToSave);
 
             } else {
@@ -259,7 +260,7 @@ export class ImageEditor {
             HolafPanelManager.createDialog({ title: "API Error", message: `Failed to save edits. The server response might not be valid. Details: ${e.message}` });
         }
     }
-    
+
     /**
      * Discards any unsaved changes by reverting to the original state.
      */
@@ -316,7 +317,7 @@ export class ImageEditor {
                     }
                     return img;
                 });
-                
+
                 if (newActiveImage) {
                     imageViewerState.setState({ images: updatedImages, activeImage: newActiveImage });
                 } else {
@@ -324,7 +325,7 @@ export class ImageEditor {
                 }
 
                 this._updateButtonStates();
-                
+
                 await this._triggerThumbnailRegeneration(pathCanonToReset);
 
             } else {
@@ -371,7 +372,7 @@ export class ImageEditor {
                 this.applyPreview();
             }
         });
-        
+
         ['brightness', 'contrast', 'saturation'].forEach(key => {
             const sliderContainer = this.panelEl.querySelector(`#holaf-editor-${key}-slider`).parentNode;
 

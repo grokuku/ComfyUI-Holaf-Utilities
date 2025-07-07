@@ -201,9 +201,7 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, state, folder_lock_persistence] # L'état de verrouillage des dossiers n'est pas sauvegardé et restauré après un redémarrage de ComfyUI.
-    - [bug, ui, scope_buttons_unresponsive] # Les boutons de portée de recherche ('Name'/'Prompt'/'Workflow') ne déclenchent pas de rafraîchissement de la galerie si la barre de recherche est vide, ce qui les fait paraître non fonctionnels.
-    - [bug, ui, filter_label_position] # Le titre de la section 'Filters' est mal positionné, en dessous de la barre de recherche au lieu d'être au-dessus.
+    # (None currently identified)
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -223,6 +221,10 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, ui, editor_visibility_on_click] # Correction du bug qui affichait l'éditeur d'image un clic sur deux depuis la galerie.
+    - [fix, ui, filter_label_cleanup] # Suppression du titre redondant "Filters" pour une interface plus épurée.
+    - [fix, ui, scope_buttons_responsive] # Correction des boutons de portée de recherche pour qu'ils rafraîchissent toujours la galerie et mettent à jour leur état visuel.
+    - [fix, state, folder_lock_persistence] # L'état de verrouillage des dossiers est maintenant sauvegardé et restauré après un redémarrage.
     - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran/zoom pour qu'ils affichent toujours les effets de l'image active.
     - [feature, ui, folder_filter_enhancements] # Added folder filter enhancements: "Invert" action, per-folder SVG lock icons, and an advanced reset dialog that respects locked folders' state.
     - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails to prevent stretching.

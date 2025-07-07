@@ -86,6 +86,12 @@
     /* MODIFIED: was 14px */
 }
 
+/* CORRECTIF: Cible le titre 'Filters' (qui est le seul enfant de son groupe) pour corriger sa position. */
+.holaf-viewer-filter-group h4:only-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
 .holaf-viewer-filter-list {
     display: flex;
     flex-direction: column;
@@ -95,7 +101,8 @@
 .holaf-viewer-filter-item {
     display: flex;
     align-items: center;
-    gap: 4px; /* MODIFIED: was 8px for compactness */
+    gap: 4px;
+    /* MODIFIED: was 8px for compactness */
     font-size: 13px;
     cursor: pointer;
     user-select: none;
@@ -145,7 +152,8 @@
 .holaf-viewer-filter-item input[type="checkbox"] {
     accent-color: var(--holaf-accent-color);
     cursor: pointer;
-    margin-left: 0; /* MODIFIED: Reset margin for compactness */
+    margin-left: 0;
+    /* MODIFIED: Reset margin for compactness */
     margin-right: 0;
 }
 
@@ -335,8 +343,10 @@
 .holaf-viewer-thumbnail-placeholder.exiting {
     opacity: 0;
     transform: scale(0.9);
-    pointer-events: none; /* Prevent interaction during exit animation */
+    pointer-events: none;
+    /* Prevent interaction during exit animation */
 }
+
 /* --- MODIFICATION END --- */
 
 .holaf-viewer-thumbnail-placeholder:hover {
@@ -1016,15 +1026,18 @@
 .holaf-folder-lock-icon {
     text-decoration: none;
     color: var(--holaf-text-secondary);
-    opacity: 0.3; /* Visible but faded when unlocked */
+    opacity: 0.3;
+    /* Visible but faded when unlocked */
     transition: opacity 0.2s, color 0.2s;
     cursor: pointer;
-    display: flex; /* Helps with vertical alignment */
+    display: flex;
+    /* Helps with vertical alignment */
     align-items: center;
 }
 
 .holaf-folder-lock-icon svg {
-    vertical-align: middle; /* Better alignment with text */
+    vertical-align: middle;
+    /* Better alignment with text */
 }
 
 .holaf-viewer-filter-item:hover .holaf-folder-lock-icon {
@@ -1035,4 +1048,5 @@
     opacity: 1;
     color: var(--holaf-accent-color);
 }
+
 /* --- END FOLDER LOCK STYLES --- */

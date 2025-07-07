@@ -19,7 +19,7 @@ class ImageViewerUI {
 
     init(container, callbacks) {
         this.callbacks = callbacks; // { getViewer, onFilterChange, onResetFilters, onEmptyTrash }
-        
+
         // Build the main structure
         this.elements.container = container;
         this.elements.container.innerHTML = ''; // Clear previous content
@@ -35,21 +35,21 @@ class ImageViewerUI {
         this.elements.leftPane = this._createLeftPane();
         this.elements.centerPane = this._createCenterPane(); // Simplified: only one center pane
         this.elements.rightColumn = this._createRightColumn();
-        
+
         // Final assembly
         mainContent.append(this.elements.leftPane, this.elements.centerPane, this.elements.rightColumn);
-        
+
         this.elements.statusBar = document.createElement('div');
         this.elements.statusBar.id = 'holaf-viewer-statusbar';
         this.elements.statusBar.style.cssText = 'text-align: left; padding: 5px 10px;';
-        
+
         this.elements.container.append(mainContent, this.elements.statusBar);
 
         this._setupEventListeners();
-        
+
         // Subscribe to state changes to reactively update UI controls
         imageViewerState.subscribe(this._render.bind(this));
-        
+
         // Initial render based on current state
         this._render(imageViewerState.getState());
     }
@@ -81,9 +81,6 @@ class ImageViewerUI {
                     <button id="holaf-search-scope-prompt" class="holaf-viewer-toggle-button">Prompt</button>
                     <button id="holaf-search-scope-workflow" class="holaf-viewer-toggle-button">Workflow</button>
                 </div>
-            </div>
-            <div class="holaf-viewer-filter-group">
-                <h4>Filters</h4>
             </div>
             <div class="holaf-viewer-filter-group">
                 <h4>Date Range</h4>
@@ -175,12 +172,12 @@ class ImageViewerUI {
         `;
         return col;
     }
-    
+
     _setupEventListeners() {
         const viewer = this.callbacks.getViewer();
 
         // --- Left Pane Listeners ---
-        
+
         // Find the new reset button in the Actions section
         this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = (e) => {
             this.callbacks.onResetFilters();
@@ -219,7 +216,7 @@ class ImageViewerUI {
             viewer._updateWorkflowButtonStates();
             this.callbacks.onFilterChange();
         };
-        
+
         this.elements.leftPane.querySelector('#holaf-viewer-folders-select-all').onclick = (e) => {
             e.preventDefault();
             const { locked_folders } = imageViewerState.getState().filters;
@@ -253,10 +250,10 @@ class ImageViewerUI {
             });
             this.callbacks.onFilterChange();
         };
-        
+
         this.elements.leftPane.querySelector('#holaf-viewer-date-start').onchange = this.callbacks.onFilterChange;
         this.elements.leftPane.querySelector('#holaf-viewer-date-end').onchange = this.callbacks.onFilterChange;
-        
+
         // --- Display Options ---
         this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
         this.elements.thumbFitToggle.onchange = (e) => {
@@ -264,7 +261,7 @@ class ImageViewerUI {
             viewer.saveSettings({ thumbnail_fit: newFit });
             viewer._applyThumbnailFit();
         };
-        
+
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
         this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
         this.elements.thumbSizeSlider.oninput = (e) => {
@@ -282,7 +279,7 @@ class ImageViewerUI {
         this.elements.centerPane.querySelector('.holaf-viewer-zoom-fullscreen-icon').onclick = () => viewer._showFullscreenView();
         zoomImage.ondblclick = () => viewer._showFullscreenView();
         zoomImage.onclick = (e) => e.stopPropagation();
-        
+
         Navigation.setupZoomAndPan(viewer.zoomViewState, zoomView, zoomImage);
     }
 }

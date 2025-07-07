@@ -86,9 +86,7 @@ This document tracks the project's evolution, planned features, and identified b
 
 ### 🐞 Active Bugs
 
-*   `🐞` **Folder lock state is not saved** and restored after a ComfyUI restart.
-*   `🐞` **Search scope buttons ('Name'/'Prompt'/'Workflow') are unresponsive** if the search bar is empty.
-*   `🐞` **The 'Filters' section title is incorrectly positioned** below the search bar instead of above it.
+*   *(None currently identified)*
 
 ### ⏳ In Progress
 
@@ -122,10 +120,11 @@ This document tracks the project's evolution, planned features, and identified b
 
 ### ✅ Completed Features (Selection)
 
+*   `✅` **UI Bug Squashing Spree:** Corrected bugs related to editor visibility, unresponsive filter buttons, and filter label positioning for a cleaner, more reliable interface.
 *   `✅` **State-Driven Architecture:** Major frontend refactor to use a central state manager, resulting in a highly responsive UI where filter changes are instant.
 *   `✅` **Non-Blocking Toast Notifications:** Replaced blocking `alert()` and `confirm()` dialogs with a non-blocking, auto-hiding toast notification system.
 *   `✅` **Folder Filter Enhancements:** Added "Invert" selection, per-folder "lock" icons, and an advanced reset dialog that respects locked folders.
-*   `✅` **Full Filter Persistence:** All filter settings (search, folders, dates, etc.) are now correctly saved and restored between sessions.
+*   `✅` **Full Filter Persistence:** All filter settings (search, folders, dates, lock state, etc.) are now correctly saved and restored between sessions.
 *   `✅` **Export Workflow Fix:** Corrected a frontend/backend data mismatch that prevented workflows from being saved in exported images.
 *   `✅` **Thumbnail & Gallery Fixes:** Corrected last-row justification, implemented instant thumbnail size/fit updates, and enabled spacebar to toggle selection.
 *   `✅` **Editor & Fullscreen Previews:** Live editor previews now correctly apply to the active image in zoom and fullscreen modes.

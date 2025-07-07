@@ -81,6 +81,7 @@ def load_all_configs():
     ui_settings_image_viewer.update({
         'folder_filters': folder_filters,
         'format_filters': format_filters,
+        'locked_folders': locked_folders,
         'thumbnail_fit': config_parser_obj.get('ImageViewerUI', 'thumbnail_fit', fallback='cover'),
         'thumbnail_size': config_parser_obj.getint('ImageViewerUI', 'thumbnail_size', fallback=150),
         'export_format': config_parser_obj.get('ImageViewerUI', 'export_format', fallback='png'),
