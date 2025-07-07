@@ -339,7 +339,7 @@ export const HolafPanelManager = {
             const overlay = document.createElement("div");
             overlay.style.cssText = `
                 position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                background: rgba(0, 0, 0, 0.6); z-index: ${currentMaxZIndex + 100};
+                background: rgba(0, 0, 0, 0.6); z-index: 110000; /* Higher than fullscreen overlay */
                 display: flex; align-items: center; justify-content: center;
             `;
             
