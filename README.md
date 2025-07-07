@@ -37,9 +37,8 @@
 
 2.  Clone this repository:
     ```bash
-    git clone <repository_url> ComfyUI-Holaf-Utilities
+    git clone https://github.com/grokuku/ComfyUI-Holaf-Utilities
     ```
-    *(Replace `<repository_url>` with the actual repository URL)*
 
 3.  Install the required Python dependencies. Navigate into the new directory and use `pip`:
     ```bash
