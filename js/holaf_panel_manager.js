@@ -170,7 +170,7 @@ export const HolafPanelManager = {
         closeButton.textContent = "✖";
         closeButton.style.marginLeft = "auto";
         if (options.headerContent) {
-             closeButton.style.marginLeft = "10px";
+            closeButton.style.marginLeft = "10px";
         }
 
         closeButton.onclick = (e) => {
@@ -204,13 +204,13 @@ export const HolafPanelManager = {
         document.body.appendChild(panel);
 
         panel.addEventListener("mousedown", () => {
-             this.bringToFront(panel);
+            this.bringToFront(panel);
         }, true);
 
         this.makeDraggable(panel, header, options.onStateChange);
         this.makeResizable(panel, resizeHandle, options.onStateChange, options.onResize);
         this.setupFullscreenToggle(panel, header, options.onFullscreenToggle);
-        
+
         this.bringToFront(panel);
 
         return { panelEl: panel, contentEl: content, headerEl: header };
@@ -325,7 +325,7 @@ export const HolafPanelManager = {
             document.addEventListener("mouseup", onResizeUp);
         });
     },
-    
+
     setupFullscreenToggle(panel, handle, onFullscreenToggle) {
         handle.addEventListener("dblclick", (e) => {
             if (e.target.closest("button, input, select, textarea, a")) return;
@@ -350,7 +350,7 @@ export const HolafPanelManager = {
                 background: rgba(0, 0, 0, 0.6); z-index: 110000;
                 display: flex; align-items: center; justify-content: center;
             `;
-            
+
             const dialog = document.createElement("div");
             dialog.className = "holaf-utility-panel";
             dialog.style.position = "relative";
@@ -361,10 +361,10 @@ export const HolafPanelManager = {
             dialog.style.height = "auto";
             dialog.style.top = "auto";
             dialog.style.left = "auto";
-            
+
             const anyPanel = document.querySelector('.holaf-utility-panel');
             let themeClass = 'holaf-theme-graphite-orange';
-            if(anyPanel) {
+            if (anyPanel) {
                 for (const theme of HOLAF_THEMES) {
                     if (anyPanel.classList.contains(theme.className)) {
                         themeClass = theme.className;
@@ -377,7 +377,7 @@ export const HolafPanelManager = {
             const header = document.createElement("div");
             header.className = "holaf-utility-header";
             header.innerHTML = `<span>${options.title || "Confirmation"}</span>`;
-            
+
             const content = document.createElement("div");
             content.innerHTML = `<p style="padding: 15px 20px; color: var(--holaf-text-primary); white-space: pre-wrap;">${options.message}</p>`;
 
@@ -402,9 +402,9 @@ export const HolafPanelManager = {
                 const button = document.createElement("button");
                 button.textContent = btnInfo.text;
                 button.className = "comfy-button";
-                if(btnInfo.type === 'cancel') {
+                if (btnInfo.type === 'cancel') {
                     button.style.backgroundColor = 'var(--holaf-tag-background)';
-                } else if(btnInfo.type === 'danger') {
+                } else if (btnInfo.type === 'danger') {
                     button.style.backgroundColor = '#c44';
                 }
                 button.onclick = () => {
@@ -414,7 +414,7 @@ export const HolafPanelManager = {
                 footer.appendChild(button);
                 buttons.push(button);
             });
-            
+
             const updateFocusedButton = (newIndex) => {
                 if (focusedButtonIndex > -1) {
                     buttons[focusedButtonIndex].classList.remove('dialog-button-focused');
@@ -441,20 +441,20 @@ export const HolafPanelManager = {
                         buttons[focusedButtonIndex].click();
                     }
                 } else if (e.key === 'Escape') {
-                     e.preventDefault();
-                     const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
-                     if(cancelButton) {
+                    e.preventDefault();
+                    const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
+                    if (cancelButton) {
                         cancelButton.click();
-                     }
+                    }
                 }
             };
-            
+
             document.addEventListener("keydown", handleDialogKeyDown);
 
             dialog.append(header, content, footer);
             overlay.appendChild(dialog);
             document.body.appendChild(overlay);
-            
+
             // CORRECTIF : Déplacer cette logique APRÈS l'ajout au DOM
             if (buttons.length > 0) {
                 // Focus the last button by default (usually the "confirm" action)

@@ -71,7 +71,7 @@ const HolafModal = {
         document.body.appendChild(overlay);
 
         const closeModal = () => {
-             // Clean up any intervals that might have been created by a process within the modal
+            // Clean up any intervals that might have been created by a process within the modal
             if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
             if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
             delete window.holaf.restartMonitorInterval;
@@ -105,6 +105,13 @@ const HolafUtilitiesMenu = {
 
     init() {
         this.loadSharedCss();
+
+        // --- [FIX] Ensure a default theme is present on the body ---
+        if (!document.body.className.includes("holaf-theme-")) {
+            document.body.classList.add("holaf-theme-graphite-orange");
+            console.log("[Holaf Main] Applied default fallback theme to body.");
+        }
+        // --- [END FIX] ---
 
         // --- NEW: Initialize global Holaf namespace and Toast Manager ---
         if (!window.holaf) {
@@ -181,7 +188,7 @@ const HolafUtilitiesMenu = {
 
                         const messageEl = document.getElementById("holaf-restart-message");
                         const timerLineEl = document.getElementById("holaf-restart-timer-line");
-                        
+
                         // Update texts and visibility
                         dialog.querySelector(".holaf-utility-header span").textContent = "Restarting Server";
                         messageEl.textContent = "Sending restart command...";
@@ -194,12 +201,12 @@ const HolafUtilitiesMenu = {
                         `;
 
                         const cleanupAndClose = () => {
-                             const overlay = document.getElementById("holaf-modal-overlay");
-                             if(overlay) overlay.remove();
-                             if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
-                             if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
-                             delete window.holaf.restartMonitorInterval;
-                             delete window.holaf.restartTimerInterval;
+                            const overlay = document.getElementById("holaf-modal-overlay");
+                            if (overlay) overlay.remove();
+                            if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
+                            if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
+                            delete window.holaf.restartMonitorInterval;
+                            delete window.holaf.restartTimerInterval;
                         }
 
                         dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
@@ -210,49 +217,61 @@ const HolafUtilitiesMenu = {
                             .then(res => res.json())
                             .then(data => {
                                 if (data.status !== "ok") throw new Error(data.message || 'Unknown server error');
-                                
+
                                 const timerEl = document.getElementById("holaf-restart-timer");
                                 const refreshBtn = document.getElementById("holaf-restart-refresh-btn");
                                 if (!messageEl || !timerEl || !refreshBtn) return; // Dialog was closed
 
                                 messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
-                                
+
                                 let seconds = 0;
                                 window.holaf.restartTimerInterval = setInterval(() => {
                                     seconds++;
-                                    if(timerEl) timerEl.textContent = seconds;
+                                    if (timerEl) timerEl.textContent = seconds;
                                 }, 1000);
 
                                 let serverIsDown = false;
                                 const checkServerStatus = () => {
-                                    fetch(window.location.origin, { method: 'HEAD', mode: 'no-cors', cache: 'no-cache' })
-                                        .then(() => {
-                                            if (serverIsDown) {
-                                                // --- Stage 3: Server is back online ---
-                                                clearInterval(window.holaf.restartMonitorInterval);
-                                                clearInterval(window.holaf.restartTimerInterval);
-                                                delete window.holaf.restartMonitorInterval;
-                                                delete window.holaf.restartTimerInterval;
-                                                
-                                                if (!messageEl || !refreshBtn) return;
+                                    // --- [FIX] Removed 'no-cors' to inspect response. Added explicit status check.
+                                    fetch(window.location.origin, { method: 'HEAD', cache: 'no-cache' })
+                                        .then(response => {
+                                            if (response.ok) { // Check for 2xx status codes
+                                                if (serverIsDown) {
+                                                    // --- Stage 3: Server is back online ---
+                                                    clearInterval(window.holaf.restartMonitorInterval);
+                                                    clearInterval(window.holaf.restartTimerInterval);
+                                                    delete window.holaf.restartMonitorInterval;
+                                                    delete window.holaf.restartTimerInterval;
 
-                                                messageEl.innerHTML = `✅ Server has rebooted successfully in <strong>${seconds}</strong> seconds.`;
-                                                if (timerLineEl) timerLineEl.style.visibility = "hidden"; // Hide timer line on success
-                                                refreshBtn.textContent = "Refresh Page";
-                                                refreshBtn.disabled = false;
-                                                refreshBtn.onclick = () => location.reload();
-                                                refreshBtn.focus();
+                                                    if (!messageEl || !refreshBtn) return;
+
+                                                    messageEl.innerHTML = `✅ Server has rebooted successfully in <strong>${seconds}</strong> seconds.`;
+                                                    if (timerLineEl) timerLineEl.style.visibility = "hidden"; // Hide timer line on success
+                                                    refreshBtn.textContent = "Refresh Page";
+                                                    refreshBtn.disabled = false;
+                                                    refreshBtn.onclick = () => location.reload();
+                                                    refreshBtn.focus();
+                                                }
+                                            } else {
+                                                // Server is up but returning an error (e.g., 502 from proxy)
+                                                // Treat this as the server being down.
+                                                if (!serverIsDown) {
+                                                    console.log(`[Holaf Utilities] Server is responding with error ${response.status}. Treating as offline.`);
+                                                    if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                                    serverIsDown = true;
+                                                }
                                             }
                                         })
                                         .catch(() => {
+                                            // This catches network errors (server truly unreachable)
                                             if (!serverIsDown) {
-                                                console.log("[Holaf Utilities] Server is now offline. Waiting for it to come back online.");
-                                                if(messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                                console.log("[Holaf Utilities] Server is now offline (network error). Waiting for it to come back online.");
+                                                if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
                                                 serverIsDown = true;
                                             }
                                         });
                                 };
-                                
+
                                 window.holaf.restartMonitorInterval = setInterval(checkServerStatus, 2000);
                             })
                             .catch(err => {
@@ -270,7 +289,7 @@ const HolafUtilitiesMenu = {
                         monitor.toggle();
                     } else {
                         console.error("[Holaf Utilities] HolafSystemMonitor is not available.");
-                        HolafModal.show("Error", "System Monitor module not loaded.", () => {}, "OK", null);
+                        HolafModal.show("Error", "System Monitor module not loaded.", () => { }, "OK", null);
                     }
                 } else {
                     // Handle standard panel opening
