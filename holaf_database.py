@@ -11,7 +11,7 @@ DB_DIR = os.path.dirname(__file__) # In the extension's root directory
 DB_PATH = os.path.join(DB_DIR, DB_NAME)
 # --- SINGLE SOURCE OF TRUTH FOR DB SCHEMA ---
 # Increment this number whenever you make a change to the table structures below.
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 # --- Thread-local storage for database connections ---
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
@@ -81,6 +81,9 @@ def _create_fresh_schema(cursor):
     # Indices for performance
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_subfolder ON images(subfolder)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
 
     # Set the version in the new table
     cursor.execute("INSERT INTO holaf_db_version (version) VALUES (?)", (LATEST_SCHEMA_VERSION,))

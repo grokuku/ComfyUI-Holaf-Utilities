@@ -45,7 +45,7 @@ async def get_filter_options_route(request: web.Request):
             "subfolders": sorted(list(subfolders)), 
             "formats": formats, 
             "has_root": has_root_images,
-            "last_update_time": logic.LAST_DB_UPDATE_TIME # --- MODIFICATION: Add timestamp to response
+            "last_update_time": logic.LAST_DB_UPDATE_TIME
         }
         return web.json_response(response_data)
     except Exception as e:
@@ -74,14 +74,11 @@ async def list_images_route(request: web.Request):
 
         folder_filters = filters.get('folder_filters', [])
         
-        # If 'trashcan' is selected, we ONLY show the trashcan, regardless of other selections.
         if logic.TRASHCAN_DIR_NAME in folder_filters:
             where_clauses.append("is_trashed = 1")
-            # Build a condition that only matches the trashcan and its subdirectories.
             where_clauses.append("(subfolder = ? OR subfolder LIKE ?)")
             params.extend([logic.TRASHCAN_DIR_NAME, f"{logic.TRASHCAN_DIR_NAME}/%"])
-
-        else: # Normal view, non-trashed items
+        else:
             where_clauses.append("is_trashed = 0")
             if folder_filters:
                 conditions = []
@@ -96,7 +93,7 @@ async def list_images_route(request: web.Request):
                     where_clauses.append(f"({ ' OR '.join(conditions) })")
 
         format_filters = filters.get('format_filters', [])
-        if format_filters: # Format filters apply to both trash and non-trash views
+        if format_filters:
             placeholders = ','.join('?' * len(format_filters))
             where_clauses.append(f"format IN ({placeholders})"); params.extend(format_filters)
 
@@ -111,7 +108,6 @@ async def list_images_route(request: web.Request):
                 where_clauses.append("mtime < ?"); params.append(time.mktime(dt_end.timetuple()))
             except (ValueError, TypeError): print(f"🟡 Invalid end date: {filters['endDate']}")
 
-        # Workflow availability filter
         workflow_filter = filters.get('workflow_filter')
         if workflow_filter and workflow_filter != 'all':
             if workflow_filter == 'present':
@@ -121,50 +117,39 @@ async def list_images_route(request: web.Request):
             elif workflow_filter == 'external':
                 where_clauses.append("workflow_source = 'external_json'")
             elif workflow_filter == 'none':
-                # Consider 'none' and NULL as no workflow
                 where_clauses.append("(workflow_source NOT IN ('internal_png', 'external_json') OR workflow_source IS NULL)")
 
-
-        # --- MODIFICATION START: Dynamic Text Search ---
         search_text = filters.get('search_text')
         search_scopes = filters.get('search_scopes', [])
         if search_text and search_scopes:
             search_term = f"%{search_text}%"
             scope_conditions = []
-            
-            scope_to_column_map = {
-                "name": "filename",
-                "prompt": "prompt_text",
-                "workflow": "workflow_json"
-            }
-            
+            scope_to_column_map = {"name": "filename", "prompt": "prompt_text", "workflow": "workflow_json"}
             for scope in search_scopes:
                 column = scope_to_column_map.get(scope)
                 if column:
                     scope_conditions.append(f"{column} LIKE ?")
                     params.append(search_term)
-
             if scope_conditions:
                 where_clauses.append(f"({ ' OR '.join(scope_conditions) })")
-        # --- MODIFICATION END ---
 
         final_query = query_base
         if where_clauses:
             final_query += " WHERE " + " AND ".join(where_clauses)
-
+        
+        # --- REVERTED: Count query is now run on the same base query ---
         count_query_filtered = final_query.replace(query_fields, "COUNT(*)")
         cursor.execute(count_query_filtered, params)
         filtered_count = cursor.fetchone()[0]
 
-        # Total non-trashed images in DB
         cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0")
         total_db_count = cursor.fetchone()[0]
-        # Generated thumbnails for non-trashed images
         cursor.execute("SELECT COUNT(*) FROM images WHERE thumbnail_status = 2 AND is_trashed = 0")
         generated_thumbnails_count = cursor.fetchone()[0]
         
         conn.commit()
 
+        # --- REVERTED: Remove LIMIT and OFFSET ---
         final_query += " ORDER BY mtime DESC"
         cursor.execute(final_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]
