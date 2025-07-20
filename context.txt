@@ -2,6 +2,8 @@
 
 --- START OF FILE context.txt ---
 
+--- START OF FILE context.txt ---
+
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -197,7 +199,7 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, performance, recursion_error_on_rapid_folder_selection] # Selecting/deselecting folders too quickly causes a "too much recursion" error.
+    # (None currently identified)
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -205,6 +207,10 @@ PROJECT_STATE:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
       - [backend, periodic_maintenance_worker] # Hourly worker to clean DB and cache.
     ImageViewer:
+      - [tuning, performance, performance_filtre_dossiers_galerie] # Améliorer la performance lors de la sélection de dossiers en pré-calculant et en mettant en cache les métadonnées des dossiers (ex: nombre d'images) dans la base de données pour accélérer les mises à jour.
+      - [feature, ui, ancrage_vue_redimensionnement_miniatures] # Ancrer la vue sur l'image sous le curseur lors du redimensionnement des miniatures pour éviter les sauts de défilement.
+      - [feature, ui, ancrage_vue_redimensionnement_fenetre] # Ancrer la vue sur l'image sous le curseur lors du redimensionnement de la fenêtre pour maintenir le contexte visuel.
+      - [feature, ui, differenciation_visuelle_curseur_selection] # Modifier le style visuel du curseur de l'image active pour le distinguer clairement des miniatures sélectionnées.
       - [feature, ui, animated_gallery_filter_transitions] # Implement smooth, animated cross-fade transitions when gallery filters are changed.
       - [feature, ui, gallery_sorting_options] # Implement gallery sorting controls (by name, by date) in both ascending and descending order.
       - [investigation, state, folder_filter_persistence] # Double-check that folder selection state is robustly saved and restored across full application reboots.
