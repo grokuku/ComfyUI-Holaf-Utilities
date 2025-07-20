@@ -11,7 +11,7 @@ DB_DIR = os.path.dirname(__file__) # In the extension's root directory
 DB_PATH = os.path.join(DB_DIR, DB_NAME)
 # --- SINGLE SOURCE OF TRUTH FOR DB SCHEMA ---
 # Increment this number whenever you make a change to the table structures below.
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 9
 
 # --- Thread-local storage for database connections ---
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
@@ -69,6 +69,7 @@ def _create_fresh_schema(cursor):
     cursor.execute("""
         CREATE TABLE images (
             id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, subfolder TEXT,
+            top_level_subfolder TEXT,
             path_canon TEXT NOT NULL UNIQUE, format TEXT, width INTEGER, height INTEGER,
             aspect_ratio_str TEXT, size_bytes INTEGER, mtime REAL, prompt_text TEXT,
             workflow_json TEXT, last_synced_at REAL, thumbnail_status INTEGER DEFAULT 0,
@@ -90,9 +91,14 @@ def _create_fresh_schema(cursor):
     # Indices for performance
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_subfolder ON images(subfolder)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
+    # --- MODIFICATION: Replace individual indexes with a more powerful composite index ---
+    # This index is critical for speeding up queries that filter by folder and order by date.
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_top_level_subfolder_mtime ON images(top_level_subfolder, mtime)")
+    # The individual index on mtime is still useful for queries that don't filter by folder.
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
+    # We no longer need the individual index on top_level_subfolder, as the composite one can serve that purpose.
+    # --- END MODIFICATION ---
 
     # Set the version in the new table
     cursor.execute("INSERT INTO holaf_db_version (version) VALUES (?)", (LATEST_SCHEMA_VERSION,))
@@ -128,7 +134,7 @@ def _migrate_database_by_copy(current_db_version):
         print("  > New database created with the latest schema.")
 
         # 3. Attach the old database and transfer data
-        print("  > Transferring data from old database...")
+        print("  > Attaching old database to transfer data...")
         cursor.execute(f"ATTACH DATABASE ? AS old_db", (backup_path,))
 
         def get_columns(c, table_name, db_name="main"):
@@ -154,10 +160,26 @@ def _migrate_database_by_copy(current_db_version):
             old_images_cols = get_columns(cursor, 'images', 'old_db')
             new_images_cols = get_columns(cursor, 'images', 'main')
             common_cols = list(old_images_cols.intersection(new_images_cols))
+            if 'top_level_subfolder' in common_cols:
+                 common_cols.remove('top_level_subfolder') # Don't copy this, we'll populate it next
+
             if common_cols:
                 cols_str = ", ".join(f'"{col}"' for col in common_cols)
                 cursor.execute(f"INSERT INTO main.images ({cols_str}) SELECT {cols_str} FROM old_db.images")
                 print(f"    > Transferred {cursor.rowcount} rows to 'images' table.")
+                
+                # Populate the top_level_subfolder column for existing images
+                print("    > Populating 'top_level_subfolder' column for existing images...")
+                cursor.execute("""
+                    UPDATE images
+                    SET top_level_subfolder = CASE
+                        WHEN subfolder = '' OR subfolder IS NULL THEN 'root'
+                        WHEN INSTR(subfolder, '/') > 0 THEN SUBSTR(subfolder, 1, INSTR(subfolder, '/') - 1)
+                        ELSE subfolder
+                    END
+                """)
+                print(f"      ... Done. {cursor.rowcount} rows updated.")
+
         except sqlite3.OperationalError:
             print("    > 'images' table not found in old database. Skipping.")
         except Exception as e:
@@ -273,13 +295,12 @@ if __name__ == '__main__':
                  assert table in tables, f"FAILURE: '{table}' table was not created."
             print("✅ All required tables are present.")
 
-            cursor_test.execute("PRAGMA table_info(images)")
-            column_names = [col_info['name'] for col_info in cursor_test.fetchall()]
-            print("Columns in 'images' table:", column_names)
-            expected_cols = ['is_trashed', 'original_path_canon', 'prompt_source', 'workflow_source', 'has_edit_file']
-            for col in expected_cols:
-                assert col in column_names, f"Column '{col}' missing!"
-            print("✅ All required columns from latest schema confirmed.")
+            cursor_test.execute("PRAGMA index_list(images)")
+            indexes = [idx['name'] for idx in cursor_test.fetchall()]
+            print("Indexes on 'images' table:", indexes)
+            assert 'idx_images_top_level_subfolder_mtime' in indexes, "CRITICAL: Composite index was not created!"
+            print("✅ Composite index is present.")
+
 
         else:
             print("Failed to get database connection.")

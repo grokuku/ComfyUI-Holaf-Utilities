@@ -114,16 +114,20 @@ def add_or_update_single_image(image_abs_path):
         if file_ext.lower() not in SUPPORTED_IMAGE_FORMATS:
             return
 
-        subfolder = os.path.relpath(directory, output_dir)
-        if subfolder == '.': subfolder = ''
-        path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
-        
-        # Determine folder_path_for_meta ('root' for base directory)
-        folder_path_for_meta = 'root' if subfolder == '' else subfolder.replace(os.sep, '/')
+        subfolder_str = os.path.relpath(directory, output_dir).replace(os.sep, '/')
+        if subfolder_str == '.': subfolder_str = ''
+        path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
 
-        # Ensure we are not processing something in the trashcan
-        if subfolder.startswith(TRASHCAN_DIR_NAME + '/') or subfolder == TRASHCAN_DIR_NAME:
+        if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
             return
+
+        # --- MODIFICATION: Calculate top_level_subfolder ---
+        top_level_subfolder = 'root'
+        if subfolder_str:
+            top_level_subfolder = subfolder_str.split('/')[0]
+        # ---
+        
+        folder_path_for_meta = 'root' if subfolder_str == '' else subfolder_str
 
         edit_file_path = os.path.join(directory, f"{base_filename}.edt")
         has_edit_file = os.path.isfile(edit_file_path)
@@ -133,22 +137,20 @@ def add_or_update_single_image(image_abs_path):
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
         
-        # Use INSERT OR REPLACE to handle both new and updated files cleanly
         cursor.execute("""
             INSERT OR REPLACE INTO images 
-                (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
+                (filename, subfolder, top_level_subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
                  is_trashed, original_path_canon,
                  prompt_text, workflow_json, prompt_source, workflow_source,
                  width, height, aspect_ratio_str, has_edit_file,
                  thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1000, NULL)
-        """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(),
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1000, NULL)
+        """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
               file_stat.st_mtime, file_stat.st_size, time.time(),
               meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
               meta.get('prompt_source'), meta.get('workflow_source'),
               meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file))
         
-        # --- MODIFICATION: Incrementally update folder metadata cache ---
         cursor.execute("""
             INSERT INTO folder_metadata (path_canon, image_count, last_calculated_at)
             VALUES (?, 1, ?)
@@ -159,7 +161,7 @@ def add_or_update_single_image(image_abs_path):
 
         conn.commit()
         print(f"🔵 [Holaf-Logic] Successfully added/updated single image in DB: {path_canon}")
-        update_last_db_update_time() # Signal that the DB has changed
+        update_last_db_update_time() 
 
     except Exception as e:
         update_exception = e
@@ -183,7 +185,6 @@ def sync_image_database_blocking():
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        # Fetch mtime and size for existing DB images to detect changes (non-trashed only for this check)
         cursor.execute("SELECT id, path_canon, mtime, size_bytes, thumbnail_last_generated_at FROM images WHERE is_trashed = 0")
         db_images = {row['path_canon']: dict(row) for row in cursor.fetchall()}
 
@@ -192,12 +193,10 @@ def sync_image_database_blocking():
             print(f"🟡 [Holaf-ImageViewer] Output directory not found: {output_dir}")
         else:
             for root, dirs, files in os.walk(output_dir):
-                # Skip the trashcan directory itself and its contents from regular sync
                 if os.path.normpath(root) == os.path.normpath(trashcan_full_path):
-                    dirs[:] = [] # Don't go into subdirectories of trashcan
+                    dirs[:] = [] 
                     continue
 
-                # Also skip if root is a subfolder of trashcan_full_path
                 if os.path.normpath(root).startswith(os.path.normpath(trashcan_full_path) + os.sep):
                     continue
 
@@ -210,51 +209,55 @@ def sync_image_database_blocking():
                         full_path = os.path.join(root, filename)
                         file_stat = os.stat(full_path)
 
-                        # --- MODIFICATION START: Check for .edt file ---
                         base_name, _ = os.path.splitext(filename)
                         edit_file_path = os.path.join(root, f"{base_name}.edt")
                         has_edit_file = os.path.isfile(edit_file_path)
-                        # --- MODIFICATION END ---
 
-                        subfolder = os.path.relpath(root, output_dir)
-                        if subfolder == '.': subfolder = ''
+                        subfolder_str = os.path.relpath(root, output_dir).replace(os.sep, '/')
+                        if subfolder_str == '.': subfolder_str = ''
                         
-                        # Ensure we are not processing something already in trashcan (double safety)
-                        if subfolder.startswith(TRASHCAN_DIR_NAME + '/') or subfolder == TRASHCAN_DIR_NAME:
+                        if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
                             continue
 
-                        path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
+                        path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
                         disk_images_canons.add(path_canon)
+                        
+                        # --- MODIFICATION: Calculate top_level_subfolder ---
+                        top_level_subfolder = 'root'
+                        if subfolder_str:
+                            top_level_subfolder = subfolder_str.split('/')[0]
+                        # ---
 
-                        # --- MODIFICATION: Extract metadata here to get sources for DB insert/update ---
                         meta = _extract_image_metadata_blocking(full_path)
 
                         existing_record = db_images.get(path_canon)
 
-                        if existing_record: # Image exists in DB and is not trashed
+                        if existing_record: 
                             if existing_record['mtime'] != file_stat.st_mtime or \
                                existing_record['size_bytes'] != file_stat.st_size:
                                 cursor.execute("""
                                     UPDATE images
                                     SET mtime = ?, size_bytes = ?, last_synced_at = ?,
+                                        subfolder = ?, top_level_subfolder = ?,
                                         prompt_text = ?, workflow_json = ?, prompt_source = ?, workflow_source = ?,
                                         width = ?, height = ?, aspect_ratio_str = ?, has_edit_file = ?,
                                         thumbnail_status = 0, thumbnail_priority_score = 1000, thumbnail_last_generated_at = NULL
                                     WHERE id = ? AND is_trashed = 0
                                 """, (file_stat.st_mtime, file_stat.st_size, current_time,
+                                      subfolder_str, top_level_subfolder,
                                       meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
                                       meta.get('prompt_source'), meta.get('workflow_source'),
                                       meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file,
                                       existing_record['id']))
-                        else: # New image found on disk (not in DB or was previously trashed and now outside trash)
+                        else: 
                             cursor.execute("""
                                 INSERT OR REPLACE INTO images 
-                                    (filename, subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
+                                    (filename, subfolder, top_level_subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
                                      is_trashed, original_path_canon,
                                      prompt_text, workflow_json, prompt_source, workflow_source,
                                      width, height, aspect_ratio_str, has_edit_file)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (filename, subfolder.replace(os.sep, '/'), path_canon, file_ext[1:].upper(),
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
                                   file_stat.st_mtime, file_stat.st_size, current_time,
                                   meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
                                   meta.get('prompt_source'), meta.get('workflow_source'),
@@ -264,7 +267,6 @@ def sync_image_database_blocking():
 
         conn.commit()
 
-        # Remove non-trashed DB entries for files no longer on disk (excluding trashcan)
         stale_canons = set(db_images.keys()) - disk_images_canons
         if stale_canons:
             print(f"🔵 [Holaf-ImageViewer] Found {len(stale_canons)} stale non-trashed image entries to remove from DB.")
@@ -272,13 +274,11 @@ def sync_image_database_blocking():
                 cursor.execute("DELETE FROM images WHERE path_canon = ? AND is_trashed = 0", (path_canon_to_delete,))
             conn.commit()
         
-        # --- MODIFICATION: Rebuild the folder metadata cache after all changes ---
         _update_folder_metadata_cache_blocking(cursor)
         conn.commit()
-        # ---
 
         print("✅ [Holaf-ImageViewer] Image database synchronization complete.")
-        update_last_db_update_time() # --- MODIFICATION: Signal DB change after sync ---
+        update_last_db_update_time()
 
     except Exception as e:
         sync_exception = e

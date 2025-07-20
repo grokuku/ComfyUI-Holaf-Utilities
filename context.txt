@@ -170,7 +170,7 @@ FILE_TREE_ANALYSIS:
   > § Imports all BE modules.
   > § Initializes DB, Config.
   > § Registers all API routes (@), including critical UI state saving endpoints like `/holaf/image-viewer/save-settings`.
-  > § Patches ComfyUI's `SaveImage` node for live updates.
+  > § Patches ComfyUI's `SaveImage` for live updates.
   > § Starts background worker threads (thumbnailing, DB sync).
   > § Dynamically loads custom nodes from the `nodes/` directory.
 📄 __main__.py
@@ -198,6 +198,15 @@ FILE_TREE_ANALYSIS:
 
 ---
 PROJECT_STATE:
+  CURRENT_INVESTIGATION:
+    - [Performance] Gallery filter is slow with large folder selections (e.g., "All" or "All except one").
+      - **Problem Analysis:** Performance logs confirm the primary bottleneck is the backend, specifically the SQL query execution time. When a large number of folders are selected, the query becomes very slow.
+        - **Log Data:** Total backend time ~7.9s. Of this, ~5.5s is spent waiting for the database (both COUNT and SELECT queries), and ~2.4s is spent processing the 13k+ rows in Python and serializing to JSON.
+        - **Conclusion:** The frontend is not the bottleneck; its JSON parsing time is negligible (<50ms). The problem is the backend's inability to efficiently filter on a large set of `LIKE` conditions and process the massive result set.
+      - **Failed Attempts & Learnings:**
+        1.  **Temporary Table JOIN:** The hypothesis that using a temporary SQL table would be faster than a long `IN`/`OR` clause was proven incorrect by the logs. The DB query time remained the primary bottleneck.
+        2.  **Server-Side Pagination:** This was a catastrophic failure. It did not solve the performance issue (the initial `COUNT(*)` query was still slow) and severely broke the user experience (broken UI, scroll jumping, loss of functionality). This confirms the current architecture relies on having all image metadata available on the client.
+      - **Next Step:** Define a new strategy that specifically targets the slow SQL query for large selections, without changing the core FE/BE architecture. The "inversion logic" (`NOT LIKE`) is the most promising candidate.
   ACTIVE_BUGS:
     # (None currently identified)
   IN_PROGRESS:
@@ -207,7 +216,6 @@ PROJECT_STATE:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
       - [backend, periodic_maintenance_worker] # Hourly worker to clean DB and cache.
     ImageViewer:
-      - [tuning, performance, performance_filtre_dossiers_galerie] # Améliorer la performance lors de la sélection de dossiers en pré-calculant et en mettant en cache les métadonnées des dossiers (ex: nombre d'images) dans la base de données pour accélérer les mises à jour.
       - [feature, ui, ancrage_vue_redimensionnement_miniatures] # Ancrer la vue sur l'image sous le curseur lors du redimensionnement des miniatures pour éviter les sauts de défilement.
       - [feature, ui, ancrage_vue_redimensionnement_fenetre] # Ancrer la vue sur l'image sous le curseur lors du redimensionnement de la fenêtre pour maintenir le contexte visuel.
       - [feature, ui, differenciation_visuelle_curseur_selection] # Modifier le style visuel du curseur de l'image active pour le distinguer clairement des miniatures sélectionnées.
@@ -228,7 +236,7 @@ PROJECT_STATE:
     - [fix, ui, gallery_empty_state_rendering] # Corrected a critical rendering bug where the gallery would not display images after being emptied (e.g., by deselecting all folders or entering an empty trashcan). The fix prevents the gallery from collapsing and instead displays a persistent placeholder message, ensuring layout stability and allowing for immediate reloading of thumbnails. This resolves both the "select none" and "trashcan" display issues.
     - [fix, ui, thumbnail_slider_realtime_update_fix] # Corrected the thumbnail size slider to provide smooth, real-time gallery resizing. The virtual gallery's layout logic was modified to accept a live size parameter, forcing the grid to recalculate continuously during sliding for a fluid user experience.
     - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view to match the fullscreen exit behavior, ensuring the active image is positioned correctly (top/bottom of the viewport).
-    - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update during keyboard navigation.
+    - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update during gallery_keyboard_navigation_highlight.
     - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working after virtualization refactor.
     - [fix, navigation, enter_key_opens_edit_view] # Corrected 'Enter' key to open edit/zoom view instead of fullscreen; added 'Ctrl+Enter' as a shortcut for fullscreen.
     - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls (smoothly) to focus on the active image, respecting its position relative to the viewport.
@@ -249,7 +257,7 @@ PROJECT_STATE:
     - [fix, ui, filter_label_cleanup] # Suppression du titre redondant "Filters" pour une interface plus épurée.
     - [fix, ui, scope_buttons_responsive] # Correction des boutons de portée de recherche pour qu'ils rafraîchissent toujours la galerie et mettent à jour leur état visuel.
     - [fix, state, folder_lock_persistence] # L'état de verrouillage des dossiers est maintenant sauvegardé et restauré après un redémarrage.
-    - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran/zoom pour qu'ils affichent toujours les effets de l'image active.
+    - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran/zoom pour qu'ils affichaient toujours les effets de l'image active.
     - [feature, ui, folder_filter_enhancements] # Added folder filter enhancements: "Invert" action, per-folder SVG lock icons, and an advanced reset dialog that respects locked folders' state.
     - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails to prevent stretching.
     - [fix, ui, thumbnail_fit_toggle_immediate_update] # The "Contained" thumbnail view option now applies instantly.

@@ -21,27 +21,23 @@ async def get_filter_options_route(request: web.Request):
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT path_canon, image_count FROM folder_metadata")
+        # This query now fetches top-level folders directly for the filter list
+        cursor.execute("""
+            SELECT top_level_subfolder, COUNT(*) as image_count 
+            FROM images 
+            WHERE is_trashed = 0 
+            GROUP BY top_level_subfolder
+        """)
         
-        aggregated_folders = defaultdict(int)
-        
-        for row in cursor.fetchall():
-            path = row['path_canon']
-            count = row['image_count']
-            
-            if path == 'root':
-                aggregated_folders['root'] += count
-            else:
-                top_level_folder = path.split('/')[0]
-                aggregated_folders[top_level_folder] += count
-
-        subfolder_data = [{'path': path, 'count': count} for path, count in aggregated_folders.items()]
+        # The paths are already the top-level folders we need
+        subfolder_data = [{'path': row['top_level_subfolder'], 'count': row['image_count']} for row in cursor.fetchall()]
         subfolder_data.sort(key=lambda x: x['path'])
 
         cursor.execute("SELECT 1 FROM images WHERE is_trashed = 1 LIMIT 1")
         has_trashed_items = cursor.fetchone() is not None
 
         if has_trashed_items:
+            # We can't easily get the count here without a slow query, -1 is fine for the UI
             subfolder_data.append({'path': logic.TRASHCAN_DIR_NAME, 'count': -1})
 
         cursor.execute("SELECT DISTINCT format FROM images WHERE is_trashed = 0")
@@ -83,6 +79,7 @@ async def list_images_route(request: web.Request):
         query_fields = "id, filename, subfolder, format, mtime, size_bytes, path_canon, thumbnail_status, thumbnail_last_generated_at, is_trashed, original_path_canon, has_edit_file"
         query_base = f"SELECT {query_fields} FROM images"
         where_clauses, params = [], []
+        scope_conditions = [] # Moved definition here
 
         folder_filters = filters.get('folder_filters', [])
         
@@ -91,16 +88,13 @@ async def list_images_route(request: web.Request):
         else:
             where_clauses.append("is_trashed = 0")
             
+            # --- MODIFICATION: Replaced complex subquery with simple, fast IN clause ---
             if folder_filters:
-                cursor.execute("CREATE TEMPORARY TABLE selected_folders (path TEXT PRIMARY KEY)")
-                folders_to_insert = [('' if f == 'root' else f,) for f in folder_filters]
-                cursor.executemany("INSERT INTO selected_folders (path) VALUES (?)", folders_to_insert)
-                where_clauses.append("""
-                    EXISTS (
-                        SELECT 1 FROM selected_folders sf 
-                        WHERE images.subfolder = sf.path OR images.subfolder LIKE (sf.path || '/%')
-                    )
-                """)
+                # The IN clause is highly efficient on an indexed column.
+                placeholders = ','.join('?' * len(folder_filters))
+                where_clauses.append(f"top_level_subfolder IN ({placeholders})")
+                params.extend(folder_filters)
+            # --- END MODIFICATION ---
 
         format_filters = filters.get('format_filters', [])
         if format_filters:
@@ -172,12 +166,26 @@ async def list_images_route(request: web.Request):
         print(f"  > [Holaf Perf] DB Main Query & Fetch Time: {(db_main_end_time - db_main_start_time):.4f} seconds")
         # ---
         
-        response = web.json_response({
-            "images": images_data,
-            "filtered_count": filtered_count,
-            "total_db_count": total_db_count,
-            "generated_thumbnails_count": generated_thumbnails_count
-        })
+        # --- MODIFICATION: Using orjson for faster serialization if available ---
+        try:
+            import orjson
+            response = web.Response(
+                body=orjson.dumps({
+                    "images": images_data,
+                    "filtered_count": filtered_count,
+                    "total_db_count": total_db_count,
+                    "generated_thumbnails_count": generated_thumbnails_count
+                }),
+                content_type='application/json'
+            )
+        except ImportError:
+            response = web.json_response({
+                "images": images_data,
+                "filtered_count": filtered_count,
+                "total_db_count": total_db_count,
+                "generated_thumbnails_count": generated_thumbnails_count
+            })
+        # --- END MODIFICATION ---
         
         # --- PERFORMANCE LOGGING: Total Time ---
         request_end_time = time.time()
