@@ -164,6 +164,8 @@ export async function navigate(viewer, direction) {
     const newActiveImage = state.images[newIndex];
     imageViewerState.setState({ currentNavIndex: newIndex, activeImage: newActiveImage });
 
+    if (viewer.gallery?.render) viewer.gallery.render();
+
     preloadNextImage(viewer);
     
     const currentViewMode = imageViewerState.getState().ui.view_mode;
@@ -204,6 +206,8 @@ export function navigateGrid(viewer, direction) {
     if (currentIndex === -1) {
         const newActiveImage = state.images[0];
         imageViewerState.setState({ currentNavIndex: 0, activeImage: newActiveImage });
+
+        if (viewer.gallery?.render) viewer.gallery.render();
         if (viewer.gallery?.ensureImageVisible) {
             viewer.gallery.ensureImageVisible(0);
         }
@@ -218,6 +222,8 @@ export function navigateGrid(viewer, direction) {
 
     const newActiveImage = state.images[newIndex];
     imageViewerState.setState({ currentNavIndex: newIndex, activeImage: newActiveImage });
+
+    if (viewer.gallery?.render) viewer.gallery.render();
 
     if (viewer.gallery?.ensureImageVisible) {
         viewer.gallery.ensureImageVisible(newIndex);
