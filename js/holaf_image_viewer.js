@@ -445,30 +445,32 @@ const holafImageViewer = {
             const state = imageViewerState.getState();
             imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update_time || state.status.lastDbUpdateTime }});
 
-            const useSavedFolderFilters = state.filters.folder_filters && state.filters.folder_filters.length > 0 && !isUpdate;
-            const useSavedFormatFilters = state.filters.format_filters && state.filters.format_filters.length > 0 && !isUpdate;
-
+            // FIX: The filter UI state is now driven directly and solely by the central `imageViewerState`,
+            // instead of a mix of state and DOM queries. This ensures that the visual state of checkboxes
+            // always reflects the saved settings upon panel load.
             if (this.panelElements) {
-                const currentSelectedFolders = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''))) : null;
-                const currentSelectedFormats = isUpdate ? new Set([...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''))) : null;
-    
-                const allFolders = new Set(data.subfolders.map(p => p.split('/')[0]));
-                allFolders.delete('trashcan');
-                const sortedFolders = Array.from(allFolders).sort();
-    
                 const foldersEl = document.getElementById('holaf-viewer-folders-filter');
                 const formatsEl = document.getElementById('holaf-viewer-formats-filter');
                 
                 if (foldersEl) foldersEl.innerHTML = '';
                 if (formatsEl) formatsEl.innerHTML = '';
+
+                const allFolders = new Set(data.subfolders.map(p => p.split('/')[0]));
+                allFolders.delete('trashcan');
+                const sortedFolders = Array.from(allFolders).sort();
                 
                 const onFilterChange = () => this.triggerFilterChange();
-    
+                
+                const { folder_filters, format_filters } = state.filters;
+                const hasSavedFolderFilters = folder_filters && folder_filters.length > 0;
+                const hasSavedFormatFilters = format_filters && format_filters.length > 0;
+
+                // Checkbox creation function for folders, now based purely on state
                 const createFolderCheckbox = (folder, isRoot = false) => {
                     const id = isRoot ? 'root' : folder;
-                    let isChecked = true;
-                    if (isUpdate) { isChecked = currentSelectedFolders.has(id); }
-                    else if (useSavedFolderFilters) { isChecked = state.filters.folder_filters.includes(id); }
+                    // If no folder filters are saved, check everything by default.
+                    // Otherwise, only check folders present in the filter list.
+                    const isChecked = !hasSavedFolderFilters || folder_filters.includes(id);
                     return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, onFilterChange, id);
                 };
     
@@ -476,13 +478,13 @@ const holafImageViewer = {
                     if (data.has_root) foldersEl.appendChild(createFolderCheckbox(null, true));
                     sortedFolders.forEach(folder => foldersEl.appendChild(createFolderCheckbox(folder)));
         
+                    // Separator for trash
                     const separator = document.createElement('div');
                     separator.className = 'holaf-viewer-trash-separator';
                     foldersEl.appendChild(separator);
         
-                    let isTrashChecked = false;
-                    if (isUpdate) { isTrashChecked = currentSelectedFolders.has('trashcan'); }
-                    else if (useSavedFolderFilters) { isTrashChecked = state.filters.folder_filters.includes('trashcan'); }
+                    // The trashcan state is based only on its explicit presence in the filters
+                    const isTrashChecked = hasSavedFolderFilters && folder_filters.includes('trashcan');
         
                     const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
                         const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
@@ -513,6 +515,7 @@ const holafImageViewer = {
                     trashContainer.appendChild(emptyTrashBtn);
                     foldersEl.appendChild(trashContainer);
         
+                    // Update disabled state if trash is checked
                     if (trashCheckboxItem.querySelector('input').checked) {
                         foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => cb.disabled = true);
                     }
@@ -520,9 +523,8 @@ const holafImageViewer = {
     
                 if (formatsEl) {
                     data.formats.forEach(format => {
-                        let isChecked = true;
-                        if (isUpdate) { isChecked = currentSelectedFormats.has(format); }
-                        else if (useSavedFormatFilters) { isChecked = state.filters.format_filters.includes(format); }
+                        // Same logic as for folders
+                        const isChecked = !hasSavedFormatFilters || format_filters.includes(format);
                         formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, isChecked, onFilterChange));
                     });
                 }

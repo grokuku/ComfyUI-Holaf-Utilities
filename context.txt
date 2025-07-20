@@ -133,7 +133,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [MODIFIED] Main orchestrator. Pre-loads image data on startup for instant panel display. Initializes all modules and delegates gallery rendering to the virtualized scroller.
+    > [MODIFIED] Main orchestrator for the Image Viewer. Pre-loads image data on startup for instant panel display, initializes all modules, and delegates rendering to the virtualized scroller.
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -205,7 +205,6 @@ PROJECT_STATE:
   ACTIVE_BUGS:
     - [bug, state, gallery_no_update_after_select_none] # After clicking "None" on folder filters, selecting a new folder doesn't refresh the gallery.
     - [bug, performance, recursion_error_on_rapid_folder_selection] # Selecting/deselecting folders too quickly causes a "too much recursion" error.
-    - [bug, state, folder_filter_not_restored_on_startup] # Folder filter selection is not restored from config on application startup.
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -281,3 +280,6 @@ PROJECT_STATE:
     - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch and added fallback logic.
     - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.
     - [fix, ui, thumbnail_size_realtime_update] # Thumbnail size slider now updates gallery size instantly.
+    - [fix, state, folder_filter_visual_restore_on_startup] # Correction de l'état visuel des cases à cocher des filtres de dossiers, qui ne reflétait pas la configuration chargée lors du premier affichage du panneau. La logique construit désormais correctement l'interface des filtres en se basant sur l'état central (`imageViewerState`) au lieu d'interroger un DOM encore vide, garantissant la cohérence visuelle.
+
+--- END OF FILE context.txt ---
