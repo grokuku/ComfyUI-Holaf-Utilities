@@ -11,7 +11,7 @@ DB_DIR = os.path.dirname(__file__) # In the extension's root directory
 DB_PATH = os.path.join(DB_DIR, DB_NAME)
 # --- SINGLE SOURCE OF TRUTH FOR DB SCHEMA ---
 # Increment this number whenever you make a change to the table structures below.
-LATEST_SCHEMA_VERSION = 6
+LATEST_SCHEMA_VERSION = 7
 
 # --- Thread-local storage for database connections ---
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
@@ -75,6 +75,15 @@ def _create_fresh_schema(cursor):
             thumbnail_priority_score INTEGER DEFAULT 1000, thumbnail_last_generated_at REAL,
             is_trashed BOOLEAN DEFAULT 0, original_path_canon TEXT, prompt_source TEXT,
             workflow_source TEXT, has_edit_file BOOLEAN DEFAULT 0
+        )
+    """)
+    
+    # Image Viewer: Folder Metadata Cache Table
+    cursor.execute("""
+        CREATE TABLE folder_metadata (
+            path_canon TEXT PRIMARY KEY NOT NULL, -- e.g., 'sub/folder' or 'root'
+            image_count INTEGER NOT NULL DEFAULT 0,
+            last_calculated_at REAL
         )
     """)
 
@@ -153,6 +162,8 @@ def _migrate_database_by_copy(current_db_version):
             print("    > 'images' table not found in old database. Skipping.")
         except Exception as e:
             print(f"🟡 [Holaf-DB] Warning: Could not transfer data from 'images' table. Error: {e}")
+
+        # folder_metadata is new, so no data to transfer.
 
         # 4. Finalize
         conn.commit()
@@ -257,7 +268,7 @@ if __name__ == '__main__':
             cursor_test.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [table[0] for table in cursor_test.fetchall()]
             print("Tables in database:", tables)
-            expected_tables = ['holaf_db_version', 'models', 'images']
+            expected_tables = ['holaf_db_version', 'models', 'images', 'folder_metadata']
             for table in expected_tables:
                  assert table in tables, f"FAILURE: '{table}' table was not created."
             print("✅ All required tables are present.")

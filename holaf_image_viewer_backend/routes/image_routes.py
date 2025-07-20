@@ -3,6 +3,7 @@ import json
 import time
 import datetime
 import traceback
+from collections import defaultdict
 
 from aiohttp import web
 
@@ -13,38 +14,52 @@ from ... import holaf_database
 # --- API Route Handlers ---
 async def get_filter_options_route(request: web.Request):
     conn = None
-    response_data = {"subfolders": [], "formats": [], "has_root": False, "last_update_time": logic.LAST_DB_UPDATE_TIME}
+    response_data = {"subfolders": [], "formats": [], "last_update_time": logic.LAST_DB_UPDATE_TIME}
     error_status = 500
     current_exception = None
     try:
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        # Get subfolders from non-trashed images
-        cursor.execute("SELECT DISTINCT subfolder FROM images WHERE subfolder != '' AND is_trashed = 0")
-        subfolders = {row['subfolder'] for row in cursor.fetchall()}
+        # --- MODIFICATION: Query cache and aggregate results in the backend ---
+        cursor.execute("SELECT path_canon, image_count FROM folder_metadata")
+        
+        # Use defaultdict for easy aggregation
+        aggregated_folders = defaultdict(int)
+        
+        for row in cursor.fetchall():
+            path = row['path_canon']
+            count = row['image_count']
+            
+            if path == 'root':
+                # Keep 'root' as a special, separate entry
+                aggregated_folders['root'] += count
+            else:
+                # Get the top-level folder (e.g., 'landscapes' from 'landscapes/winter')
+                top_level_folder = path.split('/')[0]
+                aggregated_folders[top_level_folder] += count
 
-        # Check if there are any items in the trash
+        # Convert the aggregated data into the expected format: list of {'path': str, 'count': int}
+        subfolder_data = [{'path': path, 'count': count} for path, count in aggregated_folders.items()]
+        # Sort alphabetically, with 'root' potentially being first or last depending on locale
+        subfolder_data.sort(key=lambda x: x['path'])
+
+        # Check if there are any items in the trash (this logic remains the same)
         cursor.execute("SELECT 1 FROM images WHERE is_trashed = 1 LIMIT 1")
         has_trashed_items = cursor.fetchone() is not None
 
-        # If there are trashed items, add 'trashcan' to the list of folders to be displayed
         if has_trashed_items:
-            subfolders.add(logic.TRASHCAN_DIR_NAME)
+            subfolder_data.append({'path': logic.TRASHCAN_DIR_NAME, 'count': -1}) # UI handles display
 
-        # Get formats from non-trashed images
+        # Get formats from non-trashed images (this query is efficient enough)
         cursor.execute("SELECT DISTINCT format FROM images WHERE is_trashed = 0")
         formats = sorted([row['format'] for row in cursor.fetchall()])
-
-        # Check for non-trashed images in root
-        cursor.execute("SELECT 1 FROM images WHERE subfolder = '' AND is_trashed = 0 LIMIT 1")
-        has_root_images = cursor.fetchone() is not None
         
         conn.commit()
+        
         response_data = {
-            "subfolders": sorted(list(subfolders)), 
+            "subfolders": subfolder_data, 
             "formats": formats, 
-            "has_root": has_root_images,
             "last_update_time": logic.LAST_DB_UPDATE_TIME
         }
         return web.json_response(response_data)
@@ -76,6 +91,7 @@ async def list_images_route(request: web.Request):
         
         if logic.TRASHCAN_DIR_NAME in folder_filters:
             where_clauses.append("is_trashed = 1")
+            # This logic remains correct as the frontend sends 'trashcan' as the filter value
             where_clauses.append("(subfolder = ? OR subfolder LIKE ?)")
             params.extend([logic.TRASHCAN_DIR_NAME, f"{logic.TRASHCAN_DIR_NAME}/%"])
         else:
@@ -87,6 +103,7 @@ async def list_images_route(request: web.Request):
                         conditions.append("subfolder = ?")
                         params.append('')
                     else:
+                        # This part correctly handles filtering for a top-level folder and all its children
                         conditions.append("(subfolder = ? OR subfolder LIKE ?)")
                         params.extend([folder, f"{folder}/%"])
                 if conditions:
@@ -123,7 +140,6 @@ async def list_images_route(request: web.Request):
         search_scopes = filters.get('search_scopes', [])
         if search_text and search_scopes:
             search_term = f"%{search_text}%"
-            scope_conditions = []
             scope_to_column_map = {"name": "filename", "prompt": "prompt_text", "workflow": "workflow_json"}
             for scope in search_scopes:
                 column = scope_to_column_map.get(scope)
@@ -137,7 +153,6 @@ async def list_images_route(request: web.Request):
         if where_clauses:
             final_query += " WHERE " + " AND ".join(where_clauses)
         
-        # --- REVERTED: Count query is now run on the same base query ---
         count_query_filtered = final_query.replace(query_fields, "COUNT(*)")
         cursor.execute(count_query_filtered, params)
         filtered_count = cursor.fetchone()[0]
@@ -149,7 +164,6 @@ async def list_images_route(request: web.Request):
         
         conn.commit()
 
-        # --- REVERTED: Remove LIMIT and OFFSET ---
         final_query += " ORDER BY mtime DESC"
         cursor.execute(final_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]

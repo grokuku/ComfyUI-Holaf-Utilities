@@ -56,6 +56,41 @@ def ensure_trashcan_exists():
 # Call it once at module load to be sure
 ensure_trashcan_exists()
 
+# --- MODIFICATION START: New function for folder metadata cache ---
+def _update_folder_metadata_cache_blocking(cursor):
+    """
+    Clears and completely rebuilds the folder_metadata table.
+    This should be called within an existing DB transaction.
+    """
+    try:
+        current_time = time.time()
+        print("  > Rebuilding folder metadata cache...")
+        
+        # Clear the existing cache
+        cursor.execute("DELETE FROM folder_metadata")
+        
+        # Recalculate counts from the images table (excluding trashed images)
+        # We use 'root' as a special key for images in the main output directory
+        cursor.execute("""
+            INSERT INTO folder_metadata (path_canon, image_count, last_calculated_at)
+            SELECT 
+                CASE 
+                    WHEN subfolder = '' THEN 'root' 
+                    ELSE subfolder 
+                END as folder_path,
+                COUNT(*) as count,
+                ?
+            FROM images
+            WHERE is_trashed = 0
+            GROUP BY folder_path
+        """, (current_time,))
+        
+        print(f"  > Folder metadata cache rebuilt successfully. {cursor.rowcount} folders updated.")
+    except Exception as e:
+        print(f"🔴 [Holaf-Logic] CRITICAL: Failed to rebuild folder metadata cache: {e}")
+        # The exception will be caught by the calling function's error handler,
+        # which should trigger a rollback.
+
 # --- Database Synchronization ---
 
 # --- MODIFICATION START: New function for single image updates ---
@@ -82,6 +117,9 @@ def add_or_update_single_image(image_abs_path):
         subfolder = os.path.relpath(directory, output_dir)
         if subfolder == '.': subfolder = ''
         path_canon = os.path.join(subfolder, filename).replace(os.sep, '/')
+        
+        # Determine folder_path_for_meta ('root' for base directory)
+        folder_path_for_meta = 'root' if subfolder == '' else subfolder.replace(os.sep, '/')
 
         # Ensure we are not processing something in the trashcan
         if subfolder.startswith(TRASHCAN_DIR_NAME + '/') or subfolder == TRASHCAN_DIR_NAME:
@@ -110,6 +148,15 @@ def add_or_update_single_image(image_abs_path):
               meta.get('prompt_source'), meta.get('workflow_source'),
               meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file))
         
+        # --- MODIFICATION: Incrementally update folder metadata cache ---
+        cursor.execute("""
+            INSERT INTO folder_metadata (path_canon, image_count, last_calculated_at)
+            VALUES (?, 1, ?)
+            ON CONFLICT(path_canon) DO UPDATE SET
+                image_count = image_count + 1,
+                last_calculated_at = excluded.last_calculated_at;
+        """, (folder_path_for_meta, time.time()))
+
         conn.commit()
         print(f"🔵 [Holaf-Logic] Successfully added/updated single image in DB: {path_canon}")
         update_last_db_update_time() # Signal that the DB has changed
@@ -224,6 +271,12 @@ def sync_image_database_blocking():
             for path_canon_to_delete in stale_canons:
                 cursor.execute("DELETE FROM images WHERE path_canon = ? AND is_trashed = 0", (path_canon_to_delete,))
             conn.commit()
+        
+        # --- MODIFICATION: Rebuild the folder metadata cache after all changes ---
+        _update_folder_metadata_cache_blocking(cursor)
+        conn.commit()
+        # ---
+
         print("✅ [Holaf-ImageViewer] Image database synchronization complete.")
         update_last_db_update_time() # --- MODIFICATION: Signal DB change after sync ---
 

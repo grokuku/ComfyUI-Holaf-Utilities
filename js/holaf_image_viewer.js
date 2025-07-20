@@ -445,9 +445,6 @@ const holafImageViewer = {
             const state = imageViewerState.getState();
             imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update_time || state.status.lastDbUpdateTime }});
 
-            // FIX: The filter UI state is now driven directly and solely by the central `imageViewerState`,
-            // instead of a mix of state and DOM queries. This ensures that the visual state of checkboxes
-            // always reflects the saved settings upon panel load.
             if (this.panelElements) {
                 const foldersEl = document.getElementById('holaf-viewer-folders-filter');
                 const formatsEl = document.getElementById('holaf-viewer-formats-filter');
@@ -455,81 +452,73 @@ const holafImageViewer = {
                 if (foldersEl) foldersEl.innerHTML = '';
                 if (formatsEl) formatsEl.innerHTML = '';
 
-                const allFolders = new Set(data.subfolders.map(p => p.split('/')[0]));
-                allFolders.delete('trashcan');
-                const sortedFolders = Array.from(allFolders).sort();
-                
+                // --- MODIFICATION: Simplified logic to handle the clean, aggregated data from the backend ---
                 const onFilterChange = () => this.triggerFilterChange();
                 
                 const { folder_filters, format_filters } = state.filters;
                 const hasSavedFolderFilters = folder_filters && folder_filters.length > 0;
                 const hasSavedFormatFilters = format_filters && format_filters.length > 0;
 
-                // Checkbox creation function for folders, now based purely on state
-                const createFolderCheckbox = (folder, isRoot = false) => {
-                    const id = isRoot ? 'root' : folder;
-                    // If no folder filters are saved, check everything by default.
-                    // Otherwise, only check folders present in the filter list.
-                    const isChecked = !hasSavedFolderFilters || folder_filters.includes(id);
-                    return this.createFilterItem(`folder-filter-${id}`, isRoot ? '(root)' : folder, isChecked, onFilterChange, id);
-                };
-    
+                const allFolderData = data.subfolders.filter(f => f.path !== 'trashcan');
+                const trashData = data.subfolders.find(f => f.path === 'trashcan');
+
                 if (foldersEl) {
-                    if (data.has_root) foldersEl.appendChild(createFolderCheckbox(null, true));
-                    sortedFolders.forEach(folder => foldersEl.appendChild(createFolderCheckbox(folder)));
-        
-                    // Separator for trash
-                    const separator = document.createElement('div');
-                    separator.className = 'holaf-viewer-trash-separator';
-                    foldersEl.appendChild(separator);
-        
-                    // The trashcan state is based only on its explicit presence in the filters
-                    const isTrashChecked = hasSavedFolderFilters && folder_filters.includes('trashcan');
-        
-                    const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
-                        const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
-                        if (e.target.checked) {
-                            this._lastFolderFilterState = [...otherFolderCheckboxes].filter(cb => cb.checked).map(cb => cb.id);
-                            otherFolderCheckboxes.forEach(cb => { cb.checked = false; cb.disabled = true; });
-                        } else {
-                            otherFolderCheckboxes.forEach(cb => {
-                                cb.disabled = false;
-                                if (this._lastFolderFilterState && this._lastFolderFilterState.includes(cb.id)) {
-                                    cb.checked = true;
-                                }
-                            });
-                        }
-                        onFilterChange();
+                    allFolderData.forEach(folderData => {
+                        const id = folderData.path;
+                        const isChecked = !hasSavedFolderFilters || folder_filters.includes(id);
+                        const label = id === 'root' ? `(root) (${folderData.count})` : `${id} (${folderData.count})`;
+                        foldersEl.appendChild(this.createFilterItem(`folder-filter-${id}`, label, isChecked, onFilterChange, id));
                     });
         
-                    const trashContainer = trashCheckboxItem;
-                    trashContainer.style.display = 'flex';
-                    trashContainer.style.justifyContent = 'space-between';
-                    trashContainer.style.alignItems = 'center';
-        
-                    const emptyTrashBtn = document.createElement('button');
-                    emptyTrashBtn.textContent = 'Empty';
-                    emptyTrashBtn.title = 'Permanently delete all files in the trashcan';
-                    emptyTrashBtn.style.cssText = 'font-size: 10px; padding: 2px 6px; margin-left: 10px; background-color: #802020; color: white; border: 1px solid #c03030; cursor: pointer; border-radius: 4px;';
-                    emptyTrashBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this._handleEmptyTrash(); };
-                    trashContainer.appendChild(emptyTrashBtn);
-                    foldersEl.appendChild(trashContainer);
-        
-                    // Update disabled state if trash is checked
-                    if (trashCheckboxItem.querySelector('input').checked) {
-                        foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => cb.disabled = true);
+                    if (trashData) {
+                        const separator = document.createElement('div');
+                        separator.className = 'holaf-viewer-trash-separator';
+                        foldersEl.appendChild(separator);
+            
+                        const isTrashChecked = hasSavedFolderFilters && folder_filters.includes('trashcan');
+            
+                        const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
+                            const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
+                            if (e.target.checked) {
+                                this._lastFolderFilterState = [...otherFolderCheckboxes].filter(cb => cb.checked).map(cb => cb.id);
+                                otherFolderCheckboxes.forEach(cb => { cb.checked = false; cb.disabled = true; });
+                            } else {
+                                otherFolderCheckboxes.forEach(cb => {
+                                    cb.disabled = false;
+                                    if (this._lastFolderFilterState && this._lastFolderFilterState.includes(cb.id)) {
+                                        cb.checked = true;
+                                    }
+                                });
+                            }
+                            onFilterChange();
+                        });
+            
+                        const trashContainer = trashCheckboxItem;
+                        trashContainer.style.display = 'flex';
+                        trashContainer.style.justifyContent = 'space-between';
+                        trashContainer.style.alignItems = 'center';
+            
+                        const emptyTrashBtn = document.createElement('button');
+                        emptyTrashBtn.textContent = 'Empty';
+                        emptyTrashBtn.title = 'Permanently delete all files in the trashcan';
+                        emptyTrashBtn.style.cssText = 'font-size: 10px; padding: 2px 6px; margin-left: 10px; background-color: #802020; color: white; border: 1px solid #c03030; cursor: pointer; border-radius: 4px;';
+                        emptyTrashBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this._handleEmptyTrash(); };
+                        trashContainer.appendChild(emptyTrashBtn);
+                        foldersEl.appendChild(trashContainer);
+            
+                        if (trashCheckboxItem && trashCheckboxItem.querySelector('input').checked) {
+                            foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => cb.disabled = true);
+                        }
                     }
                 }
     
                 if (formatsEl) {
                     data.formats.forEach(format => {
-                        // Same logic as for folders
                         const isChecked = !hasSavedFormatFilters || format_filters.includes(format);
                         formatsEl.appendChild(this.createFilterItem(`format-filter-${format}`, format, isChecked, onFilterChange));
                     });
                 }
             }
-
 
             if (!isUpdate) {
                 await this.loadFilteredImages(isInitialLoad);
