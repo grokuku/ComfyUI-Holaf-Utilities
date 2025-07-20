@@ -38,6 +38,7 @@ let gap = 0;
 
 function handleResize() {
     const { images } = imageViewerState.getState();
+    // Do not run resize logic if the gallery is showing the empty message
     if (!images || images.length === 0 || !galleryEl) return;
 
     const oldItemHeightWithGap = itemHeight + gap;
@@ -63,7 +64,6 @@ function handleResize() {
 function updateLayout(renderAfter = true, overrideThumbSize = null) {
     if (!galleryEl || !viewerInstance) return;
     
-    // MODIFICATION : Utilise la taille fournie en priorité, sinon celle de l'état.
     const targetThumbSize = overrideThumbSize !== null ? overrideThumbSize : imageViewerState.getState().ui.thumbnail_size;
     
     const containerWidth = galleryEl.clientWidth;
@@ -82,7 +82,6 @@ function updateLayout(renderAfter = true, overrideThumbSize = null) {
 
     if (renderAfter) {
         renderVisibleItems(true);
-        loadVisibleThumbnails();
     }
 }
 
@@ -90,7 +89,11 @@ function renderVisibleItems() {
     requestAnimationFrame(() => {
         if (columnCount === 0) return;
         const { images, activeImage, selectedImages } = imageViewerState.getState();
-        if (!images.length || !galleryEl || !galleryGridEl || itemHeight === 0) return;
+
+        // This check is now safe because the "empty" case is handled by syncGallery
+        if (!images.length || !galleryEl || !galleryGridEl || itemHeight === 0) {
+            return;
+        }
 
         const viewportHeight = galleryEl.clientHeight;
         const scrollTop = galleryEl.scrollTop;
@@ -148,6 +151,8 @@ function renderVisibleItems() {
         }
         
         renderedPlaceholders = newPlaceholdersToRender;
+
+        loadVisibleThumbnails();
     });
 }
 
@@ -174,9 +179,8 @@ function loadVisibleThumbnails() {
                 });
             } else {
                 activeThumbnailLoads--;
-                process();
+                setTimeout(process, 0);
             }
-            process();
         }
     };
     for (let i = 0; i < MAX_CONCURRENT_THUMBNAIL_LOADS; i++) process();
@@ -360,22 +364,50 @@ function syncGallery(viewer, images) {
     
     viewerInstance = viewer;
     const { images: allImages } = imageViewerState.getState();
-    
     activeThumbnailLoads = 0;
 
-    if (!allImages || allImages.length === 0) {
-        galleryGridEl.innerHTML = '';
-        renderedPlaceholders.clear();
-        gallerySizerEl.style.height = '0px';
-        viewerInstance.setLoadingState("No images match the current filters.");
-        return;
-    }
-
+    // Clear any message from a previous state.
     const messageEl = galleryEl.querySelector('.holaf-viewer-message');
     if (messageEl) messageEl.remove();
+    const fakeMessage = galleryGridEl.querySelector('.holaf-viewer-empty-message');
+    if (fakeMessage) fakeMessage.remove();
 
     galleryEl.scrollTop = 0;
-    updateLayout(true);
+
+    if (allImages && allImages.length > 0) {
+        // CASE 1: We have images to display. Run the normal layout process.
+        updateLayout(true);
+    } else {
+        // CASE 2: The gallery is empty. Display a single fake placeholder.
+        // 1. Clear the real grid and placeholders.
+        galleryGridEl.innerHTML = '';
+        renderedPlaceholders.clear();
+
+        // 2. Set sizer to a minimal height to keep the gallery from fully collapsing.
+        gallerySizerEl.style.height = '300px';
+
+        // 3. Create the fake placeholder.
+        const placeholder = document.createElement('div');
+        placeholder.className = 'holaf-viewer-thumbnail-placeholder holaf-viewer-empty-message';
+        placeholder.style.cssText = `
+            position: absolute;
+            top: 8px; left: 8px; right: 8px; /* Use grid gap */
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+            border: 2px dashed var(--holaf-border-color);
+            border-radius: var(--holaf-border-radius);
+            color: var(--holaf-text-color-secondary);
+        `;
+        placeholder.textContent = 'No images match the current filters.';
+
+        // 4. Add it to the grid.
+        galleryGridEl.appendChild(placeholder);
+    }
 }
 
 function refreshThumbnailInGallery(path_canon) {
@@ -391,9 +423,6 @@ function refreshThumbnailInGallery(path_canon) {
     loadSpecificThumbnail(placeholder, image, true);
 }
 
-/**
- * Ensures an image is visible (for keyboard navigation). Scrolls only if needed.
- */
 function ensureImageVisible(imageIndex) {
     if (!galleryEl || imageIndex < 0) return;
     
@@ -409,14 +438,10 @@ function ensureImageVisible(imageIndex) {
             const targetRow = Math.floor(imageIndex / columnCount);
             galleryEl.scrollTop = targetRow * (itemHeight + gap);
             renderVisibleItems();
-            loadVisibleThumbnails();
         }
     }, 50);
 }
 
-/**
- * Handles positioning when returning from edit/zoom view.
- */
 function alignImageOnExit(imageIndex) {
     if (!galleryEl || imageIndex < 0) return;
 
@@ -431,14 +456,12 @@ function alignImageOnExit(imageIndex) {
             const isVisible = rect.top >= galleryRect.top && rect.bottom <= galleryRect.bottom;
             
             if (isVisible) {
-                return; // Case 1: Image is visible, do nothing.
+                return;
             }
 
             if (rect.top < galleryRect.top) {
-                // Case 3: Image is above, align to top.
                 targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
             } else {
-                // Case 2: Image is below, align to bottom.
                 targetElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
         } else {
@@ -446,15 +469,12 @@ function alignImageOnExit(imageIndex) {
             const targetRow = Math.floor(imageIndex / columnCount);
             galleryEl.scrollTop = targetRow * (itemHeight + gap);
             renderVisibleItems();
-            loadVisibleThumbnails();
         }
     }, 50);
 }
 
-// NOUVELLE FONCTION EXPORTÉE
 function forceRelayout(newSize) {
     if (!galleryEl) return;
-    // Appelle la fonction interne en lui passant la nouvelle taille.
     updateLayout(true, newSize);
 }
 
@@ -464,5 +484,5 @@ export {
     ensureImageVisible,
     alignImageOnExit,
     refreshThumbnailInGallery,
-    forceRelayout // On exporte la nouvelle fonction.
+    forceRelayout
 };

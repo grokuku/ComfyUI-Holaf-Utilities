@@ -1,5 +1,7 @@
 --- START OF FILE context.txt ---
 
+--- START OF FILE context.txt ---
+
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -86,14 +88,6 @@ FILE_TREE_ANALYSIS:
       > Specific styles for the Image Viewer panel (placeholder).
     📄 holaf_image_viewer.css
       > [MODIFIED] Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`), gallery layout styles, the `flex-grow: 0` fix for thumbnails, and styles for folder lock icons.
-    📄 holaf_main_button.css
-      > Styles for the main "Holaf's Utilities" button in the ComfyUI menu.
-    📄 holaf_model_manager_styles.css
-      > Styles for the Model Manager panel.
-    📄 holaf_nodes_manager_styles.css
-      > Styles for the Nodes Manager panel.
-    📄 holaf_settings_panel_styles.css
-      > Styles for the global Settings panel.
     📄 holaf_shared_panel.css
       > [MODIFIED] Core styles for ALL floating panels (drag, resize, header, close button, modals). Includes styles for keyboard-focused dialog items.
     📄 holaf_system_monitor_styles.css
@@ -203,7 +197,6 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, state, gallery_no_update_after_select_none] # After clicking "None" on folder filters, selecting a new folder doesn't refresh the gallery.
     - [bug, performance, recursion_error_on_rapid_folder_selection] # Selecting/deselecting folders too quickly causes a "too much recursion" error.
   IN_PROGRESS:
     # (None currently identified)
@@ -226,6 +219,7 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, ui, gallery_empty_state_rendering] # Corrected a critical rendering bug where the gallery would not display images after being emptied (e.g., by deselecting all folders or entering an empty trashcan). The fix prevents the gallery from collapsing and instead displays a persistent placeholder message, ensuring layout stability and allowing for immediate reloading of thumbnails. This resolves both the "select none" and "trashcan" display issues.
     - [fix, ui, thumbnail_slider_realtime_update_fix] # Corrected the thumbnail size slider to provide smooth, real-time gallery resizing. The virtual gallery's layout logic was modified to accept a live size parameter, forcing the grid to recalculate continuously during sliding for a fluid user experience.
     - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view to match the fullscreen exit behavior, ensuring the active image is positioned correctly (top/bottom of the viewport).
     - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update during keyboard navigation.
