@@ -419,7 +419,7 @@ const holafImageViewer = {
     },
 
     _saveCurrentFilterState() {
-        if (!this.panelElements) return; // Don't save if panel isn't even created
+        if (!this.panelElements) return;
         const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
         const selectedFormats = [...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''));
         const startDate = document.getElementById('holaf-viewer-date-start').value;
@@ -452,7 +452,6 @@ const holafImageViewer = {
                 if (foldersEl) foldersEl.innerHTML = '';
                 if (formatsEl) formatsEl.innerHTML = '';
 
-                // --- MODIFICATION: Simplified logic to handle the clean, aggregated data from the backend ---
                 const onFilterChange = () => this.triggerFilterChange();
                 
                 const { folder_filters, format_filters } = state.filters;
@@ -532,6 +531,9 @@ const holafImageViewer = {
     },
     
     async _fetchFilteredImages() {
+        // --- PERFORMANCE LOGGING ---
+        console.time('BE Fetch & Parse');
+
         const { filters } = imageViewerState.getState();
         const { folder_filters, format_filters, startDate, endDate, search_text, 
                 workflow_filter_internal, workflow_filter_external,
@@ -559,19 +561,27 @@ const holafImageViewer = {
             })
         });
         if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-        return await response.json();
+        
+        console.time('JSON Parsing');
+        const data = await response.json();
+        console.timeEnd('JSON Parsing');
+        
+        console.timeEnd('BE Fetch & Parse');
+        return data;
     },
 
     async loadFilteredImages(isInitialLoad = false) {
         this.isLoading = true;
         this.isDirty = false;
         
+        // --- PERFORMANCE LOGGING ---
+        console.log("%c[Holaf Perf] Starting filter process...", "color: lightblue; font-weight: bold;");
+        console.time('Total Filter to Render Time');
+        
         try {
             const { filters } = imageViewerState.getState();
             if (!filters.folder_filters || filters.folder_filters.length === 0) {
                  if (isInitialLoad) {
-                    // On first load ever, select all folders by default.
-                    // This relies on filter options being loaded first.
                  } else {
                     imageViewerState.setState({ images: [], selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });
                     this.syncGallery([]);
@@ -579,6 +589,7 @@ const holafImageViewer = {
                     this._updateActionButtonsState();
                     this.isLoading = false;
                     this.isDirty = false;
+                    console.timeEnd('Total Filter to Render Time'); // End timer for this path
                     return;
                 }
             }
@@ -614,7 +625,8 @@ const holafImageViewer = {
                     newActiveImage = newImages[newNavIndex];
                 }
             }
-
+            
+            console.time('State Update & Gallery Sync');
             imageViewerState.setState({ 
                 images: newImages, 
                 selectedImages: newSelectedImages,
@@ -623,6 +635,8 @@ const holafImageViewer = {
             });
             
             this.syncGallery(newImages);
+            console.timeEnd('State Update & Gallery Sync');
+            
             this.updateStatusBar(data.filtered_count, data.total_db_count);
             
             const allThumbsGenerated = data.total_db_count > 0 && data.generated_thumbnails_count >= data.total_db_count;
@@ -643,12 +657,12 @@ const holafImageViewer = {
             imageViewerState.setState({ images: [], activeImage: null, currentNavIndex: -1, status: { error: e.message } });
         } finally {
             if (this.isDirty) {
-                // Use a timeout to avoid synchronous loop if loadFilteredImages fails instantly
                 setTimeout(() => this.loadFilteredImages(), 0);
             } else {
                 this.isLoading = false;
             }
             this._updateActionButtonsState();
+            console.timeEnd('Total Filter to Render Time');
         }
     },
 

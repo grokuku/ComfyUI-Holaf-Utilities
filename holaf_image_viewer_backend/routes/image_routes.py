@@ -21,10 +21,8 @@ async def get_filter_options_route(request: web.Request):
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        # --- MODIFICATION: Query cache and aggregate results in the backend ---
         cursor.execute("SELECT path_canon, image_count FROM folder_metadata")
         
-        # Use defaultdict for easy aggregation
         aggregated_folders = defaultdict(int)
         
         for row in cursor.fetchall():
@@ -32,26 +30,20 @@ async def get_filter_options_route(request: web.Request):
             count = row['image_count']
             
             if path == 'root':
-                # Keep 'root' as a special, separate entry
                 aggregated_folders['root'] += count
             else:
-                # Get the top-level folder (e.g., 'landscapes' from 'landscapes/winter')
                 top_level_folder = path.split('/')[0]
                 aggregated_folders[top_level_folder] += count
 
-        # Convert the aggregated data into the expected format: list of {'path': str, 'count': int}
         subfolder_data = [{'path': path, 'count': count} for path, count in aggregated_folders.items()]
-        # Sort alphabetically, with 'root' potentially being first or last depending on locale
         subfolder_data.sort(key=lambda x: x['path'])
 
-        # Check if there are any items in the trash (this logic remains the same)
         cursor.execute("SELECT 1 FROM images WHERE is_trashed = 1 LIMIT 1")
         has_trashed_items = cursor.fetchone() is not None
 
         if has_trashed_items:
-            subfolder_data.append({'path': logic.TRASHCAN_DIR_NAME, 'count': -1}) # UI handles display
+            subfolder_data.append({'path': logic.TRASHCAN_DIR_NAME, 'count': -1})
 
-        # Get formats from non-trashed images (this query is efficient enough)
         cursor.execute("SELECT DISTINCT format FROM images WHERE is_trashed = 0")
         formats = sorted([row['format'] for row in cursor.fetchall()])
         
@@ -72,6 +64,11 @@ async def get_filter_options_route(request: web.Request):
             holaf_database.close_db_connection(exception=current_exception)
 
 async def list_images_route(request: web.Request):
+    # --- PERFORMANCE LOGGING START ---
+    request_start_time = time.time()
+    print("\n[Holaf Perf] Received list_images request.")
+    # ---
+    
     conn = None
     filters = {}
     current_exception = None
@@ -91,23 +88,19 @@ async def list_images_route(request: web.Request):
         
         if logic.TRASHCAN_DIR_NAME in folder_filters:
             where_clauses.append("is_trashed = 1")
-            # This logic remains correct as the frontend sends 'trashcan' as the filter value
-            where_clauses.append("(subfolder = ? OR subfolder LIKE ?)")
-            params.extend([logic.TRASHCAN_DIR_NAME, f"{logic.TRASHCAN_DIR_NAME}/%"])
         else:
             where_clauses.append("is_trashed = 0")
+            
             if folder_filters:
-                conditions = []
-                for folder in folder_filters:
-                    if folder == 'root':
-                        conditions.append("subfolder = ?")
-                        params.append('')
-                    else:
-                        # This part correctly handles filtering for a top-level folder and all its children
-                        conditions.append("(subfolder = ? OR subfolder LIKE ?)")
-                        params.extend([folder, f"{folder}/%"])
-                if conditions:
-                    where_clauses.append(f"({ ' OR '.join(conditions) })")
+                cursor.execute("CREATE TEMPORARY TABLE selected_folders (path TEXT PRIMARY KEY)")
+                folders_to_insert = [('' if f == 'root' else f,) for f in folder_filters]
+                cursor.executemany("INSERT INTO selected_folders (path) VALUES (?)", folders_to_insert)
+                where_clauses.append("""
+                    EXISTS (
+                        SELECT 1 FROM selected_folders sf 
+                        WHERE images.subfolder = sf.path OR images.subfolder LIKE (sf.path || '/%')
+                    )
+                """)
 
         format_filters = filters.get('format_filters', [])
         if format_filters:
@@ -153,10 +146,15 @@ async def list_images_route(request: web.Request):
         if where_clauses:
             final_query += " WHERE " + " AND ".join(where_clauses)
         
+        # --- PERFORMANCE LOGGING: DB Count Query ---
+        db_count_start_time = time.time()
         count_query_filtered = final_query.replace(query_fields, "COUNT(*)")
         cursor.execute(count_query_filtered, params)
         filtered_count = cursor.fetchone()[0]
-
+        db_count_end_time = time.time()
+        print(f"  > [Holaf Perf] DB Count Query Time: {(db_count_end_time - db_count_start_time):.4f} seconds")
+        # ---
+        
         cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0")
         total_db_count = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM images WHERE thumbnail_status = 2 AND is_trashed = 0")
@@ -165,15 +163,28 @@ async def list_images_route(request: web.Request):
         conn.commit()
 
         final_query += " ORDER BY mtime DESC"
+        
+        # --- PERFORMANCE LOGGING: DB Main Query ---
+        db_main_start_time = time.time()
         cursor.execute(final_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]
+        db_main_end_time = time.time()
+        print(f"  > [Holaf Perf] DB Main Query & Fetch Time: {(db_main_end_time - db_main_start_time):.4f} seconds")
+        # ---
         
-        return web.json_response({
+        response = web.json_response({
             "images": images_data,
             "filtered_count": filtered_count,
             "total_db_count": total_db_count,
             "generated_thumbnails_count": generated_thumbnails_count
         })
+        
+        # --- PERFORMANCE LOGGING: Total Time ---
+        request_end_time = time.time()
+        print(f"  > [Holaf Perf] Total Backend Request Time (incl. JSON prep): {(request_end_time - request_start_time):.4f} seconds for {len(images_data)} images.")
+        # ---
+        
+        return response
     except json.JSONDecodeError as e_json:
         current_exception = e_json
         print(f"🔴 [Holaf-ImageViewer] Invalid JSON in list_images_route: {e_json}")
