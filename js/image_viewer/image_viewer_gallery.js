@@ -13,7 +13,7 @@ import { imageViewerState } from "./image_viewer_state.js";
 import { showFullscreenView } from './image_viewer_navigation.js';
 
 // --- Configuration ---
-const SCROLLBAR_DEBOUNCE_MS = 150; // Wait this long after scrollbar stops to load
+const SCROLLBAR_DEBOUNCE_MS = 150;
 const MAX_CONCURRENT_THUMBNAIL_LOADS = 12;
 
 // --- Module-level state ---
@@ -25,93 +25,17 @@ let resizeObserver = null;
 let renderedPlaceholders = new Map();
 let scrollbarDebounceTimeout = null;
 
-// NOUVELLE DISTINCTION: Drapeaux pour le type de défilement
 let isWheelScrolling = false;
 let wheelScrollTimeout = null;
-
-// --- Loading Pipeline State ---
 let activeThumbnailLoads = 0;
 
-// --- Layout properties ---
 let columnCount = 0;
 let itemWidth = 0;
 let itemHeight = 0;
 let gap = 0;
 
-/**
- * Initializes the gallery module and its observers.
- * @param {object} viewer - The main image viewer instance.
- */
-export function initGallery(viewer) {
-    viewerInstance = viewer;
-    galleryEl = document.getElementById("holaf-viewer-gallery");
+// --- Internal Functions (not exported directly) ---
 
-    document.addEventListener('holaf-refresh-thumbnail', (e) => {
-        const { path_canon } = e.detail;
-        if (path_canon) refreshThumbnailInGallery(path_canon);
-    });
-
-    galleryEl.innerHTML = `
-        <div id="holaf-gallery-sizer" style="position: relative; width: 100%; height: 0; pointer-events: none;"></div>
-        <div id="holaf-gallery-grid" style="position: absolute; top: 0; left: 0; width: 100%;"></div>
-    `;
-    gallerySizerEl = document.getElementById("holaf-gallery-sizer");
-    galleryGridEl = document.getElementById("holaf-gallery-grid");
-
-    resizeObserver = new ResizeObserver(entries => {
-        if (entries.length > 0) handleResize();
-    });
-    resizeObserver.observe(galleryEl);
-    
-    // Étape 1 : Détecter la molette pour activer le drapeau
-    galleryEl.addEventListener('wheel', () => {
-        isWheelScrolling = true;
-        clearTimeout(wheelScrollTimeout);
-        wheelScrollTimeout = setTimeout(() => { isWheelScrolling = false; }, 300); // Le drapeau reste actif 300ms
-    }, { passive: true });
-
-    // Étape 2 : L'événement de scroll choisit la stratégie
-    galleryEl.addEventListener('scroll', () => {
-        renderVisibleItems();
-        if (isWheelScrolling) {
-            // CHARGEMENT IMMÉDIAT (pour la molette)
-            loadVisibleThumbnails();
-        } else {
-            // CHARGEMENT DÉBRAYÉ (pour la barre de défilement)
-            debouncedLoadVisibleThumbnails();
-        }
-    }, { passive: true });
-}
-
-/**
- * Main entry point to update the gallery. Called when filters change.
- */
-export function syncGallery(viewer, images) {
-    if (!galleryEl) initGallery(viewer);
-    
-    viewerInstance = viewer;
-    const { images: allImages } = imageViewerState.getState();
-    
-    activeThumbnailLoads = 0;
-
-    if (!allImages || allImages.length === 0) {
-        galleryGridEl.innerHTML = '';
-        renderedPlaceholders.clear();
-        gallerySizerEl.style.height = '0px';
-        viewerInstance.setLoadingState("No images match the current filters.");
-        return;
-    }
-
-    const messageEl = galleryEl.querySelector('.holaf-viewer-message');
-    if (messageEl) messageEl.remove();
-
-    galleryEl.scrollTop = 0;
-    updateLayout(true);
-}
-
-/**
- * Handles the gallery resize event.
- */
 function handleResize() {
     const { images } = imageViewerState.getState();
     if (!images || images.length === 0 || !galleryEl) return;
@@ -136,9 +60,6 @@ function handleResize() {
     renderVisibleItems(true);
 }
 
-/**
- * Recalculates grid layout properties.
- */
 function updateLayout(renderAfter = true) {
     if (!galleryEl || !viewerInstance) return;
     
@@ -163,9 +84,6 @@ function updateLayout(renderAfter = true) {
     }
 }
 
-/**
- * Renders only the visible items using a differential update.
- */
 function renderVisibleItems() {
     requestAnimationFrame(() => {
         if (columnCount === 0) return;
@@ -231,27 +149,16 @@ function renderVisibleItems() {
     });
 }
 
-/**
- * Stratégie de chargement DÉBRAYÉE pour la barre de défilement.
- */
 function debouncedLoadVisibleThumbnails() {
     clearTimeout(scrollbarDebounceTimeout);
     scrollbarDebounceTimeout = setTimeout(loadVisibleThumbnails, SCROLLBAR_DEBOUNCE_MS);
 }
 
-/**
- * La fonction centrale qui déclenche le "gatekeeper".
- * Appelée directement par la molette, ou via le debounce par la barre de défilement.
- */
 function loadVisibleThumbnails() {
     const placeholdersToLoad = Array.from(galleryGridEl.children);
     
-    // Le "gatekeeper" est ici. Il est appelé à chaque fois mais se régule tout seul.
     const process = () => {
-        if (activeThumbnailLoads >= MAX_CONCURRENT_THUMBNAIL_LOADS) {
-            return;
-        }
-
+        if (activeThumbnailLoads >= MAX_CONCURRENT_THUMBNAIL_LOADS) return;
         const nextPlaceholder = placeholdersToLoad.find(p => !p.dataset.thumbnailLoadingOrLoaded);
 
         if (nextPlaceholder) {
@@ -261,25 +168,18 @@ function loadVisibleThumbnails() {
             if (image) {
                 loadSpecificThumbnail(nextPlaceholder, image, false, () => {
                     activeThumbnailLoads--;
-                    process(); // Une place s'est libérée, on continue.
+                    process();
                 });
             } else {
                 activeThumbnailLoads--;
                 process();
             }
-            process(); // On tente de remplir un autre slot immédiatement.
+            process();
         }
     };
-
-    for (let i = 0; i < MAX_CONCURRENT_THUMBNAIL_LOADS; i++) {
-        process();
-    }
+    for (let i = 0; i < MAX_CONCURRENT_THUMBNAIL_LOADS; i++) process();
 }
 
-
-/**
- * Loads the image for a single placeholder and calls a callback on completion.
- */
 function loadSpecificThumbnail(placeholder, image, forceReload = false, onCompleteCallback = null) {
     if (placeholder.dataset.thumbnailLoadingOrLoaded === 'true' && !forceReload) {
         if (onCompleteCallback) onCompleteCallback();
@@ -287,7 +187,6 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
     }
     
     placeholder.dataset.thumbnailLoadingOrLoaded = "true";
-
     placeholder.classList.remove('error');
     const existingError = placeholder.querySelector('.holaf-viewer-error-overlay');
     if (existingError) existingError.remove();
@@ -299,9 +198,7 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
     }
     if(oldImg) oldImg.remove();
     
-    const onComplete = () => {
-        if (onCompleteCallback) onCompleteCallback();
-    };
+    const onComplete = () => { if (onCompleteCallback) onCompleteCallback(); };
 
     const imageUrl = new URL(window.location.origin);
     imageUrl.pathname = '/holaf/images/thumbnail';
@@ -322,6 +219,10 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
             fsIcon.title = 'View fullscreen';
             fsIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
+                const imageIndex = parseInt(placeholder.dataset.index, 10);
+                if (!isNaN(imageIndex)) {
+                    imageViewerState.setState({ activeImage: image, currentNavIndex: imageIndex });
+                }
                 showFullscreenView(viewerInstance, image);
             });
             placeholder.appendChild(fsIcon);
@@ -340,7 +241,6 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
     };
 }
 
-
 function createPlaceholder(viewer, image, index) {
     const placeholder = document.createElement('div');
     placeholder.className = 'holaf-viewer-thumbnail-placeholder';
@@ -355,6 +255,7 @@ function createPlaceholder(viewer, image, index) {
     editIcon.classList.toggle('active', image.has_edit_file);
     editIcon.onclick = (e) => {
         e.stopPropagation();
+        imageViewerState.setState({ activeImage: image, currentNavIndex: index });
         viewer._showZoomedView(image);
     };
     placeholder.appendChild(editIcon);
@@ -393,19 +294,89 @@ function createPlaceholder(viewer, image, index) {
         }
         const newSelectedImages = new Set(state.images.filter(img => selectedPaths.has(img.path_canon)));
         imageViewerState.setState({ selectedImages: newSelectedImages, activeImage: clickedImageData, currentNavIndex: clickedIndex });
-        renderVisibleItems(true); 
+        renderVisibleItems();
         viewer._updateActionButtonsState();
     });
 
     placeholder.addEventListener('dblclick', (e) => {
         if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon, .holaf-viewer-thumb-checkbox')) return;
+        imageViewerState.setState({ activeImage: image, currentNavIndex: index });
         viewer._showZoomedView(image);
     });
 
     return placeholder;
 }
 
-export function refreshThumbnailInGallery(path_canon) {
+
+// --- Functions to be exported ---
+
+function initGallery(viewer) {
+    viewerInstance = viewer;
+    galleryEl = document.getElementById("holaf-viewer-gallery");
+
+    document.addEventListener('holaf-refresh-thumbnail', (e) => {
+        const { path_canon } = e.detail;
+        if (path_canon) refreshThumbnailInGallery(path_canon);
+    });
+
+    galleryEl.innerHTML = `
+        <div id="holaf-gallery-sizer" style="position: relative; width: 100%; height: 0; pointer-events: none;"></div>
+        <div id="holaf-gallery-grid" style="position: absolute; top: 0; left: 0; width: 100%;"></div>
+    `;
+    gallerySizerEl = document.getElementById("holaf-gallery-sizer");
+    galleryGridEl = document.getElementById("holaf-gallery-grid");
+
+    resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(galleryEl);
+    
+    galleryEl.addEventListener('wheel', () => {
+        isWheelScrolling = true;
+        clearTimeout(wheelScrollTimeout);
+        wheelScrollTimeout = setTimeout(() => { isWheelScrolling = false; }, 300);
+    }, { passive: true });
+
+    galleryEl.addEventListener('scroll', () => {
+        renderVisibleItems();
+        if (isWheelScrolling) {
+            loadVisibleThumbnails();
+        } else {
+            debouncedLoadVisibleThumbnails();
+        }
+    }, { passive: true });
+    
+    viewer.gallery = {
+        ensureImageVisible, // NOUVEAU
+        alignImageOnExit, // NOUVEAU
+        refreshThumbnail: refreshThumbnailInGallery,
+        render: renderVisibleItems,
+        getColumnCount: () => columnCount
+    };
+}
+
+function syncGallery(viewer, images) {
+    if (!galleryEl) initGallery(viewer);
+    
+    viewerInstance = viewer;
+    const { images: allImages } = imageViewerState.getState();
+    
+    activeThumbnailLoads = 0;
+
+    if (!allImages || allImages.length === 0) {
+        galleryGridEl.innerHTML = '';
+        renderedPlaceholders.clear();
+        gallerySizerEl.style.height = '0px';
+        viewerInstance.setLoadingState("No images match the current filters.");
+        return;
+    }
+
+    const messageEl = galleryEl.querySelector('.holaf-viewer-message');
+    if (messageEl) messageEl.remove();
+
+    galleryEl.scrollTop = 0;
+    updateLayout(true);
+}
+
+function refreshThumbnailInGallery(path_canon) {
     const placeholder = renderedPlaceholders.get(path_canon);
     if (!placeholder) return;
     const allImages = imageViewerState.getState().images;
@@ -417,3 +388,72 @@ export function refreshThumbnailInGallery(path_canon) {
     
     loadSpecificThumbnail(placeholder, image, true);
 }
+
+/**
+ * NOUVELLE FONCTION : S'assure qu'une image est visible (pour la navigation au clavier).
+ * Ne fait défiler que si nécessaire.
+ */
+function ensureImageVisible(imageIndex) {
+    if (!galleryEl || imageIndex < 0) return;
+    
+    renderVisibleItems();
+
+    setTimeout(() => {
+        const targetElement = galleryGridEl.querySelector(`[data-index="${imageIndex}"]`);
+        
+        if (targetElement) {
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            if (columnCount <= 0 || itemHeight === 0) return;
+            const targetRow = Math.floor(imageIndex / columnCount);
+            galleryEl.scrollTop = targetRow * (itemHeight + gap);
+            renderVisibleItems();
+            loadVisibleThumbnails();
+        }
+    }, 50);
+}
+
+/**
+ * NOUVELLE FONCTION : Gère le positionnement au retour du mode édition.
+ */
+function alignImageOnExit(imageIndex) {
+    if (!galleryEl || imageIndex < 0) return;
+
+    renderVisibleItems();
+
+    setTimeout(() => {
+        const targetElement = galleryGridEl.querySelector(`[data-index="${imageIndex}"]`);
+        
+        if (targetElement) {
+            const rect = targetElement.getBoundingClientRect();
+            const galleryRect = galleryEl.getBoundingClientRect();
+            const isVisible = rect.top >= galleryRect.top && rect.bottom <= galleryRect.bottom;
+            
+            if (isVisible) {
+                return; // Cas 1: L'image est visible, on ne fait rien.
+            }
+
+            if (rect.top < galleryRect.top) {
+                // Cas 3: L'image est au-dessus, on l'aligne en haut.
+                targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                // Cas 2: L'image est en dessous, on l'aligne en bas.
+                targetElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
+        } else {
+            if (columnCount <= 0 || itemHeight === 0) return;
+            const targetRow = Math.floor(imageIndex / columnCount);
+            galleryEl.scrollTop = targetRow * (itemHeight + gap);
+            renderVisibleItems();
+            loadVisibleThumbnails();
+        }
+    }, 50);
+}
+
+export {
+    initGallery,
+    syncGallery,
+    ensureImageVisible,
+    alignImageOnExit,
+    refreshThumbnailInGallery
+};

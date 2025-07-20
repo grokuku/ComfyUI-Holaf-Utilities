@@ -11,16 +11,9 @@ import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
 import { HolafPanelManager, dialogState } from '../holaf_panel_manager.js';
 
-// --- NOUVEAU CORRECTIF : Helper pour appliquer les filtres de l'éditeur ---
-/**
- * Applies the current editor's filter preview to a given image element.
- * @param {object} viewer The main viewer instance which contains the editor.
- * @param {HTMLImageElement} imageEl The image element to apply the filter to.
- */
 function _applyEditorPreview(viewer, imageEl) {
     if (!viewer.editor || !imageEl) return;
     
-    // On s'assure que l'image n'est pas "vide" ou en cours de chargement
     if (!imageEl.src || imageEl.src.endsWith('undefined')) {
         imageEl.style.filter = 'none';
         return;
@@ -36,11 +29,6 @@ function _applyEditorPreview(viewer, imageEl) {
     imageEl.style.filter = filterValue;
 }
 
-/**
- * Checks if the editor has unsaved changes and prompts the user if so.
- * @param {object} viewer The main viewer instance.
- * @returns {Promise<string>} 'proceed' if navigation should continue, 'cancel' otherwise.
- */
 async function _handleUnsavedChanges(viewer) {
     if (!viewer.editor || !viewer.editor.hasUnsavedChanges()) {
         return 'proceed';
@@ -114,12 +102,11 @@ export function showZoomedView(viewer, image) {
         i.src = u;
         v.style.display = 'flex';
         document.getElementById('holaf-viewer-gallery').style.display = 'none';
-        _applyEditorPreview(viewer, i); // CORRECTIF: Appliquer les filtres
+        _applyEditorPreview(viewer, i);
     };
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
 
-    viewer._updateActiveThumbnail(imageViewerState.getState().currentNavIndex);
     preloadNextImage(viewer);
 }
 
@@ -146,12 +133,11 @@ export function showFullscreenView(viewer, image) {
         resetTransform(viewer.fullscreenViewState, fImg);
         fImg.src = u;
         fOv.style.display = 'flex';
-        _applyEditorPreview(viewer, fImg); // CORRECTIF: Appliquer les filtres
+        _applyEditorPreview(viewer, fImg);
     };
     l.onerror = () => console.error(`Failed to load: ${u}`);
     l.src = u;
 
-    viewer._updateActiveThumbnail(imageViewerState.getState().currentNavIndex);
     preloadNextImage(viewer);
 }
 
@@ -168,56 +154,74 @@ export async function navigate(viewer, direction) {
     if (state.images.length === 0) return;
     
     let newIndex = (state.currentNavIndex === -1) ? 0 : state.currentNavIndex + direction;
-    const clampedIndex = Math.max(0, Math.min(newIndex, state.images.length - 1));
 
-    if (clampedIndex === state.currentNavIndex && state.currentNavIndex !== -1) return;
+    if (newIndex < 0) {
+        newIndex = state.images.length - 1;
+    } else if (newIndex >= state.images.length) {
+        newIndex = 0;
+    }
 
-    const newActiveImage = state.images[clampedIndex];
-    imageViewerState.setState({ currentNavIndex: clampedIndex, activeImage: newActiveImage });
+    const newActiveImage = state.images[newIndex];
+    imageViewerState.setState({ currentNavIndex: newIndex, activeImage: newActiveImage });
 
-    viewer._updateActiveThumbnail(clampedIndex);
     preloadNextImage(viewer);
-
-    const newImageUrl = getFullImageUrl(newActiveImage);
-    const loader = new Image();
-    loader.onload = () => {
-        const currentViewMode = imageViewerState.getState().ui.view_mode;
-        if (currentViewMode === 'zoom') {
-            const zImg = document.querySelector('#holaf-viewer-zoom-view img');
-            resetTransform(viewer.zoomViewState, zImg);
-            zImg.src = newImageUrl;
-            _applyEditorPreview(viewer, zImg); // CORRECTIF: Appliquer les filtres en naviguant
-        } else if (currentViewMode === 'fullscreen') {
-            const fImg = viewer.fullscreenElements.img;
-            resetTransform(viewer.fullscreenViewState, fImg);
-fImg.src = newImageUrl;
-            _applyEditorPreview(viewer, fImg); // CORRECTIF: Appliquer les filtres en naviguant
+    
+    const currentViewMode = imageViewerState.getState().ui.view_mode;
+    
+    if (currentViewMode === 'gallery') {
+        if (viewer.gallery?.ensureImageVisible) {
+            viewer.gallery.ensureImageVisible(newIndex);
         }
-    };
-    loader.onerror = () => console.error(`Preload failed: ${newImageUrl}`);
-    loader.src = newImageUrl;
+    } else {
+        const newImageUrl = getFullImageUrl(newActiveImage);
+        const loader = new Image();
+        loader.onload = () => {
+            if (currentViewMode === 'zoom') {
+                const zImg = document.querySelector('#holaf-viewer-zoom-view img');
+                resetTransform(viewer.zoomViewState, zImg);
+                zImg.src = newImageUrl;
+                _applyEditorPreview(viewer, zImg);
+            } else if (currentViewMode === 'fullscreen') {
+                const fImg = viewer.fullscreenElements.img;
+                resetTransform(viewer.fullscreenViewState, fImg);
+                fImg.src = newImageUrl;
+                _applyEditorPreview(viewer, fImg);
+            }
+        };
+        loader.onerror = () => console.error(`Preload failed: ${newImageUrl}`);
+        loader.src = newImageUrl;
+    }
 }
 
 export function navigateGrid(viewer, direction) {
     const state = imageViewerState.getState();
-    if (state.images.length === 0) return;
+    if (state.images.length === 0 || !viewer.gallery) return;
+
+    const columnCount = viewer.gallery.getColumnCount();
+    if (columnCount <= 0) return;
     
-    const g = document.getElementById('holaf-viewer-gallery');
-    const f = g?.querySelector('.holaf-viewer-thumbnail-placeholder');
-    if (!g || !f) return;
+    const currentIndex = state.currentNavIndex;
+    if (currentIndex === -1) {
+        const newActiveImage = state.images[0];
+        imageViewerState.setState({ currentNavIndex: 0, activeImage: newActiveImage });
+        if (viewer.gallery?.ensureImageVisible) {
+            viewer.gallery.ensureImageVisible(0);
+        }
+        return;
+    }
 
-    const s = window.getComputedStyle(f);
-    const w = f.offsetWidth + parseFloat(s.marginLeft) + parseFloat(s.marginRight);
-    const n = Math.max(1, Math.floor(g.clientWidth / w));
+    const newIndex = currentIndex + (direction * columnCount);
 
-    let newIndex = (state.currentNavIndex === -1) ? 0 : state.currentNavIndex + (direction * n);
-    const clampedIndex = Math.max(0, Math.min(newIndex, state.images.length - 1));
-    if (clampedIndex === state.currentNavIndex && state.currentNavIndex !== -1) return;
+    if (newIndex < 0 || newIndex >= state.images.length) {
+        return;
+    }
 
-    const newActiveImage = state.images[clampedIndex];
-    imageViewerState.setState({ currentNavIndex: clampedIndex, activeImage: newActiveImage });
+    const newActiveImage = state.images[newIndex];
+    imageViewerState.setState({ currentNavIndex: newIndex, activeImage: newActiveImage });
 
-    viewer._updateActiveThumbnail(clampedIndex);
+    if (viewer.gallery?.ensureImageVisible) {
+        viewer.gallery.ensureImageVisible(newIndex);
+    }
 }
 
 export async function handleEscape(viewer) {
@@ -231,14 +235,23 @@ export async function handleEscape(viewer) {
         
         if (targetMode === 'zoom') {
             document.getElementById('holaf-viewer-zoom-view').style.display = 'flex';
-            // CORRECTIF: S'assurer que les filtres sont ré-appliqués en sortant du plein écran vers le zoom
             const zImg = document.querySelector('#holaf-viewer-zoom-view img');
             _applyEditorPreview(viewer, zImg);
+        } else {
+            const { currentNavIndex } = imageViewerState.getState();
+            if (currentNavIndex !== -1 && viewer.gallery?.alignImageOnExit) {
+                viewer.gallery.alignImageOnExit(currentNavIndex);
+            }
         }
     } else if (currentMode === 'zoom') {
         const action = await _handleUnsavedChanges(viewer);
         if (action === 'cancel') return;
         hideZoomedView();
+        
+        const { currentNavIndex } = imageViewerState.getState();
+        if (currentNavIndex !== -1 && viewer.gallery?.alignImageOnExit) {
+            viewer.gallery.alignImageOnExit(currentNavIndex);
+        }
     }
 }
 
@@ -267,19 +280,10 @@ export async function handleKeyDown(viewer, e) {
                 currentSelection.add(activeImagePath);
             }
 
-            const newSelectedImages = new Set(
-                state.images.filter(img => currentSelection.has(img.path_canon))
-            );
-
+            const newSelectedImages = new Set(state.images.filter(img => currentSelection.has(img.path_canon)));
             imageViewerState.setState({ selectedImages: newSelectedImages });
-
-            // Update checkbox state visually
-            const activeThumbnail = document.querySelector(`.holaf-viewer-thumbnail-placeholder.active`);
-            if (activeThumbnail) {
-                const checkbox = activeThumbnail.querySelector('.holaf-viewer-thumb-checkbox');
-                if(checkbox) checkbox.checked = currentSelection.has(activeImagePath);
-            }
-            viewer._updateActionButtonsState(); // Update action buttons as selection changed
+            if (viewer.gallery?.render) viewer.gallery.render();
+            viewer._updateActionButtonsState();
             break;
         }
         case 'Delete': {
@@ -296,8 +300,7 @@ export async function handleKeyDown(viewer, e) {
 
                     if (newState.images.length === 0) {
                         if (currentMode === 'fullscreen') hideFullscreenView(viewer);
-                        document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
-                        document.getElementById('holaf-viewer-gallery').style.display = 'flex';
+                        hideZoomedView();
                         imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
                     } else {
                         const newIndex = Math.min(originalIndex, newState.images.length - 1);
@@ -325,27 +328,30 @@ export async function handleKeyDown(viewer, e) {
         case 'End':
             if (currentMode === 'gallery' && state.images.length > 0) {
                 e.preventDefault();
-                let targetIndex;
-                if (e.key === 'Home') {
-                    targetIndex = 0;
-                } else {
-                    if (viewer.backgroundRenderHandle) clearTimeout(viewer.backgroundRenderHandle);
-                    while (viewer.renderedCount < state.images.length) viewer.renderImageBatch(true);
-                    targetIndex = state.images.length - 1;
+                const targetIndex = e.key === 'Home' ? 0 : state.images.length - 1;
+                const newActiveImage = state.images[targetIndex];
+                imageViewerState.setState({ currentNavIndex: targetIndex, activeImage: newActiveImage });
+                if (viewer.gallery?.ensureImageVisible) {
+                    viewer.gallery.ensureImageVisible(targetIndex);
                 }
-                const direction = targetIndex - state.currentNavIndex;
-                await navigate(viewer, direction);
             }
             break;
         case 'Enter':
             e.preventDefault();
-            if (state.currentNavIndex === -1 && state.images.length > 0) {
-                imageViewerState.setState({ activeImage: state.images[0], currentNavIndex: 0 });
+            const { currentNavIndex, activeImage, images } = state;
+            let targetImage = activeImage;
+            
+            if (currentNavIndex === -1 && images.length > 0) {
+                targetImage = images[0];
+                imageViewerState.setState({ activeImage: targetImage, currentNavIndex: 0 });
             }
             
-            const currentState = imageViewerState.getState();
-            if (currentState.currentNavIndex !== -1 && currentState.activeImage) {
-                showFullscreenView(viewer, currentState.activeImage);
+            if (targetImage) {
+                if (e.ctrlKey) {
+                    showFullscreenView(viewer, targetImage);
+                } else {
+                    showZoomedView(viewer, targetImage);
+                }
             }
             break;
         case 'ArrowRight':

@@ -1,3 +1,5 @@
+--- START OF FILE context.txt ---
+
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -14,6 +16,10 @@ RÈGLES OPÉRATIONNELLES :
 4.  **Principe de moindre intervention :** Ne fais jamais de zèle. Ne modifie pas des sections de code qui fonctionnent correctement si cela n'est pas explicitement demandé ou absolument nécessaire pour la tâche en cours.
 
 5.  **Anticipation des erreurs et suggestion de vérification :** N'assume pas que les modifications proposées fonctionneront parfaitement du premier coup. Après avoir proposé une modification, suggère brièvement les points clés que je devrais vérifier ou les tests simples que je pourrais effectuer pour m'assurer du bon fonctionnement.
+
+6.  **Noms de fichiers :** Utilise toujours les chemins de fichiers complets (par exemple `js/image_viewer/image_viewer_gallery.js`) et ne les tronque jamais.
+
+7.  **Fichiers complets :** Ne fournis jamais de fichiers partiels ou tronqués. Si une modification est nécessaire, donne toujours le contenu intégral du fichier modifié, même pour un seul caractère changé.
 
 ---
 FILE_TREE_ANALYSIS:
@@ -107,11 +113,11 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_editor.js
       > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
-      > [MAJOR REFACTOR] Implements a high-performance virtualized scroller. Renders only visible items into the DOM, allowing for instantaneous scrolling of massive galleries without UI freezes or flicker. Preserves scroll position on resize.
+      > [MAJOR REFACTOR & FIXED] Implements a high-performance virtualized scroller. Renders only visible items into the DOM, allowing for instantaneous scrolling of massive galleries without UI freezes or flicker. Preserves scroll position on resize. Fixed navigation and focus logic.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
-      > [MODIFIED] Handles keyboard input (`handleKeyDown`). Blocks main shortcuts when a dialog is open. Applies editor filters to fullscreen/zoom views. Manages `ui.view_mode`.
+      > [MAJOR REFACTOR & FIXED] Handles keyboard input (`handleKeyDown`). Blocks main shortcuts when a dialog is open. Applies editor filters to fullscreen/zoom views. Manages `ui.view_mode`. Corrected all navigation and focus logic for gallery, zoom, and fullscreen views.
     📄 image_viewer_settings.js
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
@@ -197,8 +203,8 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view scrolls to an incorrect position instead of focusing on the active image.
     - [bug, navigation, fullscreen_arrow_nav_mismatch] # Using arrow keys in fullscreen view navigates to incorrect images in the list instead of the immediate next/previous one.
+    - [bug, navigation, enter_key_goes_to_fullscreen_instead_of_edit] # In keyboard navigation, pressing 'Enter' opens the fullscreen view instead of the edit/zoom view.
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -219,6 +225,7 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls (smoothly) to focus on the active image, respecting its position relative to the viewport.
     - [fix, performance, gallery_scroll_optimization] # Optimized thumbnail loading to use a debounced, targeted approach, eliminating request storms on fast scrolls.
     - [fix, ui, gallery_autofill_layout] # Adjusted thumbnail sizing to dynamically fill the entire gallery width, removing empty space.
     - [fix, performance, initial_load_speed] # Corrected logic to properly utilize pre-loaded data, making the initial panel opening near-instantaneous.
