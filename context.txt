@@ -1,5 +1,3 @@
---- START OF FILE context.txt ---
-
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -203,8 +201,7 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, navigation, fullscreen_arrow_nav_mismatch] # Using arrow keys in fullscreen view navigates to incorrect images in the list instead of the immediate next/previous one.
-    - [bug, navigation, enter_key_goes_to_fullscreen_instead_of_edit] # In keyboard navigation, pressing 'Enter' opens the fullscreen view instead of the edit/zoom view.
+    - [bug, navigation, gallery_desync_on_fullscreen_exit] # Returning from fullscreen doesn't always select the correct last-viewed image in the gallery.
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -225,6 +222,8 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working after virtualization refactor.
+    - [fix, navigation, enter_key_opens_edit_view] # Corrected 'Enter' key to open edit/zoom view instead of fullscreen; added 'Ctrl+Enter' as a shortcut for fullscreen.
     - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls (smoothly) to focus on the active image, respecting its position relative to the viewport.
     - [fix, performance, gallery_scroll_optimization] # Optimized thumbnail loading to use a debounced, targeted approach, eliminating request storms on fast scrolls.
     - [fix, ui, gallery_autofill_layout] # Adjusted thumbnail sizing to dynamically fill the entire gallery width, removing empty space.
