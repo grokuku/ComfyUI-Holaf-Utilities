@@ -1,3 +1,5 @@
+--- START OF FILE context.txt ---
+
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -201,7 +203,9 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    # (None currently identified)
+    - [bug, state, gallery_no_update_after_select_none] # After clicking "None" on folder filters, selecting a new folder doesn't refresh the gallery.
+    - [bug, performance, recursion_error_on_rapid_folder_selection] # Selecting/deselecting folders too quickly causes a "too much recursion" error.
+    - [bug, state, folder_filter_not_restored_on_startup] # Folder filter selection is not restored from config on application startup.
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -209,6 +213,7 @@ PROJECT_STATE:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
       - [backend, periodic_maintenance_worker] # Hourly worker to clean DB and cache.
     ImageViewer:
+      - [feature, ui, animated_gallery_filter_transitions] # Implement smooth, animated cross-fade transitions when gallery filters are changed.
       - [feature, ui, gallery_sorting_options] # Implement gallery sorting controls (by name, by date) in both ascending and descending order.
       - [investigation, state, folder_filter_persistence] # Double-check that folder selection state is robustly saved and restored across full application reboots.
       - [tuning, performance, thumbnail_concurrency] # Evaluate the optimal number of simultaneous thumbnail downloads; consider a slight increase from the current 12.
@@ -222,6 +227,7 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, ui, thumbnail_slider_realtime_update_fix] # Corrected the thumbnail size slider to provide smooth, real-time gallery resizing. The virtual gallery's layout logic was modified to accept a live size parameter, forcing the grid to recalculate continuously during sliding for a fluid user experience.
     - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view to match the fullscreen exit behavior, ensuring the active image is positioned correctly (top/bottom of the viewport).
     - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update during keyboard navigation.
     - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working after virtualization refactor.

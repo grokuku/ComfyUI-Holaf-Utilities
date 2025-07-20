@@ -60,10 +60,12 @@ function handleResize() {
     renderVisibleItems(true);
 }
 
-function updateLayout(renderAfter = true) {
+function updateLayout(renderAfter = true, overrideThumbSize = null) {
     if (!galleryEl || !viewerInstance) return;
     
-    const targetThumbSize = imageViewerState.getState().ui.thumbnail_size;
+    // MODIFICATION : Utilise la taille fournie en priorité, sinon celle de l'état.
+    const targetThumbSize = overrideThumbSize !== null ? overrideThumbSize : imageViewerState.getState().ui.thumbnail_size;
+    
     const containerWidth = galleryEl.clientWidth;
     const style = window.getComputedStyle(galleryGridEl);
     gap = parseFloat(style.getPropertyValue('gap')) || 8;
@@ -345,8 +347,8 @@ function initGallery(viewer) {
     }, { passive: true });
     
     viewer.gallery = {
-        ensureImageVisible, // NOUVEAU
-        alignImageOnExit, // NOUVEAU
+        ensureImageVisible,
+        alignImageOnExit,
         refreshThumbnail: refreshThumbnailInGallery,
         render: renderVisibleItems,
         getColumnCount: () => columnCount
@@ -390,8 +392,7 @@ function refreshThumbnailInGallery(path_canon) {
 }
 
 /**
- * NOUVELLE FONCTION : S'assure qu'une image est visible (pour la navigation au clavier).
- * Ne fait défiler que si nécessaire.
+ * Ensures an image is visible (for keyboard navigation). Scrolls only if needed.
  */
 function ensureImageVisible(imageIndex) {
     if (!galleryEl || imageIndex < 0) return;
@@ -414,7 +415,7 @@ function ensureImageVisible(imageIndex) {
 }
 
 /**
- * NOUVELLE FONCTION : Gère le positionnement au retour du mode édition.
+ * Handles positioning when returning from edit/zoom view.
  */
 function alignImageOnExit(imageIndex) {
     if (!galleryEl || imageIndex < 0) return;
@@ -430,14 +431,14 @@ function alignImageOnExit(imageIndex) {
             const isVisible = rect.top >= galleryRect.top && rect.bottom <= galleryRect.bottom;
             
             if (isVisible) {
-                return; // Cas 1: L'image est visible, on ne fait rien.
+                return; // Case 1: Image is visible, do nothing.
             }
 
             if (rect.top < galleryRect.top) {
-                // Cas 3: L'image est au-dessus, on l'aligne en haut.
+                // Case 3: Image is above, align to top.
                 targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
             } else {
-                // Cas 2: L'image est en dessous, on l'aligne en bas.
+                // Case 2: Image is below, align to bottom.
                 targetElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
         } else {
@@ -450,10 +451,18 @@ function alignImageOnExit(imageIndex) {
     }, 50);
 }
 
+// NOUVELLE FONCTION EXPORTÉE
+function forceRelayout(newSize) {
+    if (!galleryEl) return;
+    // Appelle la fonction interne en lui passant la nouvelle taille.
+    updateLayout(true, newSize);
+}
+
 export {
     initGallery,
     syncGallery,
     ensureImageVisible,
     alignImageOnExit,
-    refreshThumbnailInGallery
+    refreshThumbnailInGallery,
+    forceRelayout // On exporte la nouvelle fonction.
 };

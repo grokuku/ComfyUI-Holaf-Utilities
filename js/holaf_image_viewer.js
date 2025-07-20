@@ -18,7 +18,8 @@ import { imageViewerState } from './image_viewer/image_viewer_state.js';
 // Import modularized functionalities
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
-import { initGallery, syncGallery, refreshThumbnailInGallery } from './image_viewer/image_viewer_gallery.js';
+// MODIFICATION : Importer la nouvelle fonction forceRelayout
+import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
@@ -134,9 +135,16 @@ const holafImageViewer = {
     setTheme: function (themeName, doSave = true) { return Settings.setTheme(this, themeName, doSave); },
     applyPanelSettings: function () { return Settings.applyPanelSettings(this); },
     _applyThumbnailFit: function () { return Settings.applyThumbnailFit(imageViewerState.getState().ui.thumbnail_fit); },
-    _applyThumbnailSize: function () {
-        // This now just triggers a re-layout in the gallery module
-        Settings.applyThumbnailSize(imageViewerState.getState().ui.thumbnail_size);
+    
+    // MODIFICATION : La fonction appelle maintenant les bonnes méthodes
+    _applyThumbnailSize: function (size) {
+        if (size === undefined || !this.panelElements) return;
+
+        // Étape 1 : Met à jour la variable CSS pour changer la taille des conteneurs de miniatures.
+        Settings.applyThumbnailSize(size);
+
+        // Étape 2 : Ordonne explicitement à la galerie virtuelle de recalculer sa grille.
+        forceRelayout(size);
     },
 
     // --- UI Creation & Population (partially delegated) ---

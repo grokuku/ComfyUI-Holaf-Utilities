@@ -62,7 +62,11 @@ class ImageViewerUI {
             this.elements.thumbFitToggle.checked = state.ui.thumbnail_fit === 'contain';
         }
         if (this.elements.thumbSizeSlider) {
-            this.elements.thumbSizeSlider.value = state.ui.thumbnail_size;
+            // Only update the slider's visual position if the user is NOT currently dragging it.
+            // This prevents the state update (which happens on `onchange`) from causing a visual jump during `oninput`.
+            if (!this.isDraggingSlider) {
+                this.elements.thumbSizeSlider.value = state.ui.thumbnail_size;
+            }
             if (this.elements.thumbSizeValue) {
                 this.elements.thumbSizeValue.textContent = `${state.ui.thumbnail_size}px`;
             }
@@ -271,14 +275,22 @@ class ImageViewerUI {
 
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
         this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
+        
+        // `oninput` is for real-time visual updates *during* sliding.
         this.elements.thumbSizeSlider.oninput = (e) => {
             const newSize = parseInt(e.target.value);
+            // Update the text label instantly.
             this.elements.thumbSizeValue.textContent = `${newSize}px`;
-            viewer.saveSettings({ thumbnail_size: newSize });
-            viewer._applyThumbnailSize();
+            // Call the coordinator's function, passing the live size value directly.
+            // This bypasses the central state and forces an immediate re-render.
+            viewer._applyThumbnailSize(newSize);
         };
-        // MODIFICATION: Add onchange event to release focus after user finishes sliding
+        
+        // `onchange` fires only when the user releases the slider.
+        // This is the correct time to save the final setting.
         this.elements.thumbSizeSlider.onchange = (e) => {
+            const newSize = parseInt(e.target.value);
+            viewer.saveSettings({ thumbnail_size: newSize });
         };
 
         // --- Center Pane (Zoom View) Listeners ---
