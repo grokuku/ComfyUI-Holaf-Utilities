@@ -111,11 +111,11 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_editor.js
       > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
-      > [MAJOR REFACTOR & FIXED] Implements a high-performance virtualized scroller. Renders only visible items into the DOM, allowing for instantaneous scrolling of massive galleries without UI freezes or flicker. Preserves scroll position on resize. Fixed navigation and focus logic.
+      > [MAJOR REFACTOR & FIXED] Implements a high-performance virtualized scroller. Renders only visible items into the DOM. Preserves scroll position on resize. Provides robust functions like `ensureImageVisible` and `alignImageOnExit` to the navigation module.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
-      > [MAJOR REFACTOR & FIXED] Handles keyboard input (`handleKeyDown`). Blocks main shortcuts when a dialog is open. Applies editor filters to fullscreen/zoom views. Manages `ui.view_mode`. Corrected all navigation and focus logic for gallery, zoom, and fullscreen views.
+      > [MAJOR REFACTOR & FIXED] Manages all keyboard input (`handleKeyDown`) and view mode transitions (`handleEscape`). Unifies exit logic from zoom/fullscreen to ensure correct gallery scroll alignment. Triggers UI updates on navigation.
     📄 image_viewer_settings.js
       > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
     📄 image_viewer_state.js
@@ -201,7 +201,7 @@ FILE_TREE_ANALYSIS:
 ---
 PROJECT_STATE:
   ACTIVE_BUGS:
-    - [bug, navigation, gallery_desync_on_fullscreen_exit] # Returning from fullscreen doesn't always select the correct last-viewed image in the gallery.
+    # (None currently identified)
   IN_PROGRESS:
     # (None currently identified)
   ROADMAP:
@@ -222,6 +222,8 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view to match the fullscreen exit behavior, ensuring the active image is positioned correctly (top/bottom of the viewport).
+    - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update during keyboard navigation.
     - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working after virtualization refactor.
     - [fix, navigation, enter_key_opens_edit_view] # Corrected 'Enter' key to open edit/zoom view instead of fullscreen; added 'Ctrl+Enter' as a shortcut for fullscreen.
     - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls (smoothly) to focus on the active image, respecting its position relative to the viewport.

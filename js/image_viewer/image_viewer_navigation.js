@@ -206,7 +206,6 @@ export function navigateGrid(viewer, direction) {
     if (currentIndex === -1) {
         const newActiveImage = state.images[0];
         imageViewerState.setState({ currentNavIndex: 0, activeImage: newActiveImage });
-
         if (viewer.gallery?.render) viewer.gallery.render();
         if (viewer.gallery?.ensureImageVisible) {
             viewer.gallery.ensureImageVisible(0);
@@ -250,14 +249,22 @@ export async function handleEscape(viewer) {
             }
         }
     } else if (currentMode === 'zoom') {
+        // --- BLOC CORRIGÉ ---
+        // La logique est maintenant une copie de la sortie du mode fullscreen pour assurer la cohérence.
         const action = await _handleUnsavedChanges(viewer);
         if (action === 'cancel') return;
-        hideZoomedView();
         
+        // On effectue les opérations manuellement au lieu d'utiliser hideZoomedView()
+        document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
+        document.getElementById('holaf-viewer-gallery').style.display = 'flex';
+        imageViewerState.setState({ ui: { view_mode: 'gallery' } });
+        
+        // On appelle alignImageOnExit APRÈS que tout a été remis en place
         const { currentNavIndex } = imageViewerState.getState();
         if (currentNavIndex !== -1 && viewer.gallery?.alignImageOnExit) {
             viewer.gallery.alignImageOnExit(currentNavIndex);
         }
+        // --- FIN DU BLOC CORRIGÉ ---
     }
 }
 
