@@ -366,27 +366,26 @@ function syncGallery(viewer, images) {
     const { images: allImages } = imageViewerState.getState();
     activeThumbnailLoads = 0;
 
-    // Clear any message from a previous state.
+    // BUG FIX: Force a clean slate for the renderer. This ensures that when the underlying dataset changes,
+    // the differential rendering logic starts from scratch, preventing errors from a stale internal state.
+    galleryGridEl.innerHTML = '';
+    renderedPlaceholders.clear();
+
+    // Clear any message from a previous state (might be in galleryEl directly)
     const messageEl = galleryEl.querySelector('.holaf-viewer-message');
     if (messageEl) messageEl.remove();
-    const fakeMessage = galleryGridEl.querySelector('.holaf-viewer-empty-message');
-    if (fakeMessage) fakeMessage.remove();
-
+    
+    // Reset scroll position to see new items if they are at the top.
     galleryEl.scrollTop = 0;
 
     if (allImages && allImages.length > 0) {
-        // CASE 1: We have images to display. Run the normal layout process.
+        // CASE 1: We have images to display. Run the normal layout and render process.
         updateLayout(true);
     } else {
-        // CASE 2: The gallery is empty. Display a single fake placeholder.
-        // 1. Clear the real grid and placeholders.
-        galleryGridEl.innerHTML = '';
-        renderedPlaceholders.clear();
-
-        // 2. Set sizer to a minimal height to keep the gallery from fully collapsing.
+        // CASE 2: The gallery is empty. Display a placeholder message.
+        // The grid is already clear, so we just need to set the sizer and add the message.
         gallerySizerEl.style.height = '300px';
 
-        // 3. Create the fake placeholder.
         const placeholder = document.createElement('div');
         placeholder.className = 'holaf-viewer-thumbnail-placeholder holaf-viewer-empty-message';
         placeholder.style.cssText = `
@@ -404,8 +403,6 @@ function syncGallery(viewer, images) {
             color: var(--holaf-text-color-secondary);
         `;
         placeholder.textContent = 'No images match the current filters.';
-
-        // 4. Add it to the grid.
         galleryGridEl.appendChild(placeholder);
     }
 }

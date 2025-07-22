@@ -98,6 +98,7 @@ class ImageViewerUI {
                 <div id="holaf-viewer-workflow-filter-buttons" class="holaf-viewer-toggle-button-group">
                     <button id="holaf-workflow-filter-internal" class="holaf-viewer-toggle-button">Internal</button>
                     <button id="holaf-workflow-filter-external" class="holaf-viewer-toggle-button">External</button>
+                    <button id="holaf-workflow-filter-none" class="holaf-viewer-toggle-button">None</button>
                 </div>
             </div>
             <div class="holaf-viewer-filter-group holaf-viewer-scrollable-section">
@@ -220,6 +221,12 @@ class ImageViewerUI {
         this.elements.leftPane.querySelector('#holaf-workflow-filter-external').onclick = () => {
             const currentFilters = imageViewerState.getState().filters;
             viewer.saveSettings({ workflow_filter_external: !currentFilters.workflow_filter_external });
+            viewer._updateWorkflowButtonStates();
+            this.callbacks.onFilterChange();
+        };
+        this.elements.leftPane.querySelector('#holaf-workflow-filter-none').onclick = () => {
+            const currentFilters = imageViewerState.getState().filters;
+            viewer.saveSettings({ workflow_filter_none: !currentFilters.workflow_filter_none });
             viewer._updateWorkflowButtonStates();
             this.callbacks.onFilterChange();
         };

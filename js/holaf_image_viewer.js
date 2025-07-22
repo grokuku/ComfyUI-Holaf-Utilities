@@ -110,6 +110,10 @@ const holafImageViewer = {
                 this.filterRefreshIntervalId = setInterval(() => this.checkForUpdates(), FILTER_REFRESH_INTERVAL_MS);
             }
             this._updateViewerActivity(true);
+
+            // CORRECTION : Forcer une vérification des mises à jour dès l'affichage du panneau
+            // pour refléter immédiatement les changements faits pendant qu'il était fermé.
+            this.checkForUpdates();
         }
     },
 
@@ -326,9 +330,14 @@ const holafImageViewer = {
 
             const state = imageViewerState.getState();
             if (data.last_update > state.status.lastDbUpdateTime) {
-                console.log("[Holaf ImageViewer] New data detected on server, refreshing filters.");
+                console.log("[Holaf ImageViewer] New data detected on server, refreshing filters and image list.");
                 imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update }});
+                
+                // BUG FIX: Explicitly chain the filter UI update and the image list reload.
+                // Step 1: Refresh the filter UI (folder counts, etc.) but DON'T trigger an image load from inside it.
                 await this.loadAndPopulateFilters(false, true);
+                // Step 2: EXPLICITLY trigger the image list reload to refresh the gallery view.
+                await this.loadFilteredImages();
             }
         } catch (e) {
             console.error("[Holaf ImageViewer] Error checking for updates:", e);
@@ -345,6 +354,7 @@ const holafImageViewer = {
             search_scope_workflow: true,
             workflow_filter_internal: true,
             workflow_filter_external: true,
+            workflow_filter_none: true,
         };
         if (resetLocks) {
             newFilters.locked_folders = [];
@@ -519,6 +529,8 @@ const holafImageViewer = {
                 }
             }
 
+            // The 'isUpdate' flag now correctly prevents a double-load.
+            // The image load is triggered explicitly by the caller (init() or checkForUpdates()).
             if (!isUpdate) {
                 await this.loadFilteredImages(isInitialLoad);
             }
@@ -536,29 +548,46 @@ const holafImageViewer = {
 
         const { filters } = imageViewerState.getState();
         const { folder_filters, format_filters, startDate, endDate, search_text, 
-                workflow_filter_internal, workflow_filter_external,
+                workflow_filter_internal, workflow_filter_external, workflow_filter_none,
                 search_scope_name, search_scope_prompt, search_scope_workflow } = filters;
-
-        let workflowFilter = 'all';
-        if (workflow_filter_internal && workflow_filter_external) workflowFilter = 'present';
-        else if (workflow_filter_internal) workflowFilter = 'internal';
-        else if (workflow_filter_external) workflowFilter = 'external';
-        else workflowFilter = 'none';
 
         const searchScopes = [];
         if (search_scope_name) searchScopes.push('name');
         if (search_scope_prompt) searchScopes.push('prompt');
         if (search_scope_workflow) searchScopes.push('workflow');
 
+        const body = {
+            folder_filters, format_filters, startDate, endDate,
+            search_text,
+            search_scopes: searchScopes,
+            workflow_filter: 'all' // Default
+        };
+        
+        // --- CORRECTED LOGIC ---
+        // Determine the single workflow filter value to send to the backend
+        const internal = workflow_filter_internal;
+        const external = workflow_filter_external;
+        const none = workflow_filter_none;
+
+        if (none) {
+            body.workflow_filter = 'none';
+        } else if (internal && external) {
+            body.workflow_filter = 'present';
+        } else if (internal) {
+            body.workflow_filter = 'internal';
+        } else if (external) {
+            body.workflow_filter = 'external';
+        } else {
+            // This case now means internal=false, external=false, none=false.
+            // We send a value that will return 0 results.
+            body.workflow_filter = 'impossible_value_to_get_zero_results';
+        }
+        // --- END CORRECTION ---
+
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                folder_filters, format_filters, startDate, endDate,
-                workflow_filter: workflowFilter,
-                search_text,
-                search_scopes: searchScopes
-            })
+            body: JSON.stringify(body)
         });
         if (!response.ok) throw new Error(`HTTP error ${response.status}`);
         
@@ -817,8 +846,10 @@ const holafImageViewer = {
         const filters = imageViewerState.getState().filters;
         const internalBtn = document.getElementById('holaf-workflow-filter-internal');
         const externalBtn = document.getElementById('holaf-workflow-filter-external');
+        const noneBtn = document.getElementById('holaf-workflow-filter-none');
         if (internalBtn) internalBtn.classList.toggle('active', filters.workflow_filter_internal);
         if (externalBtn) externalBtn.classList.toggle('active', filters.workflow_filter_external);
+        if (noneBtn) noneBtn.classList.toggle('active', filters.workflow_filter_none);
     },
 
     _updateSearchScopeButtonStates() {

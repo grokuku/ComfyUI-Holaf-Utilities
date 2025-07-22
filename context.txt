@@ -1,9 +1,3 @@
---- START OF FILE context.txt ---
-
---- START OF FILE context.txt ---
-
---- START OF FILE context.txt ---
-
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -24,6 +18,8 @@ RÈGLES OPÉRATIONNELLES :
 6.  **Noms de fichiers :** Utilise toujours les chemins de fichiers complets (par exemple `js/image_viewer/image_viewer_gallery.js`) et ne les tronque jamais.
 
 7.  **Fichiers complets :** Ne fournis jamais de fichiers partiels ou tronqués. Si une modification est nécessaire, donne toujours le contenu intégral du fichier modifié, même pour un seul caractère changé.
+
+8.  **Format de Contexte :** Lorsque tu me fournis le contenu du fichier `context.txt`, présente-le toujours dans son intégralité et encapsulé dans un bloc de code (```).
 
 ---
 FILE_TREE_ANALYSIS:
@@ -54,7 +50,7 @@ FILE_TREE_ANALYSIS:
       @ POST /holaf/images/empty-trashcan
       -> logic.py, holaf_database
     📄 image_routes.py
-      > [MODIFIED] Core image listing and filtering. Returns the *full* list of image metadata for a given filter, used by the frontend's virtualized scroller.
+      > [MODIFIED & CRITICAL] Core image listing and filtering. Returns the *full* list of image metadata for a given filter, used by the frontend's virtualized scroller. Logic updated to handle a 'none' workflow filter option.
       @ GET /holaf/images/filter-options
       @ POST /holaf/images/list
       -> logic.py, holaf_database
@@ -75,12 +71,15 @@ FILE_TREE_ANALYSIS:
     > Exposes BE functions and routes to the main `__init__.py`. An interface file.
     -> .logic, .routes.*, .worker
   📄 logic.py
-    > Core image viewer logic (DB sync, metadata extraction, thumbnail creation). Includes `apply_edits_to_image`.
+    > [MODIFIED & CRITICAL] Core image viewer logic (DB sync, metadata extraction, thumbnail creation). The primary source of the real-time bug was here: a typo caused faulty metadata extraction, leading to "ghost" entries in the DB. This is now fixed and fortified.
     -> holaf_database, holaf_utils
   📄 routes.py
     > [DEPRECATED] Kept for import safety, but logic is moved to `routes/` subdir.
   📄 worker.py
-    > Background thread for thumbnail generation.
+    > [MODIFIED & CRITICAL] Background threads for all Image Viewer tasks. Logic for handling file events was reviewed and improved.
+    > 1. `run_thumbnail_generation_worker`: Generates missing thumbnails.
+    > 2. `run_filesystem_monitor`: Uses `watchdog` to monitor the output directory for file changes.
+    > 3. `run_event_queue_processor`: Processes file change events in batches to update the database.
     -> logic, holaf_database, holaf_utils
 📁 js/
   > Frontend assets.
@@ -109,7 +108,7 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_editor.js
       > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
     📄 image_viewer_gallery.js
-      > [MAJOR REFACTOR & FIXED] Implements a high-performance virtualized scroller. Renders only visible items into the DOM. Preserves scroll position on resize. Provides robust functions like `ensureImageVisible` and `alignImageOnExit` to the navigation module.
+      > [MODIFIED] Implements a high-performance virtualized scroller. Renders only visible items into the DOM. Its `syncGallery` function was hardened to ensure refreshes are always applied.
     📄 image_viewer_infopane.js
       > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
     📄 image_viewer_navigation.js
@@ -119,7 +118,7 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_state.js
       > [MODIFIED] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture. Includes per-folder lock state (`locked_folders`).
     📄 image_viewer_ui.js
-      > [MODIFIED] Builds the main panel UI structure. Contains listeners for UI controls like thumbnail size/fit toggles. Subscribes to `imageViewerState`. Updated UI for Reset button position & folder actions (added Invert, per-folder SVG lock icons).
+      > [MODIFIED & CRITICAL] Builds the main panel UI structure. Contains listeners for UI controls. A "None" button was added to the workflow filter and its event listeners were updated to handle mutually exclusive states.
   📁 model_manager/
     > Modular JS for the Model Manager.
     📄 model_manager_actions.js -> holaf_panel_manager
@@ -129,7 +128,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [MODIFIED] Main orchestrator for the Image Viewer. Pre-loads image data on startup for instant panel display, initializes all modules, and delegates rendering to the virtualized scroller.
+    > [MODIFIED & CRITICAL] Main orchestrator for the Image Viewer. Its `checkForUpdates` polling logic was corrected. The `_fetchFilteredImages` logic was updated to correctly build the request body based on the state of the new workflow filter buttons.
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -166,13 +165,10 @@ FILE_TREE_ANALYSIS:
   📄 holaf_nodes_manager.py
     > BE logic for the Nodes Manager (scanning node folders, git actions, README fetching).
 📄 __init__.py
-  > [CRITICAL] Main extension entry point.
-  > § Imports all BE modules.
-  > § Initializes DB, Config.
-  > § Registers all API routes (@), including critical UI state saving endpoints like `/holaf/image-viewer/save-settings`.
-  > § Patches ComfyUI's `SaveImage` for live updates.
-  > § Starts background worker threads (thumbnailing, DB sync).
-  > § Dynamically loads custom nodes from the `nodes/` directory.
+  > [CRITICAL & MODIFIED] Main extension entry point.
+  > § The `SaveImage` patch has been **removed**.
+  > § Now starts the new `watchdog`-based background workers (`run_filesystem_monitor`, `run_event_queue_processor`) for real-time file updates.
+  > § Continues to initialize DB, Config, API routes, etc.
 📄 __main__.py
   > Standalone utility script to generate a password hash for `config.ini`. Not used by the running server.
 📄 deepscan.txt
@@ -194,23 +190,19 @@ FILE_TREE_ANALYSIS:
 📄 README.md
   > Main project documentation and security warning.
 📄 requirements.txt
-  > Python package dependencies (`psutil`, `pywinpty`, `aiofiles`).
+  > Python package dependencies (`psutil`, `pywinpty`, `aiofiles`, `watchdog`).
 
 ---
 PROJECT_STATE:
   CURRENT_INVESTIGATION:
-    - [Performance] Gallery filter is slow with large folder selections (e.g., "All" or "All except one").
-      - **Problem Analysis:** Performance logs confirm the primary bottleneck is the backend, specifically the SQL query execution time. When a large number of folders are selected, the query becomes very slow.
-        - **Log Data:** Total backend time ~7.9s. Of this, ~5.5s is spent waiting for the database (both COUNT and SELECT queries), and ~2.4s is spent processing the 13k+ rows in Python and serializing to JSON.
-        - **Conclusion:** The frontend is not the bottleneck; its JSON parsing time is negligible (<50ms). The problem is the backend's inability to efficiently filter on a large set of `LIKE` conditions and process the massive result set.
-      - **Failed Attempts & Learnings:**
-        1.  **Temporary Table JOIN:** The hypothesis that using a temporary SQL table would be faster than a long `IN`/`OR` clause was proven incorrect by the logs. The DB query time remained the primary bottleneck.
-        2.  **Server-Side Pagination:** This was a catastrophic failure. It did not solve the performance issue (the initial `COUNT(*)` query was still slow) and severely broke the user experience (broken UI, scroll jumping, loss of functionality). This confirms the current architecture relies on having all image metadata available on the client.
-      - **Next Step:** Define a new strategy that specifically targets the slow SQL query for large selections, without changing the core FE/BE architecture. The "inversion logic" (`NOT LIKE`) is the most promising candidate.
+    # (None)
   ACTIVE_BUGS:
-    # (None currently identified)
+    - [bug, ui, workflow_filter_buttons_state]
+      - **Problem Analysis:** The state management for the "Workflow Availability" filter buttons is buggy. Despite implementing mutually exclusive logic, the visual state of the buttons does not always reflect the true state after a click, leading to user confusion. The root cause appears to be a race condition or state update issue between `image_viewer_ui.js` (where the click is handled) and `holaf_image_viewer.js` (where the central state is managed and button visuals are updated).
+      - **Conclusion:** The logic for handling clicks and updating the visual state of these buttons needs to be refactored to be more robust and atomic.
+      - **Next Step:** Re-examine the event handling chain for the workflow filter buttons in `js/image_viewer/image_viewer_ui.js` and `js/holaf_image_viewer.js` to ensure state changes are applied correctly and consistently before the UI is redrawn.
   IN_PROGRESS:
-    # (None currently identified)
+    # (None)
   ROADMAP:
     Global:
       - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
@@ -223,7 +215,6 @@ PROJECT_STATE:
       - [feature, ui, gallery_sorting_options] # Implement gallery sorting controls (by name, by date) in both ascending and descending order.
       - [investigation, state, folder_filter_persistence] # Double-check that folder selection state is robustly saved and restored across full application reboots.
       - [tuning, performance, thumbnail_concurrency] # Evaluate the optimal number of simultaneous thumbnail downloads; consider a slight increase from the current 12.
-      - [feature, realtime_file_monitoring] # Replace periodic scan with `watchdog` for instant updates.
       - [feature, corrupted_file_management] # Auto-move unreadable images to `output/corrupted`.
       - [feature, implement_slideshow] # Implement a slideshow mode.
     ImageEditor:
@@ -233,50 +224,54 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
-    - [fix, ui, gallery_empty_state_rendering] # Corrected a critical rendering bug where the gallery would not display images after being emptied (e.g., by deselecting all folders or entering an empty trashcan). The fix prevents the gallery from collapsing and instead displays a persistent placeholder message, ensuring layout stability and allowing for immediate reloading of thumbnails. This resolves both the "select none" and "trashcan" display issues.
-    - [fix, ui, thumbnail_slider_realtime_update_fix] # Corrected the thumbnail size slider to provide smooth, real-time gallery resizing. The virtual gallery's layout logic was modified to accept a live size parameter, forcing the grid to recalculate continuously during sliding for a fluid user experience.
-    - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view to match the fullscreen exit behavior, ensuring the active image is positioned correctly (top/bottom of the viewport).
-    - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update during gallery_keyboard_navigation_highlight.
-    - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working after virtualization refactor.
-    - [fix, navigation, enter_key_opens_edit_view] # Corrected 'Enter' key to open edit/zoom view instead of fullscreen; added 'Ctrl+Enter' as a shortcut for fullscreen.
-    - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls (smoothly) to focus on the active image, respecting its position relative to the viewport.
-    - [fix, performance, gallery_scroll_optimization] # Optimized thumbnail loading to use a debounced, targeted approach, eliminating request storms on fast scrolls.
-    - [fix, ui, gallery_autofill_layout] # Adjusted thumbnail sizing to dynamically fill the entire gallery width, removing empty space.
-    - [fix, performance, initial_load_speed] # Corrected logic to properly utilize pre-loaded data, making the initial panel opening near-instantaneous.
-    - [feature, ui, dual_scroll_loading_strategy] # Implemented a smarter thumbnail loading strategy: immediate for mouse wheel, debounced for scrollbar dragging.
-    - [major_refactor, performance, gallery_virtualization] # Replaced gallery rendering with a high-performance virtualized scroller. This fixes UI freezes with large datasets, provides an instant-response scrollbar, eliminates flicker on scroll, preserves scroll position on resize, and pre-loads data on startup for an instant-on experience. Includes backend and database index optimizations.
-    - [feature, backend, db_versioning_and_migration] # Implemented a robust database version check and migration system. On startup, it verifies the DB schema version. If outdated, it safely backs up the old DB, creates a new one with the latest schema, and transfers all compatible data.
+    - [feature, ui, workflow_filter_none_option] # Added a "None" option to the Workflow Availability filter, allowing users to find images without any embedded workflow metadata. The backend and frontend were updated to support this new filter state.
+    - [bugfix, realtime, data_integrity] # Corrected a deep and elusive data corruption bug that prevented real-time gallery updates. The root cause was a typo in the metadata extraction logic (`logic.py`), which led to new images being saved with incomplete data (null `workflow_source`). A secondary issue in the reading logic (`image_routes.py`) then inadvertently filtered out these "imperfect" entries, making them invisible to the gallery despite being present in the database counts. The fix involved correcting the data extraction typo, adding validation to prevent corrupt entries, and cleaning up the database reading logic, ensuring all new images are correctly saved and displayed.
+    - [major_refactor, backend, realtime_file_monitoring] # Replaced the fragile `SaveImage` patch with a robust `watchdog` file system monitor.
+    - [fix, performance, backend_filter_optimization] # Optimized the backend image filtering logic by implementing a query inversion strategy.
+    - [fix, ui, gallery_empty_state_rendering] # Corrected a critical rendering bug where the gallery would not display images after being emptied.
+    - [fix, ui, thumbnail_slider_realtime_update_fix] # Corrected the thumbnail size slider to provide smooth, real-time gallery resizing.
+    - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view.
+    - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update.
+    - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working.
+    - [fix, navigation, enter_key_opens_edit_view] # Corrected 'Enter' key to open edit/zoom view.
+    - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls.
+    - [fix, performance, gallery_scroll_optimization] # Optimized thumbnail loading to use a debounced, targeted approach.
+    - [fix, ui, gallery_autofill_layout] # Adjusted thumbnail sizing to dynamically fill the entire gallery width.
+    - [fix, performance, initial_load_speed] # Corrected logic to properly utilize pre-loaded data.
+    - [feature, ui, dual_scroll_loading_strategy] # Implemented a smarter thumbnail loading strategy.
+    - [major_refactor, performance, gallery_virtualization] # Replaced gallery rendering with a high-performance virtualized scroller.
+    - [feature, backend, db_versioning_and_migration] # Implemented a robust database version check and migration system.
     - [fix, performance, gallery_scalability] # Optimized thumbnail loading for massive galleries.
-    - [feature, ui, export_dialog_advanced_nav] # Amélioration de la boîte de dialogue d'exportation avec une navigation 2D complète au clavier (boutons radio, cases à cocher).
-    - [feature, ui, dialog_keyboard_navigation] # Implémentation de la navigation au clavier (flèches, Entrée/Espace) pour tous les boutons des boîtes de dialogue.
-    - [fix, ui, focus_steal_on_controls] # Correction du bug où un clic sur un contrôle de l'interface (slider, case à cocher) bloquait les raccourcis clavier de la galerie.
-    - [fix, ui, dialog_z_index_fullscreen] # Correction du z-index des boîtes de dialogue pour qu'elles apparaissent toujours au-dessus de la vue plein écran.
+    - [feature, ui, export_dialog_advanced_nav] # Amélioration de la boîte de dialogue d'exportation avec une navigation 2D complète au clavier.
+    - [feature, ui, dialog_keyboard_navigation] # Implémentation de la navigation au clavier pour tous les boutons des boîtes de dialogue.
+    - [fix, ui, focus_steal_on_controls] # Correction du bug où un clic sur un contrôle de l'interface bloquait les raccourcis clavier.
+    - [fix, ui, dialog_z_index_fullscreen] # Correction du z-index des boîtes de dialogue.
     - [feature, ui, export_unsaved_changes_dialog] # Affiche un dialogue de confirmation pour sauvegarder les modifications avant d'exporter.
-    - [fix, ui, search_scope_buttons_unresponsive] # Correction des boutons de portée de recherche (Name/Prompt/Workflow) qui ne répondaient plus au clic lorsqu'il y avait du texte dans la barre de recherche.
-    - [fix, ui, editor_visibility_on_click] # Correction du bug qui affichait l'éditeur d'image un clic sur deux depuis la galerie.
-    - [fix, ui, filter_label_cleanup] # Suppression du titre redondant "Filters" pour une interface plus épurée.
-    - [fix, ui, scope_buttons_responsive] # Correction des boutons de portée de recherche pour qu'ils rafraîchissent toujours la galerie et mettent à jour leur état visuel.
-    - [fix, state, folder_lock_persistence] # L'état de verrouillage des dossiers est maintenant sauvegardé et restauré après un redémarrage.
-    - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran/zoom pour qu'ils affichaient toujours les effets de l'image active.
-    - [feature, ui, folder_filter_enhancements] # Added folder filter enhancements: "Invert" action, per-folder SVG lock icons, and an advanced reset dialog that respects locked folders' state.
-    - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails to prevent stretching.
+    - [fix, ui, search_scope_buttons_unresponsive] # Correction des boutons de portée de recherche.
+    - [fix, ui, editor_visibility_on_click] # Correction du bug qui affichait l'éditeur d'image un clic sur deux.
+    - [fix, ui, filter_label_cleanup] # Suppression du titre redondant "Filters".
+    - [fix, ui, scope_buttons_responsive] # Correction des boutons de portée de recherche.
+    - [fix, state, folder_lock_persistence] # L'état de verrouillage des dossiers est maintenant sauvegardé et restauré.
+    - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran.
+    - [feature, ui, folder_filter_enhancements] # Added folder filter enhancements: "Invert" action, per-folder SVG lock icons, and an advanced reset dialog.
+    - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails.
     - [fix, ui, thumbnail_fit_toggle_immediate_update] # The "Contained" thumbnail view option now applies instantly.
     - [feature, ui, spacebar_to_toggle_selection_in_gallery] # Pressing spacebar on an active thumbnail now toggles its selection state.
     - [fix, ui, actions_target_active_image_in_zoom_view] # Toolbar actions (Delete, Export, etc.) now correctly target the active image in zoom/fullscreen view.
     - [fix, ui, editor_previews_in_fullscreen] # Live edit previews are now correctly applied to the image in fullscreen mode.
-    - [fix, ui, thumbnail_refresh_on_edit_save] # Thumbnail in gallery now updates instantly after an edit is saved, using an event-driven approach.
-    - [refactor, ui, gallery_differential_rendering] # Replaced full gallery redraws with a non-blocking, differential rendering engine for fluid filter changes.
-    - [fix, ui, filter_race_condition] # Implemented a non-blocking request queue (`isLoading`/`isDirty`) to handle rapid filter changes without losing state.
+    - [fix, ui, thumbnail_refresh_on_edit_save] # Thumbnail in gallery now updates instantly after an edit is saved.
+    - [refactor, ui, gallery_differential_rendering] # Replaced full gallery redraws with a non-blocking, differential rendering engine.
+    - [fix, ui, filter_race_condition] # Implemented a non-blocking request queue (`isLoading`/`isDirty`).
     - [fix, ui, gallery_selection_bug] # Corrected a bug where clicking a thumbnail selected the wrong image after a filter change.
-    - [fix, ui, filter_persistence_partial] # Text search and date range filters now correctly restore their state when the panel is reopened.
-    - [feature, ui, gallery_empty_on_no_folder_selection] # The gallery now displays no images when no folders are selected, for a more intuitive UX.
-    - [feature, ui, editor_save_cancel_and_unsaved_warning] # Implemented Save/Cancel buttons and a warning dialog for unsaved changes during navigation.
-    - [feature, backend, thumbnail_regeneration_with_edits] # Implemented backend logic to regenerate thumbnails with edits applied after Save/Reset actions.
+    - [fix, ui, filter_persistence_partial] # Text search and date range filters now correctly restore their state.
+    - [feature, ui, gallery_empty_on_no_folder_selection] # The gallery now displays no images when no folders are selected.
+    - [feature, ui, editor_save_cancel_and_unsaved_warning] # Implemented Save/Cancel buttons and a warning dialog for unsaved changes.
+    - [feature, backend, thumbnail_regeneration_with_edits] # Implemented backend logic to regenerate thumbnails with edits applied.
     - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
     - [refactor, fix, image_viewer_editor_and_navigation_state] # Decoupled the Editor and Navigation modules from the main controller.
     - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state.
-    - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven and fixed a critical bug in the state manager.
-    - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters and fixed FE data parsing.
+    - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven.
+    - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters.
     - [fix, toast_theming_and_readability] # Corrected toast manager to apply a theme directly.
     - [feature, ui, toasts_notification_system_base] # Initial implementation of the non-blocking toast system.
     - [major_refactor_backend_frontend]
@@ -285,9 +280,7 @@ PROJECT_STATE:
     - [image_viewer_metadata_tools]
     - [image_editor_initial_bugfixes]
     - [thumbnail_cache_system]
-    - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch and added fallback logic.
+    - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch.
     - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.
     - [fix, ui, thumbnail_size_realtime_update] # Thumbnail size slider now updates gallery size instantly.
-    - [fix, state, folder_filter_visual_restore_on_startup] # Correction de l'état visuel des cases à cocher des filtres de dossiers, qui ne reflétait pas la configuration chargée lors du premier affichage du panneau. La logique construit désormais correctement l'interface des filtres en se basant sur l'état central (`imageViewerState`) au lieu d'interroger un DOM encore vide, garantissant la cohérence visuelle.
-
---- END OF FILE context.txt ---
+    - [fix, state, folder_filter_visual_restore_on_startup] # Correction de l'état visuel des cases à cocher des filtres de dossiers.

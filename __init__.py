@@ -67,39 +67,9 @@ holaf_database.init_database()
 reload_global_config() # Load initial config
 
 
-# --- MODIFICATION START: Patch SaveImage to enable live updates ---
-# Import the node class we want to patch
-from nodes import SaveImage
-
-# Store the original save_images method
-original_save_images = SaveImage.save_images
-
-# Define our new patched method
-def holaf_patched_save_images(self, images, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
-    # Call the original method first to let it save the images and get the results
-    results = original_save_images(self, images, filename_prefix, prompt, extra_pnginfo)
-
-    # Now, after the images are saved, trigger our DB update for each saved file
-    if results and 'ui' in results and 'images' in results['ui']:
-        output_dir = folder_paths.get_output_directory()
-        for img_info in results['ui']['images']:
-            filename = img_info.get('filename')
-            subfolder = img_info.get('subfolder', '')
-            if filename:
-                # Construct the full, absolute path of the newly saved image
-                full_path = os.path.join(output_dir, subfolder, filename)
-                try:
-                    # Use a non-blocking call if possible, or a thread to avoid delaying the UI
-                    # For simplicity here, we call it directly. If it's slow, a thread is better.
-                    holaf_image_viewer_backend.logic.add_or_update_single_image(full_path)
-                except Exception as e:
-                    print(f"🔴 [Holaf-Patch] Error calling single image update for {full_path}: {e}")
-    
-    return results
-
-# Apply the patch by replacing the original method with our new one
-SaveImage.save_images = holaf_patched_save_images
-print("🔵 [Holaf-Init] Patched 'SaveImage' node for live Image Viewer updates.")
+# --- MODIFICATION START: Remove SaveImage patch ---
+# The patch has been removed and replaced by a robust filesystem watcher.
+print("🔵 [Holaf-Init] Live image updates now handled by Filesystem Watcher.")
 # --- MODIFICATION END ---
 
 
@@ -630,51 +600,59 @@ def _periodic_task_wrapper(interval_seconds, task_func, *args, **kwargs):
     all_background_threads.append(thread) # Add to list
     return thread
 
-thumbnail_worker_thread_ref = None # Specific reference for thumbnail worker
+# --- MODIFICATION START: Consolidate worker startups ---
+thumbnail_worker_thread_ref = None
+filesystem_workers_started = False
 
 def start_thumbnail_worker():
-    global thumbnail_worker_thread_ref # Use the specific reference
+    global thumbnail_worker_thread_ref
     if thumbnail_worker_thread_ref is None or not thumbnail_worker_thread_ref.is_alive():
         print("🔵 [Holaf-Init] Starting Thumbnail Generation Worker thread...")
-        # Pass stop_event directly
         thumbnail_worker_thread_ref = threading.Thread(
-            target=holaf_image_viewer_backend.run_thumbnail_generation_worker,
-            args=(stop_event,),
-            daemon=True
+            target=holaf_image_viewer_backend.worker.run_thumbnail_generation_worker,
+            args=(stop_event,), daemon=True, name="HolafThumbWorker"
         )
         thumbnail_worker_thread_ref.start()
-        all_background_threads.append(thumbnail_worker_thread_ref) # Also add to general list
+        all_background_threads.append(thumbnail_worker_thread_ref)
     else:
         print("🟡 [Holaf-Init] Thumbnail Generation Worker thread already running.")
+
+def start_filesystem_workers():
+    global filesystem_workers_started
+    if not filesystem_workers_started:
+        print("🔵 [Holaf-Init] Starting Filesystem Watcher workers...")
+        
+        monitor_thread = threading.Thread(
+            target=holaf_image_viewer_backend.worker.run_filesystem_monitor,
+            args=(stop_event,), daemon=True, name="HolafFsMonitor"
+        )
+        processor_thread = threading.Thread(
+            target=holaf_image_viewer_backend.worker.run_event_queue_processor,
+            args=(stop_event,), daemon=True, name="HolafFsProcessor"
+        )
+
+        monitor_thread.start()
+        processor_thread.start()
+        
+        all_background_threads.extend([monitor_thread, processor_thread])
+        filesystem_workers_started = True
+    else:
+        print("🟡 [Holaf-Init] Filesystem Watcher workers already running.")
+# --- MODIFICATION END ---
+
 
 def shutdown_tasks():
     print("🔵 [Holaf-Init] Signaling background tasks and workers to stop...")
     stop_event.set()
-    # Wait for threads to finish, with a timeout
-    # Timeout can be adjusted. 5 seconds is usually enough for tasks to notice stop_event.
-    # join_timeout = 5
-    # for thread in all_background_threads:
-    #     if thread.is_alive():
-    #         thread.join(timeout=join_timeout)
-    #         if thread.is_alive():
-    #             print(f"  🔴 Thread {thread.name} did not stop in time ({join_timeout}s).")
-    # No need to join daemon threads explicitly if add_on_shutdown works as expected.
-    # ComfyUI's shutdown should handle daemon threads exiting.
     print("🔵 [Holaf-Init] Shutdown signal process complete.")
 
-# Attempt to register shutdown_tasks with ComfyUI's server lifecycle
-# This is the preferred way if it works without AttributeError
 try:
     if hasattr(server.PromptServer.instance, "add_on_shutdown"):
         server.PromptServer.instance.add_on_shutdown(shutdown_tasks)
         print("🔵 [Holaf-Init] Registered shutdown_tasks with ComfyUI server.")
-    else: # Fallback if add_on_shutdown is not available
-        # import atexit
-        # atexit.register(shutdown_tasks)
+    else:
         print("🟡 [Holaf-Init] server.add_on_shutdown not available. Background tasks will rely on daemon status for exit.")
 except AttributeError:
-    # import atexit
-    # atexit.register(shutdown_tasks)
     print("🟡 [Holaf-Init] AttributeError registering shutdown_tasks. Background tasks will rely on daemon status for exit.")
 
 
@@ -688,10 +666,15 @@ else:
 
 _periodic_task_wrapper(300.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
 
-# Delay starting the thumbnail worker slightly to let main init complete
-main_thread_startup_timer = threading.Timer(15.0, start_thumbnail_worker)
-main_thread_startup_timer.daemon = True # Ensure this timer doesn't block shutdown
-main_thread_startup_timer.start()
+# --- MODIFICATION START: Correctly schedule all image viewer workers ---
+thumbnail_startup_timer = threading.Timer(15.0, start_thumbnail_worker)
+thumbnail_startup_timer.daemon = True
+thumbnail_startup_timer.start()
+
+filesystem_startup_timer = threading.Timer(16.0, start_filesystem_workers)
+filesystem_startup_timer.daemon = True
+filesystem_startup_timer.start()
+# --- MODIFICATION END ---
 
 
 # --- Final Initialization Message ---
