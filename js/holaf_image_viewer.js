@@ -543,7 +543,6 @@ const holafImageViewer = {
     },
     
     async _fetchFilteredImages() {
-        // --- PERFORMANCE LOGGING ---
         console.time('BE Fetch & Parse');
 
         const { filters } = imageViewerState.getState();
@@ -556,34 +555,25 @@ const holafImageViewer = {
         if (search_scope_prompt) searchScopes.push('prompt');
         if (search_scope_workflow) searchScopes.push('workflow');
 
+        // --- MODIFICATION : Remplacer la logique de filtrage par un tableau ---
+        const workflow_filters = [];
+        if (workflow_filter_internal) workflow_filters.push('internal');
+        if (workflow_filter_external) workflow_filters.push('external');
+        if (workflow_filter_none) workflow_filters.push('none');
+        // --- FIN DE LA MODIFICATION ---
+
         const body = {
-            folder_filters, format_filters, startDate, endDate,
+            folder_filters, 
+            format_filters, 
+            startDate, 
+            endDate,
             search_text,
             search_scopes: searchScopes,
-            workflow_filter: 'all' // Default
+            // --- MODIFICATION : Envoyer le nouveau tableau ---
+            // Le backend devra être adapté pour lire "workflow_filters" (pluriel).
+            workflow_filters: workflow_filters,
         };
         
-        // --- CORRECTED LOGIC ---
-        // Determine the single workflow filter value to send to the backend
-        const internal = workflow_filter_internal;
-        const external = workflow_filter_external;
-        const none = workflow_filter_none;
-
-        if (none) {
-            body.workflow_filter = 'none';
-        } else if (internal && external) {
-            body.workflow_filter = 'present';
-        } else if (internal) {
-            body.workflow_filter = 'internal';
-        } else if (external) {
-            body.workflow_filter = 'external';
-        } else {
-            // This case now means internal=false, external=false, none=false.
-            // We send a value that will return 0 results.
-            body.workflow_filter = 'impossible_value_to_get_zero_results';
-        }
-        // --- END CORRECTION ---
-
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -603,7 +593,6 @@ const holafImageViewer = {
         this.isLoading = true;
         this.isDirty = false;
         
-        // --- PERFORMANCE LOGGING ---
         console.log("%c[Holaf Perf] Starting filter process...", "color: lightblue; font-weight: bold;");
         console.time('Total Filter to Render Time');
         

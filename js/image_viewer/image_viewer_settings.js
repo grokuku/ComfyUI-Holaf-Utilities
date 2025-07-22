@@ -78,7 +78,6 @@ export async function loadSettings(viewer) {
             filters: {
                 folder_filters: toArray(fetchedSettings.folder_filters, []),
                 format_filters: toArray(fetchedSettings.format_filters, []),
-                // CORRECTIF : Ajout de la restauration de `locked_folders`.
                 locked_folders: toArray(fetchedSettings.locked_folders, []),
                 search_text: toString(fetchedSettings.search_text, ''),
                 startDate: toString(fetchedSettings.startDate, ''),
@@ -88,6 +87,8 @@ export async function loadSettings(viewer) {
                 search_scope_workflow: toBoolean(fetchedSettings.search_scope_workflow, true),
                 workflow_filter_internal: toBoolean(fetchedSettings.workflow_filter_internal, true),
                 workflow_filter_external: toBoolean(fetchedSettings.workflow_filter_external, true),
+                // --- FIX : La clé manquante est ajoutée ici ---
+                workflow_filter_none: toBoolean(fetchedSettings.workflow_filter_none, true),
             },
             ui: {
                 theme: validTheme ? fetchedSettings.theme : HOLAF_THEMES[0].name,
@@ -127,11 +128,13 @@ export function saveSettings(viewer, newSettings) {
     const currentState = imageViewerState.getState();
 
     for (const key in newSettings) {
+        // --- FIX : Vérifier que la clé existe bien dans l'état ---
         if (key in currentState.filters) {
             filtersUpdate[key] = newSettings[key];
         } else if (key in currentState.ui) {
             uiUpdate[key] = newSettings[key];
-        } else if (['x', 'y', 'width', 'height', 'panel_is_fullscreen'].includes(key)) {
+        } else if (['x', 'y', 'width', 'height', 'panel_is_fullscreen'].includes(key) || 
+                   ['panel_x', 'panel_y', 'panel_width', 'panel_height'].includes(key)) {
             if (key === 'x') panelUpdate.panel_x = newSettings.x;
             else if (key === 'y') panelUpdate.panel_y = newSettings.y;
             else if (key === 'width') panelUpdate.panel_width = newSettings.width;

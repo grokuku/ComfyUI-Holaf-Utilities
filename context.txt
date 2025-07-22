@@ -114,11 +114,11 @@ FILE_TREE_ANALYSIS:
     📄 image_viewer_navigation.js
       > [MAJOR REFACTOR & FIXED] Manages all keyboard input (`handleKeyDown`) and view mode transitions (`handleEscape`). Unifies exit logic from zoom/fullscreen to ensure correct gallery scroll alignment. Triggers UI updates on navigation.
     📄 image_viewer_settings.js
-      > [REFACTORED] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object.
+      > [MODIFIED & CRITICAL] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object. Now correctly handles loading/saving of all workflow filter states.
     📄 image_viewer_state.js
       > [MODIFIED] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture. Includes per-folder lock state (`locked_folders`).
     📄 image_viewer_ui.js
-      > [MODIFIED & CRITICAL] Builds the main panel UI structure. Contains listeners for UI controls. A "None" button was added to the workflow filter and its event listeners were updated to handle mutually exclusive states.
+      > [MODIFIED & CRITICAL] Builds the main panel UI structure. Contains listeners for UI controls. The logic for the workflow filter buttons has been reviewed and now relies on a correct state management implementation.
   📁 model_manager/
     > Modular JS for the Model Manager.
     📄 model_manager_actions.js -> holaf_panel_manager
@@ -128,7 +128,7 @@ FILE_TREE_ANALYSIS:
   📄 chart.min.js
     > Chart.js library for the system monitor.
   📄 holaf_image_viewer.js
-    > [MODIFIED & CRITICAL] Main orchestrator for the Image Viewer. Its `checkForUpdates` polling logic was corrected. The `_fetchFilteredImages` logic was updated to correctly build the request body based on the state of the new workflow filter buttons.
+    > [MODIFIED & CRITICAL] Main orchestrator for the Image Viewer. Its `checkForUpdates` polling logic was corrected. The `_fetchFilteredImages` logic was updated to build the request body as an array of workflow filters, enabling additive filtering.
   📄 holaf_main.js
     > [CRITICAL] Main FE entry point.
     > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
@@ -197,10 +197,14 @@ PROJECT_STATE:
   CURRENT_INVESTIGATION:
     # (None)
   ACTIVE_BUGS:
-    - [bug, ui, workflow_filter_buttons_state]
-      - **Problem Analysis:** The state management for the "Workflow Availability" filter buttons is buggy. Despite implementing mutually exclusive logic, the visual state of the buttons does not always reflect the true state after a click, leading to user confusion. The root cause appears to be a race condition or state update issue between `image_viewer_ui.js` (where the click is handled) and `holaf_image_viewer.js` (where the central state is managed and button visuals are updated).
-      - **Conclusion:** The logic for handling clicks and updating the visual state of these buttons needs to be refactored to be more robust and atomic.
-      - **Next Step:** Re-examine the event handling chain for the workflow filter buttons in `js/image_viewer/image_viewer_ui.js` and `js/holaf_image_viewer.js` to ensure state changes are applied correctly and consistently before the UI is redrawn.
+    - [bug, state, folder_filter_reset_on_reopen]
+      - **Problem Analysis:** Dans certaines conditions non encore déterminées, à la réouverture du panneau de l'Image Viewer, tous les filtres de dossiers sont sélectionnés. Ce comportement ignore l'état "verrouillé" de certains dossiers, qui devraient rester désélectionnés. Cela suggère un problème dans la séquence de chargement ou de restauration de l'état des filtres lors de l'initialisation du panneau.
+      - **Conclusion:** La logique de restauration de l'état des filtres de dossier au démarrage est potentiellement défectueuse.
+      - **Next Step:** Examiner la séquence d'initialisation dans `js/holaf_image_viewer.js` et la logique de restauration des filtres dans `js/image_viewer/image_viewer_settings.js`.
+    - [bug, ui, delete_button_unresponsive]
+      - **Problem Analysis:** Le bouton "Delete" ne semble plus fonctionner lorsqu'il est cliqué. La cause est inconnue. Le problème peut se situer dans le gestionnaire d'événements du frontend, dans la logique d'appel de l'API, ou dans le traitement de la requête par le backend.
+      - **Conclusion:** La fonctionnalité de suppression est cassée.
+      - **Next Step:** Examiner les fichiers responsables de cette action : `js/image_viewer/image_viewer_actions.js` (pour le clic et l'appel API) et `holaf_image_viewer_backend/routes/file_ops_routes.py` (pour le traitement de l'endpoint `/holaf/images/delete`).
   IN_PROGRESS:
     # (None)
   ROADMAP:
@@ -224,6 +228,7 @@ PROJECT_STATE:
       - [feature, feature_vignette(css,Pillow_backend)]
       - [feature, feature_watermark_overlay]
   COMPLETED_FEATURES:
+    - [bugfix, logic, additive_workflow_filter] # Corrigé un bug de logique de filtrage fondamental pour les filtres de "Workflow Availability". Le problème provenait d'une logique `if/else if` dans le frontend qui empêchait la sélection de plusieurs filtres, et d'une gestion incorrecte de l'état du filtre "None" dans les paramètres. La solution a impliqué la correction de la sauvegarde/restauration de tous les filtres, la modification du frontend pour envoyer un tableau de filtres actifs, et la modification du backend pour interpréter ce tableau et construire une requête SQL `OR` appropriée, rendant ainsi les filtres additifs et fonctionnels.
     - [feature, ui, workflow_filter_none_option] # Added a "None" option to the Workflow Availability filter, allowing users to find images without any embedded workflow metadata. The backend and frontend were updated to support this new filter state.
     - [bugfix, realtime, data_integrity] # Corrected a deep and elusive data corruption bug that prevented real-time gallery updates. The root cause was a typo in the metadata extraction logic (`logic.py`), which led to new images being saved with incomplete data (null `workflow_source`). A secondary issue in the reading logic (`image_routes.py`) then inadvertently filtered out these "imperfect" entries, making them invisible to the gallery despite being present in the database counts. The fix involved correcting the data extraction typo, adding validation to prevent corrupt entries, and cleaning up the database reading logic, ensuring all new images are correctly saved and displayed.
     - [major_refactor, backend, realtime_file_monitoring] # Replaced the fragile `SaveImage` patch with a robust `watchdog` file system monitor.

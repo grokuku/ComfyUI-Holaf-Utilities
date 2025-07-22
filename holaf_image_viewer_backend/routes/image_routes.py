@@ -102,16 +102,21 @@ async def list_images_route(request: web.Request):
                 where_clauses.append("mtime < ?"); params.append(time.mktime(dt_end.timetuple()))
             except (ValueError, TypeError): print(f"🟡 Invalid end date: {filters['endDate']}")
 
-        workflow_filter = filters.get('workflow_filter')
-        if workflow_filter and workflow_filter != 'all':
-            if workflow_filter == 'present':
-                where_clauses.append("workflow_source IN ('internal_png', 'external_json')")
-            elif workflow_filter == 'internal':
-                where_clauses.append("workflow_source = 'internal_png'")
-            elif workflow_filter == 'external':
-                where_clauses.append("workflow_source = 'external_json'")
-            elif workflow_filter == 'none':
-                where_clauses.append("(workflow_source NOT IN ('internal_png', 'external_json') OR workflow_source IS NULL)")
+        # --- MODIFICATION : Remplacement de l'ancienne logique de filtrage par une nouvelle ---
+        workflow_filters = filters.get('workflow_filters', [])
+        if workflow_filters:
+            workflow_conditions = []
+            if 'internal' in workflow_filters:
+                workflow_conditions.append("workflow_source = 'internal_png'")
+            if 'external' in workflow_filters:
+                workflow_conditions.append("workflow_source = 'external_json'")
+            if 'none' in workflow_filters:
+                workflow_conditions.append("(workflow_source NOT IN ('internal_png', 'external_json') OR workflow_source IS NULL)")
+            
+            # Appliquer la clause WHERE uniquement si au moins un filtre valide a été trouvé
+            if workflow_conditions:
+                where_clauses.append(f"({ ' OR '.join(workflow_conditions) })")
+        # --- FIN DE LA MODIFICATION ---
 
         search_text = filters.get('search_text')
         search_scopes = filters.get('search_scopes', [])
