@@ -8,6 +8,7 @@
  * CORRECTIF: Actions now correctly target the active image in zoom/fullscreen view.
  * FEATURE: Added a confirmation dialog for exporting when there are unsaved edits.
  * MODIFICATION: Made the export dialog fully keyboard-navigable with 2D-aware controls.
+ * BUGFIX: The delete operation now provides detailed feedback from the backend, especially on failure.
  */
 
 import { HolafPanelManager, dialogState } from "../holaf_panel_manager.js";
@@ -88,10 +89,9 @@ export function updateActionButtonsState(viewer) {
  * @param {object} viewer - The main image viewer instance.
  * @param {boolean} [permanent=false] - If true, permanently deletes files.
  * @param {object[]|null} [imagesToProcess=null] - Specific images to delete. If null, uses context-aware targets.
- * @returns {Promise<boolean>} True if the operation was successful, otherwise false.
+ * @returns {Promise<boolean>} True if the operation was successful and caused changes, otherwise false.
  */
 export async function handleDeletion(viewer, permanent = false, imagesToProcess = null) {
-    // CORRECTIF : Le paramètre `imagesToProcess` a la priorité (utilisé par ex. par la touche Suppr), sinon on utilise _getTargets().
     const imagesForDeletion = imagesToProcess || _getTargets();
     if (imagesForDeletion.length === 0) return false;
     
@@ -135,27 +135,64 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
         const result = await response.json();
 
         if (response.ok || response.status === 207) {
-            return true; // SUCCESS
+            let finalMessage = result.message || 'Operation processed.';
+            let dialogTitle = "Operation Complete";
+            let showDialog = false;
+
+            // BUGFIX: Always check for details first and build a detailed message.
+            if (result.details && result.details.length > 0) {
+                const errorDetails = result.details.map(d => `• <strong>${d.path.split('/').pop()}</strong>:<br>  ${d.error}`).join('<br>');
+                finalMessage += `<br><br><strong>Error Details:</strong><br>${errorDetails}`;
+                dialogTitle = "Deletion Error";
+                showDialog = true;
+            }
+
+            // If files were successfully deleted, show a success toast.
+            // If some failed, the dialog above will still show the errors.
+            if (result.deleted_count > 0) {
+                window.holaf.toastManager.show({
+                    message: `${result.deleted_count} file(s) moved to trash.`,
+                    type: 'success'
+                });
+            } else if (!showDialog) {
+                // If NO files were deleted AND there were NO errors, show the generic dialog.
+                showDialog = true;
+            }
+
+            if (showDialog) {
+                HolafPanelManager.createDialog({
+                    title: dialogTitle,
+                    message: finalMessage,
+                    buttons: [{ text: "OK" }],
+                    parentElement: document.body
+                });
+            }
+            
+            // Refresh the UI only if at least one file was successfully deleted.
+            return result.deleted_count > 0;
+
         } else {
+            // Handle fatal server errors (5xx, etc.)
             HolafPanelManager.createDialog({
-                title: "Delete Error",
+                title: "Server Error",
                 message: `Failed to delete images: ${result.message || 'Unknown server error.'}`,
-                buttons: [{ text: "OK", value: true }],
+                buttons: [{ text: "OK" }],
                 parentElement: document.body
             });
-            return false; // FAILURE
+            return false;
         }
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling delete API:", error);
         HolafPanelManager.createDialog({
             title: "API Error",
             message: `Error communicating with server for delete operation: ${error.message}`,
-            buttons: [{ text: "OK", value: true }],
+            buttons: [{ text: "OK" }],
             parentElement: document.body
         });
-        return false; // FAILURE
+        return false;
     }
 }
+
 
 /**
  * Handles the "Delete" button click. Now a wrapper around handleDeletion.
