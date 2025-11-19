@@ -111,6 +111,9 @@ def add_or_update_single_image(image_abs_path):
         subfolder_str = os.path.relpath(directory, output_dir).replace(os.sep, '/')
         if subfolder_str == '.': subfolder_str = ''
         path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
+        
+        # --- FIX: Calculate thumb_hash ---
+        thumb_hash = hashlib.sha1(path_canon.encode('utf-8')).hexdigest()
 
         if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
             return
@@ -135,19 +138,20 @@ def add_or_update_single_image(image_abs_path):
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
         
+        # --- FIX: Insert thumb_hash ---
         cursor.execute("""
             INSERT OR REPLACE INTO images 
                 (filename, subfolder, top_level_subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
-                 is_trashed, original_path_canon,
-                 prompt_text, workflow_json, prompt_source, workflow_source,
-                 width, height, aspect_ratio_str, has_edit_file,
-                 thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1000, NULL)
+                    is_trashed, original_path_canon,
+                    prompt_text, workflow_json, prompt_source, workflow_source,
+                    width, height, aspect_ratio_str, has_edit_file,
+                    thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at, thumb_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1000, NULL, ?)
         """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
-              file_stat.st_mtime, file_stat.st_size, time.time(),
-              meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
-              meta.get('prompt_source'), meta.get('workflow_source'),
-              meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file))
+                file_stat.st_mtime, file_stat.st_size, time.time(),
+                meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                meta.get('prompt_source'), meta.get('workflow_source'),
+                meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash))
         
         _update_folder_metadata_cache_blocking(cursor)
 
@@ -215,7 +219,8 @@ def sync_image_database_blocking():
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, path_canon, mtime, size_bytes, thumbnail_last_generated_at FROM images WHERE is_trashed = 0")
+        # --- FIX: Fetch thumb_hash as well for checking ---
+        cursor.execute("SELECT id, path_canon, mtime, size_bytes, thumbnail_last_generated_at, thumb_hash FROM images WHERE is_trashed = 0")
         db_images = {row['path_canon']: dict(row) for row in cursor.fetchall()}
 
         disk_images_canons = set()
@@ -245,35 +250,45 @@ def sync_image_database_blocking():
                         if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
                             continue
                         path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
+                        
+                        # --- FIX: Calculate thumb_hash ---
+                        thumb_hash = hashlib.sha1(path_canon.encode('utf-8')).hexdigest()
+                        
                         disk_images_canons.add(path_canon)
                         top_level_subfolder = 'root'
                         if subfolder_str:
                             top_level_subfolder = subfolder_str.split('/')[0]
                         meta = _extract_image_metadata_blocking(full_path)
                         existing_record = db_images.get(path_canon)
+                        
                         if existing_record: 
-                            if existing_record['mtime'] != file_stat.st_mtime or existing_record['size_bytes'] != file_stat.st_size:
+                            # Check if properties changed OR if thumb_hash is missing in DB (for migration safety)
+                            if (existing_record['mtime'] != file_stat.st_mtime or 
+                                existing_record['size_bytes'] != file_stat.st_size or
+                                existing_record.get('thumb_hash') != thumb_hash):
+                                
                                 cursor.execute("""
                                     UPDATE images SET mtime = ?, size_bytes = ?, last_synced_at = ?, subfolder = ?, 
                                     top_level_subfolder = ?, prompt_text = ?, workflow_json = ?, prompt_source = ?, 
                                     workflow_source = ?, width = ?, height = ?, aspect_ratio_str = ?, has_edit_file = ?,
-                                    thumbnail_status = 0, thumbnail_priority_score = 1000, thumbnail_last_generated_at = NULL
+                                    thumbnail_status = 0, thumbnail_priority_score = 1000, thumbnail_last_generated_at = NULL,
+                                    thumb_hash = ?
                                     WHERE id = ? AND is_trashed = 0
                                 """, (file_stat.st_mtime, file_stat.st_size, current_time, subfolder_str, top_level_subfolder,
-                                      meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
-                                      meta.get('prompt_source'), meta.get('workflow_source'), meta.get('width'), meta.get('height'),
-                                      meta.get('ratio'), has_edit_file, existing_record['id']))
+                                        meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                                        meta.get('prompt_source'), meta.get('workflow_source'), meta.get('width'), meta.get('height'),
+                                        meta.get('ratio'), has_edit_file, thumb_hash, existing_record['id']))
                         else: 
                             cursor.execute("""
                                 INSERT OR REPLACE INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
                                 size_bytes, last_synced_at, is_trashed, original_path_canon, prompt_text, workflow_json, 
-                                prompt_source, workflow_source, width, height, aspect_ratio_str, has_edit_file)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+                                prompt_source, workflow_source, width, height, aspect_ratio_str, has_edit_file, thumb_hash)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
-                                  file_stat.st_mtime, file_stat.st_size, current_time,
-                                  meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
-                                  meta.get('prompt_source'), meta.get('workflow_source'),
-                                  meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file))
+                                    file_stat.st_mtime, file_stat.st_size, current_time,
+                                    meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                                    meta.get('prompt_source'), meta.get('workflow_source'),
+                                    meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash))
                     except Exception as e:
                         print(f"🔴 [Holaf-ImageViewer] Error processing file {filename} during sync: {e}")
 
@@ -299,7 +314,106 @@ def sync_image_database_blocking():
     finally:
         if conn:
             holaf_database.close_db_connection(exception=sync_exception)
-# ... (le reste du fichier est inchangé)
+
+
+def clean_thumbnails_blocking():
+    """
+    Scans the thumbnail directory and the database to clean up and regenerate thumbnails.
+    - Deletes orphan thumbnails (where the original image no longer exists).
+    - Resets the status for images that are missing a thumbnail file.
+    - Resets the status for thumbnails that are unreadable/corrupt.
+    """
+    print("🔵 [Holaf-ImageViewer] Starting thumbnail cleaning process...")
+    thumb_dir = holaf_utils.get_thumbnail_dir()
+    output_dir = folder_paths.get_output_directory()
+    
+    deleted_orphans_count = 0
+    regenerated_missing_count = 0
+    regenerated_corrupt_count = 0
+    
+    conn = None
+    clean_exception = None
+
+    try:
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. Delete orphan thumbnails
+        if os.path.isdir(thumb_dir):
+            all_thumb_files = os.listdir(thumb_dir)
+            
+            # --- OPTIMIZATION: Now we can check the hash directly from the DB ---
+            # Fetch all valid thumb_hashes
+            cursor.execute("SELECT thumb_hash FROM images WHERE thumb_hash IS NOT NULL")
+            valid_hashes = {row['thumb_hash'] for row in cursor.fetchall()}
+            
+            for thumb_filename in all_thumb_files:
+                thumb_hash = os.path.splitext(thumb_filename)[0]
+                
+                if thumb_hash not in valid_hashes:
+                    try:
+                        os.remove(os.path.join(thumb_dir, thumb_filename))
+                        deleted_orphans_count += 1
+                    except OSError as e:
+                        print(f"🟡 [Holaf-ImageViewer] Could not delete orphan thumbnail {thumb_filename}: {e}")
+
+        # 2. Check all non-corrupt images in DB for thumbnail validity
+        cursor.execute("SELECT id, path_canon, thumb_hash FROM images WHERE thumbnail_status != 3")
+        images_to_check = cursor.fetchall()
+        
+        ids_to_reset_missing = []
+        ids_to_reset_corrupt = []
+
+        for image in images_to_check:
+            if not image['thumb_hash']: continue # Skip if hash is missing (should be fixed by sync)
+
+            thumb_filename = f"{image['thumb_hash']}.jpg"
+            thumb_path = os.path.join(thumb_dir, thumb_filename)
+            
+            if not os.path.exists(thumb_path):
+                ids_to_reset_missing.append(image['id'])
+            else:
+                # 3. Verify if thumbnail is a valid, readable image
+                try:
+                    with Image.open(thumb_path) as img:
+                        img.verify() # Fast check for basic integrity
+                except Exception:
+                    # If any error occurs, it's likely corrupt
+                    ids_to_reset_corrupt.append(image['id'])
+
+        if ids_to_reset_missing:
+            regenerated_missing_count = len(ids_to_reset_missing)
+            cursor.execute(f"UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = 1500 WHERE id IN ({','.join(['?']*len(ids_to_reset_missing))})", ids_to_reset_missing)
+            print(f"🔵 [Holaf-ImageViewer] Marked {regenerated_missing_count} images for thumbnail regeneration (missing).")
+
+        if ids_to_reset_corrupt:
+            regenerated_corrupt_count = len(ids_to_reset_corrupt)
+            cursor.execute(f"UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = 1500 WHERE id IN ({','.join(['?']*len(ids_to_reset_corrupt))})", ids_to_reset_corrupt)
+            print(f"🔵 [Holaf-ImageViewer] Marked {regenerated_corrupt_count} images for thumbnail regeneration (corrupt).")
+
+        conn.commit()
+
+        print(f"✅ [Holaf-ImageViewer] Thumbnail cleaning complete. "
+                f"Deleted: {deleted_orphans_count}, "
+                f"Queued for regen (missing): {regenerated_missing_count}, "
+                f"Queued for regen (corrupt): {regenerated_corrupt_count}.")
+        
+        return {
+            "deleted_orphans": deleted_orphans_count,
+            "regenerated_missing": regenerated_missing_count,
+            "regenerated_corrupt": regenerated_corrupt_count
+        }
+
+    except Exception as e:
+        clean_exception = e
+        print(f"🔴 [Holaf-ImageViewer] Error during thumbnail cleaning: {e}")
+        traceback.print_exc()
+        return {"error": str(e)}
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=clean_exception)
+
+
 # --- Metadata Extraction ---
 def _sanitize_json_nan(obj):
     if isinstance(obj, dict):
@@ -393,7 +507,7 @@ def apply_edits_to_image(image, edit_data):
     Args:
         image (PIL.Image.Image): The source image.
         edit_data (dict): A dictionary containing edit parameters.
-                          e.g., {'brightness': 1.2, 'contrast': 1.1, 'saturation': 1.5}
+                            e.g., {'brightness': 1.2, 'contrast': 1.1, 'saturation': 1.5}
 
     Returns:
         PIL.Image.Image: The modified image.
@@ -495,10 +609,11 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
         update_exception = e_gen
         print(f"🔴 [Holaf-ImageViewer] Error in _create_thumbnail_blocking for {original_path_abs}: {e_gen}")
         if image_path_canon_for_db_update:
-             conn_update_db = holaf_database.get_db_connection()
-             cursor = conn_update_db.cursor()
-             cursor.execute("UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = CASE WHEN thumbnail_priority_score > 1000 THEN 1000 ELSE thumbnail_priority_score END WHERE path_canon = ?", (image_path_canon_for_db_update,))
-             conn_update_db.commit()
+                conn_update_db = holaf_database.get_db_connection()
+                cursor = conn_update_db.cursor()
+                # --- FIX: Prevent infinite loops. Mark as Failed (Status 3) and set Lowest Priority (9999) ---
+                cursor.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (image_path_canon_for_db_update,))
+                conn_update_db.commit()
         if os.path.exists(thumb_path_abs):
             try: os.remove(thumb_path_abs)
             except Exception as e_clean: print(f"🔴 [Holaf-ImageViewer] Could not clean up failed thumbnail {thumb_path_abs}: {e_clean}")

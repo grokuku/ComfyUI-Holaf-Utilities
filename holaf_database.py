@@ -4,6 +4,7 @@ import os
 import threading
 import shutil # For renaming the database file
 import time   # For timestamping the backup
+import hashlib # Required for migration logic
 
 # --- Constants ---
 DB_NAME = "holaf_utilities.sqlite"
@@ -11,7 +12,7 @@ DB_DIR = os.path.dirname(__file__) # In the extension's root directory
 DB_PATH = os.path.join(DB_DIR, DB_NAME)
 # --- SINGLE SOURCE OF TRUTH FOR DB SCHEMA ---
 # Increment this number whenever you make a change to the table structures below.
-LATEST_SCHEMA_VERSION = 9
+LATEST_SCHEMA_VERSION = 10
 
 # --- Thread-local storage for database connections ---
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
@@ -66,6 +67,7 @@ def _create_fresh_schema(cursor):
     """)
 
     # Image Viewer: Images Table (with all columns up to the latest version)
+    # Version 10: Added thumb_hash
     cursor.execute("""
         CREATE TABLE images (
             id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, subfolder TEXT,
@@ -75,7 +77,8 @@ def _create_fresh_schema(cursor):
             workflow_json TEXT, last_synced_at REAL, thumbnail_status INTEGER DEFAULT 0,
             thumbnail_priority_score INTEGER DEFAULT 1000, thumbnail_last_generated_at REAL,
             is_trashed BOOLEAN DEFAULT 0, original_path_canon TEXT, prompt_source TEXT,
-            workflow_source TEXT, has_edit_file BOOLEAN DEFAULT 0
+            workflow_source TEXT, has_edit_file BOOLEAN DEFAULT 0,
+            thumb_hash TEXT
         )
     """)
     
@@ -92,13 +95,13 @@ def _create_fresh_schema(cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
-    # --- MODIFICATION: Replace individual indexes with a more powerful composite index ---
-    # This index is critical for speeding up queries that filter by folder and order by date.
+    
+    # Composite index for gallery filtering/sorting
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_top_level_subfolder_mtime ON images(top_level_subfolder, mtime)")
-    # The individual index on mtime is still useful for queries that don't filter by folder.
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
-    # We no longer need the individual index on top_level_subfolder, as the composite one can serve that purpose.
-    # --- END MODIFICATION ---
+    
+    # Index for thumb_hash to speed up orphan cleanup
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_thumb_hash ON images(thumb_hash)")
 
     # Set the version in the new table
     cursor.execute("INSERT INTO holaf_db_version (version) VALUES (?)", (LATEST_SCHEMA_VERSION,))
@@ -160,8 +163,15 @@ def _migrate_database_by_copy(current_db_version):
             old_images_cols = get_columns(cursor, 'images', 'old_db')
             new_images_cols = get_columns(cursor, 'images', 'main')
             common_cols = list(old_images_cols.intersection(new_images_cols))
+            
+            # Filter out columns that we want to re-populate or that might conflict if logic changed
+            # top_level_subfolder is handled manually below
             if 'top_level_subfolder' in common_cols:
-                 common_cols.remove('top_level_subfolder') # Don't copy this, we'll populate it next
+                 common_cols.remove('top_level_subfolder') 
+            
+            # thumb_hash is new, so it won't be in common_cols yet
+            if 'thumb_hash' in common_cols:
+                 common_cols.remove('thumb_hash')
 
             if common_cols:
                 cols_str = ", ".join(f'"{col}"' for col in common_cols)
@@ -180,12 +190,27 @@ def _migrate_database_by_copy(current_db_version):
                 """)
                 print(f"      ... Done. {cursor.rowcount} rows updated.")
 
+                # Populate the thumb_hash column for existing images
+                print("    > Backfilling 'thumb_hash' column based on path_canon...")
+                cursor.execute("SELECT id, path_canon FROM images")
+                rows = cursor.fetchall()
+                updates = []
+                for row in rows:
+                    if row['path_canon']:
+                        # Calculate SHA1 hash of the canonical path, same logic as worker.py
+                        h = hashlib.sha1(row['path_canon'].encode('utf-8')).hexdigest()
+                        updates.append((h, row['id']))
+                
+                if updates:
+                    cursor.executemany("UPDATE images SET thumb_hash = ? WHERE id = ?", updates)
+                    print(f"      ... Done. {len(updates)} thumb_hashes generated.")
+
         except sqlite3.OperationalError:
             print("    > 'images' table not found in old database. Skipping.")
         except Exception as e:
             print(f"🟡 [Holaf-DB] Warning: Could not transfer data from 'images' table. Error: {e}")
 
-        # folder_metadata is new, so no data to transfer.
+        # folder_metadata is a cache, no data transfer needed.
 
         # 4. Finalize
         conn.commit()
@@ -294,12 +319,19 @@ if __name__ == '__main__':
             for table in expected_tables:
                  assert table in tables, f"FAILURE: '{table}' table was not created."
             print("✅ All required tables are present.")
+            
+            # Verify new columns/indexes
+            cursor_test.execute("PRAGMA table_info(images)")
+            cols = [col['name'] for col in cursor_test.fetchall()]
+            print("Columns in images:", cols)
+            assert 'thumb_hash' in cols, "CRITICAL: thumb_hash column missing!"
 
             cursor_test.execute("PRAGMA index_list(images)")
             indexes = [idx['name'] for idx in cursor_test.fetchall()]
             print("Indexes on 'images' table:", indexes)
             assert 'idx_images_top_level_subfolder_mtime' in indexes, "CRITICAL: Composite index was not created!"
-            print("✅ Composite index is present.")
+            assert 'idx_images_thumb_hash' in indexes, "CRITICAL: thumb_hash index was not created!"
+            print("✅ All indexes present.")
 
 
         else:

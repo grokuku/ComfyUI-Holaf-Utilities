@@ -39,7 +39,9 @@ from .routes.edit_routes import (
     delete_edits_route
 )
 from .routes.utility_routes import (
-    set_viewer_activity_route
+    set_viewer_activity_route,
+    sync_database_route,
+    clean_thumbnails_route
 )
 
 
@@ -83,6 +85,8 @@ __all__ = [
 
     # Utility
     'set_viewer_activity_route',
+    'sync_database_route',
+    'clean_thumbnails_route',
 
     # Worker
     'run_thumbnail_generation_worker'

@@ -7,6 +7,7 @@
  * but only ever renders the thumbnail elements that are currently visible in the viewport.
  * FIX: Flickering on scroll is eliminated by using differential DOM updates.
  * FIX: Scroll position is now preserved correctly during window resizes.
+ * FIX: Deadlock in thumbnail loader fixed with safety timeouts and immediate DOM insertion.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -14,7 +15,8 @@ import { showFullscreenView } from './image_viewer_navigation.js';
 
 // --- Configuration ---
 const SCROLLBAR_DEBOUNCE_MS = 150;
-const MAX_CONCURRENT_THUMBNAIL_LOADS = 12;
+// Increased concurrency limit as modern browsers handle this well
+const MAX_CONCURRENT_THUMBNAIL_LOADS = 24;
 
 // --- Module-level state ---
 let viewerInstance = null;
@@ -33,21 +35,20 @@ let columnCount = 0;
 let itemWidth = 0;
 let itemHeight = 0;
 let gap = 0;
+let renderRequestID = null;
 
 // --- Internal Functions (not exported directly) ---
 
 function handleResize() {
     const { images } = imageViewerState.getState();
-    // Do not run resize logic if the gallery is showing the empty message
     if (!images || images.length === 0 || !galleryEl) return;
 
     const oldItemHeightWithGap = itemHeight + gap;
-    const oldColumnCount = columnCount;
-    
+
     let topVisibleIndex = 0;
-    if (oldItemHeightWithGap > 0 && oldColumnCount > 0) {
+    if (oldItemHeightWithGap > 0 && columnCount > 0) {
         const topRow = Math.floor(galleryEl.scrollTop / oldItemHeightWithGap);
-        topVisibleIndex = topRow * oldColumnCount;
+        topVisibleIndex = topRow * columnCount;
     }
 
     updateLayout(false);
@@ -63,9 +64,9 @@ function handleResize() {
 
 function updateLayout(renderAfter = true, overrideThumbSize = null) {
     if (!galleryEl || !viewerInstance) return;
-    
+
     const targetThumbSize = overrideThumbSize !== null ? overrideThumbSize : imageViewerState.getState().ui.thumbnail_size;
-    
+
     const containerWidth = galleryEl.clientWidth;
     const style = window.getComputedStyle(galleryGridEl);
     gap = parseFloat(style.getPropertyValue('gap')) || 8;
@@ -74,7 +75,7 @@ function updateLayout(renderAfter = true, overrideThumbSize = null) {
     const totalGapWidth = (columnCount - 1) * gap;
     itemWidth = (containerWidth - totalGapWidth) / columnCount;
     itemHeight = itemWidth;
-    
+
     const { images } = imageViewerState.getState();
     const rowCount = Math.ceil(images.length / columnCount);
     const totalHeight = rowCount * (itemHeight + gap);
@@ -86,19 +87,24 @@ function updateLayout(renderAfter = true, overrideThumbSize = null) {
 }
 
 function renderVisibleItems() {
-    requestAnimationFrame(() => {
+    if (renderRequestID) {
+        cancelAnimationFrame(renderRequestID);
+    }
+
+    renderRequestID = requestAnimationFrame(() => {
+        renderRequestID = null;
+
         if (columnCount === 0) return;
         const { images, activeImage, selectedImages } = imageViewerState.getState();
 
-        // This check is now safe because the "empty" case is handled by syncGallery
         if (!images.length || !galleryEl || !galleryGridEl || itemHeight === 0) {
             return;
         }
 
         const viewportHeight = galleryEl.clientHeight;
         const scrollTop = galleryEl.scrollTop;
-        
-        const buffer = viewportHeight;
+
+        const buffer = viewportHeight * 1.5;
         const visibleAreaStart = Math.max(0, scrollTop - buffer);
         const visibleAreaEnd = scrollTop + viewportHeight + buffer;
 
@@ -108,7 +114,7 @@ function renderVisibleItems() {
 
         const startIndex = startRow * columnCount;
         const endIndex = Math.min(images.length - 1, (endRow * columnCount) + columnCount - 1);
-        
+
         const newPlaceholdersToRender = new Map();
         const fragment = document.createDocumentFragment();
 
@@ -126,15 +132,20 @@ function renderVisibleItems() {
                 placeholder = createPlaceholder(viewerInstance, image, i);
                 fragment.appendChild(placeholder);
             }
-            
+
             const row = Math.floor(i / columnCount);
             const col = i % columnCount;
             const top = row * itemHeightWithGap;
             const left = col * (itemWidth + gap);
-            placeholder.style.transform = `translate(${left}px, ${top}px)`;
+
+            const transformVal = `translate(${left}px, ${top}px)`;
+            if (placeholder.style.transform !== transformVal) {
+                placeholder.style.transform = transformVal;
+            }
+
             placeholder.style.width = `${itemWidth}px`;
             placeholder.style.height = `${itemHeight}px`;
-            
+
             placeholder.classList.toggle('active', activeImage && activeImage.path_canon === path);
             const isSelected = [...selectedImages].some(selImg => selImg.path_canon === path);
             placeholder.querySelector('.holaf-viewer-thumb-checkbox').checked = isSelected;
@@ -149,9 +160,8 @@ function renderVisibleItems() {
         if (fragment.childElementCount > 0) {
             galleryGridEl.appendChild(fragment);
         }
-        
-        renderedPlaceholders = newPlaceholdersToRender;
 
+        renderedPlaceholders = newPlaceholdersToRender;
         loadVisibleThumbnails();
     });
 }
@@ -163,7 +173,8 @@ function debouncedLoadVisibleThumbnails() {
 
 function loadVisibleThumbnails() {
     const placeholdersToLoad = Array.from(galleryGridEl.children);
-    
+
+    // Helper to pump the queue
     const process = () => {
         if (activeThumbnailLoads >= MAX_CONCURRENT_THUMBNAIL_LOADS) return;
         const nextPlaceholder = placeholdersToLoad.find(p => !p.dataset.thumbnailLoadingOrLoaded);
@@ -175,6 +186,7 @@ function loadVisibleThumbnails() {
             if (image) {
                 loadSpecificThumbnail(nextPlaceholder, image, false, () => {
                     activeThumbnailLoads--;
+                    if (activeThumbnailLoads < 0) activeThumbnailLoads = 0;
                     process();
                 });
             } else {
@@ -183,6 +195,8 @@ function loadVisibleThumbnails() {
             }
         }
     };
+
+    // Start as many workers as allowed
     for (let i = 0; i < MAX_CONCURRENT_THUMBNAIL_LOADS; i++) process();
 }
 
@@ -191,33 +205,47 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
         if (onCompleteCallback) onCompleteCallback();
         return;
     }
-    
+
     placeholder.dataset.thumbnailLoadingOrLoaded = "true";
     placeholder.classList.remove('error');
     const existingError = placeholder.querySelector('.holaf-viewer-error-overlay');
     if (existingError) existingError.remove();
-    
+
     const oldImg = placeholder.querySelector('img');
-    if(oldImg && !forceReload) {
-        if(onCompleteCallback) onCompleteCallback();
+    if (oldImg && !forceReload) {
+        if (onCompleteCallback) onCompleteCallback();
         return;
     }
-    if(oldImg) oldImg.remove();
-    
+    if (oldImg) oldImg.remove();
+
     const onComplete = () => { if (onCompleteCallback) onCompleteCallback(); };
 
     const imageUrl = new URL(window.location.origin);
     imageUrl.pathname = '/holaf/images/thumbnail';
-    const params = { filename: image.filename, subfolder: image.subfolder, mtime: image.mtime, t: forceReload ? new Date().getTime() : '' };
+    const cacheBuster = image.thumb_hash ? image.thumb_hash : (image.mtime || '');
+    const params = {
+        filename: image.filename,
+        subfolder: image.subfolder,
+        path_canon: image.path_canon,
+        mtime: cacheBuster,
+        t: forceReload ? new Date().getTime() : ''
+    };
     imageUrl.search = new URLSearchParams(params);
 
     const img = document.createElement('img');
-    img.src = imageUrl.href;
     img.alt = image.filename;
     img.loading = "lazy";
     img.className = "holaf-image-viewer-thumbnail";
 
+    // --- CRITICAL FIX: Safety timeout to prevent deadlocks ---
+    const safetyTimeout = setTimeout(() => {
+        // If image takes too long, consider it "done" for the queue's sake
+        // but let it keep loading in the background.
+        onComplete();
+    }, 10000); // 10 seconds safety valve
+
     img.onload = () => {
+        clearTimeout(safetyTimeout);
         if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
             const fsIcon = document.createElement('div');
             fsIcon.className = 'holaf-viewer-fullscreen-icon';
@@ -233,10 +261,11 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
             });
             placeholder.appendChild(fsIcon);
         }
-        placeholder.prepend(img);
         onComplete();
     };
+
     img.onerror = () => {
+        clearTimeout(safetyTimeout);
         placeholder.classList.add('error');
         placeholder.dataset.thumbnailLoadingOrLoaded = "error";
         const errorDiv = document.createElement('div');
@@ -245,6 +274,10 @@ function loadSpecificThumbnail(placeholder, image, forceReload = false, onComple
         placeholder.appendChild(errorDiv);
         onComplete();
     };
+
+    img.src = imageUrl.href;
+    // --- CRITICAL FIX: Append immediately so browser manages it ---
+    placeholder.prepend(img);
 }
 
 function createPlaceholder(viewer, image, index) {
@@ -334,7 +367,7 @@ function initGallery(viewer) {
 
     resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(galleryEl);
-    
+
     galleryEl.addEventListener('wheel', () => {
         isWheelScrolling = true;
         clearTimeout(wheelScrollTimeout);
@@ -349,7 +382,7 @@ function initGallery(viewer) {
             debouncedLoadVisibleThumbnails();
         }
     }, { passive: true });
-    
+
     viewer.gallery = {
         ensureImageVisible,
         alignImageOnExit,
@@ -361,36 +394,31 @@ function initGallery(viewer) {
 
 function syncGallery(viewer, images) {
     if (!galleryEl) initGallery(viewer);
-    
+
     viewerInstance = viewer;
     const { images: allImages } = imageViewerState.getState();
+
+    // --- CRITICAL FIX: Reset Semaphore on sync ---
     activeThumbnailLoads = 0;
 
-    // BUG FIX: Force a clean slate for the renderer. This ensures that when the underlying dataset changes,
-    // the differential rendering logic starts from scratch, preventing errors from a stale internal state.
     galleryGridEl.innerHTML = '';
     renderedPlaceholders.clear();
 
-    // Clear any message from a previous state (might be in galleryEl directly)
     const messageEl = galleryEl.querySelector('.holaf-viewer-message');
     if (messageEl) messageEl.remove();
-    
-    // Reset scroll position to see new items if they are at the top.
+
     galleryEl.scrollTop = 0;
 
     if (allImages && allImages.length > 0) {
-        // CASE 1: We have images to display. Run the normal layout and render process.
         updateLayout(true);
     } else {
-        // CASE 2: The gallery is empty. Display a placeholder message.
-        // The grid is already clear, so we just need to set the sizer and add the message.
         gallerySizerEl.style.height = '300px';
 
         const placeholder = document.createElement('div');
         placeholder.className = 'holaf-viewer-thumbnail-placeholder holaf-viewer-empty-message';
         placeholder.style.cssText = `
             position: absolute;
-            top: 8px; left: 8px; right: 8px; /* Use grid gap */
+            top: 8px; left: 8px; right: 8px; 
             height: 200px;
             display: flex;
             align-items: center;
@@ -416,18 +444,18 @@ function refreshThumbnailInGallery(path_canon) {
 
     const editIcon = placeholder.querySelector('.holaf-viewer-edit-icon');
     if (editIcon) editIcon.classList.add('active');
-    
+
     loadSpecificThumbnail(placeholder, image, true);
 }
 
 function ensureImageVisible(imageIndex) {
     if (!galleryEl || imageIndex < 0) return;
-    
+
     renderVisibleItems();
 
     setTimeout(() => {
         const targetElement = galleryGridEl.querySelector(`[data-index="${imageIndex}"]`);
-        
+
         if (targetElement) {
             targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } else {
@@ -446,12 +474,12 @@ function alignImageOnExit(imageIndex) {
 
     setTimeout(() => {
         const targetElement = galleryGridEl.querySelector(`[data-index="${imageIndex}"]`);
-        
+
         if (targetElement) {
             const rect = targetElement.getBoundingClientRect();
             const galleryRect = galleryEl.getBoundingClientRect();
             const isVisible = rect.top >= galleryRect.top && rect.bottom <= galleryRect.bottom;
-            
+
             if (isVisible) {
                 return;
             }

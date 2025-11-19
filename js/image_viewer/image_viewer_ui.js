@@ -10,6 +10,7 @@
 import { HOLAF_THEMES } from '../holaf_panel_manager.js';
 import { imageViewerState } from './image_viewer_state.js';
 import * as Navigation from './image_viewer_navigation.js';
+import { HolafToastManager } from '../holaf_toast_manager.js';
 
 class ImageViewerUI {
     constructor() {
@@ -199,7 +200,7 @@ class ImageViewerUI {
 
             // Save the setting, which also updates the central state
             viewer.saveSettings(newScopeState);
-            
+
             // Immediately update the button's visual state for instant feedback
             viewer._updateSearchScopeButtonStates();
 
@@ -282,7 +283,7 @@ class ImageViewerUI {
 
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
         this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
-        
+
         // `oninput` is for real-time visual updates *during* sliding.
         this.elements.thumbSizeSlider.oninput = (e) => {
             const newSize = parseInt(e.target.value);
@@ -292,7 +293,7 @@ class ImageViewerUI {
             // This bypasses the central state and forces an immediate re-render.
             viewer._applyThumbnailSize(newSize);
         };
-        
+
         // `onchange` fires only when the user releases the slider.
         // This is the correct time to save the final setting.
         this.elements.thumbSizeSlider.onchange = (e) => {

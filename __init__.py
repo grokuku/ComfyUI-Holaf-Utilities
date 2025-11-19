@@ -386,6 +386,12 @@ async def iv_save_edits_route(r): return await holaf_image_viewer_backend.save_e
 
 @routes.post("/holaf/images/delete-edits")
 async def iv_delete_edits_route(r): return await holaf_image_viewer_backend.delete_edits_route(r)
+
+@routes.post("/holaf/images/maintenance/sync-database")
+async def iv_sync_database_route(r): return await holaf_image_viewer_backend.sync_database_route(r)
+
+@routes.post("/holaf/images/maintenance/clean-thumbnails")
+async def iv_clean_thumbnails_route(r): return await holaf_image_viewer_backend.clean_thumbnails_route(r)
 # --- MODIFICATION END ---
 
 # Image Viewer Thumbnail Worker and Stats

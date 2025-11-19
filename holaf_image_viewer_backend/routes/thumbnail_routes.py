@@ -19,6 +19,7 @@ logger = logging.getLogger('holaf.images.routes')
 
 # --- API Route Handlers ---
 async def get_thumbnail_route(request: web.Request):
+    path_canon_param = request.query.get("path_canon")
     filename = request.query.get("filename")
     subfolder = request.query.get("subfolder", "") # This subfolder can now include 'trashcan'
     force_regen_param = request.query.get("force_regen") == "true"
@@ -29,91 +30,113 @@ async def get_thumbnail_route(request: web.Request):
     current_exception = None
 
     try:
-        if not filename:
-            error_message_for_client = "ERR: Filename is required."
+        output_dir = folder_paths.get_output_directory() # Base output
+
+        # --- FIX: Prioritize path_canon if available (it matches DB key exactly) ---
+        if path_canon_param:
+             # Security check is vital here since we trust the param more
+             if ".." in path_canon_param or path_canon_param.startswith("/"):
+                  return web.Response(status=403, text="ERR: Invalid path_canon.")
+             original_rel_path = path_canon_param
+             original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+             if not original_abs_path.startswith(os.path.normpath(output_dir)):
+                 return web.Response(status=403, text="ERR: Forbidden path_canon.")
+        
+        # Fallback to legacy reconstruction
+        elif filename:
+            safe_filename = holaf_utils.sanitize_filename(filename)
+            # original_rel_path is the path_canon from the DB
+            original_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
+            # original_abs_path is its location on disk
+            original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+
+            if not original_abs_path.startswith(os.path.normpath(output_dir)):
+                error_message_for_client = "ERR: Forbidden path for thumbnail."
+                return web.Response(status=403, text=error_message_for_client)
+        else:
+            error_message_for_client = "ERR: Filename or path_canon is required."
             return web.Response(status=400, text=error_message_for_client)
 
-        output_dir = folder_paths.get_output_directory() # Base output
-        safe_filename = holaf_utils.sanitize_filename(filename)
-        
-        # original_rel_path is the path_canon from the DB, which might be inside trashcan
-        original_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
-        # original_abs_path is its location on disk, relative to output_dir
-        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
 
-
-        if not original_abs_path.startswith(os.path.normpath(output_dir)):
-            error_message_for_client = "ERR: Forbidden path for thumbnail."
-            return web.Response(status=403, text=error_message_for_client)
-
-        if not os.path.isfile(original_abs_path):
-            error_message_for_client = "ERR: Original image not found for thumbnail."
-            temp_conn_no_orig, no_orig_exception = None, None
-            try:
-                temp_conn_no_orig = holaf_database.get_db_connection()
-                cursor_no_orig = temp_conn_no_orig.cursor()
-                # Check if record exists using its current path_canon (which might be in trash)
-                cursor_no_orig.execute("SELECT id FROM images WHERE path_canon = ?", (original_rel_path,))
-                if cursor_no_orig.fetchone():
-                    cursor_no_orig.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (original_rel_path,))
-                    temp_conn_no_orig.commit()
-            except Exception as e_db_no_orig: no_orig_exception = e_db_no_orig
-            finally:
-                if temp_conn_no_orig: holaf_database.close_db_connection(exception=no_orig_exception)
-            return web.Response(status=404, text=error_message_for_client)
-
-        # Hash is based on path_canon, so trashed images get different hashes if path_canon changes
-        path_hash = hashlib.sha1(original_rel_path.encode('utf-8')).hexdigest()
-        thumb_filename = f"{path_hash}.jpg"
-        thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
-
+        # --- FIX: Retrieve thumb_hash from DB first ---
         conn_info_read = holaf_database.get_db_connection()
         cursor = conn_info_read.cursor()
         cursor.execute(
-            "SELECT mtime, thumbnail_status, thumbnail_last_generated_at FROM images WHERE path_canon = ?",
-            (original_rel_path,) # Use the current path_canon from DB
+            "SELECT mtime, thumbnail_status, thumbnail_last_generated_at, thumb_hash FROM images WHERE path_canon = ?",
+            (original_rel_path,)
         )
         image_db_info = cursor.fetchone()
         conn_info_read.commit()
 
-        needs_generation = force_regen_param
-        if image_db_info:
-            original_mtime_db = image_db_info['mtime']
-            thumb_status_db = image_db_info['thumbnail_status']
-            thumb_last_gen_db = image_db_info['thumbnail_last_generated_at']
+        # Handle case where image is not in DB (possibly just created or deleted)
+        if not image_db_info:
+             holaf_database.close_db_connection()
+             conn_info_read = None
+             
+             # Fallback: check file existence manually to give a specific error
+             if not os.path.isfile(original_abs_path):
+                 return web.Response(status=404, text="ERR: Original image not found (disk or DB).")
+             return web.Response(status=404, text="ERR: Image record not found in DB.")
 
-            if thumb_status_db == 0: needs_generation = True
-            elif thumb_status_db == 1: needs_generation = True
-            elif thumb_status_db == 3: error_message_for_client = "ERR: Thumbnail previously failed (permanent)."
-            elif thumb_last_gen_db is not None and original_mtime_db > thumb_last_gen_db: needs_generation = True
-            if thumb_status_db == 2 and not os.path.exists(thumb_path_abs) and not needs_generation:
-                needs_generation = True
-        else: error_message_for_client = "ERR: Image record not found in DB."
+        # Extract data from DB
+        original_mtime_db = image_db_info['mtime']
+        thumb_status_db = image_db_info['thumbnail_status']
+        thumb_last_gen_db = image_db_info['thumbnail_last_generated_at']
+        db_thumb_hash = image_db_info['thumb_hash']
+
+        # Determine the thumbnail filename based on DB hash (Source of Truth)
+        if db_thumb_hash:
+            thumb_filename = f"{db_thumb_hash}.jpg"
+        else:
+            # Fallback for legacy records or sync lag: calculate it
+            path_hash = hashlib.sha1(original_rel_path.encode('utf-8')).hexdigest()
+            thumb_filename = f"{path_hash}.jpg"
+
+        thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
+        
+        # Determine generation needs
+        needs_generation = force_regen_param
+        if thumb_status_db == 0: needs_generation = True
+        elif thumb_status_db == 1: needs_generation = True
+        elif thumb_status_db == 3: error_message_for_client = "ERR: Thumbnail previously failed (permanent)."
+        elif thumb_last_gen_db is not None and original_mtime_db > thumb_last_gen_db: needs_generation = True
+        if thumb_status_db == 2 and not os.path.exists(thumb_path_abs) and not needs_generation:
+            needs_generation = True
         
         holaf_database.close_db_connection()
         conn_info_read = None
 
-        if error_message_for_client in ("ERR: Thumbnail previously failed (permanent).", "ERR: Image record not found in DB."):
-             return web.Response(status=404 if "not found" in error_message_for_client else 500, text=error_message_for_client)
+        if error_message_for_client == "ERR: Thumbnail previously failed (permanent)." and not force_regen_param:
+             return web.Response(status=500, text=error_message_for_client)
 
         if needs_generation and os.path.exists(thumb_path_abs):
             try: os.remove(thumb_path_abs)
-            except Exception: pass # Ignore error if removal fails, generation will overwrite
+            except Exception: pass 
 
+        # Serve existing if no regen needed
         if not needs_generation and os.path.exists(thumb_path_abs):
             try:
                 async with aiofiles.open(thumb_path_abs, 'rb') as f: content = await f.read()
                 return web.Response(body=content, content_type='image/jpeg')
             except Exception as e: needs_generation = True; error_message_for_client = "ERR: Failed to read existing thumb."
 
+        # Generate if needed
         if needs_generation:
+            if not os.path.isfile(original_abs_path):
+                 return web.Response(status=404, text="ERR: Source file missing for generation.")
+
             loop = asyncio.get_event_loop()
-            try:
-                # Pass original_rel_path (which is current path_canon) for DB update key
-                gen_success = await loop.run_in_executor(None, logic._create_thumbnail_blocking, original_abs_path, thumb_path_abs, original_rel_path)
-                if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
-            except Exception as e: current_exception = e; error_message_for_client = "ERR: Exception during thumbnail creation."
+            # Pass explicit args to blocking logic
+            gen_success = await loop.run_in_executor(
+                None, 
+                logic._create_thumbnail_blocking, 
+                original_abs_path, 
+                thumb_path_abs, 
+                original_rel_path # path_canon for DB update
+            )
+            if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
         
+        # Serve generated file
         if os.path.exists(thumb_path_abs):
             try:
                 async with aiofiles.open(thumb_path_abs, 'rb') as f: content = await f.read()
@@ -125,7 +148,7 @@ async def get_thumbnail_route(request: web.Request):
 
     except Exception as e_outer:
         current_exception = e_outer
-        # ... (rest of outer exception handling unchanged, but ensure DB updates use correct path_canon) ...
+        # ... (Exception handling) ...
         final_error_text = error_message_for_client if error_message_for_client != "ERR: Thumbnail processing failed." else f"ERR: Server error processing thumbnail for {filename}."
         if original_rel_path: 
             error_conn_outer, db_outer_exception = None, None
@@ -154,19 +177,26 @@ async def regenerate_thumbnail_route(request: web.Request):
             return web.json_response({"status": "error", "message": "'path_canon' is required"}, status=400)
 
         output_dir = folder_paths.get_output_directory()
-        
-        # Validate and get original image path
         safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
-        if safe_path_canon != path_canon:
-             return web.json_response({"status": "error", "message": "Invalid path specified"}, status=403)
         original_abs_path = os.path.normpath(os.path.join(output_dir, safe_path_canon))
+        
         if not original_abs_path.startswith(os.path.normpath(output_dir)):
-            return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
+             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
         if not os.path.isfile(original_abs_path):
             return web.json_response({"status": "error", "message": "Original image not found"}, status=404)
 
-        # Determine thumbnail path
-        path_hash = hashlib.sha1(safe_path_canon.encode('utf-8')).hexdigest()
+        # --- FIX: Lookup Hash in DB ---
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT thumb_hash FROM images WHERE path_canon = ?", (safe_path_canon,))
+        row = cursor.fetchone()
+        holaf_database.close_db_connection()
+        
+        if row and row['thumb_hash']:
+            path_hash = row['thumb_hash']
+        else:
+            path_hash = hashlib.sha1(safe_path_canon.encode('utf-8')).hexdigest()
+
         thumb_filename = f"{path_hash}.jpg"
         thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
 

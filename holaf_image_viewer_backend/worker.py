@@ -4,9 +4,10 @@ import sqlite3
 import hashlib
 import time
 import queue
+import json
+import traceback
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import traceback
 
 import folder_paths # ComfyUI global
 
@@ -54,10 +55,10 @@ class HolafFileSystemEventHandler(FileSystemEventHandler):
             
             if os.path.normpath(src_path).startswith(self.trashcan_path_norm): return False
         except FileNotFoundError:
-             return False # File disappeared before we could check it
+                return False # File disappeared before we could check it
         except Exception:
-             return False
-             
+                return False
+                
         return True
 
     def on_created(self, event):
@@ -70,9 +71,9 @@ class HolafFileSystemEventHandler(FileSystemEventHandler):
             filename = os.path.basename(event.src_path)
             _, file_ext = os.path.splitext(filename)
             if any(p in filename for p in WATCHER_TEMP_FILE_PATTERNS) or file_ext.lower() not in SUPPORTED_IMAGE_FORMATS:
-                 return
+                    return
             if os.path.normpath(event.src_path).startswith(self.trashcan_path_norm):
-                 return
+                    return
             print(f"🔵 [Holaf-Watcher-Event] Detected deletion: {event.src_path}")
             FILESYSTEM_EVENT_QUEUE.put(('deleted', event.src_path))
 
@@ -150,8 +151,8 @@ def run_filesystem_monitor(stop_event):
         while not stop_event.is_set():
             stop_event.wait(1)
     except Exception as e:
-         print(f"🔴 [Holaf-ImageViewer-Worker] Filesystem monitor encountered a fatal error: {e}")
-         traceback.print_exc()
+            print(f"🔴 [Holaf-ImageViewer-Worker] Filesystem monitor encountered a fatal error: {e}")
+            traceback.print_exc()
     finally:
         if observer and observer.is_alive():
             observer.stop()
@@ -160,9 +161,8 @@ def run_filesystem_monitor(stop_event):
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor stopped.")
 
 
-# --- Thumbnail Generation Worker (Unchanged) ---
+# --- Thumbnail Generation Worker ---
 def run_thumbnail_generation_worker(stop_event):
-    # ... (code inchangé ici)
     print("🔵 [Holaf-ImageViewer-Worker] Thumbnail generation worker started.")
     output_dir = folder_paths.get_output_directory()
     batch_size_for_query = 1
@@ -222,11 +222,25 @@ def run_thumbnail_generation_worker(stop_event):
                 stop_event.wait(WORKER_POST_JOB_SLEEP_SECONDS)
                 continue
 
+            # --- FEATURE: Load .edt file if exists ---
+            edit_data = None
+            try:
+                directory, filename = os.path.split(original_abs_path)
+                base_filename, _ = os.path.splitext(filename)
+                edit_file_path = os.path.join(directory, f"{base_filename}.edt")
+                
+                if os.path.isfile(edit_file_path):
+                    with open(edit_file_path, 'r', encoding='utf-8') as f:
+                        edit_data = json.load(f)
+            except Exception as e_edit:
+                print(f"🟡 [Holaf-ImageViewer-Worker] Failed to load edits for {filename}: {e_edit}")
+
             path_hash = hashlib.sha1(image_to_process_path_canon.encode('utf-8')).hexdigest()
             thumb_filename = f"{path_hash}.jpg"
             thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
 
-            logic._create_thumbnail_blocking(original_abs_path, thumb_path_abs, image_path_canon_for_db_update=image_to_process_path_canon)
+            # Pass the loaded edit_data to the generation logic
+            logic._create_thumbnail_blocking(original_abs_path, thumb_path_abs, image_path_canon_for_db_update=image_to_process_path_canon, edit_data=edit_data)
             stop_event.wait(WORKER_POST_JOB_SLEEP_SECONDS)
 
         except sqlite3.Error as e_sql:
