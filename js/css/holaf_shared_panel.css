@@ -65,14 +65,20 @@
     font-size: 16px !important;
     font-weight: bold !important;
     transition: background-color 0.2s, color 0.2s !important;
-    margin-left: auto !important;
     flex-shrink: 0;
+    margin-left: auto !important;
+    /* MODIFICATION: margin-left: auto !important; a été SUPPRIMÉ */
+    display: flex; /* Pour centrer le SVG ajouté */
+    align-items: center;
+    justify-content: center;
 }
 
 .holaf-utility-close-button:hover {
     background-color: #c44 !important;
     color: white !important;
 }
+
+
 
 .holaf-utility-resize-handle {
     position: absolute !important;

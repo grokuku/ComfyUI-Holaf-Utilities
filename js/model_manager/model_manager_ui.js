@@ -4,7 +4,8 @@
  * including the main panel, dialogs, and theme/zoom controls.
  */
 
-import { HolafPanelManager, HOLAF_THEMES } from "../holaf_panel_manager.js";
+import { HolafPanelManager } from "../holaf_panel_manager.js";
+import { HOLAF_THEMES } from "../holaf_themes.js";
 
 /**
  * Creates the main panel for the Model Manager.

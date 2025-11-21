@@ -7,7 +7,8 @@
  */
 
 import { app } from "../../../scripts/app.js";
-import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
+import { HolafPanelManager } from "./holaf_panel_manager.js";
+import { HOLAF_THEMES } from "./holaf_themes.js";
 import { api } from "../../../scripts/api.js";
 
 const HolafSettingsManager = {

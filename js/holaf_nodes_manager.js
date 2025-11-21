@@ -29,7 +29,8 @@
  */
 
 import { app } from "../../../scripts/app.js";
-import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
+import { HolafPanelManager } from "./holaf_panel_manager.js";
+import { HOLAF_THEMES } from "./holaf_themes.js";
 
 // Helper to load external scripts
 function loadScript(src, id) {

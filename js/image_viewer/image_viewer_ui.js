@@ -7,7 +7,7 @@
  * and reacts to changes in the global image viewer state.
  */
 
-import { HOLAF_THEMES } from '../holaf_panel_manager.js';
+import { HOLAF_THEMES } from '../holaf_themes.js';
 import { imageViewerState } from './image_viewer_state.js';
 import * as Navigation from './image_viewer_navigation.js';
 import { HolafToastManager } from '../holaf_toast_manager.js';
@@ -16,6 +16,7 @@ class ImageViewerUI {
     constructor() {
         this.elements = {};
         this.callbacks = {};
+        this.isDraggingSlider = false; // Flag to prevent state updates while dragging
     }
 
     init(container, callbacks) {
@@ -34,7 +35,7 @@ class ImageViewerUI {
 
         // Create panes
         this.elements.leftPane = this._createLeftPane();
-        this.elements.centerPane = this._createCenterPane(); // Simplified: only one center pane
+        this.elements.centerPane = this._createCenterPane();
         this.elements.rightColumn = this._createRightColumn();
 
         // Final assembly
@@ -46,30 +47,48 @@ class ImageViewerUI {
 
         this.elements.container.append(mainContent, this.elements.statusBar);
 
+        // Cache UI elements that will be updated frequently
+        this._cacheElements();
+        
         this._setupEventListeners();
 
-        // Subscribe to state changes to reactively update UI controls
         imageViewerState.subscribe(this._render.bind(this));
-
-        // Initial render based on current state
         this._render(imageViewerState.getState());
     }
 
-    // This render function is now much simpler. It only updates UI controls,
-    // it DOES NOT manage view visibility, as that is handled by other modules (Navigation, Editor).
     _render(state) {
-        // Update display options from state
+        const { filters, ui } = state;
+
+        if (!this.elements.searchFilename) return; // UI not cached yet
+
+        // Update Filter Controls
+        this.elements.searchFilename.value = filters.filename_search || '';
+        this.elements.searchPrompt.value = filters.prompt_search || '';
+        this.elements.searchWorkflow.value = filters.workflow_search || '';
+
+        this.elements.dateStart.value = filters.startDate || '';
+        this.elements.dateEnd.value = filters.endDate || '';
+
+        // Update boolean filter buttons
+        for (const key in this.elements.boolFilterButtons) {
+            const button = this.elements.boolFilterButtons[key];
+            if (button) {
+                button.classList.toggle('active', filters.bool_filters[key] === true);
+            }
+        }
+        
+        this._renderActiveTags(filters.tags_filter || []);
+        
+        // Update Display Options
         if (this.elements.thumbFitToggle) {
-            this.elements.thumbFitToggle.checked = state.ui.thumbnail_fit === 'contain';
+            this.elements.thumbFitToggle.checked = ui.thumbnail_fit === 'contain';
         }
         if (this.elements.thumbSizeSlider) {
-            // Only update the slider's visual position if the user is NOT currently dragging it.
-            // This prevents the state update (which happens on `onchange`) from causing a visual jump during `oninput`.
             if (!this.isDraggingSlider) {
-                this.elements.thumbSizeSlider.value = state.ui.thumbnail_size;
+                this.elements.thumbSizeSlider.value = ui.thumbnail_size;
             }
             if (this.elements.thumbSizeValue) {
-                this.elements.thumbSizeValue.textContent = `${state.ui.thumbnail_size}px`;
+                this.elements.thumbSizeValue.textContent = `${ui.thumbnail_size}px`;
             }
         }
     }
@@ -78,28 +97,42 @@ class ImageViewerUI {
         const pane = document.createElement('div');
         pane.id = 'holaf-viewer-left-pane';
         pane.className = 'holaf-viewer-pane';
+        // Reworked HTML structure for the new filter system
         pane.innerHTML = `
             <div class="holaf-viewer-filter-group">
-                <input type="search" id="holaf-viewer-search-input" placeholder="Search filename, prompt, workflow..." class="holaf-viewer-search-bar">
-                <div id="holaf-viewer-search-scope-buttons" class="holaf-viewer-toggle-button-group">
-                    <button id="holaf-search-scope-filename" class="holaf-viewer-toggle-button">Name</button>
-                    <button id="holaf-search-scope-prompt" class="holaf-viewer-toggle-button">Prompt</button>
-                    <button id="holaf-search-scope-workflow" class="holaf-viewer-toggle-button">Workflow</button>
-                </div>
+                <h4>Filename Search</h4>
+                <input type="search" id="holaf-viewer-search-filename" placeholder="Enter filename text..." class="holaf-viewer-search-bar">
+            </div>
+            <div class="holaf-viewer-filter-group">
+                <h4>Prompt Search</h4>
+                <input type="search" id="holaf-viewer-search-prompt" placeholder="Enter prompt text..." class="holaf-viewer-search-bar">
+            </div>
+            <div class="holaf-viewer-filter-group">
+                <h4>Workflow Search</h4>
+                <input type="search" id="holaf-viewer-search-workflow" placeholder="Enter workflow text..." class="holaf-viewer-search-bar">
             </div>
             <div class="holaf-viewer-filter-group">
                 <h4>Date Range</h4>
-                <div id="holaf-viewer-date-filter" class="holaf-viewer-date-range-container">
+                <div class="holaf-viewer-date-range-container">
                     <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-start">From:</label><input type="date" id="holaf-viewer-date-start"></div>
                     <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-end">To:</label><input type="date" id="holaf-viewer-date-end"></div>
                 </div>
             </div>
             <div class="holaf-viewer-filter-group">
-                <h4>Workflow Availability</h4>
-                <div id="holaf-viewer-workflow-filter-buttons" class="holaf-viewer-toggle-button-group">
-                    <button id="holaf-workflow-filter-internal" class="holaf-viewer-toggle-button">Internal</button>
-                    <button id="holaf-workflow-filter-external" class="holaf-viewer-toggle-button">External</button>
-                    <button id="holaf-workflow-filter-none" class="holaf-viewer-toggle-button">None</button>
+                <h4>Tags (AND logic)</h4>
+                <div id="holaf-viewer-tags-filter-container">
+                    <div id="holaf-viewer-active-tags" class="holaf-viewer-active-tags-container"></div>
+                    <input type="text" id="holaf-viewer-tag-input" list="holaf-viewer-tag-suggestions" placeholder="Add a tag..." class="holaf-viewer-search-bar">
+                    <datalist id="holaf-viewer-tag-suggestions"></datalist>
+                </div>
+            </div>
+            <div class="holaf-viewer-filter-group">
+                <h4>Metadata & Sidecars</h4>
+                <div id="holaf-viewer-bool-filters" class="holaf-viewer-button-grid">
+                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-workflow" data-filterkey="has_workflow">Workflow</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-prompt" data-filterkey="has_prompt">Prompt</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-edits" data-filterkey="has_edits">Edits</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-tags" data-filterkey="has_tags">Tags</button>
                 </div>
             </div>
             <div class="holaf-viewer-filter-group holaf-viewer-scrollable-section">
@@ -149,8 +182,6 @@ class ImageViewerUI {
         const pane = document.createElement('div');
         pane.id = 'holaf-viewer-center-pane';
         pane.className = 'holaf-viewer-pane';
-        // This pane now contains the containers for BOTH the gallery and the zoom view.
-        // Their visibility is controlled by other modules, not this UI module.
         pane.innerHTML = `
             <div id="holaf-viewer-toolbar"></div>
             <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">Loading images...</p></div>
@@ -166,8 +197,6 @@ class ImageViewerUI {
     _createRightColumn() {
         const col = document.createElement('div');
         col.id = 'holaf-viewer-right-column';
-        // This column will contain BOTH the info pane and the editor pane as siblings.
-        // Their respective modules will control their visibility.
         col.innerHTML = `
             <div id="holaf-viewer-right-pane" class="holaf-viewer-pane">
                 <h4>Image Information</h4>
@@ -178,60 +207,96 @@ class ImageViewerUI {
         `;
         return col;
     }
+    
+    _cacheElements() {
+        this.elements.searchFilename = this.elements.leftPane.querySelector('#holaf-viewer-search-filename');
+        this.elements.searchPrompt = this.elements.leftPane.querySelector('#holaf-viewer-search-prompt');
+        this.elements.searchWorkflow = this.elements.leftPane.querySelector('#holaf-viewer-search-workflow');
+        this.elements.dateStart = this.elements.leftPane.querySelector('#holaf-viewer-date-start');
+        this.elements.dateEnd = this.elements.leftPane.querySelector('#holaf-viewer-date-end');
+        this.elements.tagInput = this.elements.leftPane.querySelector('#holaf-viewer-tag-input');
+        this.elements.activeTagsContainer = this.elements.leftPane.querySelector('#holaf-viewer-active-tags');
+        this.elements.boolFiltersContainer = this.elements.leftPane.querySelector('#holaf-viewer-bool-filters');
+        
+        // Cache buttons instead of checkboxes
+        this.elements.boolFilterButtons = {
+            has_workflow: this.elements.leftPane.querySelector('#holaf-bool-filter-has-workflow'),
+            has_prompt: this.elements.leftPane.querySelector('#holaf-bool-filter-has-prompt'),
+            has_edits: this.elements.leftPane.querySelector('#holaf-bool-filter-has-edits'),
+            has_tags: this.elements.leftPane.querySelector('#holaf-bool-filter-has-tags'),
+        };
+
+        this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
+        this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
+        this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
+    }
 
     _setupEventListeners() {
         const viewer = this.callbacks.getViewer();
 
-        // --- Left Pane Listeners ---
-
-        // Find the new reset button in the Actions section
-        this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = (e) => {
+        this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = () => {
             this.callbacks.onResetFilters();
         };
 
-        const searchInputEl = this.elements.leftPane.querySelector('#holaf-viewer-search-input');
-        searchInputEl.oninput = () => {
-            this.callbacks.onFilterChange();
-        };
+        // Text search inputs
+        const onSearchInput = () => this.callbacks.onFilterChange();
+        this.elements.searchFilename.oninput = onSearchInput;
+        this.elements.searchPrompt.oninput = onSearchInput;
+        this.elements.searchWorkflow.oninput = onSearchInput;
+        
+        // Date inputs
+        const onDateChange = () => this.callbacks.onFilterChange();
+        this.elements.dateStart.onchange = onDateChange;
+        this.elements.dateEnd.onchange = onDateChange;
 
-        const createScopeClickHandler = (scopeKey) => () => {
-            const currentFilters = imageViewerState.getState().filters;
-            const newScopeState = { [scopeKey]: !currentFilters[scopeKey] };
+        // Boolean filters (now using click on buttons)
+        this.elements.boolFiltersContainer.onclick = (e) => {
+            if (e.target.matches('button')) {
+                const key = e.target.dataset.filterkey;
+                const currentFilters = imageViewerState.getState().filters;
 
-            // Save the setting, which also updates the central state
-            viewer.saveSettings(newScopeState);
+                // Flip the state: true becomes null, anything else becomes true
+                const currentValue = currentFilters.bool_filters[key];
+                const newValue = currentValue === true ? null : true;
+                
+                const newBoolFilters = { ...currentFilters.bool_filters, [key]: newValue };
+                imageViewerState.setState({ filters: { ...currentFilters, bool_filters: newBoolFilters } });
+                
 
-            // Immediately update the button's visual state for instant feedback
-            viewer._updateSearchScopeButtonStates();
-
-            // Only trigger a full filter reload if there is text in the search bar
-            if (searchInputEl.value.trim() !== "") {
                 this.callbacks.onFilterChange();
             }
         };
-        this.elements.leftPane.querySelector('#holaf-search-scope-filename').onclick = createScopeClickHandler('search_scope_name');
-        this.elements.leftPane.querySelector('#holaf-search-scope-prompt').onclick = createScopeClickHandler('search_scope_prompt');
-        this.elements.leftPane.querySelector('#holaf-search-scope-workflow').onclick = createScopeClickHandler('search_scope_workflow');
 
-        this.elements.leftPane.querySelector('#holaf-workflow-filter-internal').onclick = () => {
-            const currentFilters = imageViewerState.getState().filters;
-            viewer.saveSettings({ workflow_filter_internal: !currentFilters.workflow_filter_internal });
-            viewer._updateWorkflowButtonStates();
-            this.callbacks.onFilterChange();
-        };
-        this.elements.leftPane.querySelector('#holaf-workflow-filter-external').onclick = () => {
-            const currentFilters = imageViewerState.getState().filters;
-            viewer.saveSettings({ workflow_filter_external: !currentFilters.workflow_filter_external });
-            viewer._updateWorkflowButtonStates();
-            this.callbacks.onFilterChange();
-        };
-        this.elements.leftPane.querySelector('#holaf-workflow-filter-none').onclick = () => {
-            const currentFilters = imageViewerState.getState().filters;
-            viewer.saveSettings({ workflow_filter_none: !currentFilters.workflow_filter_none });
-            viewer._updateWorkflowButtonStates();
-            this.callbacks.onFilterChange();
+        // Tag filter input
+        this.elements.tagInput.onkeydown = (e) => {
+            if (e.key === 'Enter' && this.elements.tagInput.value.trim() !== '') {
+                e.preventDefault();
+                const newTag = this.elements.tagInput.value.trim();
+                const currentFilters = imageViewerState.getState().filters;
+                const currentTags = currentFilters.tags_filter || [];
+
+                if (!currentTags.includes(newTag)) {
+                    const newTags = [...currentTags, newTag];
+                    imageViewerState.setState({ filters: { ...currentFilters, tags_filter: newTags } });
+                    this.callbacks.onFilterChange();
+                }
+                this.elements.tagInput.value = '';
+            }
         };
 
+        // Remove tags by clicking them
+        this.elements.activeTagsContainer.onclick = (e) => {
+            if (e.target.matches('.holaf-viewer-tag-remove')) {
+                const tagToRemove = e.target.parentElement.dataset.tag;
+                const currentFilters = imageViewerState.getState().filters;
+                const newTags = (currentFilters.tags_filter || []).filter(t => t !== tagToRemove);
+                
+                imageViewerState.setState({ filters: { ...currentFilters, tags_filter: newTags } });
+                this.callbacks.onFilterChange();
+            }
+        };
+
+        // Folder filters
         this.elements.leftPane.querySelector('#holaf-viewer-folders-select-all').onclick = (e) => {
             e.preventDefault();
             const { locked_folders } = imageViewerState.getState().filters;
@@ -266,42 +331,30 @@ class ImageViewerUI {
             this.callbacks.onFilterChange();
         };
 
-        this.elements.leftPane.querySelector('#holaf-viewer-date-start').onchange = (e) => {
-            this.callbacks.onFilterChange();
-        };
-        this.elements.leftPane.querySelector('#holaf-viewer-date-end').onchange = (e) => {
-            this.callbacks.onFilterChange();
-        };
-
-        // --- Display Options ---
-        this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
+        // Display Options
         this.elements.thumbFitToggle.onchange = (e) => {
             const newFit = e.target.checked ? 'contain' : 'cover';
             viewer.saveSettings({ thumbnail_fit: newFit });
             viewer._applyThumbnailFit();
         };
 
-        this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
-        this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
-
         // `oninput` is for real-time visual updates *during* sliding.
         this.elements.thumbSizeSlider.oninput = (e) => {
+            this.isDraggingSlider = true;
             const newSize = parseInt(e.target.value);
-            // Update the text label instantly.
             this.elements.thumbSizeValue.textContent = `${newSize}px`;
-            // Call the coordinator's function, passing the live size value directly.
-            // This bypasses the central state and forces an immediate re-render.
             viewer._applyThumbnailSize(newSize);
         };
 
         // `onchange` fires only when the user releases the slider.
         // This is the correct time to save the final setting.
         this.elements.thumbSizeSlider.onchange = (e) => {
+            this.isDraggingSlider = false;
             const newSize = parseInt(e.target.value);
             viewer.saveSettings({ thumbnail_size: newSize });
         };
-
-        // --- Center Pane (Zoom View) Listeners ---
+        
+        // Center Pane (Zoom View) Listeners
         const zoomView = this.elements.centerPane.querySelector('#holaf-viewer-zoom-view');
         const zoomImage = zoomView.querySelector('img');
         this.elements.centerPane.querySelector('.holaf-viewer-zoom-close').onclick = () => viewer._hideZoomedView();
@@ -311,13 +364,23 @@ class ImageViewerUI {
 
         Navigation.setupZoomAndPan(viewer.zoomViewState, zoomView, zoomImage);
     }
+    
+    _renderActiveTags(tags) {
+        if (!this.elements.activeTagsContainer) return;
+        this.elements.activeTagsContainer.innerHTML = '';
+        tags.forEach(tag => {
+            const tagEl = document.createElement('div');
+            tagEl.className = 'holaf-viewer-active-tag';
+            tagEl.dataset.tag = tag;
+            tagEl.innerHTML = `
+                <span>${tag}</span>
+                <button class="holaf-viewer-tag-remove" title="Remove tag">×</button>
+            `;
+            this.elements.activeTagsContainer.appendChild(tagEl);
+        });
+    }
 }
 
-/**
- * Creates the theme selection menu.
- * @param {function(string): void} setThemeCallback - The function to call when a theme is selected.
- * @returns {HTMLUListElement} The theme menu element.
- */
 export function createThemeMenu(setThemeCallback) {
     const menu = document.createElement("ul");
     menu.className = "holaf-theme-menu";
@@ -334,6 +397,4 @@ export function createThemeMenu(setThemeCallback) {
     return menu;
 }
 
-
-// Export a single instance (Singleton) for the entire application
 export const UI = new ImageViewerUI();

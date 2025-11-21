@@ -3,13 +3,16 @@
  * Date: 2025-05-23 (Final)
  *
  * MODIFIED: Added delayed fitTerminal on initial socket open for better initial sizing.
- * MODIFIED: Unified theme management using HOLAF_THEMES from holaf_panel_manager.
+ * MODIFIED: Unified theme management using HOLAF_THEMES from holaf_themes.js.
  * MODIFIED: Added fullscreen state management (double-click on header).
  * CORRECTION: Removed dynamic menu registration. Added object to `app` for static menu access.
+ * CORRECTION: Re-integrated critical CSS for terminal container layout.
  * === End Documentation ===
  */
 import { app } from "../../../scripts/app.js";
-import { HolafPanelManager, HOLAF_THEMES } from "./holaf_panel_manager.js";
+import { HolafPanelManager } from "./holaf_panel_manager.js";
+// CORRECTED IMPORT: No longer depends on panel_manager for themes.
+import { HOLAF_THEMES } from "./holaf_themes.js";
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -72,7 +75,7 @@ const holafTerminal = {
     scriptsLoaded: false,
     settings: {
         fontSize: 14,
-        theme: HOLAF_THEMES[0].name, // Default to the first theme in the shared list
+        theme: HOLAF_THEMES[0].name,
         panel_x: null,
         panel_y: null,
         panel_width: 600,
@@ -122,7 +125,7 @@ const holafTerminal = {
         themeButton.className = "holaf-header-button";
         themeButton.title = "Change Theme";
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
-        const themeMenu = this.createThemeMenu(); // Uses HOLAF_THEMES
+        const themeMenu = this.createThemeMenu();
         themeButton.onclick = (e) => {
             e.stopPropagation();
             themeMenu.style.display = themeMenu.style.display === 'block' ? 'none' : 'block';
@@ -175,6 +178,7 @@ const holafTerminal = {
             return;
         }
 
+        // --- CORRECTION : Ce bloc CSS est essentiel pour le redimensionnement ---
         const styleId = "holaf-terminal-specific-styles";
         if (!document.getElementById(styleId)) {
             const style = document.createElement("style");
@@ -395,7 +399,7 @@ const holafTerminal = {
             this.newPasswordInput.focus();
         }
     },
-    checkServerStatus: async function () {
+    async checkServerStatus() {
         this.showView('loading');
         try {
             const r = await fetch("/holaf/utilities/settings");
@@ -419,7 +423,7 @@ const holafTerminal = {
             if (this.loadingView) this.loadingView.textContent = "Error: Could not contact server.";
         }
     },
-    setPassword: async function () {
+    async setPassword() {
         if (!this.newPasswordInput || !this.confirmPasswordInput || !this.setupStatusMessage) return;
         const newPass = this.newPasswordInput.value; const confirmPass = this.confirmPasswordInput.value;
         if (!newPass || newPass.length < 4) { this.setupStatusMessage.textContent = "Password must be at least 4 characters long."; return; }
@@ -440,7 +444,7 @@ const holafTerminal = {
             this.setupStatusMessage.textContent = `Error: Could not contact server.`; console.error("[Holaf Terminal] Error setting password:", e);
         }
     },
-    authenticateAndConnect: async function () {
+    async authenticateAndConnect() {
         if (!this.passwordInput || !this.loginStatusMessage) return;
         const password = this.passwordInput.value;
         if (!password) { this.loginStatusMessage.textContent = "Error: Password cannot be empty."; return; }
@@ -460,7 +464,7 @@ const holafTerminal = {
         }
     },
 
-    connectWebSocket: async function (sessionToken) {
+    async connectWebSocket(sessionToken) {
         if (!sessionToken) { if (this.loginStatusMessage) this.loginStatusMessage.textContent = "Error: No session token."; this.showView('login'); return; }
 
         const scriptsReady = await this.ensureScriptsLoaded();
@@ -524,12 +528,10 @@ const holafTerminal = {
             this.showView('terminal');
             requestAnimationFrame(() => {
                 if (this.terminal) {
-                    console.log("[Holaf Terminal] Initial fit on socket open (RAF).");
                     this.fitTerminal();
                     this.terminal.focus();
                     setTimeout(() => {
                         if (this.terminal && this.panelElements.panelEl.style.display === 'flex') {
-                            console.log("[Holaf Terminal] Delayed fit after socket open.");
                             this.fitTerminal();
                         }
                     }, 100);
@@ -592,7 +594,6 @@ const holafTerminal = {
                 }
             });
             this.panelElements.panelEl.classList.add(themeConfig.className);
-            console.log(`[Holaf Terminal] Theme set to: ${themeName} (Class: ${themeConfig.className})`);
         }
 
         if (doSave) this.saveSettings({ theme: themeName });

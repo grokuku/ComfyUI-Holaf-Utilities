@@ -13,19 +13,23 @@ class ImageViewerState {
             activeImage: null,
             currentNavIndex: -1,
 
-            // État des filtres (calqué sur l'objet 'settings' pour la persistance)
+            // État des filtres aligné sur la nouvelle API backend
             filters: {
                 folder_filters: [],
                 format_filters: [],
-                search_text: '',
                 startDate: '',
                 endDate: '',
-                search_scope_name: true,
-                search_scope_prompt: true,
-                search_scope_workflow: true,
-                workflow_filter_internal: true,
-                workflow_filter_external: true,
- locked_folders: [],
+                filename_search: '',
+                prompt_search: '',
+                workflow_search: '',
+                tags_filter: [],
+                bool_filters: {
+                    has_workflow: null, // null: indifférent, true: oui, false: non
+                    has_prompt: null,
+                    has_edits: null,
+                    has_tags: null,
+                },
+                locked_folders: [], // État de l'UI, non envoyé au backend
             },
 
             // État de l'interface et des préférences
@@ -131,7 +135,10 @@ class ImageViewerState {
             
             // Création de nouvelles copies pour les objets et tableaux imbriqués
             images: [...state.images],
-            filters: { ...state.filters },
+            filters: { 
+                ...state.filters,
+                bool_filters: { ...state.filters.bool_filters } // Copie profonde pour l'objet imbriqué
+            },
             ui: { ...state.ui },
             status: { ...state.status },
             exporting: {

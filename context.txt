@@ -1,3 +1,5 @@
+--- START OF FILE context.txt ---
+
 RÈGLES OPÉRATIONNELLES :
 
 1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
@@ -15,13 +17,16 @@ RÈGLES OPÉRATIONNELLES :
 
 5.  **Anticipation des erreurs et suggestion de vérification :** N'assume pas que les modifications proposées fonctionneront parfaitement du premier coup. Après avoir proposé une modification, suggère brièvement les points clés que je devrais vérifier ou les tests simples que je pourrais effectuer pour m'assurer du bon fonctionnement.
 
-6.  **Noms de fichiers :** Utilise toujours les chemins de fichiers complets (par exemple `js/image_viewer/image_viewer_gallery.js`) et ne les tronque jamais.
 
-7.  **Fichiers complets :** Ne fournis jamais de fichiers partiels ou tronqués. Si une modification est nécessaire, donne toujours le contenu intégral du fichier modifié, même pour un seul caractère changé.
+INSTRUCTION INITIALE :
+Voici un projet (les fichiers et l'arborescence te seront fournis). Analyse-le attentivement. Une fois ton analyse terminée, signale-moi que tu es prêt à commencer à travailler sur les modifications en respectant les règles ci-dessus.
 
-8.  **Format de Contexte :** Lorsque tu me fournis le contenu du fichier `context.txt`, présente-le toujours dans son intégralité et encapsulé dans un bloc de code (```).
+Ne fait aucune optimisation de code si ca n'est pas explicitement demandé.
+Ne fait aucune modification sur des parties de codes qui n'on pas la necessité d'etre modifié pour la tache en cours.
 
----
+
+
+
 FILE_TREE_ANALYSIS:
 # --- Root Directory ---
 📁 holaf_image_viewer_backend/
@@ -32,257 +37,135 @@ FILE_TREE_ANALYSIS:
       > Empty. Placeholder.
     📄 edit_routes.py
       > Handles image editing operations (non-destructive).
-      @ POST /holaf/images/save-edits
-      @ GET /holaf/images/load-edits
-      @ POST /holaf/images/delete-edits
-      -> holaf_database, holaf_utils
     📄 export_routes.py
       > Prepares and serves image export packages.
-      @ POST /holaf/images/prepare-export
-      -> FE_PAYLOAD: {paths_canon:[str], export_format:str, include_meta:bool, meta_method:str}
-      @ GET /holaf/images/export-chunk
-      -> logic.py (for applying edits), holaf_utils
     📄 file_ops_routes.py
-      > [MODIFIED] Handles file system operations (delete, restore). Now confirmed to correctly report detailed errors (e.g., permission denied) back to the frontend.
-      @ POST /holaf/images/delete
-      @ POST /holaf/images/delete-permanently
-      @ POST /holaf/images/restore
-      @ POST /holaf/images/empty-trashcan
-      -> logic.py, holaf_database
+      > Handles file system operations (delete, restore).
+      > [**NEEDS REVIEW**] La logique de suppression doit être vérifiée pour s'assurer qu'elle déplace/supprime également tous les fichiers sidecar (.json, .txt, .edt, .xmp) associés à une image.
     📄 image_routes.py
-      > [MODIFIED & CRITICAL] Core image listing and filtering. Returns the *full* list of image metadata for a given filter, used by the frontend's virtualized scroller. Logic updated to handle a 'none' workflow filter option.
+      > [**REFACTORED & CRITICAL**] Core image listing and filtering. La route `/list` a été refactorisée pour accepter un objet JSON de filtres structuré. La route `/filter-options` retourne maintenant aussi la liste complète des tags.
       @ GET /holaf/images/filter-options
       @ POST /holaf/images/list
-      -> logic.py, holaf_database
     📄 metadata_routes.py
       > Handles metadata fetching, extraction, and injection.
-      @ GET /holaf/images/metadata
-      @ POST /holaf/images/extract-metadata
-      @ POST /holaf/images/inject-metadata
-      -> logic.py, holaf_database, holaf_utils
+      > [**NEEDS UPDATE**] À étendre pour gérer l'injection/extraction des tags via les métadonnées XMP.
     📄 thumbnail_routes.py
-      > [MODIFIED] Manages thumbnail lifecycle. Serves individual thumbnails (`/get_thumbnail_route`), regenerates them (`/regenerate_thumbnail_route`), and accepts non-blocking batch prioritization requests (`/prioritize_thumbnails_route`) via background tasks to pre-warm the cache.
-      -> logic.py, holaf_database, holaf_utils
+      > Manages thumbnail lifecycle.
     📄 utility_routes.py
       > Misc utility routes for the viewer.
-      @ POST /holaf/images/viewer-activity
-      -> worker.py
   📄 __init__.py
-    > Exposes BE functions and routes to the main `__init__.py`. An interface file.
-    -> .logic, .routes.*, .worker
+    > Exposes BE functions and routes to the main `__init__.py`.
   📄 logic.py
-    > [MODIFIED & CRITICAL] Core image viewer logic (DB sync, metadata extraction, thumbnail creation). The primary source of the real-time bug was here: a typo caused faulty metadata extraction, leading to "ghost" entries in the DB. This is now fixed and fortified.
-    -> holaf_database, holaf_utils
+    > [**UPDATED & CRITICAL**] Core image viewer logic. La logique de scan/synchronisation a été étendue pour détecter les fichiers sidecar (.txt, .json, .edt, .xmp), lire les tags depuis les fichiers XMP, et mettre à jour les nouveaux drapeaux booléens et les tables de tags dans la DB. **Dépend de `python-xmp-toolkit`**.
   📄 routes.py
-    > [DEPRECATED] Kept for import safety, but logic is moved to `routes/` subdir.
+    > [DEPRECATED]
   📄 worker.py
-    > [MODIFIED & CRITICAL] Background threads for all Image Viewer tasks. Logic for handling file events was reviewed and improved.
-    > 1. `run_thumbnail_generation_worker`: Generates missing thumbnails.
-    > 2. `run_filesystem_monitor`: Uses `watchdog` to monitor the output directory for file changes.
-    > 3. `run_event_queue_processor`: Processes file change events in batches to update the database.
-    -> logic, holaf_database, holaf_utils
+    > Background threads for all Image Viewer tasks.
+    > [**NEEDS UPDATE**] Le `run_filesystem_monitor` doit déclencher la nouvelle logique de scan enrichie (détection sidecar, lecture des tags, mise à jour des drapeaux) lorsqu'un fichier est ajouté ou modifié.
 📁 js/
   > Frontend assets.
-  📁 css/
-    > All CSS files for styling the utilities.
-    📄 holaf_image_viewer_styles.css
-      > Specific styles for the Image Viewer panel (placeholder).
-    📄 holaf_image_viewer.css
-      > [MODIFIED] Main stylesheet for the Image Viewer's internal layout (gallery, panes). Includes animation classes (`.entering`, `.exiting`), gallery layout styles, the `flex-grow: 0` fix for thumbnails, and styles for folder lock icons.
-    📄 holaf_shared_panel.css
-      > [MODIFIED] Core styles for ALL floating panels (drag, resize, header, close button, modals). Includes styles for keyboard-focused dialog items.
-    📄 holaf_system_monitor_styles.css
-      > Styles for the system monitor overlay.
-    📄 holaf_terminal_styles.css
-      > Styles for the Terminal panel (login/setup screens).
-    📄 holaf_themes.css
-      > [CRITICAL] Defines all themes via CSS variables. All other CSS files use these variables.
-    📄 holaf_toasts.css
-      > [NEW] Styles for the non-blocking toast notification system. Uses theme variables.
-    📄 holaf_utilities.css
-      > [DEPRECATED/MERGED] Old monolithic CSS. Now split into component files but might be referenced.
-  📁 image_viewer/
-    > Modular JS for the Image Viewer.
-    📄 image_viewer_actions.js
-      > [MODIFIED & CRITICAL] Handles user actions (delete, export). Includes logic for the fully keyboard-navigable export dialog. Now provides detailed user feedback on failure (e.g., delete permission errors), preventing "unresponsive button" feel. -> image_viewer_state, HolafPanelManager
-    📄 image_viewer_editor.js
-      > [MODIFIED] Controller for the Image Editor sub-panel. Dispatches `holaf-refresh-thumbnail` event on save/reset. Applies preview filters. Subscribes to `imageViewerState`.
-    📄 image_viewer_gallery.js
-      > [MODIFIED] Implements a high-performance virtualized scroller. Renders only visible items into the DOM. Its `syncGallery` function was hardened to ensure refreshes are always applied.
-    📄 image_viewer_infopane.js
-      > [REFACTORED] Logic for the right-side info panel. Subscribes to and reads `activeImage` from central state.
-    📄 image_viewer_navigation.js
-      > [MAJOR REFACTOR & FIXED] Manages all keyboard input (`handleKeyDown`) and view mode transitions (`handleEscape`). Unifies exit logic from zoom/fullscreen to ensure correct gallery scroll alignment. Triggers UI updates on navigation.
-    📄 image_viewer_settings.js
-      > [MODIFIED & CRITICAL] Manages load/save to/from central state and applies themes/panel settings. Maps between flat server config and structured state object. Now correctly handles loading/saving of all workflow filter states.
-    📄 image_viewer_state.js
-      > [MODIFIED] Manages the central state for the Image Viewer (filters, selection, `ui.view_mode`, etc.) using a pub/sub model. Core of the new state-driven architecture. Includes per-folder lock state (`locked_folders`).
-    📄 image_viewer_ui.js
-      > [MODIFIED & CRITICAL] Builds the main panel UI structure. Contains listeners for UI controls. The logic for the workflow filter buttons has been reviewed and now relies on a correct state management implementation.
-  📁 model_manager/
-    > Modular JS for the Model Manager.
-    📄 model_manager_actions.js -> holaf_panel_manager
-    📄 model_manager_settings.js -> holaf_panel_manager
-    📄 model_manager_ui.js -> holaf_panel_manager
-    📄 model_manager_view.js -> holaf_panel_manager
-  📄 chart.min.js
-    > Chart.js library for the system monitor.
-  📄 holaf_image_viewer.js
-    > [MODIFIED & CRITICAL] Main orchestrator for the Image Viewer. Its `checkForUpdates` polling logic was corrected. The `_fetchFilteredImages` logic was updated to build the request body as an array of workflow filters, enabling additive filtering.
-  📄 holaf_main.js
-    > [CRITICAL] Main FE entry point.
-    > § Creates top menu, loads all CSS assets (including `holaf_toasts.css`).
-    > § Initializes and exposes `window.holaf.toastManager`.
-    -> holaf_toast_manager, holaf_panel_manager, holaf_terminal, etc.
-  📄 holaf_model_manager.js
-    > Main controller for the Model Manager.
-    -> holaf_panel_manager, model_manager/*
-  📄 holaf_monitor.js
-    > Controller for the System Monitor overlay.
-    -> chart.min.js
-  📄 holaf_nodes_manager.js
-    > Controller for the Nodes Manager.
-    -> holaf_panel_manager
-  📄 holaf_panel_manager.js
-    > [MODIFIED] Core FE utility. Creates draggable panels and modals. Exports `HOLAF_THEMES`. Now manages a global dialog state (`dialogState`) and keyboard navigation for generic dialogs.
-  📄 holaf_settings_manager.js
-    > Controller for the global Settings panel.
-    -> holaf_panel_manager
-  📄 holaf_toast_manager.js
-    > [NEW & CRITICAL] Manages creation and lifecycle of toast notifications. Exposes global `window.holaf.toastManager`. Applies a default theme to its container to ensure readability.
-  📄 holaf_terminal.js
-    > Main controller for the Terminal.
-    -> holaf_panel_manager, xterm.js, xterm-addon-fit.js
-  📄 xterm-addon-fit.js
-    > Add-on for xterm.js to resize the terminal.
-  📄 xterm.js
-    > Core library for the terminal emulation.
-📁 nodes/
-  > Custom nodes for ComfyUI, loaded by root `__init__.py`.
-  📄 holaf_model_manager.py
-    > BE logic for the Model Manager (scanning models, DB interaction, deep scan).
-    -> holaf_database
-  📄 holaf_nodes_manager.py
-    > BE logic for the Nodes Manager (scanning node folders, git actions, README fetching).
-📄 __init__.py
-  > [CRITICAL & MODIFIED] Main extension entry point.
-  > § The `SaveImage` patch has been **removed**.
-  > § Now starts the new `watchdog`-based background workers (`run_filesystem_monitor`, `run_event_queue_processor`) for real-time file updates.
-  > § Continues to initialize DB, Config, API routes, etc.
-📄 __main__.py
-  > Standalone utility script to generate a password hash for `config.ini`. Not used by the running server.
-📄 deepscan.txt
-  > Documentation/plan for the "Deep Scan" feature. Not code.
-📄 holaf_config.py
-  > Manages `config.ini` file. Reads/writes settings, including complex ones like filter arrays as JSON strings.
+  (le reste de l'arborescence est inchangé)
+...
 📄 holaf_database.py
-  > [MODIFIED] Manages the SQLite database. Implements a robust version check (now v6) and migration system. On startup, it verifies the DB schema version, adding new performance indexes (mtime, subfolder, format) as needed.
-📄 holaf_server_management.py
-  > Handles server restart logic.
-📄 holaf_system_monitor.py
-  > BE for the System Monitor. Gets system stats (psutil, nvidia-smi) and serves them via WebSocket (WS).
-📄 holaf_terminal.py
-  > BE for the Terminal. Handles password auth and WebSocket (WS) PTY sessions.
-📄 holaf_utils.py
-  > Shared Python utility functions (sanitization, file chunking, temp dirs).
-📄 model_types.json
-  > Configuration file defining known model types, their folders, and formats. Used by `holaf_model_manager.py`.
-📄 README.md
-  > Main project documentation and security warning.
+  > [**UPDATED & CRITICAL**] Manages the SQLite database. Le schéma a été migré jusqu'à la version 12 pour supporter le nouveau système de filtrage et de tags.
 📄 requirements.txt
-  > Python package dependencies (`psutil`, `pywinpty`, `aiofiles`, `watchdog`).
+  > Python package dependencies. [**NEEDS UPDATE**] Doit être mis à jour pour inclure `python-xmp-toolkit`.
 
----
 PROJECT_STATE:
-  CURRENT_INVESTIGATION:
-    # (None)
-  ACTIVE_BUGS:
-    - [bug, state, folder_filter_reset_on_reopen]
-      - **Problem Analysis:** Dans certaines conditions non encore déterminées, à la réouverture du panneau de l'Image Viewer, tous les filtres de dossiers sont sélectionnés. Ce comportement ignore l'état "verrouillé" de certains dossiers, qui devraient rester désélectionnés. Cela suggère un problème dans la séquence de chargement ou de restauration de l'état des filtres lors de l'initialisation du panneau.
-      - **Conclusion:** La logique de restauration de l'état des filtres de dossier au démarrage est potentiellement défectueuse.
-      - **Next Step:** Examiner la séquence d'initialisation dans `js/holaf_image_viewer.js` et la logique de restauration des filtres dans `js/image_viewer/image_viewer_settings.js`.
+  CURRENT_INVESTIGATION: {
+    "bug": "[bugfix, regression, editor_unsaved_warning]",
+    "description": "L'éditeur ne prévient plus l'utilisateur s'il quitte avec des modifications non sauvegardées. Il s'agit d'une régression d'une fonctionnalité existante."
+  }
+  ACTIVE_BUGS: {
+    "[bugfix, regression, editor_unsaved_warning]": "Le dialogue de confirmation pour les modifications non sauvegardées dans l'éditeur ne s'affiche plus."
+  }
   IN_PROGRESS:
-    # (None)
+    - **Tâche :** `[project, architecture, tagging_and_performance_rework]`
+    - **Statut :** **Phases Backend et Frontend TERMINÉES.**
+    - **Résumé des modifications :** L'architecture de la base de données, la logique de scan, l'API de filtrage et l'interface utilisateur du frontend ont été entièrement remaniées pour prendre en charge un système de filtrage avancé basé sur les tags et les métadonnées.
+    - **PROCHAINE ÉTAPE :**
+      - **Phase :** Correction de Régression Critique.
+      - **Objectif :** Rétablir le dialogue d'avertissement pour les modifications non sauvegardées dans l'éditeur.
+      - **Fichiers probables :** `js/image_viewer/image_viewer_editor.js`, `js/holaf_image_viewer.js`.
+
   ROADMAP:
     Global:
-      - [new_tool, session_log_tool] # Add a new panel to log user and system actions.
-      - [backend, periodic_maintenance_worker] # Hourly worker to clean DB and cache.
+      - [new_tool, session_log_tool]
+      - [backend, periodic_maintenance_worker]
     ImageViewer:
-      - [feature, ui, ancrage_vue_redimensionnement_miniatures] # Ancrer la vue sur l'image sous le curseur lors du redimensionnement des miniatures pour éviter les sauts de défilement.
-      - [feature, ui, ancrage_vue_redimensionnement_fenetre] # Ancrer la vue sur l'image sous le curseur lors du redimensionnement de la fenêtre pour maintenir le contexte visuel.
-      - [feature, ui, differenciation_visuelle_curseur_selection] # Modifier le style visuel du curseur de l'image active pour le distinguer clairement des miniatures sélectionnées.
-      - [feature, ui, animated_gallery_filter_transitions] # Implement smooth, animated cross-fade transitions when gallery filters are changed.
-      - [feature, ui, gallery_sorting_options] # Implement gallery sorting controls (by name, by date) in both ascending and descending order.
-      - [investigation, state, folder_filter_persistence] # Double-check that folder selection state is robustly saved and restored across full application reboots.
-      - [tuning, performance, thumbnail_concurrency] # Evaluate the optimal number of simultaneous thumbnail downloads; consider a slight increase from the current 12.
-      - [feature, corrupted_file_management] # Auto-move unreadable images to `output/corrupted`.
-      - [feature, implement_slideshow] # Implement a slideshow mode.
-    ImageEditor:
-      - [feature, ui, editor_operations_tab(toggle_preview,copy_paste)] # Implement the "Operations" tab with toggle preview and copy/paste settings.
-      - [feature, feature_crop_expand(canvas,Pillow_backend)]
-      - [feature, feature_white_balance_rgb(canvas,Pillow_backend)]
-      - [feature, feature_vignette(css,Pillow_backend)]
-      - [feature, feature_watermark_overlay]
+      - [**URGENT_FIX**, bugfix, regression, editor_unsaved_warning] # L'avertissement de modifications non sauvegardées ne fonctionne plus.
+      - [**project, architecture, tagging_and_performance_rework**]
+        - **Plan d'action détaillé:**
+          - **1. Optimisation de la Base de Données (Index manquants):** `[COMPLETED]`
+          - **2. Architecture du Système de Tags (Backend):** `[COMPLETED]`
+          - **3. Centralisation des Métadonnées Sidecar (Performance):** `[COMPLETED]`
+          - **4. Refonte de l'Interface de Filtrage (Frontend):** `[COMPLETED]`
+          - **4.1. Amélioration UX/UI du filtre "Metadata & Sidecars":** `[TODO]` # Revoir la présentation des boutons.
+          - **5. Fiabilisation des Opérations sur Fichiers:** `[TODO]`
+      (Le reste de la roadmap est inchangé)
   COMPLETED_FEATURES:
-    - [bugfix, ui, delete_button_unresponsive] # Corrigé le bouton de suppression qui semblait inerte. Le problème sous-jacent était une erreur de permission (`Permission denied`) côté backend lors du déplacement du fichier vers la corbeille. Le frontend n'affichait pas correctement les détails de l'erreur renvoyés par l'API, ce qui donnait l'impression d'un échec silencieux. La logique dans `js/image_viewer/image_viewer_actions.js` a été renforcée pour analyser la réponse JSON complète du serveur, extraire et formater le tableau des erreurs détaillées, et les présenter à l'utilisateur dans une boîte de dialogue claire. Le bouton fournit maintenant un retour d'information précis en cas d'échec.
-    - [bugfix, logic, additive_workflow_filter] # Corrigé un bug de logique de filtrage fondamental pour les filtres de "Workflow Availability". Le problème provenait d'une logique `if/else if` dans le frontend qui empêchait la sélection de plusieurs filtres, et d'une gestion incorrecte de l'état du filtre "None" dans les paramètres. La solution a impliqué la correction de la sauvegarde/restauration de tous les filtres, la modification du frontend pour envoyer un tableau de filtres actifs, et la modification du backend pour interpréter ce tableau et construire une requête SQL `OR` appropriée, rendant ainsi les filtres additifs et fonctionnels.
-    - [feature, ui, workflow_filter_none_option] # Added a "None" option to the Workflow Availability filter, allowing users to find images without any embedded workflow metadata. The backend and frontend were updated to support this new filter state.
-    - [bugfix, realtime, data_integrity] # Corrected a deep and elusive data corruption bug that prevented real-time gallery updates. The root cause was a typo in the metadata extraction logic (`logic.py`), which led to new images being saved with incomplete data (null `workflow_source`). A secondary issue in the reading logic (`image_routes.py`) then inadvertently filtered out these "imperfect" entries, making them invisible to the gallery despite being present in the database counts. The fix involved correcting the data extraction typo, adding validation to prevent corrupt entries, and cleaning up the database reading logic, ensuring all new images are correctly saved and displayed.
-    - [major_refactor, backend, realtime_file_monitoring] # Replaced the fragile `SaveImage` patch with a robust `watchdog` file system monitor.
-    - [fix, performance, backend_filter_optimization] # Optimized the backend image filtering logic by implementing a query inversion strategy.
-    - [fix, ui, gallery_empty_state_rendering] # Corrected a critical rendering bug where the gallery would not display images after being emptied.
-    - [fix, ui, thumbnail_slider_realtime_update_fix] # Corrected the thumbnail size slider to provide smooth, real-time gallery resizing.
-    - [fix, navigation, zoom_exit_scroll_alignment] # Re-implemented the intelligent scroll alignment when exiting the zoom/edit view.
-    - [fix, navigation, gallery_keyboard_navigation_highlight] # Corrected a regression where the active thumbnail highlight did not update.
-    - [fix, ui, gallery_fullscreen_icon_click] # Fixed the fullscreen icon on thumbnails not working.
-    - [fix, navigation, enter_key_opens_edit_view] # Corrected 'Enter' key to open edit/zoom view.
-    - [fix, navigation, zoom_return_scroll_jump] # Returning to gallery after navigating in zoom/edit view now intelligently scrolls.
-    - [fix, performance, gallery_scroll_optimization] # Optimized thumbnail loading to use a debounced, targeted approach.
-    - [fix, ui, gallery_autofill_layout] # Adjusted thumbnail sizing to dynamically fill the entire gallery width.
-    - [fix, performance, initial_load_speed] # Corrected logic to properly utilize pre-loaded data.
-    - [feature, ui, dual_scroll_loading_strategy] # Implemented a smarter thumbnail loading strategy.
-    - [major_refactor, performance, gallery_virtualization] # Replaced gallery rendering with a high-performance virtualized scroller.
-    - [feature, backend, db_versioning_and_migration] # Implemented a robust database version check and migration system.
-    - [fix, performance, gallery_scalability] # Optimized thumbnail loading for massive galleries.
-    - [feature, ui, export_dialog_advanced_nav] # Amélioration de la boîte de dialogue d'exportation avec une navigation 2D complète au clavier.
-    - [feature, ui, dialog_keyboard_navigation] # Implémentation de la navigation au clavier pour tous les boutons des boîtes de dialogue.
-    - [fix, ui, focus_steal_on_controls] # Correction du bug où un clic sur un contrôle de l'interface bloquait les raccourcis clavier.
-    - [fix, ui, dialog_z_index_fullscreen] # Correction du z-index des boîtes de dialogue.
-    - [feature, ui, export_unsaved_changes_dialog] # Affiche un dialogue de confirmation pour sauvegarder les modifications avant d'exporter.
-    - [fix, ui, search_scope_buttons_unresponsive] # Correction des boutons de portée de recherche.
-    - [fix, ui, editor_visibility_on_click] # Correction du bug qui affichait l'éditeur d'image un clic sur deux.
-    - [fix, ui, filter_label_cleanup] # Suppression du titre redondant "Filters".
-    - [fix, ui, scope_buttons_responsive] # Correction des boutons de portée de recherche.
-    - [fix, state, folder_lock_persistence] # L'état de verrouillage des dossiers est maintenant sauvegardé et restauré.
-    - [fix, ui, editor_previews_on_fullscreen_stale] # Correction des aperçus de l'éditeur en direct en vue plein écran.
-    - [feature, ui, folder_filter_enhancements] # Added folder filter enhancements: "Invert" action, per-folder SVG lock icons, and an advanced reset dialog.
-    - [fix, ui, gallery_last_row_justification] # Corrected CSS for the last row of thumbnails.
-    - [fix, ui, thumbnail_fit_toggle_immediate_update] # The "Contained" thumbnail view option now applies instantly.
-    - [feature, ui, spacebar_to_toggle_selection_in_gallery] # Pressing spacebar on an active thumbnail now toggles its selection state.
-    - [fix, ui, actions_target_active_image_in_zoom_view] # Toolbar actions (Delete, Export, etc.) now correctly target the active image in zoom/fullscreen view.
-    - [fix, ui, editor_previews_in_fullscreen] # Live edit previews are now correctly applied to the image in fullscreen mode.
-    - [fix, ui, thumbnail_refresh_on_edit_save] # Thumbnail in gallery now updates instantly after an edit is saved.
-    - [refactor, ui, gallery_differential_rendering] # Replaced full gallery redraws with a non-blocking, differential rendering engine.
-    - [fix, ui, filter_race_condition] # Implemented a non-blocking request queue (`isLoading`/`isDirty`).
-    - [fix, ui, gallery_selection_bug] # Corrected a bug where clicking a thumbnail selected the wrong image after a filter change.
-    - [fix, ui, filter_persistence_partial] # Text search and date range filters now correctly restore their state.
-    - [feature, ui, gallery_empty_on_no_folder_selection] # The gallery now displays no images when no folders are selected.
-    - [feature, ui, editor_save_cancel_and_unsaved_warning] # Implemented Save/Cancel buttons and a warning dialog for unsaved changes.
-    - [feature, backend, thumbnail_regeneration_with_edits] # Implemented backend logic to regenerate thumbnails with edits applied.
-    - [feature, state_driven_architecture] # Major refactor to a state-driven FE architecture.
-    - [refactor, fix, image_viewer_editor_and_navigation_state] # Decoupled the Editor and Navigation modules from the main controller.
-    - [refactor, image_viewer_infopane_state_driven] # Refactored the info pane to subscribe to the central state.
-    - [fix, image_viewer_selection_and_state_bug] # Rebuilt gallery selection logic to be fully state-driven.
-    - [fix, image_viewer_filter_persistence_full] # Corrected BE save/load logic for all filters.
-    - [fix, toast_theming_and_readability] # Corrected toast manager to apply a theme directly.
-    - [feature, ui, toasts_notification_system_base] # Initial implementation of the non-blocking toast system.
+    - [bugfix, regression, terminal_functionality]
+    - [bugfix, state, folder_filter_reset_on_reopen]
+    - [bugfix, ui, delete_button_unresponsive]
+    - [bugfix, logic, additive_workflow_filter]
+    - [feature, ui, workflow_filter_none_option]
+    - [bugfix, realtime, data_integrity]
+    - [major_refactor, backend, realtime_file_monitoring]
+    - [fix, performance, backend_filter_optimization]
+    - [fix, ui, gallery_empty_state_rendering]
+    - [fix, ui, thumbnail_slider_realtime_update_fix]
+    - [fix, navigation, zoom_exit_scroll_alignment]
+    - [fix, navigation, gallery_keyboard_navigation_highlight]
+    - [fix, ui, gallery_fullscreen_icon_click]
+    - [fix, navigation, enter_key_opens_edit_view]
+    - [fix, navigation, zoom_return_scroll_jump]
+    - [fix, performance, gallery_scroll_optimization]
+    - [fix, ui, gallery_autofill_layout]
+    - [fix, performance, initial_load_speed]
+    - [feature, ui, dual_scroll_loading_strategy]
+    - [major_refactor, performance, gallery_virtualization]
+    - [feature, backend, db_versioning_and_migration]
+    - [fix, performance, gallery_scalability]
+    - [feature, ui, export_dialog_advanced_nav]
+    - [feature, ui, dialog_keyboard_navigation]
+    - [fix, ui, focus_steal_on_controls]
+    - [fix, ui, dialog_z_index_fullscreen]
+    - [feature, ui, export_unsaved_changes_dialog]
+    - [fix, ui, search_scope_buttons_unresponsive]
+    - [fix, ui, editor_visibility_on_click]
+    - [fix, ui, filter_label_cleanup]
+    - [fix, ui, scope_buttons_responsive]
+    - [fix, state, folder_lock_persistence]
+    - [fix, ui, editor_previews_on_fullscreen_stale]
+    - [feature, ui, folder_filter_enhancements]
+    - [fix, ui, gallery_last_row_justification]
+    - [fix, ui, thumbnail_fit_toggle_immediate_update]
+    - [feature, ui, spacebar_to_toggle_selection_in_gallery]
+    - [fix, ui, actions_target_active_image_in_zoom_view]
+    - [fix, ui, editor_previews_in_fullscreen]
+    - [fix, ui, thumbnail_refresh_on_edit_save]
+    - [refactor, ui, gallery_differential_rendering]
+    - [fix, ui, filter_race_condition]
+    - [fix, ui, gallery_selection_bug]
+    - [fix, ui, filter_persistence_partial]
+    - [feature, ui, gallery_empty_on_no_folder_selection]
+    - [feature, ui, editor_save_cancel_and_unsaved_warning] # THIS IS THE REGRESSION
+    - [feature, backend, thumbnail_regeneration_with_edits]
+    - [feature, state_driven_architecture]
+    - [refactor, fix, image_viewer_editor_and_navigation_state]
+    - [refactor, image_viewer_infopane_state_driven]
+    - [fix, image_viewer_selection_and_state_bug]
+    - [fix, image_viewer_filter_persistence_full]
+    - [fix, toast_theming_and_readability]
+    - [feature, ui, toasts_notification_system_base]
     - [major_refactor_backend_frontend]
     - [image_editor_base_architecture]
     - [image_viewer_trashcan]
     - [image_viewer_metadata_tools]
     - [image_editor_initial_bugfixes]
     - [thumbnail_cache_system]
-    - [fix, export_workflow_save_fails] # Corrected FE/BE data mismatch.
-    - [feature, ui, image_viewer_reset_filters_button] # Added a button to reset all filters to default.
-    - [fix, ui, thumbnail_size_realtime_update] # Thumbnail size slider now updates gallery size instantly.
-    - [fix, state, folder_filter_visual_restore_on_startup] # Correction de l'état visuel des cases à cocher des filtres de dossiers.
+    - [fix, export_workflow_save_fails]
+    - [feature, ui, image_viewer_reset_filters_button]
+    - [fix, ui, thumbnail_size_realtime_update]
+    - [fix, state, folder_filter_visual_restore_on_startup]
+--- END OF FILE context.txt ---

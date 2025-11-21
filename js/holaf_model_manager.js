@@ -8,7 +8,7 @@
  */
 
 import { app } from "../../../scripts/app.js";
-import { HOLAF_THEMES } from "./holaf_panel_manager.js";
+import { HOLAF_THEMES } from "./holaf_themes.js";
 import { initializeSettings, saveSettings } from "./model_manager/model_manager_settings.js";
 import { createPanel, createUploadDialog, applyZoom, setTheme } from "./model_manager/model_manager_ui.js";
 import { renderModels, filterAndSortModels, updateActionButtonsState, updateStatusBarText } from "./model_manager/model_manager_view.js";

@@ -22,6 +22,8 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 // We can't import the other modules here without creating circular dependencies or race conditions.
 // We rely on the fact that ComfyUI loads all JS files, making the handler objects available globally.
 // We will add checks to ensure the handlers exist before calling them.
+// CORRECTED: Import themes first to ensure it's available for all other modules.
+import "./holaf_themes.js";
 import "./holaf_terminal.js";
 import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";

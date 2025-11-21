@@ -6,7 +6,8 @@
  * REFACTOR: Simplified to robustly map between flat server settings and structured state.
  */
 
-import { HolafPanelManager, HOLAF_THEMES } from "../holaf_panel_manager.js";
+import { HolafPanelManager } from "../holaf_panel_manager.js";
+import { HOLAF_THEMES } from "../holaf_themes.js";
 import { imageViewerState } from "./image_viewer_state.js";
 
 let saveTimeout;
@@ -76,8 +77,8 @@ export async function loadSettings(viewer) {
         // Mettre à jour l'état centralisé avec les données validées
         imageViewerState.setState({
             filters: {
-                folder_filters: toArray(fetchedSettings.folder_filters, []),
-                format_filters: toArray(fetchedSettings.format_filters, []),
+                folder_filters: toArray(fetchedSettings.folder_filters, null),
+                format_filters: toArray(fetchedSettings.format_filters, null),
                 locked_folders: toArray(fetchedSettings.locked_folders, []),
                 search_text: toString(fetchedSettings.search_text, ''),
                 startDate: toString(fetchedSettings.startDate, ''),

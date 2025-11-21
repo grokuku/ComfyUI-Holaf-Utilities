@@ -12,7 +12,7 @@ DB_DIR = os.path.dirname(__file__) # In the extension's root directory
 DB_PATH = os.path.join(DB_DIR, DB_NAME)
 # --- SINGLE SOURCE OF TRUTH FOR DB SCHEMA ---
 # Increment this number whenever you make a change to the table structures below.
-LATEST_SCHEMA_VERSION = 10
+LATEST_SCHEMA_VERSION = 12
 
 # --- Thread-local storage for database connections ---
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
@@ -78,10 +78,34 @@ def _create_fresh_schema(cursor):
             thumbnail_priority_score INTEGER DEFAULT 1000, thumbnail_last_generated_at REAL,
             is_trashed BOOLEAN DEFAULT 0, original_path_canon TEXT, prompt_source TEXT,
             workflow_source TEXT, has_edit_file BOOLEAN DEFAULT 0,
-            thumb_hash TEXT
+            thumb_hash TEXT,
+            -- NEW in v12: Boolean flags for performant sidecar filtering --
+            has_workflow BOOLEAN NOT NULL DEFAULT 0,
+            has_prompt BOOLEAN NOT NULL DEFAULT 0,
+            has_edits BOOLEAN NOT NULL DEFAULT 0,
+            has_tags BOOLEAN NOT NULL DEFAULT 0
         )
     """)
     
+    # Image Viewer: Tags Table (NEW in v11)
+    cursor.execute("""
+        CREATE TABLE tags (
+            tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        )
+    """)
+
+    # Image Viewer: Image-Tag Link Table (NEW in v11)
+    cursor.execute("""
+        CREATE TABLE imagetags (
+            image_id INTEGER NOT NULL,
+            tag_id INTEGER NOT NULL,
+            PRIMARY KEY (image_id, tag_id),
+            FOREIGN KEY (image_id) REFERENCES images (id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id) REFERENCES tags (tag_id) ON DELETE CASCADE
+        )
+    """)
+
     # Image Viewer: Folder Metadata Cache Table
     cursor.execute("""
         CREATE TABLE folder_metadata (
@@ -95,13 +119,26 @@ def _create_fresh_schema(cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
-    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)")
+    # --- MODIFICATION: Replace individual indexes with a more powerful composite index ---
+    # This index is critical for speeding up queries that filter by folder and order by date.
     # Composite index for gallery filtering/sorting
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_top_level_subfolder_mtime ON images(top_level_subfolder, mtime)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
     
     # Index for thumb_hash to speed up orphan cleanup
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_thumb_hash ON images(thumb_hash)")
+
+    # Indices for Tagging System (NEW in v11)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_imagetags_image_id ON imagetags(image_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_imagetags_tag_id ON imagetags(tag_id)")
+
+    # Indices for Boolean Flags (NEW in v12)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_workflow ON images(has_workflow)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_prompt ON images(has_prompt)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_edits ON images(has_edits)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_tags ON images(has_tags)")
 
     # Set the version in the new table
     cursor.execute("INSERT INTO holaf_db_version (version) VALUES (?)", (LATEST_SCHEMA_VERSION,))
@@ -175,6 +212,7 @@ def _migrate_database_by_copy(current_db_version):
 
             if common_cols:
                 cols_str = ", ".join(f'"{col}"' for col in common_cols)
+                # The new boolean columns in `main.images` will get their default value (0) for all transferred rows.
                 cursor.execute(f"INSERT INTO main.images ({cols_str}) SELECT {cols_str} FROM old_db.images")
                 print(f"    > Transferred {cursor.rowcount} rows to 'images' table.")
                 
@@ -210,7 +248,7 @@ def _migrate_database_by_copy(current_db_version):
         except Exception as e:
             print(f"🟡 [Holaf-DB] Warning: Could not transfer data from 'images' table. Error: {e}")
 
-        # folder_metadata is a cache, no data transfer needed.
+        # folder_metadata, tags, and imagetags are new, so no data to transfer.
 
         # 4. Finalize
         conn.commit()
@@ -315,7 +353,7 @@ if __name__ == '__main__':
             cursor_test.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [table[0] for table in cursor_test.fetchall()]
             print("Tables in database:", tables)
-            expected_tables = ['holaf_db_version', 'models', 'images', 'folder_metadata']
+            expected_tables = ['holaf_db_version', 'models', 'images', 'folder_metadata', 'tags', 'imagetags']
             for table in expected_tables:
                  assert table in tables, f"FAILURE: '{table}' table was not created."
             print("✅ All required tables are present.")
@@ -331,7 +369,8 @@ if __name__ == '__main__':
             print("Indexes on 'images' table:", indexes)
             assert 'idx_images_top_level_subfolder_mtime' in indexes, "CRITICAL: Composite index was not created!"
             assert 'idx_images_thumb_hash' in indexes, "CRITICAL: thumb_hash index was not created!"
-            print("✅ All indexes present.")
+            assert 'idx_images_has_workflow' in indexes, "CRITICAL: 'has_workflow' index was not created!"
+            print("✅ All required indexes are present.")
 
 
         else:

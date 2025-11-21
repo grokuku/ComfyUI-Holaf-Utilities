@@ -3,7 +3,7 @@
  * This module handles loading and saving settings for the Model Manager panel.
  */
 
-import { HOLAF_THEMES } from "../holaf_panel_manager.js";
+import { HOLAF_THEMES } from "../holaf_themes.js";
 
 /**
  * Loads the model type definitions and UI settings from the server.

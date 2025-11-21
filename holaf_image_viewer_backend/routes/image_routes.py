@@ -14,7 +14,8 @@ from ... import holaf_database
 # --- API Route Handlers ---
 async def get_filter_options_route(request: web.Request):
     conn = None
-    response_data = {"subfolders": [], "formats": [], "last_update_time": logic.LAST_DB_UPDATE_TIME}
+    # --- MODIFICATION: Added 'tags' to the response ---
+    response_data = {"subfolders": [], "formats": [], "tags": [], "last_update_time": logic.LAST_DB_UPDATE_TIME}
     error_status = 500
     current_exception = None
     try:
@@ -40,11 +41,17 @@ async def get_filter_options_route(request: web.Request):
         cursor.execute("SELECT DISTINCT format FROM images WHERE is_trashed = 0")
         formats = sorted([row['format'] for row in cursor.fetchall()])
         
+        # --- MODIFICATION: Fetch all existing tags ---
+        cursor.execute("SELECT name FROM tags ORDER BY name ASC")
+        tags = [row['name'] for row in cursor.fetchall()]
+        # --- END MODIFICATION ---
+
         conn.commit()
         
         response_data = {
             "subfolders": subfolder_data, 
-            "formats": formats, 
+            "formats": formats,
+            "tags": tags,
             "last_update_time": logic.LAST_DB_UPDATE_TIME
         }
         return web.json_response(response_data)
@@ -63,114 +70,118 @@ async def list_images_route(request: web.Request):
     filters = {}
     current_exception = None
     default_response_data = {
-        "images": [], "filtered_count": 0, "total_db_count": 0, "generated_thumbnails_count": 0
+        "images": [], "filtered_count": 0, "total_db_count": 0
     }
     try:
         filters = await request.json()
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        query_fields = "id, filename, subfolder, format, mtime, size_bytes, path_canon, thumbnail_status, thumbnail_last_generated_at, is_trashed, original_path_canon, has_edit_file"
-        query_base = f"SELECT {query_fields} FROM images"
-        where_clauses, params = [], []
-        scope_conditions = []
-
-        folder_filters = filters.get('folder_filters', [])
+        # --- MAJOR REFACTOR: Advanced Filtering Logic ---
         
+        # Base selection remains the same
+        query_fields = "i.id, i.filename, i.subfolder, i.format, i.mtime, i.size_bytes, i.path_canon, i.thumbnail_status, i.thumbnail_last_generated_at, i.is_trashed, i.original_path_canon"
+        query_base = f"FROM images i"
+        where_clauses, params = [], []
+
+        # JOINs will be added conditionally
+        joins = ""
+        
+        # Folder & Trash Filters (largely unchanged, but aliased to 'i')
+        folder_filters = filters.get('folder_filters', [])
         if logic.TRASHCAN_DIR_NAME in folder_filters:
-            where_clauses.append("is_trashed = 1")
+            where_clauses.append("i.is_trashed = 1")
         else:
-            where_clauses.append("is_trashed = 0")
+            where_clauses.append("i.is_trashed = 0")
             if folder_filters:
                 placeholders = ','.join('?' * len(folder_filters))
-                where_clauses.append(f"top_level_subfolder IN ({placeholders})")
+                where_clauses.append(f"i.top_level_subfolder IN ({placeholders})")
                 params.extend(folder_filters)
 
+        # Basic Filters
         format_filters = filters.get('format_filters', [])
         if format_filters:
             placeholders = ','.join('?' * len(format_filters))
-            where_clauses.append(f"format IN ({placeholders})"); params.extend(format_filters)
+            where_clauses.append(f"i.format IN ({placeholders})"); params.extend(format_filters)
 
         if filters.get('startDate'):
             try:
                 dt_start = datetime.datetime.strptime(filters['startDate'], '%Y-%m-%d')
-                where_clauses.append("mtime >= ?"); params.append(time.mktime(dt_start.timetuple()))
-            except (ValueError, TypeError): print(f"🟡 Invalid start date: {filters['startDate']}")
+                where_clauses.append("i.mtime >= ?"); params.append(time.mktime(dt_start.timetuple()))
+            except (ValueError, TypeError): pass
         if filters.get('endDate'):
             try:
                 dt_end = datetime.datetime.strptime(filters['endDate'], '%Y-%m-%d') + datetime.timedelta(days=1)
-                where_clauses.append("mtime < ?"); params.append(time.mktime(dt_end.timetuple()))
-            except (ValueError, TypeError): print(f"🟡 Invalid end date: {filters['endDate']}")
+                where_clauses.append("i.mtime < ?"); params.append(time.mktime(dt_end.timetuple()))
+            except (ValueError, TypeError): pass
 
-        # --- MODIFICATION : Remplacement de l'ancienne logique de filtrage par une nouvelle ---
-        workflow_filters = filters.get('workflow_filters', [])
-        if workflow_filters:
-            workflow_conditions = []
-            if 'internal' in workflow_filters:
-                workflow_conditions.append("workflow_source = 'internal_png'")
-            if 'external' in workflow_filters:
-                workflow_conditions.append("workflow_source = 'external_json'")
-            if 'none' in workflow_filters:
-                workflow_conditions.append("(workflow_source NOT IN ('internal_png', 'external_json') OR workflow_source IS NULL)")
-            
-            # Appliquer la clause WHERE uniquement si au moins un filtre valide a été trouvé
-            if workflow_conditions:
-                where_clauses.append(f"({ ' OR '.join(workflow_conditions) })")
-        # --- FIN DE LA MODIFICATION ---
+        # Text Field Searches
+        if filters.get('filename_search'):
+            where_clauses.append("i.filename LIKE ?"); params.append(f"%{filters['filename_search']}%")
+        if filters.get('prompt_search'):
+            where_clauses.append("i.prompt_text LIKE ?"); params.append(f"%{filters['prompt_search']}%")
+        if filters.get('workflow_search'):
+            where_clauses.append("i.workflow_json LIKE ?"); params.append(f"%{filters['workflow_search']}%")
 
-        search_text = filters.get('search_text')
-        search_scopes = filters.get('search_scopes', [])
-        if search_text and search_scopes:
-            search_term = f"%{search_text}%"
-            scope_to_column_map = {"name": "filename", "prompt": "prompt_text", "workflow": "workflow_json"}
-            for scope in search_scopes:
-                column = scope_to_column_map.get(scope)
-                if column:
-                    scope_conditions.append(f"{column} LIKE ?")
-                    params.append(search_term)
-            if scope_conditions:
-                where_clauses.append(f"({ ' OR '.join(scope_conditions) })")
+        # Boolean Flag Filters
+        bool_filters = filters.get('bool_filters', {})
+        if bool_filters.get('has_workflow') is not None:
+             where_clauses.append("i.has_workflow = ?"); params.append(bool_filters['has_workflow'])
+        if bool_filters.get('has_prompt') is not None:
+             where_clauses.append("i.has_prompt = ?"); params.append(bool_filters['has_prompt'])
+        if bool_filters.get('has_edits') is not None:
+             where_clauses.append("i.has_edits = ?"); params.append(bool_filters['has_edits'])
+        if bool_filters.get('has_tags') is not None:
+             where_clauses.append("i.has_tags = ?"); params.append(bool_filters['has_tags'])
 
-        final_query = query_base
-        if where_clauses:
-            final_query += " WHERE " + " AND ".join(where_clauses)
+        # Tag Filtering Logic
+        tags_filter = filters.get('tags_filter', [])
+        if tags_filter:
+            joins += """
+                INNER JOIN imagetags it ON i.id = it.image_id
+                INNER JOIN tags t ON it.tag_id = t.tag_id
+            """
+            tags_placeholders = ','.join('?' * len(tags_filter))
+            where_clauses.append(f"t.name IN ({tags_placeholders})")
+            params.extend([tag.lower() for tag in tags_filter])
+
+        # Construct the final query parts
+        final_where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        
+        # Build the counting query
+        count_query_base = "SELECT COUNT(DISTINCT i.id)" if tags_filter else "SELECT COUNT(i.id)"
+        count_query = f"{count_query_base} {query_base} {joins} {final_where}"
         
         db_count_start_time = time.time()
-        count_query_filtered = final_query.replace(query_fields, "COUNT(*)")
-        cursor.execute(count_query_filtered, params)
+        cursor.execute(count_query, params)
         filtered_count = cursor.fetchone()[0]
         db_count_end_time = time.time()
-        
-        conn.commit()
 
-        final_query += " ORDER BY mtime DESC"
+        # Build the main data fetching query
+        group_by = f"GROUP BY i.id HAVING COUNT(DISTINCT t.name) = {len(tags_filter)}" if tags_filter else ""
+        order_by = "ORDER BY i.mtime DESC"
+        
+        main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by}"
         
         db_main_start_time = time.time()
-        cursor.execute(final_query, params)
+        cursor.execute(main_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]
         db_main_end_time = time.time()
         
+        # --- END MAJOR REFACTOR ---
+
+        # Use orjson for faster JSON serialization if available
         try:
             import orjson
             response = web.Response(
-                body=orjson.dumps({
-                    "images": images_data,
-                    "filtered_count": filtered_count,
-                    "total_db_count": 0, # REMOVED for performance
-                    "generated_thumbnails_count": 0 # REMOVED for performance
-                }),
+                body=orjson.dumps({ "images": images_data, "filtered_count": filtered_count }),
                 content_type='application/json'
             )
         except ImportError:
-            response = web.json_response({
-                "images": images_data,
-                "filtered_count": filtered_count,
-                "total_db_count": 0, # REMOVED for performance
-                "generated_thumbnails_count": 0 # REMOVED for performance
-            })
+            response = web.json_response({ "images": images_data, "filtered_count": filtered_count })
         
         request_end_time = time.time()
-        print(f"\n[Holaf Perf] Request finished.")
+        print(f"\n[Holaf Perf] Request finished. Found {filtered_count} images.")
         print(f"  > DB Count Query Time:      {(db_count_end_time - db_count_start_time):.4f} seconds")
         print(f"  > DB Main Query & Fetch:    {(db_main_end_time - db_main_start_time):.4f} seconds")
         print(f"  > Total Backend Request Time: {(request_end_time - request_start_time):.4f} seconds for {len(images_data)} images.")
