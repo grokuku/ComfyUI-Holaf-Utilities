@@ -66,11 +66,11 @@ async def delete_images_route(request: web.Request):
             try:
                 shutil.move(original_full_path, destination_full_path_in_trash)
                 
-                # Move associated .txt and .json files
+                # Move associated .txt, .json, .edt, and .xmp files
                 base_original_path, _ = os.path.splitext(original_full_path)
                 base_dest_path_in_trash, _ = os.path.splitext(destination_full_path_in_trash)
 
-                for meta_ext in ['.txt', '.json']:
+                for meta_ext in ['.txt', '.json', '.edt', '.xmp']:
                     original_meta_file = base_original_path + meta_ext
                     dest_meta_file_in_trash = base_dest_path_in_trash + meta_ext
                     if os.path.exists(original_meta_file):
@@ -157,11 +157,11 @@ async def restore_images_route(request: web.Request):
                 # Move the main image file
                 shutil.move(current_full_path_in_trash, original_full_path_restored)
 
-                # Move associated .txt and .json files
+                # Move associated .txt, .json, .edt, and .xmp files
                 base_path_in_trash, _ = os.path.splitext(current_full_path_in_trash)
                 base_restored_path, _ = os.path.splitext(original_full_path_restored)
                 
-                for meta_ext in ['.txt', '.json']:
+                for meta_ext in ['.txt', '.json', '.edt', '.xmp']:
                     meta_file_in_trash = base_path_in_trash + meta_ext
                     restored_meta_file = base_restored_path + meta_ext
                     if os.path.exists(meta_file_in_trash):
@@ -234,9 +234,9 @@ async def delete_images_permanently_route(request: web.Request):
                 if os.path.isfile(full_path):
                     os.unlink(full_path)
                 
-                # Delete associated .txt and .json files
+                # Delete associated .txt, .json, .edt, and .xmp files
                 base_path, _ = os.path.splitext(full_path)
-                for meta_ext in ['.txt', '.json']:
+                for meta_ext in ['.txt', '.json', '.edt', '.xmp']:
                     meta_file = base_path + meta_ext
                     if os.path.exists(meta_file):
                         os.unlink(meta_file)

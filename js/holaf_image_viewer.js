@@ -652,7 +652,7 @@ const holafImageViewer = {
     _showZoomedView: function (image) { 
         if (image) Navigation.showZoomedView(this, image);
     },
-    _hideZoomedView: function () { return Navigation.hideZoomedView(); },
+    _hideZoomedView: function () { return Navigation.hideZoomedView(this); },
     _showFullscreenView: function () { 
         const { activeImage } = imageViewerState.getState();
         if (activeImage) Navigation.showFullscreenView(this, activeImage);

@@ -110,10 +110,20 @@ export function showZoomedView(viewer, image) {
     preloadNextImage(viewer);
 }
 
-export function hideZoomedView() {
+export async function hideZoomedView(viewer) {
+    // --- BUGFIX: Check for unsaved changes before closing ---
+    const action = await _handleUnsavedChanges(viewer);
+    if (action === 'cancel') return;
+
     imageViewerState.setState({ ui: { view_mode: 'gallery' } });
     document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
     document.getElementById('holaf-viewer-gallery').style.display = 'flex';
+
+    // Restore scroll position alignment
+    const { currentNavIndex } = imageViewerState.getState();
+    if (currentNavIndex !== -1 && viewer.gallery?.alignImageOnExit) {
+        viewer.gallery.alignImageOnExit(currentNavIndex);
+    }
 }
 
 export function showFullscreenView(viewer, image) {
@@ -249,22 +259,8 @@ export async function handleEscape(viewer) {
             }
         }
     } else if (currentMode === 'zoom') {
-        // --- BLOC CORRIGÉ ---
-        // La logique est maintenant une copie de la sortie du mode fullscreen pour assurer la cohérence.
-        const action = await _handleUnsavedChanges(viewer);
-        if (action === 'cancel') return;
-        
-        // On effectue les opérations manuellement au lieu d'utiliser hideZoomedView()
-        document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
-        document.getElementById('holaf-viewer-gallery').style.display = 'flex';
-        imageViewerState.setState({ ui: { view_mode: 'gallery' } });
-        
-        // On appelle alignImageOnExit APRÈS que tout a été remis en place
-        const { currentNavIndex } = imageViewerState.getState();
-        if (currentNavIndex !== -1 && viewer.gallery?.alignImageOnExit) {
-            viewer.gallery.alignImageOnExit(currentNavIndex);
-        }
-        // --- FIN DU BLOC CORRIGÉ ---
+        // Reuse the centralized hideZoomedView logic to ensure consistency
+        await hideZoomedView(viewer);
     }
 }
 
@@ -313,7 +309,7 @@ export async function handleKeyDown(viewer, e) {
 
                     if (newState.images.length === 0) {
                         if (currentMode === 'fullscreen') hideFullscreenView(viewer);
-                        hideZoomedView();
+                        hideZoomedView(viewer); // Pass viewer here too
                         imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
                     } else {
                         const newIndex = Math.min(originalIndex, newState.images.length - 1);

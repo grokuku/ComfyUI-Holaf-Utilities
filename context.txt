@@ -41,14 +41,13 @@ FILE_TREE_ANALYSIS:
       > Prepares and serves image export packages.
     📄 file_ops_routes.py
       > Handles file system operations (delete, restore).
-      > [**NEEDS REVIEW**] La logique de suppression doit être vérifiée pour s'assurer qu'elle déplace/supprime également tous les fichiers sidecar (.json, .txt, .edt, .xmp) associés à une image.
+      > [**FIXED**] La logique inclut maintenant la gestion des fichiers sidecar .edt et .xmp.
     📄 image_routes.py
       > [**REFACTORED & CRITICAL**] Core image listing and filtering. La route `/list` a été refactorisée pour accepter un objet JSON de filtres structuré. La route `/filter-options` retourne maintenant aussi la liste complète des tags.
       @ GET /holaf/images/filter-options
       @ POST /holaf/images/list
     📄 metadata_routes.py
       > Handles metadata fetching, extraction, and injection.
-      > [**NEEDS UPDATE**] À étendre pour gérer l'injection/extraction des tags via les métadonnées XMP.
     📄 thumbnail_routes.py
       > Manages thumbnail lifecycle.
     📄 utility_routes.py
@@ -61,7 +60,6 @@ FILE_TREE_ANALYSIS:
     > [DEPRECATED]
   📄 worker.py
     > Background threads for all Image Viewer tasks.
-    > [**NEEDS UPDATE**] Le `run_filesystem_monitor` doit déclencher la nouvelle logique de scan enrichie (détection sidecar, lecture des tags, mise à jour des drapeaux) lorsqu'un fichier est ajouté ou modifié.
 📁 js/
   > Frontend assets.
   (le reste de l'arborescence est inchangé)
@@ -69,41 +67,35 @@ FILE_TREE_ANALYSIS:
 📄 holaf_database.py
   > [**UPDATED & CRITICAL**] Manages the SQLite database. Le schéma a été migré jusqu'à la version 12 pour supporter le nouveau système de filtrage et de tags.
 📄 requirements.txt
-  > Python package dependencies. [**NEEDS UPDATE**] Doit être mis à jour pour inclure `python-xmp-toolkit`.
+  > Python package dependencies. [**UPDATED**] Inclut maintenant `python-xmp-toolkit`.
 
 PROJECT_STATE:
-  CURRENT_INVESTIGATION: {
-    "bug": "[bugfix, regression, editor_unsaved_warning]",
-    "description": "L'éditeur ne prévient plus l'utilisateur s'il quitte avec des modifications non sauvegardées. Il s'agit d'une régression d'une fonctionnalité existante."
-  }
-  ACTIVE_BUGS: {
-    "[bugfix, regression, editor_unsaved_warning]": "Le dialogue de confirmation pour les modifications non sauvegardées dans l'éditeur ne s'affiche plus."
-  }
+  CURRENT_INVESTIGATION: null
+  ACTIVE_BUGS: {}
   IN_PROGRESS:
     - **Tâche :** `[project, architecture, tagging_and_performance_rework]`
-    - **Statut :** **Phases Backend et Frontend TERMINÉES.**
-    - **Résumé des modifications :** L'architecture de la base de données, la logique de scan, l'API de filtrage et l'interface utilisateur du frontend ont été entièrement remaniées pour prendre en charge un système de filtrage avancé basé sur les tags et les métadonnées.
-    - **PROCHAINE ÉTAPE :**
-      - **Phase :** Correction de Régression Critique.
-      - **Objectif :** Rétablir le dialogue d'avertissement pour les modifications non sauvegardées dans l'éditeur.
-      - **Fichiers probables :** `js/image_viewer/image_viewer_editor.js`, `js/holaf_image_viewer.js`.
+    - **Statut :** **TERMINÉ.**
+    - **Résumé des modifications :**
+      - Architecture DB optimisée (index composites, tags).
+      - Système de tags XMP implémenté (backend + dépendance).
+      - Refonte du filtrage frontend/backend.
+      - Correction des opérations de suppression (fichiers sidecars manquants).
+      - Correction de la régression sur l'avertissement de sauvegarde dans l'éditeur.
 
   ROADMAP:
     Global:
       - [new_tool, session_log_tool]
       - [backend, periodic_maintenance_worker]
     ImageViewer:
-      - [**URGENT_FIX**, bugfix, regression, editor_unsaved_warning] # L'avertissement de modifications non sauvegardées ne fonctionne plus.
-      - [**project, architecture, tagging_and_performance_rework**]
-        - **Plan d'action détaillé:**
-          - **1. Optimisation de la Base de Données (Index manquants):** `[COMPLETED]`
-          - **2. Architecture du Système de Tags (Backend):** `[COMPLETED]`
-          - **3. Centralisation des Métadonnées Sidecar (Performance):** `[COMPLETED]`
-          - **4. Refonte de l'Interface de Filtrage (Frontend):** `[COMPLETED]`
-          - **4.1. Amélioration UX/UI du filtre "Metadata & Sidecars":** `[TODO]` # Revoir la présentation des boutons.
-          - **5. Fiabilisation des Opérations sur Fichiers:** `[TODO]`
+      - [**project, architecture, tagging_and_performance_rework**] `[COMPLETED]`
+      - **Améliorations Futures:**
+          - Amélioration UX/UI du filtre "Metadata & Sidecars".
+          - Fiabilisation continue des Opérations sur Fichiers.
       (Le reste de la roadmap est inchangé)
   COMPLETED_FEATURES:
+    - [fix, dependency, add_python_xmp_toolkit]
+    - [fix, backend, file_ops_include_sidecars]
+    - [bugfix, regression, editor_unsaved_warning]
     - [bugfix, regression, terminal_functionality]
     - [bugfix, state, folder_filter_reset_on_reopen]
     - [bugfix, ui, delete_button_unresponsive]
@@ -149,7 +141,7 @@ PROJECT_STATE:
     - [fix, ui, gallery_selection_bug]
     - [fix, ui, filter_persistence_partial]
     - [feature, ui, gallery_empty_on_no_folder_selection]
-    - [feature, ui, editor_save_cancel_and_unsaved_warning] # THIS IS THE REGRESSION
+    - [feature, ui, editor_save_cancel_and_unsaved_warning]
     - [feature, backend, thumbnail_regeneration_with_edits]
     - [feature, state_driven_architecture]
     - [refactor, fix, image_viewer_editor_and_navigation_state]
