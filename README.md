@@ -1,4 +1,4 @@
-# Holaf Utilities for ComfyUI
+# Holaf Utilities for ComfyUI.
 
 ## 🚨 ***EXTREMELY IMPORTANT SECURITY WARNING*** 🚨
 
