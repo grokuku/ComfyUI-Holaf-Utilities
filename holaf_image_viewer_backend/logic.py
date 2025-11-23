@@ -8,6 +8,7 @@ import datetime
 import traceback
 import uuid
 import shutil
+import subprocess
 from PIL import PngImagePlugin
 
 from PIL import Image, ImageOps, UnidentifiedImageError, ImageEnhance
@@ -28,7 +29,10 @@ from .. import holaf_database
 from .. import holaf_utils
 
 # --- Constants ---
-SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+# We keep the name SUPPORTED_IMAGE_FORMATS for compatibility, but it now includes videos
+VIDEO_FORMATS = {'.mp4', '.webm'}
+SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}.union(VIDEO_FORMATS)
+
 TRASHCAN_DIR_NAME = "trashcan"
 STANDARD_RATIOS = [
     {"name": "1:1", "value": 1.0}, {"name": "4:3", "value": 4/3}, {"name": "3:4", "value": 3/4},
@@ -64,6 +68,14 @@ def ensure_trashcan_exists():
 
 # Call it once at module load to be sure
 ensure_trashcan_exists()
+
+def get_ffmpeg_path():
+    """Returns the path to the ffmpeg executable, or None if not found."""
+    return shutil.which("ffmpeg")
+
+def get_ffprobe_path():
+    """Returns the path to the ffprobe executable, or None if not found."""
+    return shutil.which("ffprobe")
 
 def _update_folder_metadata_cache_blocking(cursor):
     """
@@ -173,6 +185,9 @@ def add_or_update_single_image(image_abs_path):
         has_prompt_flag = (meta.get('prompt_source', 'none') not in ['none', 'error'])
         has_workflow_flag = (meta.get('workflow_source', 'none') not in ['none', 'error'])
         has_edits_flag = meta.get('has_edits', False)
+        # BUGFIX: Define has_edit_file alias for backward compatibility/SQL params
+        has_edit_file = has_edits_flag
+        
         # The 'has_tags' flag is now determined by whether the tags list from metadata is empty
         tags_list = meta.get('tags', [])
         has_tags_flag = bool(tags_list)
@@ -199,6 +214,7 @@ def add_or_update_single_image(image_abs_path):
                   has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
         else:
             # INSERT new image
+            # --- FIX: Ensure 24 '?' for 24 columns ---
             cursor.execute("""
                 INSERT INTO images 
                     (filename, subfolder, top_level_subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
@@ -311,46 +327,50 @@ def sync_image_database_blocking():
                         has_prompt_flag = (meta.get('prompt_source', 'none') not in ['none', 'error'])
                         has_workflow_flag = (meta.get('workflow_source', 'none') not in ['none', 'error'])
                         has_edits_flag = meta.get('has_edits', False)
+                        # BUGFIX: Define has_edit_file alias for backward compatibility/SQL params
+                        has_edit_file = has_edits_flag
+                        
                         tags_list = meta.get('tags', [])
                         has_tags_flag = bool(tags_list)
                         
                         existing_record = db_images.get(path_canon)
-                                image_id = None
-                                if existing_record:
-                                    image_id = existing_record['id']
-                                    # Check if properties changed OR if thumb_hash is missing in DB (for migration safety)
-                                    if (existing_record['mtime'] != file_stat.st_mtime or
-                                        existing_record['size_bytes'] != file_stat.st_size or
-                                        existing_record.get('thumb_hash') != thumb_hash): # Check for thumb_hash change too
-                                        cursor.execute("""
-                                            UPDATE images SET mtime=?, size_bytes=?, last_synced_at=?, subfolder=?, 
-                                            top_level_subfolder=?, prompt_text=?, workflow_json=?, prompt_source=?, 
-                                            workflow_source=?, width=?, height=?, aspect_ratio_str=?, has_edit_file=?, thumb_hash=?,
-                                            has_prompt=?, has_workflow=?, has_edits=?, has_tags=?, 
-                                            thumbnail_status=0, thumbnail_priority_score=1000, thumbnail_last_generated_at=NULL
-                                            WHERE id=?
-                                        """, (file_stat.st_mtime, file_stat.st_size, current_time, subfolder_str, top_level_subfolder,
-                                              meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None, meta.get('prompt_source'),
-                                              meta.get('workflow_source'), meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
-                                              has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
-                                else:
-                                    cursor.execute("""
-                                        INSERT INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
-                                        size_bytes, last_synced_at, has_edit_file, thumb_hash, has_prompt, has_workflow, has_edits, has_tags,
-                                        prompt_text, workflow_json, prompt_source, workflow_source, width, height, aspect_ratio_str,
-                                        thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
-                                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                                    """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
-                                          file_stat.st_mtime, file_stat.st_size, current_time, has_edit_file, thumb_hash,
-                                          has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag,
-                                          meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
-                                          meta.get('prompt_source'), meta.get('workflow_source'),
-                                          meta.get('width'), meta.get('height'), meta.get('ratio'),
-                                          0, 1000, None))
-                                    image_id = cursor.lastrowid
-                                
-                                if image_id:
-                                    _update_image_tags_in_db(cursor, image_id, tags_list)
+                        image_id = None
+                        if existing_record:
+                            image_id = existing_record['id']
+                            # Check if properties changed OR if thumb_hash is missing in DB (for migration safety)
+                            if (existing_record['mtime'] != file_stat.st_mtime or
+                                existing_record['size_bytes'] != file_stat.st_size or
+                                existing_record.get('thumb_hash') != thumb_hash): # Check for thumb_hash change too
+                                cursor.execute("""
+                                    UPDATE images SET mtime=?, size_bytes=?, last_synced_at=?, subfolder=?, 
+                                    top_level_subfolder=?, prompt_text=?, workflow_json=?, prompt_source=?, 
+                                    workflow_source=?, width=?, height=?, aspect_ratio_str=?, has_edit_file=?, thumb_hash=?,
+                                    has_prompt=?, has_workflow=?, has_edits=?, has_tags=?, 
+                                    thumbnail_status=0, thumbnail_priority_score=1000, thumbnail_last_generated_at=NULL
+                                    WHERE id=?
+                                """, (file_stat.st_mtime, file_stat.st_size, current_time, subfolder_str, top_level_subfolder,
+                                      meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None, meta.get('prompt_source'),
+                                      meta.get('workflow_source'), meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
+                                      has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
+                        else:
+                            # --- FIX: Ensure 24 '?' for 24 columns in Sync function too ---
+                            cursor.execute("""
+                                INSERT INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
+                                size_bytes, last_synced_at, has_edit_file, thumb_hash, has_prompt, has_workflow, has_edits, has_tags,
+                                prompt_text, workflow_json, prompt_source, workflow_source, width, height, aspect_ratio_str,
+                                thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
+                                  file_stat.st_mtime, file_stat.st_size, current_time, has_edit_file, thumb_hash,
+                                  has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag,
+                                  meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                                  meta.get('prompt_source'), meta.get('workflow_source'),
+                                  meta.get('width'), meta.get('height'), meta.get('ratio'),
+                                  0, 1000, None))
+                            image_id = cursor.lastrowid
+                        
+                        if image_id:
+                            _update_image_tags_in_db(cursor, image_id, tags_list)
                     except Exception as e:
                         print(f"🔴 [Holaf-ImageViewer] Error processing file {filename} during sync: {e}")
             conn.commit()
@@ -375,7 +395,6 @@ def sync_image_database_blocking():
         if conn:
             holaf_database.close_db_connection(exception=sync_exception)
 
-<<<<<<< HEAD
 
 def clean_thumbnails_blocking():
     """
@@ -475,8 +494,6 @@ def clean_thumbnails_blocking():
             holaf_database.close_db_connection(exception=clean_exception)
 
 
-=======
->>>>>>> c48bb24 (update)
 # --- Metadata Extraction ---
 def _sanitize_json_nan(obj):
     if isinstance(obj, dict): return {k: _sanitize_json_nan(v) for k, v in obj.items()}
@@ -497,7 +514,7 @@ def _get_best_ratio_string(width, height):
 
 def _extract_image_metadata_blocking(image_path_abs):
     directory, filename = os.path.split(image_path_abs)
-    base_filename = os.path.splitext(filename)[0]
+    base_filename, file_ext = os.path.splitext(filename)
 
     prompt_txt_path = os.path.join(directory, base_filename + ".txt")
     workflow_json_path = os.path.join(directory, base_filename + ".json")
@@ -539,6 +556,39 @@ def _extract_image_metadata_blocking(image_path_abs):
             result["workflow_source"] = "external_json"
         except Exception as e: result["workflow"], result["workflow_source"] = {"error": f"Error reading .json: {e}"}, "error"
 
+    # --- VIDEO HANDLING ---
+    if file_ext.lower() in VIDEO_FORMATS:
+        ffprobe = get_ffprobe_path()
+        if ffprobe:
+            try:
+                # Run ffprobe to get resolution
+                cmd = [
+                    ffprobe, "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height",
+                    "-of", "json", image_path_abs
+                ]
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                stdout, stderr = process.communicate()
+                
+                if process.returncode == 0:
+                    info = json.loads(stdout)
+                    streams = info.get("streams", [])
+                    if streams:
+                        result["width"] = streams[0].get("width")
+                        result["height"] = streams[0].get("height")
+                        if result["width"] and result["height"]:
+                             result["ratio"] = _get_best_ratio_string(result["width"], result["height"])
+                else:
+                    result["error"] = f"ffprobe failed: {stderr.decode('utf-8')}"
+            except Exception as e:
+                result["error"] = f"Video analysis failed: {e}"
+        else:
+            result["error"] = "ffprobe not found"
+            
+        return result
+    # --- END VIDEO HANDLING ---
+
+    # --- IMAGE HANDLING ---
     try:
         with Image.open(image_path_abs) as img:
             result["width"], result["height"] = img.size
@@ -567,26 +617,64 @@ def apply_edits_to_image(image, edit_data):
 def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_canon_for_db_update=None, edit_data=None):
     conn_update_db = None
     update_exception = None
+    file_ext = os.path.splitext(original_path_abs)[1].lower()
+
     try:
         if os.path.exists(thumb_path_abs): os.remove(thumb_path_abs)
-        with Image.open(original_path_abs) as img:
+        
+        img = None
+        
+        # --- VIDEO THUMBNAIL EXTRACTION ---
+        if file_ext in VIDEO_FORMATS:
+            ffmpeg = get_ffmpeg_path()
+            if not ffmpeg:
+                raise RuntimeError("ffmpeg not found, cannot generate video thumbnail.")
+            
+            # Extract first frame at 00:00:00 to stdout
+            cmd = [
+                ffmpeg, "-y", "-ss", "00:00:00", "-i", original_path_abs,
+                "-frames:v", "1", "-f", "image2", "pipe:1"
+            ]
+            
+            # We suppress stderr unless there is an error to avoid console spam
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                raise RuntimeError(f"ffmpeg extraction failed: {stderr.decode('utf-8')}")
+                
+            from io import BytesIO
+            img = Image.open(BytesIO(stdout))
+        # --- END VIDEO THUMBNAIL EXTRACTION ---
+        else:
+            # Standard image loading
+            img = Image.open(original_path_abs)
+
+        # Common processing (Resize, Edits, Save)
+        with img:
             img_copy = img.copy()
             if edit_data: img_copy = apply_edits_to_image(img_copy, edit_data)
+            
             target_dim_w, target_dim_h = holaf_utils.THUMBNAIL_SIZE if isinstance(holaf_utils.THUMBNAIL_SIZE, tuple) else (holaf_utils.THUMBNAIL_SIZE, holaf_utils.THUMBNAIL_SIZE)
             original_width, original_height = img_copy.size
             if original_width == 0 or original_height == 0: raise ValueError("Image dimensions cannot be zero.")
+            
             ratio = min(target_dim_w / original_width, target_dim_h / original_height)
             new_width, new_height = int(original_width * ratio), int(original_height * ratio)
+            
             if new_width <= 0: new_width = 1
             if new_height <= 0: new_height = 1
+            
             img_copy = img_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
             img_to_save = img_copy.convert("RGB")
             img_to_save.save(thumb_path_abs, "JPEG", quality=85, optimize=True)
+            
         if image_path_canon_for_db_update:
             conn_update_db = holaf_database.get_db_connection()
             cursor = conn_update_db.cursor()
             cursor.execute("UPDATE images SET thumbnail_status = 2, thumbnail_last_generated_at = ? WHERE path_canon = ?", (time.time(), image_path_canon_for_db_update))
             conn_update_db.commit()
+            
     except UnidentifiedImageError as e:
         update_exception = e
     except Exception as e:
@@ -611,30 +699,6 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
     finally:
         if conn_update_db:
             holaf_database.close_db_connection(exception=update_exception)
-
-    if update_exception:
-        print(f"🔴 [Holaf-ImageViewer] Error creating thumbnail for {original_path_abs}: {update_exception}")
-        if image_path_canon_for_db_update:
-            # This part needs its own robust connection handling in case the first one was part of the problem
-            # or was never opened.
-            conn_fail_db = None
-            fail_exception = None
-            try:
-                conn_fail_db = holaf_database.get_db_connection()
-                cursor = conn_fail_db.cursor()
-                cursor.execute("UPDATE images SET thumbnail_status = 3 WHERE path_canon = ?", (image_path_canon_for_db_update,))
-                conn_fail_db.commit()
-            except Exception as e_fail:
-                fail_exception = e_fail
-                print(f"🔴 [Holaf-ImageViewer] CRITICAL: ALSO FAILED to update thumbnail error status in DB: {e_fail}")
-            finally:
-                if conn_fail_db:
-                    holaf_database.close_db_connection(exception=fail_exception)
-
-        if os.path.exists(thumb_path_abs):
-            os.remove(thumb_path_abs)
-
-    return update_exception is None
 
 def _strip_png_metadata_and_get_mtime(image_abs_path):
     try:

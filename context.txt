@@ -1,163 +1,164 @@
 --- START OF FILE context.txt ---
 
-RÈGLES OPÉRATIONNELLES :
+### Purpose
+This file serves as the **primary source of truth** and **cognitive map** for the Large Language Model (LLM) working on AiKore. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
 
-1.  **Gestion des fichiers manquants :** Si un fichier mentionné est nécessaire à ma compréhension ou à l'exécution d'une tâche mais n'a pas été fourni précédemment, ne l'invente jamais. Signale-moi qu'il est manquant et que tu as besoin que je te fournisse son contenu.
+### Protocol for Updates
+When the user requests a "context update" or when a major feature is implemented, the following information MUST be integrated/updated in this file:
+1.  **Structural Changes**: If files are created, renamed, moved, or deleted, update **Section 2 (File Structure)** to reflect the new tree and the responsibility of the new files.
+2.  **Schema Evolutions**: If `models.py` or `migration.py` changes, update **Section 4 (Database Schema)** to reflect the current V-version and columns.
+3.  **Logic Shifts**: If the core way the backend handles processes, ports, saving, or networking changes, update **Section 3 (Key Concepts)**.
+4.  **New Dependencies**: If `Dockerfile` or `requirements.txt` changes significantly (new tools like KasmVNC, new libs), update **Section 1 (Stack)**.
 
-2.  **Format des modifications de fichiers :**
-    *   Lorsqu'une modification est apportée à un fichier, fournis une commande `sed` pour Git Bash, **en une seule ligne**, permettant d'appliquer ce patch. (encapsuler l'argument de la commande sed dans des guillemets simples (') au lieu de guillemets doubles)
-    *   **Condition :** Ne fournis cette commande `sed` que si elle est basique et ne risque pas de generer une erreur.
-    *   Dans ce cas (commande `sed` sans risque), ne montre pas les blocs de code modifiés, donne uniquement la commande `sed`.
-    *   **Restriction d'outil :** N'utilise que `sed` pour ces commandes de patch. N'utilise jamais d'autres outils (comme `patch`, `awk`, `tee`, etc.) pour générer la commande de modification.
-    *   **Alternative :** Si la commande `sed` requise (en respectant la contrainte d'une seule ligne) risquerait de ne pas fonctionner correctement, ou si une commande `sed` en une seule ligne n'est pas réalisable pour la modification demandée, ne fournis pas de commande. À la place, donne-moi le contenu intégral du fichier modifié.
+**Golden Rule**: Never paste raw code blocks in this file. Use concise, high-level functional descriptions to minimize token usage while maximizing understanding.
 
-3.  **Flux de travail séquentiel :** Après avoir proposé une modification (commande `sed` ou fichier complet) pour un fichier, attends explicitement l'accord de l'utilisateur (et non du LLM) avant de proposer des modifications pour un fichier suivant ou de continuer sur une autre tâche.
+---
 
-4.  **Principe de moindre intervention :** Ne fais jamais de zèle. Ne modifie pas des sections de code qui fonctionnent correctement si cela n'est pas explicitement demandé ou absolument nécessaire pour la tâche en cours.
+RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 
-5.  **Anticipation des erreurs et suggestion de vérification :** N'assume pas que les modifications proposées fonctionneront parfaitement du premier coup. Après avoir proposé une modification, suggère brièvement les points clés que je devrais vérifier ou les tests simples que je pourrais effectuer pour m'assurer du bon fonctionnement.
+1.  **Gestion des fichiers manquants :** Ne jamais inventer de code. Demander explicitement les fichiers manquants.
+2.  **Format des modifications :**
+    *   Utiliser `sed` (une ligne, guillemets simples) pour les petits patchs sans risque.
+    *   Fournir le **fichier complet** pour toute modification complexe ou risquée (Défaut).
+3.  **Flux séquentiel :** Attendre validation utilisateur après chaque fichier modifié.
+4.  **Moindre intervention :** Ne modifier que le strict nécessaire.
+5.  **Bilinguisme :** Interactions en Français, Code/Commentaires en Anglais.
 
+---
 
-INSTRUCTION INITIALE :
-Voici un projet (les fichiers et l'arborescence te seront fournis). Analyse-le attentivement. Une fois ton analyse terminée, signale-moi que tu es prêt à commencer à travailler sur les modifications en respectant les règles ci-dessus.
+### SECTION 1: STACK & DEPENDENCIES
 
-Ne fait aucune optimisation de code si ca n'est pas explicitement demandé.
-Ne fait aucune modification sur des parties de codes qui n'on pas la necessité d'etre modifié pour la tache en cours.
+*   **Python Environment:** ComfyUI embedded python.
+*   **Key Libraries:**
+    *   `aiohttp` (Server/API)
+    *   `sqlite3` (Database)
+    *   `Pillow` (Image processing)
+    *   `python-xmp-toolkit` (XMP Metadata support)
+*   **System Dependencies:**
+    *   **FFmpeg** : Requis dans le PATH système pour le support vidéo (thumbnails, metadata extraction).
+    *   `psutil`, `pywinpty` (Windows only) for System Monitor/Terminal.
 
+---
 
+### SECTION 2: FILE STRUCTURE
 
-
-FILE_TREE_ANALYSIS:
-# --- Root Directory ---
 📁 holaf_image_viewer_backend/
   > Backend logic for the Image Viewer.
   📁 routes/
-    > Modular API route handlers for the Image Viewer.
+    > Modular API route handlers.
     📄 __init__.py
-      > Empty. Placeholder.
     📄 edit_routes.py
-      > Handles image editing operations (non-destructive).
     📄 export_routes.py
-      > Prepares and serves image export packages.
     📄 file_ops_routes.py
-      > Handles file system operations (delete, restore).
-      > [**FIXED**] La logique inclut maintenant la gestion des fichiers sidecar .edt et .xmp.
+      > Delete/Restore operations. Gère les sidecars (.edt, .xmp, .json, .txt).
     📄 image_routes.py
-      > [**REFACTORED & CRITICAL**] Core image listing and filtering. La route `/list` a été refactorisée pour accepter un objet JSON de filtres structuré. La route `/filter-options` retourne maintenant aussi la liste complète des tags.
-      @ GET /holaf/images/filter-options
-      @ POST /holaf/images/list
+      > [**UPDATED**] Listing API. Supporte le tri, les filtres booléens, et les filtres de source de workflow (Availability).
     📄 metadata_routes.py
-      > Handles metadata fetching, extraction, and injection.
     📄 thumbnail_routes.py
-      > Manages thumbnail lifecycle.
+      > Gestion des thumbnails. Délègue la génération à logic.py.
     📄 utility_routes.py
-      > Misc utility routes for the viewer.
   📄 __init__.py
-    > Exposes BE functions and routes to the main `__init__.py`.
   📄 logic.py
-    > [**UPDATED & CRITICAL**] Core image viewer logic. La logique de scan/synchronisation a été étendue pour détecter les fichiers sidecar (.txt, .json, .edt, .xmp), lire les tags depuis les fichiers XMP, et mettre à jour les nouveaux drapeaux booléens et les tables de tags dans la DB. **Dépend de `python-xmp-toolkit`**.
+    > [**CRITICAL**] Core logic. Scanner de fichiers, Sync DB.
+    > **Video Support:** Détecte .mp4/.webm via FFmpeg.
+    > **Thumbnails:** Génère des JPG statiques pour les vidéos (t=0s).
+    > **Metadata:** Extrait dimensions/durée via ffprobe.
   📄 routes.py
-    > [DEPRECATED]
   📄 worker.py
-    > Background threads for all Image Viewer tasks.
+    > Background tasks.
+
 📁 js/
   > Frontend assets.
-  (le reste de l'arborescence est inchangé)
-...
-📄 holaf_database.py
-  > [**UPDATED & CRITICAL**] Manages the SQLite database. Le schéma a été migré jusqu'à la version 12 pour supporter le nouveau système de filtrage et de tags.
-📄 requirements.txt
-  > Python package dependencies. [**UPDATED**] Inclut maintenant `python-xmp-toolkit`.
+  📁 css/
+    📄 holaf_image_viewer.css
+      > [**UPDATED**] Styles globaux. Utilise CSS Grid (3 colonnes) pour la liste des formats.
+    📄 (Autres fichiers CSS inchangés...)
+  📁 image_viewer/
+    📄 image_viewer_actions.js
+    📄 image_viewer_editor.js
+    📄 image_viewer_gallery.js
+      > [**UPDATED**] Affiche l'icône 🎥 pour les vidéos. Bouton Edit désactivé pour les vidéos (pour l'instant).
+    📄 image_viewer_infopane.js
+    📄 image_viewer_navigation.js
+    📄 image_viewer_settings.js
+    📄 image_viewer_state.js
+    📄 image_viewer_ui.js
+      > [**UPDATED**] Sidebar UI.
+      > **Search:** Recherche unifiée avec boutons Scope (Name, Prompt, Workflow).
+      > **Workflow:** Filtre Availability (Internal/External).
+  📁 model_manager/
+    > (Fichiers du gestionnaire de modèles...)
+  📄 holaf_main.js
+  📄 (Autres fichiers JS root...)
 
-PROJECT_STATE:
-  CURRENT_INVESTIGATION: null
+📁 nodes/
+  📄 holaf_model_manager.py
+  📄 holaf_nodes_manager.py
+
+📄 __init__.py
+📄 __main__.py
+📄 context.txt
+📄 holaf_config.py
+📄 holaf_database.py
+  > Gère la connexion SQLite et les migrations.
+📄 holaf_server_management.py
+📄 holaf_system_monitor.py
+📄 holaf_terminal.py
+📄 holaf_utils.py
+📄 requirements.txt
+
+---
+
+### SECTION 3: KEY CONCEPTS
+
+*   **Sync Strategy:** `logic.py` scanne le dossier output. Il compare mtime/size/hash avec la DB. Les vidéos sont traitées via `subprocess` (FFmpeg).
+*   **Thumbnailing:** Les images utilisent PIL. Les vidéos utilisent FFmpeg pour extraire une frame à 00:00:00. Format de cache : `.jpg`.
+*   **Filtering Logic:**
+    *   **Backend:** Construction dynamique de requêtes SQL (`image_routes.py`).
+    *   **Frontend:** `image_viewer_ui.js` construit un objet filtre JSON.
+    *   **Search Scopes:** Le frontend envoie le texte de recherche dans des champs spécifiques (`filename_search`, etc.) selon les boutons actifs.
+*   **Workflow Availability:** Distingue si le workflow est embarqué dans le PNG (`internal_png`) ou dans un sidecar JSON (`external_json`).
+
+---
+
+### SECTION 4: DATABASE SCHEMA
+
+*   **File:** `holaf_utilities.sqlite`
+*   **Current Version:** 12
+*   **Table `images` (Key Columns):**
+    *   `path_canon` (Unique ID path)
+    *   `format` (e.g., 'PNG', 'JPG', 'MP4', 'WEBM')
+    *   `workflow_source` ('internal_png', 'external_json', 'none')
+    *   `has_edits` (Boolean, alias `has_edit_file` in logic)
+    *   `width`, `height` (Dimensions, video resolution)
+    *   `thumb_hash` (Used for thumbnail caching)
+    *   `has_tags`, `has_prompt`, `has_workflow` (Boolean flags for fast filtering)
+
+---
+
+### PROJECT STATE
+
   ACTIVE_BUGS: {}
+
   IN_PROGRESS:
-    - **Tâche :** `[project, architecture, tagging_and_performance_rework]`
-    - **Statut :** **TERMINÉ.**
-    - **Résumé des modifications :**
-      - Architecture DB optimisée (index composites, tags).
-      - Système de tags XMP implémenté (backend + dépendance).
-      - Refonte du filtrage frontend/backend.
-      - Correction des opérations de suppression (fichiers sidecars manquants).
-      - Correction de la régression sur l'avertissement de sauvegarde dans l'éditeur.
+    - (Aucune tâche active - Fin de session)
+
+  COMPLETED_FEATURES (Recent):
+    - **[feature, video_support_basic]** : Support MP4/WEBM (Scan, Metadata, Thumbnails via FFmpeg).
+    - **[feature, ui, video_indicator]** : Icône 🎥 dans la galerie.
+    - **[refactor, ui, unified_search]** : Barre de recherche unique avec boutons de portée (Name/Prompt/Workflow).
+    - **[refactor, ui, workflow_filter]** : Filtre "Availability" (Internal/External).
+    - **[fix, backend, sql_insert_bug]** : Correction du nombre de paramètres SQL pour l'insertion d'images.
+    - **[fix, ui, formats_grid]** : Affichage des formats sur 3 colonnes.
 
   ROADMAP:
     Global:
       - [new_tool, session_log_tool]
       - [backend, periodic_maintenance_worker]
     ImageViewer:
-      - [**project, architecture, tagging_and_performance_rework**] `[COMPLETED]`
-      - **Améliorations Futures:**
+      - **Améliorations Futures (Vidéo) :**
+          - `[feature, ui, video_hover_preview]` : Prévisualisation au survol.
+          - `[feature, ui, video_player_modal]` : Lecteur vidéo simple.
+      - **Améliorations Futures (Général) :**
           - Amélioration UX/UI du filtre "Metadata & Sidecars".
-          - Fiabilisation continue des Opérations sur Fichiers.
-      (Le reste de la roadmap est inchangé)
-  COMPLETED_FEATURES:
-    - [fix, dependency, add_python_xmp_toolkit]
-    - [fix, backend, file_ops_include_sidecars]
-    - [bugfix, regression, editor_unsaved_warning]
-    - [bugfix, regression, terminal_functionality]
-    - [bugfix, state, folder_filter_reset_on_reopen]
-    - [bugfix, ui, delete_button_unresponsive]
-    - [bugfix, logic, additive_workflow_filter]
-    - [feature, ui, workflow_filter_none_option]
-    - [bugfix, realtime, data_integrity]
-    - [major_refactor, backend, realtime_file_monitoring]
-    - [fix, performance, backend_filter_optimization]
-    - [fix, ui, gallery_empty_state_rendering]
-    - [fix, ui, thumbnail_slider_realtime_update_fix]
-    - [fix, navigation, zoom_exit_scroll_alignment]
-    - [fix, navigation, gallery_keyboard_navigation_highlight]
-    - [fix, ui, gallery_fullscreen_icon_click]
-    - [fix, navigation, enter_key_opens_edit_view]
-    - [fix, navigation, zoom_return_scroll_jump]
-    - [fix, performance, gallery_scroll_optimization]
-    - [fix, ui, gallery_autofill_layout]
-    - [fix, performance, initial_load_speed]
-    - [feature, ui, dual_scroll_loading_strategy]
-    - [major_refactor, performance, gallery_virtualization]
-    - [feature, backend, db_versioning_and_migration]
-    - [fix, performance, gallery_scalability]
-    - [feature, ui, export_dialog_advanced_nav]
-    - [feature, ui, dialog_keyboard_navigation]
-    - [fix, ui, focus_steal_on_controls]
-    - [fix, ui, dialog_z_index_fullscreen]
-    - [feature, ui, export_unsaved_changes_dialog]
-    - [fix, ui, search_scope_buttons_unresponsive]
-    - [fix, ui, editor_visibility_on_click]
-    - [fix, ui, filter_label_cleanup]
-    - [fix, ui, scope_buttons_responsive]
-    - [fix, state, folder_lock_persistence]
-    - [fix, ui, editor_previews_on_fullscreen_stale]
-    - [feature, ui, folder_filter_enhancements]
-    - [fix, ui, gallery_last_row_justification]
-    - [fix, ui, thumbnail_fit_toggle_immediate_update]
-    - [feature, ui, spacebar_to_toggle_selection_in_gallery]
-    - [fix, ui, actions_target_active_image_in_zoom_view]
-    - [fix, ui, editor_previews_in_fullscreen]
-    - [fix, ui, thumbnail_refresh_on_edit_save]
-    - [refactor, ui, gallery_differential_rendering]
-    - [fix, ui, filter_race_condition]
-    - [fix, ui, gallery_selection_bug]
-    - [fix, ui, filter_persistence_partial]
-    - [feature, ui, gallery_empty_on_no_folder_selection]
-    - [feature, ui, editor_save_cancel_and_unsaved_warning]
-    - [feature, backend, thumbnail_regeneration_with_edits]
-    - [feature, state_driven_architecture]
-    - [refactor, fix, image_viewer_editor_and_navigation_state]
-    - [refactor, image_viewer_infopane_state_driven]
-    - [fix, image_viewer_selection_and_state_bug]
-    - [fix, image_viewer_filter_persistence_full]
-    - [fix, toast_theming_and_readability]
-    - [feature, ui, toasts_notification_system_base]
-    - [major_refactor_backend_frontend]
-    - [image_editor_base_architecture]
-    - [image_viewer_trashcan]
-    - [image_viewer_metadata_tools]
-    - [image_editor_initial_bugfixes]
-    - [thumbnail_cache_system]
-    - [fix, export_workflow_save_fails]
-    - [feature, ui, image_viewer_reset_filters_button]
-    - [fix, ui, thumbnail_size_realtime_update]
-    - [fix, state, folder_filter_visual_restore_on_startup]
 --- END OF FILE context.txt ---

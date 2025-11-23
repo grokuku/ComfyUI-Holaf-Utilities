@@ -287,17 +287,37 @@ function createPlaceholder(viewer, image, index) {
     placeholder.dataset.index = index;
     placeholder.dataset.pathCanon = image.path_canon;
 
-    const editIcon = document.createElement('div');
-    editIcon.className = 'holaf-viewer-edit-icon';
-    editIcon.innerHTML = '✎';
-    editIcon.title = "Edit image";
-    editIcon.classList.toggle('active', image.has_edit_file);
-    editIcon.onclick = (e) => {
-        e.stopPropagation();
-        imageViewerState.setState({ activeImage: image, currentNavIndex: index });
-        viewer._showZoomedView(image);
-    };
-    placeholder.appendChild(editIcon);
+    // --- MODIFICATION: Video Icon Logic ---
+    const actionIcon = document.createElement('div');
+    // We keep the base class 'holaf-viewer-edit-icon' so it inherits the top-right positioning
+    // from the existing CSS.
+    actionIcon.className = 'holaf-viewer-edit-icon';
+
+    if (['MP4', 'WEBM'].includes(image.format)) {
+        // Video Case
+        actionIcon.innerHTML = '🎥'; // Camera icon
+        actionIcon.title = "Video media";
+        // We do NOT add the 'active' class (which usually means "has edits") for videos yet.
+        
+        actionIcon.onclick = (e) => {
+            e.stopPropagation();
+            // Placeholder for future video player logic
+            console.log("Video action clicked (Not yet implemented) for:", image.filename);
+        };
+    } else {
+        // Standard Image Case
+        actionIcon.innerHTML = '✎';
+        actionIcon.title = "Edit image";
+        actionIcon.classList.toggle('active', image.has_edit_file);
+        
+        actionIcon.onclick = (e) => {
+            e.stopPropagation();
+            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
+            viewer._showZoomedView(image);
+        };
+    }
+    placeholder.appendChild(actionIcon);
+    // --- END MODIFICATION ---
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';

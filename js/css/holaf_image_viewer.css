@@ -1050,3 +1050,11 @@
 }
 
 /* --- END FOLDER LOCK STYLES --- */
+
+/* --- MODIFICATION START: Formats Grid Layout --- */
+#holaf-viewer-formats-filter {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+/* --- MODIFICATION END --- */

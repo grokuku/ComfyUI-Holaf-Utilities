@@ -79,8 +79,9 @@ async def list_images_route(request: web.Request):
 
         # --- MAJOR REFACTOR: Advanced Filtering Logic ---
         
-        # Base selection remains the same
-        query_fields = "i.id, i.filename, i.subfolder, i.format, i.mtime, i.size_bytes, i.path_canon, i.thumbnail_status, i.thumbnail_last_generated_at, i.is_trashed, i.original_path_canon"
+        # Base selection
+        # --- FIX: Included boolean flags and thumb_hash in query_fields ---
+        query_fields = "i.id, i.filename, i.subfolder, i.format, i.mtime, i.size_bytes, i.path_canon, i.thumbnail_status, i.thumbnail_last_generated_at, i.is_trashed, i.original_path_canon, i.has_edit_file, i.has_workflow, i.has_prompt, i.has_tags, i.thumb_hash"
         query_base = f"FROM images i"
         where_clauses, params = [], []
 
@@ -123,16 +124,21 @@ async def list_images_route(request: web.Request):
         if filters.get('workflow_search'):
             where_clauses.append("i.workflow_json LIKE ?"); params.append(f"%{filters['workflow_search']}%")
 
-        # Boolean Flag Filters
+        # Boolean Flag Filters (REMOVED 'has_workflow' as it is now handled by workflow_sources)
         bool_filters = filters.get('bool_filters', {})
-        if bool_filters.get('has_workflow') is not None:
-             where_clauses.append("i.has_workflow = ?"); params.append(bool_filters['has_workflow'])
         if bool_filters.get('has_prompt') is not None:
              where_clauses.append("i.has_prompt = ?"); params.append(bool_filters['has_prompt'])
         if bool_filters.get('has_edits') is not None:
              where_clauses.append("i.has_edits = ?"); params.append(bool_filters['has_edits'])
         if bool_filters.get('has_tags') is not None:
              where_clauses.append("i.has_tags = ?"); params.append(bool_filters['has_tags'])
+        
+        # --- MODIFICATION: Workflow Source Filters (Availability) ---
+        workflow_sources = filters.get('workflow_sources', [])
+        if workflow_sources:
+            placeholders = ','.join('?' * len(workflow_sources))
+            where_clauses.append(f"i.workflow_source IN ({placeholders})")
+            params.extend(workflow_sources)
 
         # Tag Filtering Logic
         tags_filter = filters.get('tags_filter', [])

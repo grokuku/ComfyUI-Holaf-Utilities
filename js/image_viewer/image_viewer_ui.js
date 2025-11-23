@@ -17,6 +17,13 @@ class ImageViewerUI {
         this.elements = {};
         this.callbacks = {};
         this.isDraggingSlider = false; // Flag to prevent state updates while dragging
+        
+        // Internal state to track scope button activation even when text is empty
+        this.scopeState = {
+            filename: true, // Default to Name active
+            prompt: false,
+            workflow: false
+        };
     }
 
     init(container, callbacks) {
@@ -59,27 +66,37 @@ class ImageViewerUI {
     _render(state) {
         const { filters, ui } = state;
 
-        if (!this.elements.searchFilename) return; // UI not cached yet
+        if (!this.elements.searchInput) return; // UI not cached yet
 
-        // Update Filter Controls
-        this.elements.searchFilename.value = filters.filename_search || '';
-        this.elements.searchPrompt.value = filters.prompt_search || '';
-        this.elements.searchWorkflow.value = filters.workflow_search || '';
+        // --- Search Logic Rendering ---
+        const currentText = filters.filename_search || filters.prompt_search || filters.workflow_search || '';
+        
+        if (this.elements.searchInput.value !== currentText && (currentText !== '' || this.elements.searchInput.value !== '')) {
+             this.elements.searchInput.value = currentText;
+        }
 
+        if (filters.filename_search) this.scopeState.filename = true;
+        if (filters.prompt_search) this.scopeState.prompt = true;
+        if (filters.workflow_search) this.scopeState.workflow = true;
+        
+        this.elements.scopeButtons.filename.classList.toggle('active', this.scopeState.filename);
+        this.elements.scopeButtons.prompt.classList.toggle('active', this.scopeState.prompt);
+        this.elements.scopeButtons.workflow.classList.toggle('active', this.scopeState.workflow);
+
+
+        // --- Date Range ---
         this.elements.dateStart.value = filters.startDate || '';
         this.elements.dateEnd.value = filters.endDate || '';
 
-        // Update boolean filter buttons
-        for (const key in this.elements.boolFilterButtons) {
-            const button = this.elements.boolFilterButtons[key];
-            if (button) {
-                button.classList.toggle('active', filters.bool_filters[key] === true);
-            }
-        }
+        // --- Workflow Availability Filters (RESTORED) ---
+        // We check if the source is present in the array
+        const sources = filters.workflow_sources || [];
+        this.elements.workflowButtons.internal.classList.toggle('active', sources.includes('internal_png'));
+        this.elements.workflowButtons.external.classList.toggle('active', sources.includes('external_json'));
         
         this._renderActiveTags(filters.tags_filter || []);
         
-        // Update Display Options
+        // --- Display Options ---
         if (this.elements.thumbFitToggle) {
             this.elements.thumbFitToggle.checked = ui.thumbnail_fit === 'contain';
         }
@@ -97,20 +114,18 @@ class ImageViewerUI {
         const pane = document.createElement('div');
         pane.id = 'holaf-viewer-left-pane';
         pane.className = 'holaf-viewer-pane';
-        // Reworked HTML structure for the new filter system
+        // Reworked HTML structure
         pane.innerHTML = `
             <div class="holaf-viewer-filter-group">
-                <h4>Filename Search</h4>
-                <input type="search" id="holaf-viewer-search-filename" placeholder="Enter filename text..." class="holaf-viewer-search-bar">
+                <h4>Search</h4>
+                <input type="search" id="holaf-viewer-search-input" placeholder="Search filename, prompt, workflow..." class="holaf-viewer-search-bar">
+                <div class="holaf-viewer-scope-buttons" style="display: flex; gap: 5px; margin-top: 8px;">
+                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-filename" title="Search in Filenames">Name</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-prompt" title="Search in Prompts">Prompt</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-workflow" title="Search in Workflow JSON">Workflow</button>
+                </div>
             </div>
-            <div class="holaf-viewer-filter-group">
-                <h4>Prompt Search</h4>
-                <input type="search" id="holaf-viewer-search-prompt" placeholder="Enter prompt text..." class="holaf-viewer-search-bar">
-            </div>
-            <div class="holaf-viewer-filter-group">
-                <h4>Workflow Search</h4>
-                <input type="search" id="holaf-viewer-search-workflow" placeholder="Enter workflow text..." class="holaf-viewer-search-bar">
-            </div>
+            
             <div class="holaf-viewer-filter-group">
                 <h4>Date Range</h4>
                 <div class="holaf-viewer-date-range-container">
@@ -118,6 +133,15 @@ class ImageViewerUI {
                     <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-end">To:</label><input type="date" id="holaf-viewer-date-end"></div>
                 </div>
             </div>
+            
+            <div class="holaf-viewer-filter-group">
+                <h4>Workflow Availability</h4>
+                <div id="holaf-viewer-workflow-filters" class="holaf-viewer-button-grid" style="display: flex; gap: 5px;">
+                    <button class="holaf-viewer-toggle-button" id="holaf-wf-filter-internal" data-source="internal_png">Internal</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-wf-filter-external" data-source="external_json">External</button>
+                </div>
+            </div>
+
             <div class="holaf-viewer-filter-group">
                 <h4>Tags (AND logic)</h4>
                 <div id="holaf-viewer-tags-filter-container">
@@ -126,15 +150,7 @@ class ImageViewerUI {
                     <datalist id="holaf-viewer-tag-suggestions"></datalist>
                 </div>
             </div>
-            <div class="holaf-viewer-filter-group">
-                <h4>Metadata & Sidecars</h4>
-                <div id="holaf-viewer-bool-filters" class="holaf-viewer-button-grid">
-                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-workflow" data-filterkey="has_workflow">Workflow</button>
-                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-prompt" data-filterkey="has_prompt">Prompt</button>
-                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-edits" data-filterkey="has_edits">Edits</button>
-                    <button class="holaf-viewer-toggle-button" id="holaf-bool-filter-has-tags" data-filterkey="has_tags">Tags</button>
-                </div>
-            </div>
+            
             <div class="holaf-viewer-filter-group holaf-viewer-scrollable-section">
                 <div class="holaf-viewer-filter-header">
                     <h4>Folders</h4>
@@ -209,21 +225,24 @@ class ImageViewerUI {
     }
     
     _cacheElements() {
-        this.elements.searchFilename = this.elements.leftPane.querySelector('#holaf-viewer-search-filename');
-        this.elements.searchPrompt = this.elements.leftPane.querySelector('#holaf-viewer-search-prompt');
-        this.elements.searchWorkflow = this.elements.leftPane.querySelector('#holaf-viewer-search-workflow');
+        this.elements.searchInput = this.elements.leftPane.querySelector('#holaf-viewer-search-input');
+        
+        this.elements.scopeButtons = {
+            filename: this.elements.leftPane.querySelector('#holaf-search-scope-filename'),
+            prompt: this.elements.leftPane.querySelector('#holaf-search-scope-prompt'),
+            workflow: this.elements.leftPane.querySelector('#holaf-search-scope-workflow')
+        };
+
         this.elements.dateStart = this.elements.leftPane.querySelector('#holaf-viewer-date-start');
         this.elements.dateEnd = this.elements.leftPane.querySelector('#holaf-viewer-date-end');
         this.elements.tagInput = this.elements.leftPane.querySelector('#holaf-viewer-tag-input');
         this.elements.activeTagsContainer = this.elements.leftPane.querySelector('#holaf-viewer-active-tags');
-        this.elements.boolFiltersContainer = this.elements.leftPane.querySelector('#holaf-viewer-bool-filters');
         
-        // Cache buttons instead of checkboxes
-        this.elements.boolFilterButtons = {
-            has_workflow: this.elements.leftPane.querySelector('#holaf-bool-filter-has-workflow'),
-            has_prompt: this.elements.leftPane.querySelector('#holaf-bool-filter-has-prompt'),
-            has_edits: this.elements.leftPane.querySelector('#holaf-bool-filter-has-edits'),
-            has_tags: this.elements.leftPane.querySelector('#holaf-bool-filter-has-tags'),
+        // REPLACED: Cache the new workflow buttons
+        this.elements.workflowButtonsContainer = this.elements.leftPane.querySelector('#holaf-viewer-workflow-filters');
+        this.elements.workflowButtons = {
+            internal: this.elements.leftPane.querySelector('#holaf-wf-filter-internal'),
+            external: this.elements.leftPane.querySelector('#holaf-wf-filter-external')
         };
 
         this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
@@ -235,34 +254,67 @@ class ImageViewerUI {
         const viewer = this.callbacks.getViewer();
 
         this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = () => {
+            this.scopeState = { filename: true, prompt: false, workflow: false };
             this.callbacks.onResetFilters();
         };
 
-        // Text search inputs
-        const onSearchInput = () => this.callbacks.onFilterChange();
-        this.elements.searchFilename.oninput = onSearchInput;
-        this.elements.searchPrompt.oninput = onSearchInput;
-        this.elements.searchWorkflow.oninput = onSearchInput;
+        // --- Unified Search Logic ---
+        const dispatchSearch = () => {
+            const searchText = this.elements.searchInput.value;
+            const currentFilters = imageViewerState.getState().filters;
+            const newFilters = {
+                ...currentFilters,
+                filename_search: this.scopeState.filename ? searchText : '',
+                prompt_search: this.scopeState.prompt ? searchText : '',
+                workflow_search: this.scopeState.workflow ? searchText : ''
+            };
+            imageViewerState.setState({ filters: newFilters });
+            this.callbacks.onFilterChange();
+        };
+
+        this.elements.searchInput.oninput = () => {
+             if (!this.scopeState.filename && !this.scopeState.prompt && !this.scopeState.workflow) {
+                 this.scopeState.filename = true;
+                 this.elements.scopeButtons.filename.classList.add('active');
+             }
+             dispatchSearch();
+        };
+
+        const toggleScope = (scopeKey) => {
+            this.scopeState[scopeKey] = !this.scopeState[scopeKey];
+            this.elements.scopeButtons[scopeKey].classList.toggle('active', this.scopeState[scopeKey]);
+            dispatchSearch();
+        };
+
+        this.elements.scopeButtons.filename.onclick = () => toggleScope('filename');
+        this.elements.scopeButtons.prompt.onclick = () => toggleScope('prompt');
+        this.elements.scopeButtons.workflow.onclick = () => toggleScope('workflow');
+        // --- End Unified Search Logic ---
+
         
         // Date inputs
         const onDateChange = () => this.callbacks.onFilterChange();
         this.elements.dateStart.onchange = onDateChange;
         this.elements.dateEnd.onchange = onDateChange;
 
-        // Boolean filters (now using click on buttons)
-        this.elements.boolFiltersContainer.onclick = (e) => {
+        // --- Workflow Availability Logic (RESTORED) ---
+        this.elements.workflowButtonsContainer.onclick = (e) => {
             if (e.target.matches('button')) {
-                const key = e.target.dataset.filterkey;
+                const source = e.target.dataset.source;
                 const currentFilters = imageViewerState.getState().filters;
+                // Get current list of sources or empty array
+                const currentSources = currentFilters.workflow_sources || [];
+                let newSources;
 
-                // Flip the state: true becomes null, anything else becomes true
-                const currentValue = currentFilters.bool_filters[key];
-                const newValue = currentValue === true ? null : true;
+                if (currentSources.includes(source)) {
+                    // Remove if exists
+                    newSources = currentSources.filter(s => s !== source);
+                } else {
+                    // Add if not exists
+                    newSources = [...currentSources, source];
+                }
                 
-                const newBoolFilters = { ...currentFilters.bool_filters, [key]: newValue };
-                imageViewerState.setState({ filters: { ...currentFilters, bool_filters: newBoolFilters } });
-                
-
+                imageViewerState.setState({ filters: { ...currentFilters, workflow_sources: newSources } });
                 this.callbacks.onFilterChange();
             }
         };
@@ -338,7 +390,6 @@ class ImageViewerUI {
             viewer._applyThumbnailFit();
         };
 
-        // `oninput` is for real-time visual updates *during* sliding.
         this.elements.thumbSizeSlider.oninput = (e) => {
             this.isDraggingSlider = true;
             const newSize = parseInt(e.target.value);
@@ -346,8 +397,6 @@ class ImageViewerUI {
             viewer._applyThumbnailSize(newSize);
         };
 
-        // `onchange` fires only when the user releases the slider.
-        // This is the correct time to save the final setting.
         this.elements.thumbSizeSlider.onchange = (e) => {
             this.isDraggingSlider = false;
             const newSize = parseInt(e.target.value);
