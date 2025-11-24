@@ -17,6 +17,8 @@ from ... import holaf_utils
 
 logger = logging.getLogger('holaf.images.routes')
 
+EDIT_DIR_NAME = "edit"
+
 # --- API Route Handlers ---
 async def get_thumbnail_route(request: web.Request):
     path_canon_param = request.query.get("path_canon")
@@ -32,7 +34,7 @@ async def get_thumbnail_route(request: web.Request):
     try:
         output_dir = folder_paths.get_output_directory() # Base output
 
-        # --- FIX: Prioritize path_canon if available (it matches DB key exactly) ---
+        # --- Prioritize path_canon if available (it matches DB key exactly) ---
         if path_canon_param:
              # Security check is vital here since we trust the param more
              if ".." in path_canon_param or path_canon_param.startswith("/"):
@@ -58,7 +60,7 @@ async def get_thumbnail_route(request: web.Request):
             return web.Response(status=400, text=error_message_for_client)
 
 
-        # --- FIX: Retrieve thumb_hash from DB first ---
+        # --- Retrieve thumb_hash from DB first ---
         conn_info_read = holaf_database.get_db_connection()
         cursor = conn_info_read.cursor()
         cursor.execute(
@@ -165,7 +167,6 @@ async def get_thumbnail_route(request: web.Request):
         if conn_info_read: holaf_database.close_db_connection(exception=current_exception)
 
 
-# <-- MODIFICATION START: Nouvelle route pour la régénération de miniature -->
 async def regenerate_thumbnail_route(request: web.Request):
     """
     Regenerates a thumbnail for a given image, applying .edt file adjustments if present.
@@ -185,7 +186,7 @@ async def regenerate_thumbnail_route(request: web.Request):
         if not os.path.isfile(original_abs_path):
             return web.json_response({"status": "error", "message": "Original image not found"}, status=404)
 
-        # --- FIX: Lookup Hash in DB ---
+        # --- Lookup Hash in DB ---
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT thumb_hash FROM images WHERE path_canon = ?", (safe_path_canon,))
@@ -200,18 +201,30 @@ async def regenerate_thumbnail_route(request: web.Request):
         thumb_filename = f"{path_hash}.jpg"
         thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
 
-        # Load edit data if it exists
+        # --- LOAD EDIT DATA (New Structure Support) ---
         edit_data = None
-        base_path, _ = os.path.splitext(safe_path_canon)
-        edit_file_rel_path = f"{base_path}.edt"
-        edit_file_abs_path = os.path.normpath(os.path.join(output_dir, edit_file_rel_path))
-        if os.path.isfile(edit_file_abs_path):
+        
+        # 1. Check New Location: /edit/filename.edt
+        original_dir = os.path.dirname(original_abs_path)
+        base_filename = os.path.splitext(os.path.basename(original_abs_path))[0]
+        
+        edit_file_new = os.path.join(original_dir, EDIT_DIR_NAME, base_filename + ".edt")
+        edit_file_legacy = os.path.join(original_dir, base_filename + ".edt")
+        
+        target_edit_file = None
+        if os.path.isfile(edit_file_new):
+            target_edit_file = edit_file_new
+        elif os.path.isfile(edit_file_legacy):
+            target_edit_file = edit_file_legacy
+
+        if target_edit_file:
             try:
-                async with aiofiles.open(edit_file_abs_path, 'r', encoding='utf-8') as f:
+                async with aiofiles.open(target_edit_file, 'r', encoding='utf-8') as f:
                     content = await f.read()
                     edit_data = json.loads(content)
             except Exception as e:
-                logger.warning(f"Could not read or parse edit file {edit_file_abs_path}: {e}")
+                logger.warning(f"Could not read or parse edit file {target_edit_file}: {e}")
+        # -----------------------------------------------
 
         # Run blocking thumbnail creation in an executor thread
         loop = asyncio.get_event_loop()
@@ -234,14 +247,11 @@ async def regenerate_thumbnail_route(request: web.Request):
     except Exception as e:
         traceback.print_exc()
         return web.json_response({"status": "error", "message": str(e)}, status=500)
-# <-- MODIFICATION END -->
 
 
-# --- NOUVEAU : Fonction pour traiter la priorisation en arrière-plan ---
 async def _background_prioritize_task(paths_canon):
     """
     Processes a list of paths to update their priority in the database.
-    This runs in the background.
     """
     conn = None
     current_exception = None
@@ -250,7 +260,6 @@ async def _background_prioritize_task(paths_canon):
         cursor = conn.cursor()
         priority_score_for_visible = 10
         
-        # Use a single UPDATE statement for efficiency
         placeholders = ','.join(['?'] * len(paths_canon))
         sql = f"""
             UPDATE images
@@ -272,7 +281,6 @@ async def _background_prioritize_task(paths_canon):
             holaf_database.close_db_connection(exception=current_exception)
 
 
-# --- MODIFIÉ : Route de priorisation non-bloquante ---
 async def prioritize_thumbnails_route(request: web.Request):
     try:
         data = await request.json()
@@ -281,11 +289,9 @@ async def prioritize_thumbnails_route(request: web.Request):
         if not paths_canon or not isinstance(paths_canon, list):
             return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
 
-        # Lancer la tâche de mise à jour de la base de données en arrière-plan
         loop = asyncio.get_event_loop()
         loop.create_task(_background_prioritize_task(paths_canon))
 
-        # Répondre immédiatement
         return web.json_response({"status": "accepted", "message": "Prioritization task scheduled."}, status=202)
 
     except json.JSONDecodeError:

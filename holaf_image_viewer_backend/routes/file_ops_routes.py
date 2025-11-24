@@ -11,6 +11,8 @@ import folder_paths # ComfyUI global
 from .. import logic
 from ... import holaf_database
 
+EDIT_DIR_NAME = "edit"
+
 # --- API Route Handlers ---
 async def delete_images_route(request: web.Request):
     conn = None
@@ -66,16 +68,39 @@ async def delete_images_route(request: web.Request):
             try:
                 shutil.move(original_full_path, destination_full_path_in_trash)
                 
-                # Move associated .txt, .json, .edt, and .xmp files
+                # Move associated .txt, .json, .xmp files (direct siblings)
                 base_original_path, _ = os.path.splitext(original_full_path)
                 base_dest_path_in_trash, _ = os.path.splitext(destination_full_path_in_trash)
 
-                for meta_ext in ['.txt', '.json', '.edt', '.xmp']:
+                for meta_ext in ['.txt', '.json', '.xmp']:
                     original_meta_file = base_original_path + meta_ext
                     dest_meta_file_in_trash = base_dest_path_in_trash + meta_ext
                     if os.path.exists(original_meta_file):
                         shutil.move(original_meta_file, dest_meta_file_in_trash)
                 
+                # --- HANDLING EDITS (.edt) ---
+                # 1. Check New Location: /edit/filename.edt
+                original_dir = os.path.dirname(original_full_path)
+                original_edit_file_new = os.path.join(original_dir, EDIT_DIR_NAME, os.path.basename(base_original_path) + ".edt")
+                
+                # 2. Check Legacy Location: /filename.edt
+                original_edit_file_legacy = base_original_path + ".edt"
+                
+                dest_edit_file_in_trash = base_dest_path_in_trash + ".edt"
+                
+                if os.path.exists(original_edit_file_new):
+                    shutil.move(original_edit_file_new, dest_edit_file_in_trash)
+                    # Optional: Clean up empty edit dir
+                    try:
+                        edit_dir = os.path.dirname(original_edit_file_new)
+                        if not os.listdir(edit_dir):
+                            os.rmdir(edit_dir)
+                    except OSError: pass # Ignore if not empty
+                    
+                elif os.path.exists(original_edit_file_legacy):
+                    shutil.move(original_edit_file_legacy, dest_edit_file_in_trash)
+                # -----------------------------
+
                 cursor.execute("""
                     UPDATE images 
                     SET is_trashed = 1, original_path_canon = ?, path_canon = ?, subfolder = ?, filename = ?
@@ -157,15 +182,27 @@ async def restore_images_route(request: web.Request):
                 # Move the main image file
                 shutil.move(current_full_path_in_trash, original_full_path_restored)
 
-                # Move associated .txt, .json, .edt, and .xmp files
+                # Move associated .txt, .json, .xmp files (siblings)
                 base_path_in_trash, _ = os.path.splitext(current_full_path_in_trash)
                 base_restored_path, _ = os.path.splitext(original_full_path_restored)
                 
-                for meta_ext in ['.txt', '.json', '.edt', '.xmp']:
+                for meta_ext in ['.txt', '.json', '.xmp']:
                     meta_file_in_trash = base_path_in_trash + meta_ext
                     restored_meta_file = base_restored_path + meta_ext
                     if os.path.exists(meta_file_in_trash):
                         shutil.move(meta_file_in_trash, restored_meta_file)
+
+                # --- RESTORING EDITS (.edt) ---
+                # We always restore to the NEW location structure: /edit/filename.edt
+                edit_file_in_trash = base_path_in_trash + ".edt"
+                if os.path.exists(edit_file_in_trash):
+                    restored_dir = os.path.dirname(original_full_path_restored)
+                    edit_dir = os.path.join(restored_dir, EDIT_DIR_NAME)
+                    os.makedirs(edit_dir, exist_ok=True)
+                    
+                    restored_edit_file = os.path.join(edit_dir, os.path.basename(base_restored_path) + ".edt")
+                    shutil.move(edit_file_in_trash, restored_edit_file)
+                # ------------------------------
 
                 # Update the database record
                 new_subfolder, new_filename = os.path.split(original_path_canon)
@@ -178,7 +215,6 @@ async def restore_images_route(request: web.Request):
                 if cursor.rowcount > 0:
                     restored_files_count += 1
                 else:
-                    # This case is unlikely if we passed the initial select, but good for safety
                     errors.append({"path": path_in_trash_canon, "error": "DB record could not be updated after file move."})
 
             except Exception as move_exc:
@@ -234,12 +270,33 @@ async def delete_images_permanently_route(request: web.Request):
                 if os.path.isfile(full_path):
                     os.unlink(full_path)
                 
-                # Delete associated .txt, .json, .edt, and .xmp files
+                # Delete associated .txt, .json, .xmp files (siblings)
                 base_path, _ = os.path.splitext(full_path)
-                for meta_ext in ['.txt', '.json', '.edt', '.xmp']:
+                for meta_ext in ['.txt', '.json', '.xmp']:
                     meta_file = base_path + meta_ext
                     if os.path.exists(meta_file):
                         os.unlink(meta_file)
+                        
+                # --- DELETING EDITS (.edt) ---
+                # Check New Location
+                parent_dir = os.path.dirname(full_path)
+                filename_no_ext = os.path.basename(base_path)
+                edit_file_new = os.path.join(parent_dir, EDIT_DIR_NAME, filename_no_ext + ".edt")
+                
+                if os.path.exists(edit_file_new):
+                    os.unlink(edit_file_new)
+                    # Optional: Clean up empty edit dir
+                    try:
+                        edit_dir = os.path.dirname(edit_file_new)
+                        if not os.listdir(edit_dir):
+                            os.rmdir(edit_dir)
+                    except OSError: pass
+
+                # Check Legacy Location (just in case)
+                edit_file_legacy = base_path + ".edt"
+                if os.path.exists(edit_file_legacy):
+                    os.unlink(edit_file_legacy)
+                # -----------------------------
                 
                 # Delete the record from the database
                 cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_canon,))

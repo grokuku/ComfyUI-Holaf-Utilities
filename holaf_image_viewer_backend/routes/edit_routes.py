@@ -12,9 +12,39 @@ import folder_paths # ComfyUI global
 from ... import holaf_utils
 from ... import holaf_database
 
+EDIT_DIR_NAME = "edit"
+
+def _get_edit_paths(output_dir, path_canon):
+    """
+    Returns a tuple (new_edit_path, legacy_edit_path, edit_dir) based on the image path.
+    """
+    # 1. Resolve absolute path of the image
+    safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
+    # Note: path_canon is relative to output_dir
+    
+    # Split into directory and filename (relative)
+    rel_dir, filename = os.path.split(safe_path_canon)
+    base_name, _ = os.path.splitext(filename)
+    
+    # Absolute path to the directory containing the image
+    abs_img_dir = os.path.normpath(os.path.join(output_dir, rel_dir))
+    
+    # Define paths
+    edit_filename = f"{base_name}.edt"
+    
+    # New Structure: /path/to/image_folder/edit/image.edt
+    abs_edit_dir = os.path.join(abs_img_dir, EDIT_DIR_NAME)
+    abs_new_edit_path = os.path.join(abs_edit_dir, edit_filename)
+    
+    # Legacy Structure: /path/to/image_folder/image.edt
+    abs_legacy_edit_path = os.path.join(abs_img_dir, edit_filename)
+    
+    return abs_new_edit_path, abs_legacy_edit_path, abs_edit_dir, safe_path_canon
+
 async def load_edits_route(request: web.Request):
     """
-    Loads the content of an .edt sidecar file for a given image.
+    Loads the content of an .edt sidecar file. 
+    Prioritizes 'edit/' folder, falls back to legacy sibling file.
     """
     path_canon = request.query.get("path_canon")
     if not path_canon:
@@ -22,22 +52,28 @@ async def load_edits_route(request: web.Request):
 
     try:
         output_dir = folder_paths.get_output_directory()
-        # Sanitize to prevent directory traversal outside of the intended path
-        safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
-        if safe_path_canon != path_canon:
+        new_path, legacy_path, _, safe_path = _get_edit_paths(output_dir, path_canon)
+
+        if safe_path != path_canon:
              return web.json_response({"status": "error", "message": "Invalid path specified"}, status=403)
 
-        base_path, _ = os.path.splitext(safe_path_canon)
-        edit_file_rel_path = f"{base_path}.edt"
-        edit_file_abs_path = os.path.normpath(os.path.join(output_dir, edit_file_rel_path))
-
-        if not edit_file_abs_path.startswith(os.path.normpath(output_dir)):
+        # Security check
+        if not new_path.startswith(os.path.normpath(output_dir)):
             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
         
-        if not os.path.isfile(edit_file_abs_path):
+        target_path = None
+        
+        # 1. Check new 'edit/' folder
+        if os.path.isfile(new_path):
+            target_path = new_path
+        # 2. Check legacy location
+        elif os.path.isfile(legacy_path):
+            target_path = legacy_path
+            
+        if not target_path:
             return web.json_response({"status": "error", "message": "Edit file not found"}, status=404)
 
-        async with aiofiles.open(edit_file_abs_path, 'r', encoding='utf-8') as f:
+        async with aiofiles.open(target_path, 'r', encoding='utf-8') as f:
             content = await f.read()
             edit_data = json.loads(content)
 
@@ -52,7 +88,8 @@ async def load_edits_route(request: web.Request):
 
 async def save_edits_route(request: web.Request):
     """
-    Saves edit data to an .edt sidecar file and updates the database.
+    Saves edit data to 'edit/' folder.
+    Migrates legacy files by deleting them after successful save in new location.
     """
     conn, current_exception = None, None
     try:
@@ -64,22 +101,31 @@ async def save_edits_route(request: web.Request):
             return web.json_response({"status": "error", "message": "'path_canon' and 'edits' are required"}, status=400)
 
         output_dir = folder_paths.get_output_directory()
-        safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
-        if safe_path_canon != path_canon:
+        new_path, legacy_path, edit_dir, safe_path = _get_edit_paths(output_dir, path_canon)
+        
+        if safe_path != path_canon:
              return web.json_response({"status": "error", "message": "Invalid path specified"}, status=403)
 
-        base_path, _ = os.path.splitext(safe_path_canon)
-        edit_file_rel_path = f"{base_path}.edt"
-        edit_file_abs_path = os.path.normpath(os.path.join(output_dir, edit_file_rel_path))
-
-        if not edit_file_abs_path.startswith(os.path.normpath(output_dir)):
+        if not new_path.startswith(os.path.normpath(output_dir)):
             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
 
-        # Write the .edt file
-        async with aiofiles.open(edit_file_abs_path, 'w', encoding='utf-8') as f:
-            await f.write(json.dumps(edits, indent=2))
+        # Ensure 'edit' directory exists
+        if not os.path.exists(edit_dir):
+            os.makedirs(edit_dir, exist_ok=True)
 
-        # Update the database to reflect the presence of the edit file
+        # Write the .edt file to the NEW location
+        async with aiofiles.open(new_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(edits, indent=2))
+            
+        # Cleanup: Remove legacy file if it exists to avoid confusion
+        if os.path.isfile(legacy_path):
+            try:
+                os.remove(legacy_path)
+                print(f"🔵 [Holaf-Edit] Migrated edit file for {path_canon} to 'edit/' folder.")
+            except Exception as e:
+                print(f"🟡 [Holaf-Edit] Failed to remove legacy edit file: {e}")
+
+        # Update the database
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE images SET has_edit_file = 1, last_synced_at = ? WHERE path_canon = ?", (time.time(), path_canon))
@@ -101,7 +147,7 @@ async def save_edits_route(request: web.Request):
 
 async def delete_edits_route(request: web.Request):
     """
-    Deletes an .edt sidecar file and updates the database.
+    Deletes .edt sidecar file (checks both new and legacy locations).
     """
     conn, current_exception = None, None
     try:
@@ -111,20 +157,21 @@ async def delete_edits_route(request: web.Request):
             return web.json_response({"status": "error", "message": "'path_canon' is required"}, status=400)
         
         output_dir = folder_paths.get_output_directory()
-        safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
-        if safe_path_canon != path_canon:
-             return web.json_response({"status": "error", "message": "Invalid path specified"}, status=403)
+        new_path, legacy_path, _, safe_path = _get_edit_paths(output_dir, path_canon)
         
-        base_path, _ = os.path.splitext(safe_path_canon)
-        edit_file_rel_path = f"{base_path}.edt"
-        edit_file_abs_path = os.path.normpath(os.path.join(output_dir, edit_file_rel_path))
+        if safe_path != path_canon:
+             return web.json_response({"status": "error", "message": "Invalid path specified"}, status=403)
 
-        if not edit_file_abs_path.startswith(os.path.normpath(output_dir)):
+        if not new_path.startswith(os.path.normpath(output_dir)):
             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
 
-        # Delete the file if it exists
-        if os.path.isfile(edit_file_abs_path):
-            os.remove(edit_file_abs_path)
+        # Delete from NEW location
+        if os.path.isfile(new_path):
+            os.remove(new_path)
+            
+        # Delete from LEGACY location (cleanup)
+        if os.path.isfile(legacy_path):
+            os.remove(legacy_path)
         
         # Update the database
         conn = holaf_database.get_db_connection()

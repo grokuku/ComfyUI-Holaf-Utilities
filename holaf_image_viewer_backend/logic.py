@@ -15,7 +15,6 @@ from PIL import Image, ImageOps, UnidentifiedImageError, ImageEnhance
 import folder_paths
 
 # --- NEW DEPENDENCY: Required for reading XMP sidecar files for tags ---
-# Make sure to add 'python-xmp-toolkit' to your requirements.txt
 try:
     from libxmp.files import XMPFiles
     from libxmp.consts import XMP_NS_DC
@@ -29,11 +28,12 @@ from .. import holaf_database
 from .. import holaf_utils
 
 # --- Constants ---
-# We keep the name SUPPORTED_IMAGE_FORMATS for compatibility, but it now includes videos
 VIDEO_FORMATS = {'.mp4', '.webm'}
 SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}.union(VIDEO_FORMATS)
 
 TRASHCAN_DIR_NAME = "trashcan"
+EDIT_DIR_NAME = "edit"  # New reserved folder name
+
 STANDARD_RATIOS = [
     {"name": "1:1", "value": 1.0}, {"name": "4:3", "value": 4/3}, {"name": "3:4", "value": 3/4},
     {"name": "3:2", "value": 3/2}, {"name": "2:3", "value": 2/3}, {"name": "16:9", "value": 16/9},
@@ -105,26 +105,22 @@ def _update_folder_metadata_cache_blocking(cursor):
         print(f"🔴 [Holaf-Logic] CRITICAL: Failed to rebuild folder metadata cache: {e}")
         raise
 
-# --- MODIFICATION: New helper function to manage tags in the DB ---
 def _update_image_tags_in_db(cursor, image_id, tags_list):
     """
     Updates the tags for a specific image ID within a transaction.
     It clears existing tags and adds the new ones.
     """
-    # 1. Clear all existing tags for this image
     cursor.execute("DELETE FROM imagetags WHERE image_id = ?", (image_id,))
 
     if not tags_list:
-        return # Nothing more to do if the list is empty
+        return 
 
-    # 2. Process the new list of tags
-    for tag_name in set(tags_list): # Use set to ensure uniqueness
+    for tag_name in set(tags_list): 
         if not isinstance(tag_name, str) or not tag_name.strip():
-            continue # Skip empty or invalid tags
+            continue 
         
         clean_tag = tag_name.strip().lower()
 
-        # 3. Find tag_id or create a new tag
         cursor.execute("SELECT tag_id FROM tags WHERE name = ?", (clean_tag,))
         tag_row = cursor.fetchone()
         
@@ -134,7 +130,6 @@ def _update_image_tags_in_db(cursor, image_id, tags_list):
             cursor.execute("INSERT INTO tags (name) VALUES (?)", (clean_tag,))
             tag_id = cursor.lastrowid
         
-        # 4. Link the tag to the image
         cursor.execute("INSERT OR IGNORE INTO imagetags (image_id, tag_id) VALUES (?, ?)", (image_id, tag_id))
 
 # --- Database Synchronization ---
@@ -142,7 +137,6 @@ def _update_image_tags_in_db(cursor, image_id, tags_list):
 def add_or_update_single_image(image_abs_path):
     """
     Efficiently adds or updates a single image in the database.
-    This should be called by any process that saves a new image.
     """
     output_dir = folder_paths.get_output_directory()
     if not os.path.normpath(image_abs_path).startswith(os.path.normpath(output_dir)):
@@ -166,10 +160,11 @@ def add_or_update_single_image(image_abs_path):
         if subfolder_str == '.': subfolder_str = ''
         path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
         
-        # --- FIX: Calculate thumb_hash ---
         thumb_hash = hashlib.sha1(path_canon.encode('utf-8')).hexdigest()
 
-        if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
+        # Check exclusion for Trashcan AND Edit folder
+        if (subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME or
+            subfolder_str.endswith('/' + EDIT_DIR_NAME) or subfolder_str == EDIT_DIR_NAME or f"/{EDIT_DIR_NAME}/" in subfolder_str):
             return
 
         top_level_subfolder = 'root'
@@ -185,10 +180,8 @@ def add_or_update_single_image(image_abs_path):
         has_prompt_flag = (meta.get('prompt_source', 'none') not in ['none', 'error'])
         has_workflow_flag = (meta.get('workflow_source', 'none') not in ['none', 'error'])
         has_edits_flag = meta.get('has_edits', False)
-        # BUGFIX: Define has_edit_file alias for backward compatibility/SQL params
         has_edit_file = has_edits_flag
         
-        # The 'has_tags' flag is now determined by whether the tags list from metadata is empty
         tags_list = meta.get('tags', [])
         has_tags_flag = bool(tags_list)
 
@@ -200,7 +193,6 @@ def add_or_update_single_image(image_abs_path):
 
         if existing_image:
             image_id = existing_image['id']
-            # UPDATE existing image
             cursor.execute("""
                 UPDATE images SET
                     filename=?, subfolder=?, top_level_subfolder=?, format=?, mtime=?, size_bytes=?, last_synced_at=?,
@@ -213,8 +205,6 @@ def add_or_update_single_image(image_abs_path):
                   meta.get('workflow_source'), meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
                   has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
         else:
-            # INSERT new image
-            # --- FIX: Ensure 24 '?' for 24 columns ---
             cursor.execute("""
                 INSERT INTO images 
                     (filename, subfolder, top_level_subfolder, path_canon, format, mtime, size_bytes, last_synced_at, 
@@ -230,11 +220,8 @@ def add_or_update_single_image(image_abs_path):
                   has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag))
             image_id = cursor.lastrowid
         
-        # --- MODIFICATION: Update tags for the image ---
         _update_image_tags_in_db(cursor, image_id, tags_list)
-
         _update_folder_metadata_cache_blocking(cursor)
-
         conn.commit()
         print(f"✅ [Holaf-Logic-DB] Successfully added/updated in DB: {path_canon}")
         update_last_db_update_time() 
@@ -248,8 +235,6 @@ def add_or_update_single_image(image_abs_path):
             holaf_database.close_db_connection(exception=update_exception)
 
 def delete_single_image_by_path(image_abs_path):
-    # This function is correct and doesn't need changes, as deleting an image
-    # will cascade-delete its tag associations due to the FOREIGN KEY ON DELETE CASCADE constraint.
     output_dir = folder_paths.get_output_directory()
     if not os.path.normpath(image_abs_path).startswith(os.path.normpath(output_dir)):
         return
@@ -290,7 +275,6 @@ def sync_image_database_blocking():
     try:
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
-        # --- FIX: Fetch thumb_hash as well for checking ---
         cursor.execute("SELECT id, path_canon, mtime, size_bytes, thumbnail_last_generated_at, thumb_hash FROM images WHERE is_trashed = 0")
         db_images = {row['path_canon']: dict(row) for row in cursor.fetchall()}
         disk_images_canons = set()
@@ -298,11 +282,22 @@ def sync_image_database_blocking():
             print(f"🟡 [Holaf-ImageViewer] Output directory not found: {output_dir}")
         else:
             for root, dirs, files in os.walk(output_dir):
+                # --- IGNORE TRASHCAN ---
                 if os.path.normpath(root) == os.path.normpath(trashcan_full_path):
                     dirs[:] = [] 
                     continue
                 if os.path.normpath(root).startswith(os.path.normpath(trashcan_full_path) + os.sep):
                     continue
+
+                # --- IGNORE EDIT FOLDERS ---
+                # This modifies 'dirs' in-place so os.walk skips descending into them
+                if EDIT_DIR_NAME in dirs:
+                    dirs.remove(EDIT_DIR_NAME)
+                
+                # Double check we are not currently inside an edit folder (should be covered above but safety first)
+                if os.path.basename(root) == EDIT_DIR_NAME:
+                    continue
+
                 for filename in files:
                     file_ext = os.path.splitext(filename)[1].lower()
                     if file_ext not in SUPPORTED_IMAGE_FORMATS:
@@ -312,11 +307,12 @@ def sync_image_database_blocking():
                         file_stat = os.stat(full_path)
                         subfolder_str = os.path.relpath(root, output_dir).replace(os.sep, '/')
                         if subfolder_str == '.': subfolder_str = ''
+                        
+                        # Extra safety check
                         if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
                             continue
+
                         path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
-                        
-                        # --- FIX: Calculate thumb_hash ---
                         thumb_hash = hashlib.sha1(path_canon.encode('utf-8')).hexdigest()
                         
                         disk_images_canons.add(path_canon)
@@ -327,7 +323,6 @@ def sync_image_database_blocking():
                         has_prompt_flag = (meta.get('prompt_source', 'none') not in ['none', 'error'])
                         has_workflow_flag = (meta.get('workflow_source', 'none') not in ['none', 'error'])
                         has_edits_flag = meta.get('has_edits', False)
-                        # BUGFIX: Define has_edit_file alias for backward compatibility/SQL params
                         has_edit_file = has_edits_flag
                         
                         tags_list = meta.get('tags', [])
@@ -337,10 +332,9 @@ def sync_image_database_blocking():
                         image_id = None
                         if existing_record:
                             image_id = existing_record['id']
-                            # Check if properties changed OR if thumb_hash is missing in DB (for migration safety)
                             if (existing_record['mtime'] != file_stat.st_mtime or
                                 existing_record['size_bytes'] != file_stat.st_size or
-                                existing_record.get('thumb_hash') != thumb_hash): # Check for thumb_hash change too
+                                existing_record.get('thumb_hash') != thumb_hash):
                                 cursor.execute("""
                                     UPDATE images SET mtime=?, size_bytes=?, last_synced_at=?, subfolder=?, 
                                     top_level_subfolder=?, prompt_text=?, workflow_json=?, prompt_source=?, 
@@ -353,7 +347,6 @@ def sync_image_database_blocking():
                                       meta.get('workflow_source'), meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
                                       has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
                         else:
-                            # --- FIX: Ensure 24 '?' for 24 columns in Sync function too ---
                             cursor.execute("""
                                 INSERT INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
                                 size_bytes, last_synced_at, has_edit_file, thumb_hash, has_prompt, has_workflow, has_edits, has_tags,
@@ -399,13 +392,9 @@ def sync_image_database_blocking():
 def clean_thumbnails_blocking():
     """
     Scans the thumbnail directory and the database to clean up and regenerate thumbnails.
-    - Deletes orphan thumbnails (where the original image no longer exists).
-    - Resets the status for images that are missing a thumbnail file.
-    - Resets the status for thumbnails that are unreadable/corrupt.
     """
     print("🔵 [Holaf-ImageViewer] Starting thumbnail cleaning process...")
     thumb_dir = holaf_utils.get_thumbnail_dir()
-    output_dir = folder_paths.get_output_directory()
     
     deleted_orphans_count = 0
     regenerated_missing_count = 0
@@ -418,12 +407,8 @@ def clean_thumbnails_blocking():
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Delete orphan thumbnails
         if os.path.isdir(thumb_dir):
             all_thumb_files = os.listdir(thumb_dir)
-            
-            # --- OPTIMIZATION: Now we can check the hash directly from the DB ---
-            # Fetch all valid thumb_hashes
             cursor.execute("SELECT thumb_hash FROM images WHERE thumb_hash IS NOT NULL")
             valid_hashes = {row['thumb_hash'] for row in cursor.fetchall()}
             
@@ -437,7 +422,6 @@ def clean_thumbnails_blocking():
                     except OSError as e:
                         print(f"🟡 [Holaf-ImageViewer] Could not delete orphan thumbnail {thumb_filename}: {e}")
 
-        # 2. Check all non-corrupt images in DB for thumbnail validity
         cursor.execute("SELECT id, path_canon, thumb_hash FROM images WHERE thumbnail_status != 3")
         images_to_check = cursor.fetchall()
         
@@ -445,7 +429,7 @@ def clean_thumbnails_blocking():
         ids_to_reset_corrupt = []
 
         for image in images_to_check:
-            if not image['thumb_hash']: continue # Skip if hash is missing (should be fixed by sync)
+            if not image['thumb_hash']: continue 
 
             thumb_filename = f"{image['thumb_hash']}.jpg"
             thumb_path = os.path.join(thumb_dir, thumb_filename)
@@ -453,12 +437,10 @@ def clean_thumbnails_blocking():
             if not os.path.exists(thumb_path):
                 ids_to_reset_missing.append(image['id'])
             else:
-                # 3. Verify if thumbnail is a valid, readable image
                 try:
                     with Image.open(thumb_path) as img:
-                        img.verify() # Fast check for basic integrity
+                        img.verify() 
                 except Exception:
-                    # If any error occurs, it's likely corrupt
                     ids_to_reset_corrupt.append(image['id'])
 
         if ids_to_reset_missing:
@@ -518,31 +500,39 @@ def _extract_image_metadata_blocking(image_path_abs):
 
     prompt_txt_path = os.path.join(directory, base_filename + ".txt")
     workflow_json_path = os.path.join(directory, base_filename + ".json")
-    edit_file_path = os.path.join(directory, base_filename + ".edt")
     xmp_file_path = os.path.join(directory, base_filename + ".xmp")
+    
+    # --- MODIFICATION: Updated Edit File Logic ---
+    # Check new folder structure first
+    new_edit_path = os.path.join(directory, EDIT_DIR_NAME, base_filename + ".edt")
+    legacy_edit_path = os.path.join(directory, base_filename + ".edt")
+    
+    has_edits = False
+    if os.path.isfile(new_edit_path):
+        has_edits = True
+    elif os.path.isfile(legacy_edit_path):
+        has_edits = True
+    # ---------------------------------------------
 
     result = {
         "prompt": None, "prompt_source": "none",
         "workflow": None, "workflow_source": "none",
         "width": None, "height": None, "ratio": None,
-        "has_edits": os.path.isfile(edit_file_path),
-        "tags": [] # Initialize with an empty list for tags
+        "has_edits": has_edits,
+        "tags": [] 
     }
 
-    # --- MODIFICATION: Read tags from XMP sidecar file ---
     if XMP_AVAILABLE and os.path.isfile(xmp_file_path):
         try:
             xmpfile = XMPFiles(file_path=xmp_file_path, open_forupdate=False)
             xmp = xmpfile.get_xmp()
             if xmp and xmp.does_property_exist(XMP_NS_DC, 'subject'):
-                # get_property returns a list of strings for 'subject'
                 tags = xmp.get_property(XMP_NS_DC, 'subject')
                 if tags:
                     result["tags"] = [str(tag) for tag in tags if isinstance(tag, str) and tag.strip()]
             xmpfile.close_file()
         except Exception as e:
             print(f"🟡 [Holaf-Logic] Failed to read XMP file {xmp_file_path}: {e}")
-    # --- END MODIFICATION ---
 
     if os.path.isfile(prompt_txt_path):
         try:
@@ -556,12 +546,10 @@ def _extract_image_metadata_blocking(image_path_abs):
             result["workflow_source"] = "external_json"
         except Exception as e: result["workflow"], result["workflow_source"] = {"error": f"Error reading .json: {e}"}, "error"
 
-    # --- VIDEO HANDLING ---
     if file_ext.lower() in VIDEO_FORMATS:
         ffprobe = get_ffprobe_path()
         if ffprobe:
             try:
-                # Run ffprobe to get resolution
                 cmd = [
                     ffprobe, "-v", "error", "-select_streams", "v:0",
                     "-show_entries", "stream=width,height",
@@ -586,9 +574,7 @@ def _extract_image_metadata_blocking(image_path_abs):
             result["error"] = "ffprobe not found"
             
         return result
-    # --- END VIDEO HANDLING ---
 
-    # --- IMAGE HANDLING ---
     try:
         with Image.open(image_path_abs) as img:
             result["width"], result["height"] = img.size
@@ -624,19 +610,16 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
         
         img = None
         
-        # --- VIDEO THUMBNAIL EXTRACTION ---
         if file_ext in VIDEO_FORMATS:
             ffmpeg = get_ffmpeg_path()
             if not ffmpeg:
                 raise RuntimeError("ffmpeg not found, cannot generate video thumbnail.")
             
-            # Extract first frame at 00:00:00 to stdout
             cmd = [
                 ffmpeg, "-y", "-ss", "00:00:00", "-i", original_path_abs,
                 "-frames:v", "1", "-f", "image2", "pipe:1"
             ]
             
-            # We suppress stderr unless there is an error to avoid console spam
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             stdout, stderr = process.communicate()
             
@@ -645,12 +628,9 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
                 
             from io import BytesIO
             img = Image.open(BytesIO(stdout))
-        # --- END VIDEO THUMBNAIL EXTRACTION ---
         else:
-            # Standard image loading
             img = Image.open(original_path_abs)
 
-        # Common processing (Resize, Edits, Save)
         with img:
             img_copy = img.copy()
             if edit_data: img_copy = apply_edits_to_image(img_copy, edit_data)
@@ -679,10 +659,9 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
         update_exception = e
     except Exception as e:
         update_exception = e
-        # --- FIX: Prevent infinite loops. Mark as Failed (Status 3) and set Lowest Priority (9999) ---
         print(f"🔴 [Holaf-ImageViewer] Error in _create_thumbnail_blocking for {original_path_abs}: {e}")
         if image_path_canon_for_db_update:
-            conn_fail_db_inner = None # Use a new connection variable to avoid conflicts
+            conn_fail_db_inner = None 
             try:
                 conn_fail_db_inner = holaf_database.get_db_connection()
                 cursor_inner = conn_fail_db_inner.cursor()
