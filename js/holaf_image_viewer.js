@@ -5,7 +5,8 @@
  * This script provides the client-side logic for the Holaf Image Viewer.
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
- * UPDATE: Added <video> support in Fullscreen Overlay.
+ * FIX: Exposes UI elements to viewer instance for navigation module access.
+ * UPDATE: Added 'loop' attribute to fullscreen video.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -34,6 +35,7 @@ const holafImageViewer = {
     // --- State & Properties ---
     editor: null,
     panelElements: null,
+    elements: null, // Will hold references from UI module
     isInitialized: false,
     areSettingsLoaded: false,
     settings: {},
@@ -140,12 +142,12 @@ const holafImageViewer = {
         overlay.id = 'holaf-viewer-fullscreen-overlay';
         overlay.style.display = 'none';
 
-        // Added <video> tag here
+        // Added 'loop' to video tag
         overlay.innerHTML = `
             <button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="Close (Esc)">✖</button>
             <button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="Previous (Left Arrow)">‹</button>
             <img src="" draggable="false" />
-            <video controls id="holaf-viewer-fs-video" style="display: none;"></video>
+            <video controls loop id="holaf-viewer-fs-video" style="display: none;"></video>
             <button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>
         `;
         document.body.appendChild(overlay);
@@ -153,7 +155,7 @@ const holafImageViewer = {
         this.fullscreenElements = {
             overlay,
             img: overlay.querySelector('img'),
-            video: overlay.querySelector('video'), // Cached video element
+            video: overlay.querySelector('video'),
             closeBtn: overlay.querySelector('#holaf-viewer-fs-close'),
             prevBtn: overlay.querySelector('#holaf-viewer-fs-prev'),
             nextBtn: overlay.querySelector('#holaf-viewer-fs-next')
@@ -235,6 +237,10 @@ const holafImageViewer = {
             onFilterChange: () => this.triggerFilterChange(),
             onResetFilters: () => this._resetFilters(),
         });
+
+        // CRITICAL FIX: Expose UI elements to the viewer instance
+        // so Navigation module can access elements.zoomVideo
+        this.elements = UI.elements;
 
         this._updateActionButtonsState();
     },

@@ -5,7 +5,7 @@
  * REFACTORED: This module is now an active, state-aware component.
  * It builds the main UI structure, manages its own event listeners,
  * and reacts to changes in the global image viewer state.
- * UPDATE: Added <video> tag injection in center pane.
+ * UPDATE: Added 'loop' to zoom video.
  */
 
 import { HOLAF_THEMES } from '../holaf_themes.js';
@@ -199,13 +199,14 @@ class ImageViewerUI {
         const pane = document.createElement('div');
         pane.id = 'holaf-viewer-center-pane';
         pane.className = 'holaf-viewer-pane';
+        // Added loop to video tag
         pane.innerHTML = `
             <div id="holaf-viewer-toolbar"></div>
             <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">Loading images...</p></div>
             <div id="holaf-viewer-zoom-view" style="display: none;">
                 <button class="holaf-viewer-zoom-close" title="Close (or double-click image)">✖</button>
                 <img src="" draggable="false" />
-                <video controls id="holaf-viewer-zoom-video" style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
+                <video controls loop id="holaf-viewer-zoom-video" style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
                 <button class="holaf-viewer-zoom-fullscreen-icon" title="Enter fullscreen">⛶</button>
             </div>
         `;
