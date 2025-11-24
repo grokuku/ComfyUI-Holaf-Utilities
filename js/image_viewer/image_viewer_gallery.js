@@ -6,14 +6,16 @@
  * INCLUDES: Built-in Benchmark Tool to test concurrency limits.
  * FIX: Added strict 30s TIMEOUT to prevent queue deadlocks on stalled requests.
  * UPDATE: Added video click handler.
+ * UPDATE: Added Video Hover Preview logic.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
-import { showFullscreenView } from './image_viewer_navigation.js';
+import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
 
 // --- Configuration ---
 const SCROLLBAR_DEBOUNCE_MS = 50;
 const FETCH_TIMEOUT_MS = 30000; // 30 seconds timeout per image
+const HOVER_DELAY_MS = 100; // Slight delay before playing video to prevent crazy flashing when moving mouse fast
 
 // Default concurrency. Can be overridden by the benchmark tool.
 let currentConcurrencyLimit = 6;
@@ -34,6 +36,9 @@ let scrollbarDebounceTimeout = null;
 // Track active network requests to cancel them if needed
 // Map<path_canon, AbortController>
 const activeFetches = new Map();
+
+// Track hover timeouts
+const hoverTimeouts = new Map();
 
 let isWheelScrolling = false;
 let wheelScrollTimeout = null;
@@ -245,6 +250,12 @@ function renderVisibleItems() {
 
         // Cleanup
         for (const [path, element] of renderedPlaceholders) {
+            // Cancel any pending hover video
+            if (hoverTimeouts.has(path)) {
+                clearTimeout(hoverTimeouts.get(path));
+                hoverTimeouts.delete(path);
+            }
+
             element.remove();
             if (activeFetches.has(path)) {
                 // Abort user-cancelled fetches (scroll away)
@@ -388,6 +399,8 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
             oldImg.remove();
         }
 
+        // If a video preview is currently playing, we put the img behind it or hide it
+        // But simplified logic: just prepend.
         placeholder.prepend(img);
         placeholder.dataset.thumbnailLoadingOrLoaded = "true";
 
@@ -432,10 +445,62 @@ function createPlaceholder(viewer, image, index) {
         actionIcon.title = "Play Video";
         actionIcon.onclick = (e) => {
             e.stopPropagation();
-            // Trigger viewer to open video (Zoom view will handle it)
             imageViewerState.setState({ activeImage: image, currentNavIndex: index });
             viewer._showZoomedView(image);
         };
+
+        // --- HOVER PREVIEW LOGIC FOR VIDEO ---
+        placeholder.addEventListener('mouseenter', () => {
+            // Clear any existing timeout to avoid overlaps
+            if (hoverTimeouts.has(image.path_canon)) {
+                clearTimeout(hoverTimeouts.get(image.path_canon));
+            }
+
+            // Set a delay to avoid playing if just passing through
+            const timeoutId = setTimeout(() => {
+                if (!placeholder.isConnected) return;
+
+                const existingVideo = placeholder.querySelector('video.holaf-hover-preview');
+                if (existingVideo) return; // Already playing
+
+                const videoUrl = getFullImageUrl(image);
+                const vid = document.createElement('video');
+                vid.className = 'holaf-hover-preview';
+                vid.src = videoUrl;
+                vid.muted = true;
+                vid.loop = true;
+                vid.autoplay = true;
+                vid.playsInline = true;
+                // Style to cover the thumbnail completely
+                vid.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none;';
+
+                // Hide image while video is playing (optional, z-index covers it)
+                const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
+
+                // Handling load errors smoothly
+                vid.onerror = () => { vid.remove(); };
+
+                placeholder.appendChild(vid);
+            }, HOVER_DELAY_MS);
+
+            hoverTimeouts.set(image.path_canon, timeoutId);
+        });
+
+        placeholder.addEventListener('mouseleave', () => {
+            if (hoverTimeouts.has(image.path_canon)) {
+                clearTimeout(hoverTimeouts.get(image.path_canon));
+                hoverTimeouts.delete(image.path_canon);
+            }
+
+            const vid = placeholder.querySelector('video.holaf-hover-preview');
+            if (vid) {
+                vid.pause();
+                vid.src = ""; // Help gc
+                vid.remove();
+            }
+        });
+        // --- END HOVER PREVIEW ---
+
     } else {
         actionIcon.innerHTML = '✎';
         actionIcon.title = "Edit image";
