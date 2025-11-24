@@ -389,21 +389,25 @@ const holafImageViewer = {
     },
 
     _saveCurrentFilterState() {
-        if (!this.panelElements || !UI.elements.searchFilename) return; // UI not ready
+        // --- FIX: Removed obsolete check for UI.elements.searchFilename ---
+        if (!this.panelElements) return;
 
         const selectedFolders = [...document.querySelectorAll('#holaf-viewer-folders-filter input:checked')].map(cb => cb.id.replace('folder-filter-', ''));
         const selectedFormats = [...document.querySelectorAll('#holaf-viewer-formats-filter input:checked')].map(cb => cb.id.replace('format-filter-', ''));
 
+        // Use current state for search filters as they are updated by UI module
+        const currentFilters = imageViewerState.getState().filters;
+
         const settingsToSave = {
             folder_filters: selectedFolders,
             format_filters: selectedFormats,
-            startDate: UI.elements.dateStart.value,
-            endDate: UI.elements.dateEnd.value,
-            filename_search: UI.elements.searchFilename.value,
-            prompt_search: UI.elements.searchPrompt.value,
-            workflow_search: UI.elements.searchWorkflow.value,
-            // bool_filters, tags_filter, and locked_folders are already up-to-date in the state
-            // because their UI controls update the state directly on change.
+            startDate: UI.elements.dateStart ? UI.elements.dateStart.value : '',
+            endDate: UI.elements.dateEnd ? UI.elements.dateEnd.value : '',
+            
+            // Persist the Unified Search state
+            filename_search: currentFilters.filename_search,
+            prompt_search: currentFilters.prompt_search,
+            workflow_search: currentFilters.workflow_search,
         };
 
         this.saveSettings(settingsToSave);

@@ -118,7 +118,8 @@ class ImageViewerState {
             }
         }
         
-        console.log("Image Viewer State Updated:", partialState);
+        // LOG REMOVED to keep console clean during polling
+        // console.log("Image Viewer State Updated:", partialState);
         this._notify();
     }
 
@@ -133,12 +134,20 @@ class ImageViewerState {
             // Copie de toutes les propriétés de premier niveau
             ...state,
             
-            // Création de nouvelles copies pour les objets et tableaux imbriqués
-            images: [...state.images],
+            // OPTIMISATION CRITIQUE 1 : Retourne la référence directe au tableau d'images (gros volume).
+            images: state.images,
+            
+            // FIX CRITIQUE 2 : Copie explicite des tableaux de filtres.
             filters: { 
                 ...state.filters,
-                bool_filters: { ...state.filters.bool_filters } // Copie profonde pour l'objet imbriqué
+                folder_filters: [...(state.filters.folder_filters || [])],
+                format_filters: [...(state.filters.format_filters || [])],
+                tags_filter: [...(state.filters.tags_filter || [])],
+                workflow_sources: [...(state.filters.workflow_sources || [])],
+                locked_folders: [...(state.filters.locked_folders || [])],
+                bool_filters: { ...state.filters.bool_filters } 
             },
+            
             ui: { ...state.ui },
             status: { ...state.status },
             exporting: {

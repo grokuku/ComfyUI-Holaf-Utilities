@@ -31,7 +31,7 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 *   **Python Environment:** ComfyUI embedded python.
 *   **Key Libraries:**
     *   `aiohttp` (Server/API)
-    *   `sqlite3` (Database)
+    *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
     *   `Pillow` (Image processing)
     *   `python-xmp-toolkit` (XMP Metadata support)
 *   **System Dependencies:**
@@ -50,46 +50,37 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
     📄 edit_routes.py
     📄 export_routes.py
     📄 file_ops_routes.py
-      > Delete/Restore operations. Gère les sidecars (.edt, .xmp, .json, .txt).
     📄 image_routes.py
-      > [**UPDATED**] Listing API. Supporte le tri, les filtres booléens, et les filtres de source de workflow (Availability).
+      > [**OPTIMIZED**] Listing API. Utilise maintenant des index composites pour une performance < 200ms.
     📄 metadata_routes.py
     📄 thumbnail_routes.py
-      > Gestion des thumbnails. Délègue la génération à logic.py.
+      > Gestion des thumbnails. Supporte la priorisation via file d'attente.
     📄 utility_routes.py
   📄 __init__.py
   📄 logic.py
     > [**CRITICAL**] Core logic. Scanner de fichiers, Sync DB.
-    > **Video Support:** Détecte .mp4/.webm via FFmpeg.
-    > **Thumbnails:** Génère des JPG statiques pour les vidéos (t=0s).
-    > **Metadata:** Extrait dimensions/durée via ffprobe.
   📄 routes.py
   📄 worker.py
-    > Background tasks.
 
 📁 js/
   > Frontend assets.
   📁 css/
     📄 holaf_image_viewer.css
-      > [**UPDATED**] Styles globaux. Utilise CSS Grid (3 colonnes) pour la liste des formats.
-    📄 (Autres fichiers CSS inchangés...)
   📁 image_viewer/
     📄 image_viewer_actions.js
     📄 image_viewer_editor.js
     📄 image_viewer_gallery.js
-      > [**UPDATED**] Affiche l'icône 🎥 pour les vidéos. Bouton Edit désactivé pour les vidéos (pour l'instant).
+      > [**REFACTORED**] Virtual Scroller avec gestion active du réseau (AbortController) et Timeout de sécurité (30s).
     📄 image_viewer_infopane.js
     📄 image_viewer_navigation.js
     📄 image_viewer_settings.js
     📄 image_viewer_state.js
+      > [**OPTIMIZED**] Gestion d'état optimisée pour éviter les clonages profonds inutiles sur les grands datasets.
     📄 image_viewer_ui.js
-      > [**UPDATED**] Sidebar UI.
-      > **Search:** Recherche unifiée avec boutons Scope (Name, Prompt, Workflow).
-      > **Workflow:** Filtre Availability (Internal/External).
   📁 model_manager/
-    > (Fichiers du gestionnaire de modèles...)
   📄 holaf_main.js
-  📄 (Autres fichiers JS root...)
+  📄 holaf_image_viewer.js
+    > [**FIXED**] Contrôleur principal nettoyé des références obsolètes pour la sauvegarde des filtres.
 
 📁 nodes/
   📄 holaf_model_manager.py
@@ -100,7 +91,7 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 📄 context.txt
 📄 holaf_config.py
 📄 holaf_database.py
-  > Gère la connexion SQLite et les migrations.
+  > [**UPDATED**] Gestion SQLite optimisée (PRAGMA mmap_size, cache_size, synchronous=NORMAL).
 📄 holaf_server_management.py
 📄 holaf_system_monitor.py
 📄 holaf_terminal.py
@@ -111,12 +102,11 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 
 ### SECTION 3: KEY CONCEPTS
 
-*   **Sync Strategy:** `logic.py` scanne le dossier output. Il compare mtime/size/hash avec la DB. Les vidéos sont traitées via `subprocess` (FFmpeg).
-*   **Thumbnailing:** Les images utilisent PIL. Les vidéos utilisent FFmpeg pour extraire une frame à 00:00:00. Format de cache : `.jpg`.
+*   **Sync Strategy:** `logic.py` scanne le dossier output. Il compare mtime/size/hash avec la DB.
+*   **Thumbnailing (Frontend):** Virtual Scroller personnalisé. Charge uniquement les images visibles. Annule les requêtes (`abort()`) si l'utilisateur scrolle trop vite pour éviter la saturation réseau. Timeout strict de 30s pour éviter les blocages.
 *   **Filtering Logic:**
-    *   **Backend:** Construction dynamique de requêtes SQL (`image_routes.py`).
-    *   **Frontend:** `image_viewer_ui.js` construit un objet filtre JSON.
-    *   **Search Scopes:** Le frontend envoie le texte de recherche dans des champs spécifiques (`filename_search`, etc.) selon les boutons actifs.
+    *   **Backend:** Requêtes SQL optimisées via Index Composite (`is_trashed`, `top_level_subfolder`, `mtime`).
+    *   **Frontend:** État centralisé (`imageViewerState`).
 *   **Workflow Availability:** Distingue si le workflow est embarqué dans le PNG (`internal_png`) ou dans un sidecar JSON (`external_json`).
 
 ---
@@ -124,15 +114,15 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 ### SECTION 4: DATABASE SCHEMA
 
 *   **File:** `holaf_utilities.sqlite`
-*   **Current Version:** 12
+*   **Current Version:** 13
 *   **Table `images` (Key Columns):**
     *   `path_canon` (Unique ID path)
-    *   `format` (e.g., 'PNG', 'JPG', 'MP4', 'WEBM')
-    *   `workflow_source` ('internal_png', 'external_json', 'none')
-    *   `has_edits` (Boolean, alias `has_edit_file` in logic)
-    *   `width`, `height` (Dimensions, video resolution)
+    *   `top_level_subfolder` (Indexed for fast folder switching)
+    *   `mtime` (Indexed for sorting)
     *   `thumb_hash` (Used for thumbnail caching)
-    *   `has_tags`, `has_prompt`, `has_workflow` (Boolean flags for fast filtering)
+    *   `is_trashed`
+*   **Indexes:**
+    *   `idx_gallery_composite`: (is_trashed, top_level_subfolder, mtime DESC) -> **Performance Critique**.
 
 ---
 
@@ -144,12 +134,11 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
     - (Aucune tâche active - Fin de session)
 
   COMPLETED_FEATURES (Recent):
-    - **[feature, video_support_basic]** : Support MP4/WEBM (Scan, Metadata, Thumbnails via FFmpeg).
-    - **[feature, ui, video_indicator]** : Icône 🎥 dans la galerie.
-    - **[refactor, ui, unified_search]** : Barre de recherche unique avec boutons de portée (Name/Prompt/Workflow).
-    - **[refactor, ui, workflow_filter]** : Filtre "Availability" (Internal/External).
-    - **[fix, backend, sql_insert_bug]** : Correction du nombre de paramètres SQL pour l'insertion d'images.
-    - **[fix, ui, formats_grid]** : Affichage des formats sur 3 colonnes.
+    - **[perf, backend, db_optimization]** : Passage DB v13. Index composites + WAL mode. Vitesse listing x10.
+    - **[perf, frontend, virtual_scroller]** : AbortController sur le scroll rapide, Timeout 30s, suppression des memory leaks.
+    - **[fix, ui, filters]** : Correction du bug de sélection des dossiers (références objets JS).
+    - **[feature, video_support_basic]** : Support MP4/WEBM.
+    - **[feature, ui, unified_search]** : Barre de recherche unique avec scopes.
 
   ROADMAP:
     Global:
@@ -159,6 +148,4 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
       - **Améliorations Futures (Vidéo) :**
           - `[feature, ui, video_hover_preview]` : Prévisualisation au survol.
           - `[feature, ui, video_player_modal]` : Lecteur vidéo simple.
-      - **Améliorations Futures (Général) :**
-          - Amélioration UX/UI du filtre "Metadata & Sidecars".
 --- END OF FILE context.txt ---

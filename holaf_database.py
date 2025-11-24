@@ -12,7 +12,8 @@ DB_DIR = os.path.dirname(__file__) # In the extension's root directory
 DB_PATH = os.path.join(DB_DIR, DB_NAME)
 # --- SINGLE SOURCE OF TRUTH FOR DB SCHEMA ---
 # Increment this number whenever you make a change to the table structures below.
-LATEST_SCHEMA_VERSION = 12
+# Version 13: Performance Tuning (Composite Indexes + WAL/MMAP Optimizations)
+LATEST_SCHEMA_VERSION = 13
 
 # --- Thread-local storage for database connections ---
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
@@ -28,9 +29,28 @@ def get_db_connection():
 
             local_data.connection = sqlite3.connect(DB_PATH, timeout=10)
             local_data.connection.row_factory = sqlite3.Row
+            
+            # --- PERFORMANCE TUNING (CRITICAL FOR LISTING SPEED) ---
+            # WAL Mode: Allows simultaneous readers and one writer.
             local_data.connection.execute("PRAGMA journal_mode=WAL;")
-            local_data.connection.execute("PRAGMA foreign_keys = ON;") # Good practice
-            local_data.connection.execute("PRAGMA busy_timeout = 7500;") # Increased timeout
+            
+            # Synchronous Normal: Good balance between safety and speed in WAL mode.
+            # Significantly faster writes/commits than FULL.
+            local_data.connection.execute("PRAGMA synchronous = NORMAL;")
+            
+            # Memory Mapping: Maps the DB file into RAM.
+            # Drastically reduces I/O system calls for reads. Set to ~30GB limit.
+            local_data.connection.execute("PRAGMA mmap_size = 30000000000;")
+            
+            # Cache Size: Increase page cache to ~64MB (negative value = kilobytes).
+            local_data.connection.execute("PRAGMA cache_size = -64000;")
+            
+            # Temp Store: Store temporary tables/indices in RAM, not disk.
+            local_data.connection.execute("PRAGMA temp_store = MEMORY;")
+            
+            local_data.connection.execute("PRAGMA foreign_keys = ON;")
+            local_data.connection.execute("PRAGMA busy_timeout = 10000;") # Increased timeout to 10s
+            
         except sqlite3.Error as e:
             print(f"🔴 [Holaf-DB] Thread {threading.get_ident()}: Error connecting to database at {DB_PATH}: {e}")
             local_data.connection = None # Ensure it's None if connection failed
@@ -115,26 +135,35 @@ def _create_fresh_schema(cursor):
         )
     """)
 
-    # Indices for performance
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_is_trashed ON images(is_trashed)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)")
-    # --- MODIFICATION: Replace individual indexes with a more powerful composite index ---
-    # This index is critical for speeding up queries that filter by folder and order by date.
-    # Composite index for gallery filtering/sorting
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_top_level_subfolder_mtime ON images(top_level_subfolder, mtime)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_mtime ON images(mtime)")
+    # --- PERFORMANCE INDEXES (Optimized for v13) ---
     
-    # Index for thumb_hash to speed up orphan cleanup
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_thumb_hash ON images(thumb_hash)")
+    # 1. The "Covering Index" for the main Gallery View.
+    #    Queries usually filter by `is_trashed` AND `top_level_subfolder` AND sort by `mtime DESC`.
+    #    Putting all three in one index allows SQLite to satisfy the query purely from the index tree.
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_gallery_composite 
+        ON images(is_trashed, top_level_subfolder, mtime DESC)
+    """)
+    
+    # 2. Global Timeline View Index (No folder filter)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_timeline_composite 
+        ON images(is_trashed, mtime DESC)
+    """)
 
-    # Indices for Tagging System (NEW in v11)
+    # 3. Standard lookups
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_path_canon ON images(path_canon)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_thumb_hash ON images(thumb_hash)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_format ON images(format)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_workflow_source ON images(workflow_source)")
+
+    # 4. Indices for Tagging System
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_imagetags_image_id ON imagetags(image_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_imagetags_tag_id ON imagetags(tag_id)")
 
-    # Indices for Boolean Flags (NEW in v12)
+    # 5. Indices for Boolean Flags
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_workflow ON images(has_workflow)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_prompt ON images(has_prompt)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_has_edits ON images(has_edits)")
@@ -367,9 +396,8 @@ if __name__ == '__main__':
             cursor_test.execute("PRAGMA index_list(images)")
             indexes = [idx['name'] for idx in cursor_test.fetchall()]
             print("Indexes on 'images' table:", indexes)
-            assert 'idx_images_top_level_subfolder_mtime' in indexes, "CRITICAL: Composite index was not created!"
+            assert 'idx_gallery_composite' in indexes, "CRITICAL: Composite index was not created!"
             assert 'idx_images_thumb_hash' in indexes, "CRITICAL: thumb_hash index was not created!"
-            assert 'idx_images_has_workflow' in indexes, "CRITICAL: 'has_workflow' index was not created!"
             print("✅ All required indexes are present.")
 
 

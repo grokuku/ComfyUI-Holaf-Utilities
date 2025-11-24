@@ -4,6 +4,7 @@ import time
 import datetime
 import traceback
 from collections import defaultdict
+import math
 
 from aiohttp import web
 
@@ -64,7 +65,8 @@ async def get_filter_options_route(request: web.Request):
             holaf_database.close_db_connection(exception=current_exception)
 
 async def list_images_route(request: web.Request):
-    request_start_time = time.time()
+    # --- BENCHMARK START ---
+    t_start = time.perf_counter()
     
     conn = None
     filters = {}
@@ -72,10 +74,21 @@ async def list_images_route(request: web.Request):
     default_response_data = {
         "images": [], "filtered_count": 0, "total_db_count": 0
     }
+    
+    t_db_connected = 0
+    t_count_query = 0
+    t_main_query = 0
+    t_processing = 0
+    t_serialization = 0
+    
     try:
         filters = await request.json()
+        
+        t_json_received = time.perf_counter()
+        
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
+        t_db_connected = time.perf_counter()
 
         # --- MAJOR REFACTOR: Advanced Filtering Logic ---
         
@@ -158,10 +171,10 @@ async def list_images_route(request: web.Request):
         count_query_base = "SELECT COUNT(DISTINCT i.id)" if tags_filter else "SELECT COUNT(i.id)"
         count_query = f"{count_query_base} {query_base} {joins} {final_where}"
         
-        db_count_start_time = time.time()
         cursor.execute(count_query, params)
         filtered_count = cursor.fetchone()[0]
-        db_count_end_time = time.time()
+        
+        t_count_query = time.perf_counter()
 
         # Build the main data fetching query
         group_by = f"GROUP BY i.id HAVING COUNT(DISTINCT t.name) = {len(tags_filter)}" if tags_filter else ""
@@ -169,29 +182,45 @@ async def list_images_route(request: web.Request):
         
         main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by}"
         
-        db_main_start_time = time.time()
         cursor.execute(main_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]
-        db_main_end_time = time.time()
+        
+        t_main_query = time.perf_counter()
         
         # --- END MAJOR REFACTOR ---
 
         # Use orjson for faster JSON serialization if available
+        body_content = ""
+        serialization_method = "json"
+        
         try:
             import orjson
-            response = web.Response(
-                body=orjson.dumps({ "images": images_data, "filtered_count": filtered_count }),
-                content_type='application/json'
-            )
+            body_content = orjson.dumps({ "images": images_data, "filtered_count": filtered_count })
+            serialization_method = "orjson"
         except ImportError:
-            response = web.json_response({ "images": images_data, "filtered_count": filtered_count })
+            body_content = json.dumps({ "images": images_data, "filtered_count": filtered_count }).encode('utf-8')
         
-        request_end_time = time.time()
-        print(f"\n[Holaf Perf] Request finished. Found {filtered_count} images.")
-        print(f"  > DB Count Query Time:      {(db_count_end_time - db_count_start_time):.4f} seconds")
-        print(f"  > DB Main Query & Fetch:    {(db_main_end_time - db_main_start_time):.4f} seconds")
-        print(f"  > Total Backend Request Time: {(request_end_time - request_start_time):.4f} seconds for {len(images_data)} images.")
+        response = web.Response(body=body_content, content_type='application/json')
         
+        t_serialization = time.perf_counter()
+        
+        # --- BENCHMARK REPORTING ---
+        total_time = (t_serialization - t_start) * 1000
+        db_count_ms = (t_count_query - t_db_connected) * 1000
+        db_fetch_ms = (t_main_query - t_count_query) * 1000
+        serialize_ms = (t_serialization - t_main_query) * 1000
+        payload_size_mb = len(body_content) / (1024 * 1024)
+        
+        print(f"\n⚡ [Holaf Perf Report] List Images ({filtered_count} items)")
+        print(f"  ├── Total Time:     {total_time:.2f} ms")
+        print(f"  ├── DB Count Query: {db_count_ms:.2f} ms")
+        print(f"  ├── DB Fetch Data:  {db_fetch_ms:.2f} ms")
+        print(f"  ├── JSON Serialize: {serialize_ms:.2f} ms ({serialization_method})")
+        print(f"  └── Payload Size:   {payload_size_mb:.2f} MB")
+        
+        if payload_size_mb > 5.0:
+            print(f"  ⚠️  WARNING: Payload is large (>5MB). Network transfer will be the bottleneck.")
+
         return response
     except json.JSONDecodeError as e_json:
         current_exception = e_json
