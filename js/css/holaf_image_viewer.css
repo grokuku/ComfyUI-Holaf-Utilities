@@ -14,6 +14,7 @@
  * CORRECTION: Fixed missing scrollbar on the right info pane when the editor is open.
  * MODIFICATION: Added a loading overlay effect for non-blocking filter changes.
  * MODIFICATION: Added fade-in/out transitions for differential gallery rendering.
+ * MODIFICATION: Added Video Player styles (zoom view & fullscreen).
  */
 
 #holaf-viewer-panel .holaf-viewer-container {
@@ -482,6 +483,23 @@
     transform-origin: top left;
 }
 
+/* --- VIDEO PLAYER STYLES --- */
+#holaf-viewer-zoom-view video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    outline: none;
+    display: none;
+    /* Managed by JS */
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+#holaf-viewer-zoom-view video.filtered {
+    transition: filter 0.2s ease-out;
+}
+
+/* --- END VIDEO PLAYER STYLES --- */
+
 .holaf-viewer-zoom-close {
     position: absolute;
     top: 15px;
@@ -751,6 +769,21 @@
     transition: transform 0.2s ease-out;
     transform-origin: top left;
 }
+
+/* --- FULLSCREEN VIDEO STYLES --- */
+#holaf-viewer-fullscreen-overlay video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    outline: none;
+}
+
+/* Ensure controls are clickable */
+video::-webkit-media-controls {
+    z-index: 20;
+}
+
+/* --- END FULLSCREEN VIDEO STYLES --- */
 
 .holaf-viewer-fs-close {
     position: absolute;
@@ -1057,4 +1090,5 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 4px;
 }
+
 /* --- MODIFICATION END --- */

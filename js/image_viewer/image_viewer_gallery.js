@@ -5,6 +5,7 @@
  * MAJOR REFACTOR: Implements high-performance virtualized scrolling with NETWORK CANCELLATION.
  * INCLUDES: Built-in Benchmark Tool to test concurrency limits.
  * FIX: Added strict 30s TIMEOUT to prevent queue deadlocks on stalled requests.
+ * UPDATE: Added video click handler.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -50,30 +51,30 @@ if (!window.holaf) window.holaf = {};
 window.holaf.runBenchmark = (concurrency = 6) => {
     console.clear();
     console.log(`🚀 STARTING BENCHMARK with Concurrency: ${concurrency}`);
-    
+
     // 1. Setup Benchmark Environment
     currentConcurrencyLimit = concurrency;
     benchmarkCacheBuster = `bench_${Date.now()}`; // Unique ID to bypass browser cache
     isBenchmarking = true;
-    
+
     // 2. Reset Gallery
     if (viewerInstance) {
         // Cancel everything current
         for (const controller of activeFetches.values()) controller.abort();
         activeFetches.clear();
         activeThumbnailLoads = 0;
-        
+
         // Clear DOM to force re-render
         galleryGridEl.innerHTML = '';
         renderedPlaceholders.clear();
-        
+
         // 3. Start Timer and Trigger Render
         setTimeout(() => {
             const visibleCount = getVisibleItemCount();
             console.log(`📸 Target: Loading ${visibleCount} visible images from scratch...`);
             benchmarkTotalItems = visibleCount;
             benchmarkStartTime = performance.now();
-            
+
             // Force re-layout and load
             renderVisibleItems();
         }, 100);
@@ -93,29 +94,29 @@ function getVisibleItemCount() {
 
 function checkBenchmarkCompletion() {
     if (!isBenchmarking) return;
-    
+
     // Check if queue is empty and no active fetches
     if (activeThumbnailLoads === 0 && activeFetches.size === 0) {
         // Double check: are all visible placeholders actually loaded?
         const visiblePlaceholders = Array.from(galleryGridEl.children);
         const allLoaded = visiblePlaceholders.every(p => p.dataset.thumbnailLoadingOrLoaded === 'true' || p.dataset.thumbnailLoadingOrLoaded === 'error');
-        
+
         if (allLoaded) {
             const endTime = performance.now();
             const duration = (endTime - benchmarkStartTime) / 1000; // seconds
             const speed = (benchmarkTotalItems / duration).toFixed(2);
-            
+
             console.log(`🏁 BENCHMARK COMPLETE`);
             console.log(`-----------------------------------`);
             console.log(`threads:  ${currentConcurrencyLimit}`);
             console.log(`time:     ${duration.toFixed(3)}s`);
             console.log(`speed:    ${speed} images/sec`);
             console.log(`-----------------------------------`);
-            
+
             // Reset benchmark state
             isBenchmarking = false;
-            benchmarkCacheBuster = ''; 
-            
+            benchmarkCacheBuster = '';
+
             if (window.holaf.toastManager) {
                 window.holaf.toastManager.show({
                     message: `<strong>Benchmark Result (${currentConcurrencyLimit} threads)</strong><br>Speed: ${speed} imgs/sec<br>Time: ${duration.toFixed(2)}s`,
@@ -193,7 +194,7 @@ function renderVisibleItems() {
         const viewportHeight = galleryEl.clientHeight;
         const scrollTop = galleryEl.scrollTop;
 
-        const buffer = viewportHeight * 0.5; 
+        const buffer = viewportHeight * 0.5;
         const visibleAreaStart = Math.max(0, scrollTop - buffer);
         const visibleAreaEnd = scrollTop + viewportHeight + buffer;
 
@@ -277,9 +278,9 @@ function loadVisibleThumbnails() {
 
     const process = () => {
         if (activeThumbnailLoads >= currentConcurrencyLimit) return;
-        
-        const nextPlaceholder = placeholdersToLoad.find(p => 
-            !p.dataset.thumbnailLoadingOrLoaded && 
+
+        const nextPlaceholder = placeholdersToLoad.find(p =>
+            !p.dataset.thumbnailLoadingOrLoaded &&
             !activeFetches.has(p.dataset.pathCanon)
         );
 
@@ -287,7 +288,7 @@ function loadVisibleThumbnails() {
             activeThumbnailLoads++;
             const imageIndex = parseInt(nextPlaceholder.dataset.index, 10);
             const image = imageViewerState.getState().images[imageIndex];
-            
+
             if (image) {
                 fetchThumbnail(nextPlaceholder, image, false).finally(() => {
                     activeThumbnailLoads--;
@@ -311,11 +312,11 @@ function loadVisibleThumbnails() {
 
 async function fetchThumbnail(placeholder, image, forceReload = false) {
     const pathCanon = image.path_canon;
-    if (activeFetches.has(pathCanon)) return; 
-    
+    if (activeFetches.has(pathCanon)) return;
+
     // Flag as loading to prevent duplicate queueing
     placeholder.dataset.thumbnailLoadingOrLoaded = "loading";
-    
+
     // Visual feedback for loading (optional: could be a spinner)
     placeholder.classList.remove('error');
     const existingError = placeholder.querySelector('.holaf-viewer-error-overlay');
@@ -338,15 +339,15 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
     const controller = new AbortController();
     // --- TIMEOUT PROTECTION ---
     const timeoutId = setTimeout(() => controller.abort('timeout'), FETCH_TIMEOUT_MS);
-    
+
     activeFetches.set(pathCanon, controller);
 
     try {
-        const response = await fetch(imageUrl.href, { 
+        const response = await fetch(imageUrl.href, {
             signal: controller.signal,
-            priority: 'high' 
+            priority: 'high'
         });
-        
+
         clearTimeout(timeoutId);
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -362,9 +363,9 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         const img = document.createElement('img');
         img.className = "holaf-image-viewer-thumbnail";
         img.src = objectURL;
-        
+
         img.onload = () => {
-             if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
+            if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
                 const fsIcon = document.createElement('div');
                 fsIcon.className = 'holaf-viewer-fullscreen-icon';
                 fsIcon.innerHTML = '⛶';
@@ -383,7 +384,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
 
         const oldImg = placeholder.querySelector('img');
         if (oldImg) {
-            URL.revokeObjectURL(oldImg.src); 
+            URL.revokeObjectURL(oldImg.src);
             oldImg.remove();
         }
 
@@ -392,7 +393,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
 
     } catch (err) {
         clearTimeout(timeoutId);
-        
+
         let isTimeout = false;
         // Check if it's a timeout abort
         if (controller.signal.aborted && controller.signal.reason === 'timeout') {
@@ -428,15 +429,18 @@ function createPlaceholder(viewer, image, index) {
 
     if (['MP4', 'WEBM'].includes(image.format)) {
         actionIcon.innerHTML = '🎥';
-        actionIcon.title = "Video media";
+        actionIcon.title = "Play Video";
         actionIcon.onclick = (e) => {
             e.stopPropagation();
+            // Trigger viewer to open video (Zoom view will handle it)
+            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
+            viewer._showZoomedView(image);
         };
     } else {
         actionIcon.innerHTML = '✎';
         actionIcon.title = "Edit image";
         actionIcon.classList.toggle('active', image.has_edit_file);
-        
+
         actionIcon.onclick = (e) => {
             e.stopPropagation();
             imageViewerState.setState({ activeImage: image, currentNavIndex: index });
@@ -542,7 +546,7 @@ function syncGallery(viewer, images) {
     if (!galleryEl) initGallery(viewer);
 
     viewerInstance = viewer;
-    
+
     activeThumbnailLoads = 0;
     for (const controller of activeFetches.values()) {
         controller.abort();

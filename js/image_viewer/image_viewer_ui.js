@@ -5,6 +5,7 @@
  * REFACTORED: This module is now an active, state-aware component.
  * It builds the main UI structure, manages its own event listeners,
  * and reacts to changes in the global image viewer state.
+ * UPDATE: Added <video> tag injection in center pane.
  */
 
 import { HOLAF_THEMES } from '../holaf_themes.js';
@@ -17,7 +18,7 @@ class ImageViewerUI {
         this.elements = {};
         this.callbacks = {};
         this.isDraggingSlider = false; // Flag to prevent state updates while dragging
-        
+
         // Internal state to track scope button activation even when text is empty
         this.scopeState = {
             filename: true, // Default to Name active
@@ -56,7 +57,7 @@ class ImageViewerUI {
 
         // Cache UI elements that will be updated frequently
         this._cacheElements();
-        
+
         this._setupEventListeners();
 
         imageViewerState.subscribe(this._render.bind(this));
@@ -70,15 +71,15 @@ class ImageViewerUI {
 
         // --- Search Logic Rendering ---
         const currentText = filters.filename_search || filters.prompt_search || filters.workflow_search || '';
-        
+
         if (this.elements.searchInput.value !== currentText && (currentText !== '' || this.elements.searchInput.value !== '')) {
-             this.elements.searchInput.value = currentText;
+            this.elements.searchInput.value = currentText;
         }
 
         if (filters.filename_search) this.scopeState.filename = true;
         if (filters.prompt_search) this.scopeState.prompt = true;
         if (filters.workflow_search) this.scopeState.workflow = true;
-        
+
         this.elements.scopeButtons.filename.classList.toggle('active', this.scopeState.filename);
         this.elements.scopeButtons.prompt.classList.toggle('active', this.scopeState.prompt);
         this.elements.scopeButtons.workflow.classList.toggle('active', this.scopeState.workflow);
@@ -93,9 +94,9 @@ class ImageViewerUI {
         const sources = filters.workflow_sources || [];
         this.elements.workflowButtons.internal.classList.toggle('active', sources.includes('internal_png'));
         this.elements.workflowButtons.external.classList.toggle('active', sources.includes('external_json'));
-        
+
         this._renderActiveTags(filters.tags_filter || []);
-        
+
         // --- Display Options ---
         if (this.elements.thumbFitToggle) {
             this.elements.thumbFitToggle.checked = ui.thumbnail_fit === 'contain';
@@ -203,7 +204,8 @@ class ImageViewerUI {
             <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">Loading images...</p></div>
             <div id="holaf-viewer-zoom-view" style="display: none;">
                 <button class="holaf-viewer-zoom-close" title="Close (or double-click image)">✖</button>
-                <img src="" />
+                <img src="" draggable="false" />
+                <video controls id="holaf-viewer-zoom-video" style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
                 <button class="holaf-viewer-zoom-fullscreen-icon" title="Enter fullscreen">⛶</button>
             </div>
         `;
@@ -223,10 +225,10 @@ class ImageViewerUI {
         `;
         return col;
     }
-    
+
     _cacheElements() {
         this.elements.searchInput = this.elements.leftPane.querySelector('#holaf-viewer-search-input');
-        
+
         this.elements.scopeButtons = {
             filename: this.elements.leftPane.querySelector('#holaf-search-scope-filename'),
             prompt: this.elements.leftPane.querySelector('#holaf-search-scope-prompt'),
@@ -237,7 +239,7 @@ class ImageViewerUI {
         this.elements.dateEnd = this.elements.leftPane.querySelector('#holaf-viewer-date-end');
         this.elements.tagInput = this.elements.leftPane.querySelector('#holaf-viewer-tag-input');
         this.elements.activeTagsContainer = this.elements.leftPane.querySelector('#holaf-viewer-active-tags');
-        
+
         // REPLACED: Cache the new workflow buttons
         this.elements.workflowButtonsContainer = this.elements.leftPane.querySelector('#holaf-viewer-workflow-filters');
         this.elements.workflowButtons = {
@@ -248,6 +250,9 @@ class ImageViewerUI {
         this.elements.thumbFitToggle = this.elements.leftPane.querySelector('#holaf-viewer-thumb-fit-toggle');
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
         this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
+
+        // --- Added: Cache Video Element ---
+        this.elements.zoomVideo = this.elements.centerPane.querySelector('#holaf-viewer-zoom-video');
     }
 
     _setupEventListeners() {
@@ -273,11 +278,11 @@ class ImageViewerUI {
         };
 
         this.elements.searchInput.oninput = () => {
-             if (!this.scopeState.filename && !this.scopeState.prompt && !this.scopeState.workflow) {
-                 this.scopeState.filename = true;
-                 this.elements.scopeButtons.filename.classList.add('active');
-             }
-             dispatchSearch();
+            if (!this.scopeState.filename && !this.scopeState.prompt && !this.scopeState.workflow) {
+                this.scopeState.filename = true;
+                this.elements.scopeButtons.filename.classList.add('active');
+            }
+            dispatchSearch();
         };
 
         const toggleScope = (scopeKey) => {
@@ -291,7 +296,7 @@ class ImageViewerUI {
         this.elements.scopeButtons.workflow.onclick = () => toggleScope('workflow');
         // --- End Unified Search Logic ---
 
-        
+
         // Date inputs
         const onDateChange = () => this.callbacks.onFilterChange();
         this.elements.dateStart.onchange = onDateChange;
@@ -313,7 +318,7 @@ class ImageViewerUI {
                     // Add if not exists
                     newSources = [...currentSources, source];
                 }
-                
+
                 imageViewerState.setState({ filters: { ...currentFilters, workflow_sources: newSources } });
                 this.callbacks.onFilterChange();
             }
@@ -342,7 +347,7 @@ class ImageViewerUI {
                 const tagToRemove = e.target.parentElement.dataset.tag;
                 const currentFilters = imageViewerState.getState().filters;
                 const newTags = (currentFilters.tags_filter || []).filter(t => t !== tagToRemove);
-                
+
                 imageViewerState.setState({ filters: { ...currentFilters, tags_filter: newTags } });
                 this.callbacks.onFilterChange();
             }
@@ -402,7 +407,7 @@ class ImageViewerUI {
             const newSize = parseInt(e.target.value);
             viewer.saveSettings({ thumbnail_size: newSize });
         };
-        
+
         // Center Pane (Zoom View) Listeners
         const zoomView = this.elements.centerPane.querySelector('#holaf-viewer-zoom-view');
         const zoomImage = zoomView.querySelector('img');
@@ -413,7 +418,7 @@ class ImageViewerUI {
 
         Navigation.setupZoomAndPan(viewer.zoomViewState, zoomView, zoomImage);
     }
-    
+
     _renderActiveTags(tags) {
         if (!this.elements.activeTagsContainer) return;
         this.elements.activeTagsContainer.innerHTML = '';

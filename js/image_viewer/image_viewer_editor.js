@@ -4,7 +4,7 @@
  *
  * This module manages the image editing panel, its state,
  * and interactions with the backend for saving/loading edits.
- * REFACTOR: Logic now depends on both activeImage and ui.view_mode.
+ * REFACTOR: Added Playback Rate support for video.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
@@ -14,6 +14,7 @@ const DEFAULT_EDIT_STATE = {
     brightness: 1,
     contrast: 1,
     saturation: 1,
+    playbackRate: 1.0 // New property for video speed
 };
 
 export class ImageEditor {
@@ -51,7 +52,6 @@ export class ImageEditor {
         }
 
         // Now, separately, handle the panel's visibility based on the view mode.
-        // This ensures the panel only shows in zoom view, even if _show() was just called to load data.
         if (shouldBeVisible) {
             if (!isActuallyVisible) {
                 this.panelEl.style.display = 'block';
@@ -88,8 +88,6 @@ export class ImageEditor {
      */
     async _show(image) {
         this.activeImage = image;
-        // CORRECTIF : Ne plus gérer la visibilité ici pour éviter le bug de "stale state".
-        // this.panelEl.style.display = 'block'; 
         this.isDirty = false;
 
         await this._loadEditsForCurrentImage();
@@ -111,10 +109,19 @@ export class ImageEditor {
             this.panelEl.style.display = 'none';
         }
 
+        // Clean up filters and rates on exit
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
+        const zoomedVideo = document.querySelector('#holaf-viewer-zoom-view video');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
-        if (zoomedImg) zoomedImg.style.filter = 'none';
-        if (fullscreenImg) fullscreenImg.style.filter = 'none';
+        const fullscreenVideo = document.querySelector('#holaf-viewer-fullscreen-overlay video');
+
+        const elements = [zoomedImg, zoomedVideo, fullscreenImg, fullscreenVideo];
+        elements.forEach(el => {
+            if (el) {
+                el.style.filter = 'none';
+                if (el.tagName === 'VIDEO') el.playbackRate = 1.0;
+            }
+        });
 
         this.activeImage = null;
     }
@@ -134,6 +141,10 @@ export class ImageEditor {
                     const data = await response.json();
                     if (data.status === 'ok') {
                         this.currentState = { ...DEFAULT_EDIT_STATE, ...data.edits };
+                        // Ensure playbackRate is numeric
+                        if (typeof this.currentState.playbackRate !== 'number') {
+                            this.currentState.playbackRate = 1.0;
+                        }
                     }
                 }
             } catch (e) {
@@ -152,18 +163,29 @@ export class ImageEditor {
      * Applies the current edit state to the zoomed/fullscreen image preview.
      */
     applyPreview() {
-        // CORRECTIF : On retire la garde `if (!this.activeImage)` qui causait la race condition.
-        // La fonction peut maintenant s'exécuter même si `_hide()` a été appelé juste avant,
-        // ce qui est crucial pour le passage en plein écran.
         const currentViewMode = imageViewerState.getState().ui.view_mode;
         if (currentViewMode !== 'zoom' && currentViewMode !== 'fullscreen') return;
 
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
+        const zoomedVideo = document.querySelector('#holaf-viewer-zoom-view video');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');
+        const fullscreenVideo = document.querySelector('#holaf-viewer-fullscreen-overlay video');
+
         const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
 
-        if (zoomedImg) zoomedImg.style.filter = filterValue;
-        if (fullscreenImg) fullscreenImg.style.filter = filterValue;
+        // Helper to apply to a set of elements
+        const applyToElements = (elements) => {
+            elements.forEach(el => {
+                if (el) {
+                    el.style.filter = filterValue;
+                    if (el.tagName === 'VIDEO') {
+                        el.playbackRate = this.currentState.playbackRate;
+                    }
+                }
+            });
+        };
+
+        applyToElements([zoomedImg, zoomedVideo, fullscreenImg, fullscreenVideo]);
     }
 
     /**
@@ -196,14 +218,10 @@ export class ImageEditor {
                 body: JSON.stringify({ path_canon: pathCanon })
             });
             if (response.ok) {
-                // CORRECTIF : Ne pas manipuler le DOM de la galerie.
-                // Envoyer un événement global pour que la galerie puisse l'intercepter et se mettre à jour elle-même.
                 const event = new CustomEvent('holaf-refresh-thumbnail', {
                     detail: { path_canon: pathCanon }
                 });
                 document.dispatchEvent(event);
-                console.log(`[Holaf Editor] Dispatched holaf-refresh-thumbnail event for ${pathCanon}`);
-
             } else {
                 console.error("[Holaf Editor] Failed to trigger thumbnail regeneration.", await response.json());
             }
@@ -349,12 +367,19 @@ export class ImageEditor {
      * Updates the UI elements (sliders) to match the current state.
      */
     _updateUIFromState() {
+        // Standard filters
         for (const key of ['brightness', 'contrast', 'saturation']) {
             const slider = this.panelEl.querySelector(`#holaf-editor-${key}-slider`);
             const valueEl = this.panelEl.querySelector(`#holaf-editor-${key}-value`);
             if (slider) slider.value = this.currentState[key] * 100;
             if (valueEl) valueEl.textContent = Math.round(this.currentState[key] * 100);
         }
+
+        // Playback Rate (handled slightly differently due to range/step)
+        const rateSlider = this.panelEl.querySelector('#holaf-editor-playbackRate-slider');
+        const rateValueEl = this.panelEl.querySelector('#holaf-editor-playbackRate-value');
+        if (rateSlider) rateSlider.value = this.currentState.playbackRate;
+        if (rateValueEl) rateValueEl.textContent = this.currentState.playbackRate.toFixed(1) + 'x';
     }
 
     /**
@@ -381,6 +406,7 @@ export class ImageEditor {
             }
         });
 
+        // Filter Sliders
         ['brightness', 'contrast', 'saturation'].forEach(key => {
             const sliderContainer = this.panelEl.querySelector(`#holaf-editor-${key}-slider`).parentNode;
 
@@ -409,6 +435,30 @@ export class ImageEditor {
             }
         });
 
+        // Playback Rate Slider
+        const rateSlider = this.panelEl.querySelector('#holaf-editor-playbackRate-slider');
+        const rateContainer = rateSlider ? rateSlider.parentNode : null;
+        if (rateSlider && rateContainer) {
+            rateContainer.addEventListener('dblclick', () => {
+                this.currentState.playbackRate = 1.0;
+                this.isDirty = true;
+                this._updateButtonStates();
+                this._updateUIFromState();
+                this.applyPreview();
+            });
+
+            rateSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.currentState.playbackRate = value;
+                const valueEl = rateContainer.querySelector('.holaf-editor-slider-value');
+                if (valueEl) valueEl.textContent = value.toFixed(1) + 'x';
+
+                this.isDirty = true;
+                this._updateButtonStates();
+                this.applyPreview();
+            });
+        }
+
         const saveBtn = this.panelEl.querySelector('#holaf-editor-save-btn');
         const resetBtn = this.panelEl.querySelector('#holaf-editor-reset-btn');
         const cancelBtn = this.panelEl.querySelector('#holaf-editor-cancel-btn');
@@ -422,11 +472,11 @@ export class ImageEditor {
      * Generates the inner HTML for the editor panel.
      */
     _getPanelHTML() {
-        const createSlider = (name, label, min, max, step, value) => `
+        const createSlider = (name, label, min, max, step, value, displayValue) => `
             <div class="holaf-editor-slider-container">
                 <label for="holaf-editor-${name}-slider">${label}</label>
                 <input type="range" id="holaf-editor-${name}-slider" min="${min}" max="${max}" step="${step}" value="${value}">
-                <span id="holaf-editor-${name}-value" class="holaf-editor-slider-value">${value}</span>
+                <span id="holaf-editor-${name}-value" class="holaf-editor-slider-value">${displayValue}</span>
             </div>
         `;
 
@@ -441,9 +491,12 @@ export class ImageEditor {
                 </div>
                 <div class="holaf-editor-tab-content">
                     <div class="holaf-editor-section">
-                        ${createSlider('brightness', 'Brightness', 0, 200, 1, 100)}
-                        ${createSlider('contrast', 'Contrast', 0, 200, 1, 100)}
-                        ${createSlider('saturation', 'Saturation', 0, 200, 1, 100)}
+                        ${createSlider('brightness', 'Brightness', 0, 200, 1, 100, '100')}
+                        ${createSlider('contrast', 'Contrast', 0, 200, 1, 100, '100')}
+                        ${createSlider('saturation', 'Saturation', 0, 200, 1, 100, '100')}
+                    </div>
+                    <div class="holaf-editor-section" style="border-top: 1px solid var(--holaf-border-color); padding-top: 8px; margin-top: 4px;">
+                        ${createSlider('playbackRate', 'Playback Speed', 0.1, 4.0, 0.1, 1.0, '1.0x')}
                     </div>
                 </div>
                 <div class="holaf-editor-footer">

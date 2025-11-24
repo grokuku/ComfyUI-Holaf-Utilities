@@ -5,6 +5,7 @@
  * This script provides the client-side logic for the Holaf Image Viewer.
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
+ * UPDATE: Added <video> support in Fullscreen Overlay.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -35,7 +36,7 @@ const holafImageViewer = {
     panelElements: null,
     isInitialized: false,
     areSettingsLoaded: false,
-    settings: {}, 
+    settings: {},
     fullscreenElements: null,
     _fullscreenSourceView: null,
     _lastFolderFilterState: null,
@@ -48,13 +49,13 @@ const holafImageViewer = {
     // --- Robust Filtering State ---
     isLoading: false,
     isDirty: false,
-    
+
     // --- Initialization & Core Lifecycle ---
 
     async init() {
         if (this.isInitialized) return;
         this.isInitialized = true;
-        
+
         document.addEventListener("keydown", (e) => this._handleKeyDown(e));
         const cssId = "holaf-image-viewer-css";
         if (!document.getElementById(cssId)) {
@@ -67,7 +68,7 @@ const holafImageViewer = {
         }
 
         await this.loadSettings();
-        await this.loadAndPopulateFilters(true); 
+        await this.loadAndPopulateFilters(true);
     },
 
     async show() {
@@ -84,10 +85,10 @@ const holafImageViewer = {
 
         if (this.panelElements?.panelEl) {
             this.applyPanelSettings();
-            
+
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
-            
+
             this.triggerFilterChange();
 
             if (!this.filterRefreshIntervalId) {
@@ -111,6 +112,9 @@ const holafImageViewer = {
                 this.filterRefreshIntervalId = null;
             }
             this._updateViewerActivity(false);
+
+            // Ensure video stops playing when hiding panel
+            Navigation.stopPlayback(this);
         }
     },
 
@@ -121,7 +125,7 @@ const holafImageViewer = {
     setTheme: function (themeName, doSave = true) { return Settings.setTheme(this, themeName, doSave); },
     applyPanelSettings: function () { return Settings.applyPanelSettings(this); },
     _applyThumbnailFit: function () { return Settings.applyThumbnailFit(imageViewerState.getState().ui.thumbnail_fit); },
-    
+
     _applyThumbnailSize: function (size) {
         if (size === undefined || !this.panelElements) return;
         Settings.applyThumbnailSize(size);
@@ -135,11 +139,21 @@ const holafImageViewer = {
         const overlay = document.createElement('div');
         overlay.id = 'holaf-viewer-fullscreen-overlay';
         overlay.style.display = 'none';
-        overlay.innerHTML = `<button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="Close (Esc)">✖</button><button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="Previous (Left Arrow)">‹</button><img src="" /><button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>`;
+
+        // Added <video> tag here
+        overlay.innerHTML = `
+            <button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="Close (Esc)">✖</button>
+            <button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="Previous (Left Arrow)">‹</button>
+            <img src="" draggable="false" />
+            <video controls id="holaf-viewer-fs-video" style="display: none;"></video>
+            <button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>
+        `;
         document.body.appendChild(overlay);
+
         this.fullscreenElements = {
             overlay,
             img: overlay.querySelector('img'),
+            video: overlay.querySelector('video'), // Cached video element
             closeBtn: overlay.querySelector('#holaf-viewer-fs-close'),
             prevBtn: overlay.querySelector('#holaf-viewer-fs-prev'),
             nextBtn: overlay.querySelector('#holaf-viewer-fs-next')
@@ -147,12 +161,14 @@ const holafImageViewer = {
         this.fullscreenElements.closeBtn.onclick = () => this._handleEscape();
         this.fullscreenElements.prevBtn.onclick = () => this._navigate(-1);
         this.fullscreenElements.nextBtn.onclick = () => this._navigate(1);
+
+        // Initial setup for zoom/pan on image (video setup is dynamic in navigation)
         Navigation.setupZoomAndPan(this.fullscreenViewState, overlay, this.fullscreenElements.img);
     },
 
     createPanel() {
         if (this.panelElements && this.panelElements.panelEl) return;
-        
+
         const state = imageViewerState.getState();
         const headerControls = document.createElement("div");
         headerControls.className = "holaf-header-button-group";
@@ -199,7 +215,7 @@ const holafImageViewer = {
             this.applyPanelSettings();
             this._createFullscreenOverlay();
             this._attachActionListeners();
-            
+
             InfoPane.setupInfoPane();
             this.editor = new ImageEditor(this);
             this.editor.init();
@@ -284,7 +300,7 @@ const holafImageViewer = {
         }
         this.loadFilteredImages();
     },
-    
+
     async checkForUpdates() {
         if (this.isLoading) return;
         try {
@@ -295,8 +311,8 @@ const holafImageViewer = {
             const state = imageViewerState.getState();
             if (data.last_update > state.status.lastDbUpdateTime) {
                 console.log("[Holaf ImageViewer] New data detected on server, refreshing filters and image list.");
-                imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update }});
-                
+                imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update } });
+
                 await this.loadAndPopulateFilters(false, true);
                 await this.loadFilteredImages();
             }
@@ -304,7 +320,7 @@ const holafImageViewer = {
             console.error("[Holaf ImageViewer] Error checking for updates:", e);
         }
     },
-    
+
     _performFullReset(resetLocks) {
         const newFilters = {
             filename_search: '',
@@ -326,7 +342,7 @@ const holafImageViewer = {
         } else {
             newFilters.locked_folders = imageViewerState.getState().filters.locked_folders;
         }
-        
+
         // This saves the state and triggers a re-render from the UI module
         this.saveSettings(newFilters);
 
@@ -340,7 +356,7 @@ const holafImageViewer = {
             }
         });
         document.querySelectorAll('#holaf-viewer-formats-filter input[type="checkbox"]').forEach(cb => cb.checked = true);
-        
+
         if (resetLocks) {
             document.querySelectorAll('.holaf-folder-lock-icon.locked').forEach(icon => {
                 icon.classList.remove('locked');
@@ -348,12 +364,12 @@ const holafImageViewer = {
                 icon.title = 'Lock this folder (prevents changes from All/None/Invert)';
             });
         }
-        
+
         const trashCheckbox = document.getElementById('folder-filter-trashcan');
         if (trashCheckbox) {
             trashCheckbox.checked = false;
         }
-        
+
         this.triggerFilterChange();
     },
 
@@ -403,7 +419,7 @@ const holafImageViewer = {
             format_filters: selectedFormats,
             startDate: UI.elements.dateStart ? UI.elements.dateStart.value : '',
             endDate: UI.elements.dateEnd ? UI.elements.dateEnd.value : '',
-            
+
             // Persist the Unified Search state
             filename_search: currentFilters.filename_search,
             prompt_search: currentFilters.prompt_search,
@@ -412,15 +428,15 @@ const holafImageViewer = {
 
         this.saveSettings(settingsToSave);
     },
-    
+
     async loadAndPopulateFilters(isInitialLoad = false, isUpdate = false) {
         try {
             const response = await fetch('/holaf/images/filter-options', { cache: 'no-store' });
             if (!response.ok) throw new Error(`HTTP error ${response.status}`);
             const data = await response.json();
-            
+
             const state = imageViewerState.getState();
-            imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update_time || state.status.lastDbUpdateTime }});
+            imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update_time || state.status.lastDbUpdateTime } });
 
             if (this.panelElements) {
                 // Populate tag suggestions datalist
@@ -433,15 +449,15 @@ const holafImageViewer = {
                         tagSuggestionsEl.appendChild(option);
                     });
                 }
-                
+
                 const foldersEl = document.getElementById('holaf-viewer-folders-filter');
                 const formatsEl = document.getElementById('holaf-viewer-formats-filter');
-                
+
                 if (foldersEl) foldersEl.innerHTML = '';
                 if (formatsEl) formatsEl.innerHTML = '';
 
                 const onFilterChange = () => this.triggerFilterChange();
-                
+
                 const { folder_filters, format_filters } = state.filters;
                 const hasSavedFolderFilters = folder_filters !== null;
                 const hasSavedFormatFilters = format_filters !== null;
@@ -456,14 +472,14 @@ const holafImageViewer = {
                         const label = id === 'root' ? `(root) (${folderData.count})` : `${id} (${folderData.count})`;
                         foldersEl.appendChild(this.createFilterItem(`folder-filter-${id}`, label, isChecked, onFilterChange, id));
                     });
-        
+
                     if (trashData) {
                         const separator = document.createElement('div');
                         separator.className = 'holaf-viewer-trash-separator';
                         foldersEl.appendChild(separator);
-            
+
                         const isTrashChecked = hasSavedFolderFilters && folder_filters.includes('trashcan');
-            
+
                         const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
                             const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
                             if (e.target.checked) {
@@ -479,12 +495,12 @@ const holafImageViewer = {
                             }
                             onFilterChange();
                         });
-            
+
                         const trashContainer = trashCheckboxItem;
                         trashContainer.style.display = 'flex';
                         trashContainer.style.justifyContent = 'space-between';
                         trashContainer.style.alignItems = 'center';
-            
+
                         const emptyTrashBtn = document.createElement('button');
                         emptyTrashBtn.textContent = 'Empty';
                         emptyTrashBtn.title = 'Permanently delete all files in the trashcan';
@@ -492,13 +508,13 @@ const holafImageViewer = {
                         emptyTrashBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this._handleEmptyTrash(); };
                         trashContainer.appendChild(emptyTrashBtn);
                         foldersEl.appendChild(trashContainer);
-            
+
                         if (trashCheckboxItem && trashCheckboxItem.querySelector('input').checked) {
                             foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => cb.disabled = true);
                         }
                     }
                 }
-    
+
                 if (formatsEl) {
                     data.formats.forEach(format => {
                         const isChecked = !hasSavedFormatFilters || format_filters.includes(format);
@@ -517,17 +533,17 @@ const holafImageViewer = {
             }
         }
     },
-    
+
     async _fetchFilteredImages() {
         console.time('BE Fetch & Parse');
-        
+
         // The state now holds the exact payload structure the API needs.
         const { filters } = imageViewerState.getState();
 
         // Create a clean payload for the API, excluding UI-only properties.
         const payload = { ...filters };
         delete payload.locked_folders;
-        
+
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -535,11 +551,11 @@ const holafImageViewer = {
         });
 
         if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-        
+
         console.time('JSON Parsing');
         const data = await response.json();
         console.timeEnd('JSON Parsing');
-        
+
         console.timeEnd('BE Fetch & Parse');
         return data;
     },
@@ -547,16 +563,16 @@ const holafImageViewer = {
     async loadFilteredImages(isInitialLoad = false) {
         this.isLoading = true;
         this.isDirty = false;
-        
+
         console.log("%c[Holaf Perf] Starting filter process...", "color: lightblue; font-weight: bold;");
         console.time('Total Filter to Render Time');
-        
+
         try {
             const { filters } = imageViewerState.getState();
             if (!filters.folder_filters || filters.folder_filters.length === 0) {
-                 if (isInitialLoad) {
-                     // On initial load with no folders, do nothing, wait for user selection.
-                 } else {
+                if (isInitialLoad) {
+                    // On initial load with no folders, do nothing, wait for user selection.
+                } else {
                     imageViewerState.setState({ images: [], selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });
                     this.syncGallery([]);
                     this.updateStatusBar(0, imageViewerState.getState().status.totalImageCount);
@@ -575,12 +591,12 @@ const holafImageViewer = {
             const currentState = imageViewerState.getState();
             const currentSelectedPaths = new Set(Array.from(currentState.selectedImages).map(img => img.path_canon));
             const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
-            
+
             imageViewerState.setState({ selectedImages: new Set() });
 
             const data = await this._fetchFilteredImages();
             const newImages = data.images || [];
-            
+
             const newSelectedImages = new Set();
             if (currentSelectedPaths.size > 0) {
                 newImages.forEach(img => {
@@ -599,25 +615,27 @@ const holafImageViewer = {
                     newActiveImage = newImages[newNavIndex];
                 }
             }
-            
+
             console.time('State Update & Gallery Sync');
-            imageViewerState.setState({ 
-                images: newImages, 
+            imageViewerState.setState({
+                images: newImages,
                 selectedImages: newSelectedImages,
-                activeImage: newActiveImage, 
+                activeImage: newActiveImage,
                 currentNavIndex: newNavIndex
             });
-            
+
             this.syncGallery(newImages);
             console.timeEnd('State Update & Gallery Sync');
-            
+
             this.updateStatusBar(data.filtered_count, data.total_db_count);
-            
+
             const allThumbsGenerated = data.total_db_count > 0 && data.generated_thumbnails_count >= data.total_db_count;
-            imageViewerState.setState({ status: { 
-                allThumbnailsGenerated: allThumbsGenerated,
-                generatedThumbnailsCount: data.generated_thumbnails_count || 0,
-            }});
+            imageViewerState.setState({
+                status: {
+                    allThumbnailsGenerated: allThumbsGenerated,
+                    generatedThumbnailsCount: data.generated_thumbnails_count || 0,
+                }
+            });
 
             if (!allThumbsGenerated && !this.statsRefreshIntervalId) {
                 this.statsRefreshIntervalId = setInterval(() => this.fetchAndUpdateThumbnailStats(), STATS_REFRESH_INTERVAL_MS);
@@ -641,9 +659,9 @@ const holafImageViewer = {
     },
 
     // --- Gallery & Thumbnail Rendering (delegated) ---
-    syncGallery: function (images) { 
+    syncGallery: function (images) {
         if (this.panelElements) { // Only sync if panel is created
-             syncGallery(this, images);
+            syncGallery(this, images);
         }
     },
     refreshSingleThumbnail: function (path_canon) { return refreshThumbnailInGallery(path_canon); },
@@ -653,11 +671,11 @@ const holafImageViewer = {
     _navigate: function (direction) { return Navigation.navigate(this, direction); },
     _navigateGrid: function (direction) { return Navigation.navigateGrid(this, direction); },
     _handleEscape: function () { return Navigation.handleEscape(this); },
-    _showZoomedView: function (image) { 
+    _showZoomedView: function (image) {
         if (image) Navigation.showZoomedView(this, image);
     },
     _hideZoomedView: function () { return Navigation.hideZoomedView(this); },
-    _showFullscreenView: function () { 
+    _showFullscreenView: function () {
         const { activeImage } = imageViewerState.getState();
         if (activeImage) Navigation.showFullscreenView(this, activeImage);
     },
@@ -684,9 +702,9 @@ const holafImageViewer = {
         let state = imageViewerState.getState();
         if (state.exporting.queue.length === 0) {
             this._stopStatusAnimation();
-            
+
             const newExportStats = { totalFiles: 0, completedFiles: 0, currentFileName: '', currentFileProgress: 0 };
-            imageViewerState.setState({ 
+            imageViewerState.setState({
                 status: { isExporting: false },
                 exporting: { stats: newExportStats, activeToastId: null }
             });
@@ -718,7 +736,7 @@ const holafImageViewer = {
                 stats: { ...state.exporting.stats, currentFileName: filename, currentFileProgress: 0 }
             }
         });
-        
+
         state = imageViewerState.getState();
 
         let receivedBytes = 0;
@@ -742,7 +760,7 @@ const holafImageViewer = {
                 const chunk = await response.arrayBuffer();
                 chunks.push(chunk);
                 receivedBytes += chunk.byteLength;
-                
+
                 imageViewerState.setState({
                     exporting: {
                         stats: {
@@ -762,10 +780,10 @@ const holafImageViewer = {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(blobUrl);
-            
+
             const currentCompleted = imageViewerState.getState().exporting.stats.completedFiles;
             imageViewerState.setState({ exporting: { stats: { completedFiles: currentCompleted + 1 } } });
-            
+
             setTimeout(() => this.processExportDownloadQueue(), 100);
 
         } catch (error) {
@@ -800,14 +818,16 @@ const holafImageViewer = {
             const response = await fetch('/holaf/images/thumbnail-stats');
             if (!response.ok) return;
             const stats = await response.json();
-            
+
             const allGenerated = stats.generated_thumbnails_count >= stats.total_db_count;
-            imageViewerState.setState({ status: {
-                allThumbnailsGenerated: allGenerated,
-                generatedThumbnailsCount: stats.generated_thumbnails_count,
-                totalImageCount: stats.total_db_count
-            }});
-            
+            imageViewerState.setState({
+                status: {
+                    allThumbnailsGenerated: allGenerated,
+                    generatedThumbnailsCount: stats.generated_thumbnails_count,
+                    totalImageCount: stats.total_db_count
+                }
+            });
+
             this.updateStatusBar();
 
             if (allGenerated && this.statsRefreshIntervalId) {
@@ -825,7 +845,7 @@ const holafImageViewer = {
             const progress = state.exporting.stats.currentFileProgress.toFixed(1);
             const text = `Exporting (${state.exporting.stats.completedFiles + 1}/${state.exporting.stats.totalFiles}): ${state.exporting.stats.currentFileName}`;
             statusBarEl.textContent = `${text} [${progress}%]`;
-            
+
             if (state.exporting.activeToastId) {
                 window.holaf.toastManager.update(state.exporting.activeToastId, {
                     message: text,
@@ -838,8 +858,8 @@ const holafImageViewer = {
         const currentFilteredCount = filteredCount !== undefined ? filteredCount : state.status.filteredImageCount;
         const currentTotalDbCount = totalCount !== undefined ? totalCount : state.status.totalImageCount;
 
-        if (filteredCount !== undefined) imageViewerState.setState({ status: { filteredImageCount: filteredCount }});
-        if (totalCount !== undefined) imageViewerState.setState({ status: { totalImageCount: totalCount }});
+        if (filteredCount !== undefined) imageViewerState.setState({ status: { filteredImageCount: filteredCount } });
+        if (totalCount !== undefined) imageViewerState.setState({ status: { totalImageCount: totalCount } });
 
         let statusText = `Displaying ${currentFilteredCount} of ${currentTotalDbCount} total images.`;
 
@@ -862,58 +882,58 @@ const holafImageViewer = {
     createFilterItem(id, label, isChecked, onChange, folderId = null) {
         const container = document.createElement('div');
         container.className = 'holaf-viewer-filter-item';
-        
+
         const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox'; 
-        checkbox.id = id; 
+        checkbox.type = 'checkbox';
+        checkbox.id = id;
         checkbox.checked = isChecked;
         checkbox.onchange = onChange;
-        
+
         const labelEl = document.createElement('label');
-        labelEl.htmlFor = id; 
+        labelEl.htmlFor = id;
         labelEl.textContent = label;
-        
+
         const elementsToAppend = [];
-    
+
         if (folderId) {
             container.dataset.folderId = folderId;
             const lockIcon = document.createElement('a');
             lockIcon.href = '#';
             lockIcon.className = 'holaf-folder-lock-icon';
-            
+
             const { locked_folders } = imageViewerState.getState().filters;
             const isLocked = locked_folders.includes(folderId);
-            
+
             lockIcon.innerHTML = isLocked ? ICONS.locked : ICONS.unlocked;
             lockIcon.title = isLocked ? 'Unlock this folder' : 'Lock this folder (prevents changes from All/None/Invert)';
             lockIcon.classList.toggle('locked', isLocked);
-    
+
             lockIcon.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-    
+
                 const currentState = imageViewerState.getState();
                 let currentLocked = [...currentState.filters.locked_folders];
                 const isCurrentlyLocked = currentLocked.includes(folderId);
-                
+
                 if (isCurrentlyLocked) {
                     currentLocked = currentLocked.filter(f => f !== folderId);
                 } else {
                     currentLocked.push(folderId);
                 }
-                
+
                 this.saveSettings({ locked_folders: currentLocked });
-                
+
                 lockIcon.innerHTML = !isCurrentlyLocked ? ICONS.locked : ICONS.unlocked;
                 lockIcon.title = !isCurrentlyLocked ? 'Unlock this folder' : 'Lock this folder (prevents changes from All/None/Invert)';
                 lockIcon.classList.toggle('locked', !isCurrentlyLocked);
             };
             elementsToAppend.push(lockIcon);
         }
-        
+
         elementsToAppend.push(checkbox, labelEl);
         container.append(...elementsToAppend);
-        
+
         return container;
     },
 

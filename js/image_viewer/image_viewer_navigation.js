@@ -4,29 +4,36 @@
  *
  * This module handles all user navigation, including keyboard controls,
  * zoomed view, fullscreen view, and pan/zoom interactions.
- * REFACTOR: Updated to use and manage ui.view_mode in the central state.
+ * FIX: Removed DOM cloning which caused "parentNode is null" errors.
+ * FIX: Added safety checks for missing video elements.
  */
 
 import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
 import { HolafPanelManager, dialogState } from '../holaf_panel_manager.js';
 
-function _applyEditorPreview(viewer, imageEl) {
-    if (!viewer.editor || !imageEl) return;
-    
-    if (!imageEl.src || imageEl.src.endsWith('undefined')) {
-        imageEl.style.filter = 'none';
+function _applyEditorPreview(viewer, mediaEl) {
+    if (!viewer.editor || !mediaEl) return;
+
+    // Safety check for invalid sources
+    if (mediaEl.tagName === 'IMG' && (!mediaEl.src || mediaEl.src.endsWith('undefined'))) {
+        mediaEl.style.filter = 'none';
         return;
     }
 
     const { currentState } = viewer.editor;
     if (!currentState) {
-        imageEl.style.filter = 'none';
+        mediaEl.style.filter = 'none';
+        if (mediaEl.tagName === 'VIDEO') mediaEl.playbackRate = 1.0;
         return;
     }
 
     const filterValue = `brightness(${currentState.brightness}) contrast(${currentState.contrast}) saturate(${currentState.saturation})`;
-    imageEl.style.filter = filterValue;
+    mediaEl.style.filter = filterValue;
+
+    if (mediaEl.tagName === 'VIDEO') {
+        mediaEl.playbackRate = currentState.playbackRate;
+    }
 }
 
 async function _handleUnsavedChanges(viewer) {
@@ -58,20 +65,22 @@ async function _handleUnsavedChanges(viewer) {
 }
 
 
-function resetTransform(state, imageEl) {
+function resetTransform(state, element) {
+    if (!element) return;
     state.scale = 1;
     state.tx = 0;
     state.ty = 0;
-    imageEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
-    imageEl.style.cursor = 'grab';
+    element.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+    element.style.cursor = 'grab';
+    element.style.transformOrigin = '0 0'; // Ensure origin is consistent
 }
 
 function preloadNextImage(viewer) {
     const state = imageViewerState.getState();
     if (state.currentNavIndex < 0 || (state.currentNavIndex + 1) >= state.images.length) return;
-    
+
     const nextImage = state.images[state.currentNavIndex + 1];
-    if (nextImage) {
+    if (nextImage && !['MP4', 'WEBM'].includes(nextImage.format)) {
         const preloader = new Image();
         preloader.src = getFullImageUrl(nextImage);
     }
@@ -89,35 +98,93 @@ export function getFullImageUrl(image) {
     return url.href;
 }
 
+/**
+ * Updates the container to show either the Image or Video element based on the file type.
+ */
+function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformState) {
+    const isVideo = ['MP4', 'WEBM'].includes(image.format);
+    const url = getFullImageUrl(image);
+
+    // Safety check: ensure videoEl exists (it might be missing if UI didn't initialize correctly)
+    const hasVideoEl = !!videoEl;
+
+    if (isVideo && hasVideoEl) {
+        if (imgEl) {
+            imgEl.style.display = 'none';
+            imgEl.src = '';
+        }
+
+        videoEl.style.display = 'block';
+        videoEl.src = url;
+        resetTransform(transformState, videoEl);
+
+        // Re-attach pan/zoom logic to the video element
+        setupZoomAndPan(transformState, container, videoEl);
+        _applyEditorPreview(viewer, videoEl);
+
+        // Attempt autoplay
+        videoEl.play().catch(e => {
+            // console.warn("Autoplay blocked or interrupted:", e);
+        });
+
+    } else {
+        if (hasVideoEl) {
+            videoEl.pause();
+            videoEl.style.display = 'none';
+            videoEl.src = '';
+        }
+
+        if (imgEl) {
+            imgEl.style.display = 'block';
+
+            // Pre-load image
+            const loader = new Image();
+            loader.onload = () => {
+                resetTransform(transformState, imgEl);
+                imgEl.src = url;
+                setupZoomAndPan(transformState, container, imgEl);
+                _applyEditorPreview(viewer, imgEl);
+            };
+            loader.src = url;
+        }
+    }
+}
+
+export function stopPlayback(viewer) {
+    if (viewer.elements?.zoomVideo) viewer.elements.zoomVideo.pause();
+    if (viewer.fullscreenElements?.video) viewer.fullscreenElements.video.pause();
+}
+
 export function showZoomedView(viewer, image) {
     imageViewerState.setState({ ui: { view_mode: 'zoom' } });
 
-    const v = document.getElementById('holaf-viewer-zoom-view');
-    const i = v.querySelector('img');
-    const u = getFullImageUrl(image);
+    const view = document.getElementById('holaf-viewer-zoom-view');
+    const imgEl = view.querySelector('img');
+    const videoEl = viewer.elements ? viewer.elements.zoomVideo : null;
 
-    const l = new Image();
-    l.onload = () => {
-        resetTransform(viewer.zoomViewState, i);
-        i.src = u;
-        v.style.display = 'flex';
-        document.getElementById('holaf-viewer-gallery').style.display = 'none';
-        _applyEditorPreview(viewer, i);
-    };
-    l.onerror = () => console.error(`Failed to load: ${u}`);
-    l.src = u;
+    view.style.display = 'flex';
+    const galleryEl = document.getElementById('holaf-viewer-gallery');
+    if (galleryEl) galleryEl.style.display = 'none';
+
+    _updateMediaSource(viewer, image, view, imgEl, videoEl, viewer.zoomViewState);
 
     preloadNextImage(viewer);
 }
 
 export async function hideZoomedView(viewer) {
-    // --- BUGFIX: Check for unsaved changes before closing ---
     const action = await _handleUnsavedChanges(viewer);
     if (action === 'cancel') return;
 
+    // Pause video
+    if (viewer.elements && viewer.elements.zoomVideo) viewer.elements.zoomVideo.pause();
+
     imageViewerState.setState({ ui: { view_mode: 'gallery' } });
-    document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
-    document.getElementById('holaf-viewer-gallery').style.display = 'flex';
+
+    const zoomView = document.getElementById('holaf-viewer-zoom-view');
+    if (zoomView) zoomView.style.display = 'none';
+
+    const galleryEl = document.getElementById('holaf-viewer-gallery');
+    if (galleryEl) galleryEl.style.display = 'flex';
 
     // Restore scroll position alignment
     const { currentNavIndex } = imageViewerState.getState();
@@ -128,41 +195,45 @@ export async function hideZoomedView(viewer) {
 
 export function showFullscreenView(viewer, image) {
     if (!image) return;
-    
+
     viewer._fullscreenSourceView = imageViewerState.getState().ui.view_mode;
     imageViewerState.setState({ ui: { view_mode: 'fullscreen' } });
 
     if (viewer._fullscreenSourceView === 'zoom') {
-        document.getElementById('holaf-viewer-zoom-view').style.display = 'none';
+        const zoomView = document.getElementById('holaf-viewer-zoom-view');
+        if (zoomView) zoomView.style.display = 'none';
+        // Pause zoom video while in fullscreen
+        if (viewer.elements && viewer.elements.zoomVideo) viewer.elements.zoomVideo.pause();
     }
 
-    const { img: fImg, overlay: fOv } = viewer.fullscreenElements;
-    const u = getFullImageUrl(image);
-    const l = new Image();
-    l.onload = () => {
-        resetTransform(viewer.fullscreenViewState, fImg);
-        fImg.src = u;
-        fOv.style.display = 'flex';
-        _applyEditorPreview(viewer, fImg);
-    };
-    l.onerror = () => console.error(`Failed to load: ${u}`);
-    l.src = u;
+    const { overlay, img: imgEl, video: videoEl } = viewer.fullscreenElements;
+    overlay.style.display = 'flex';
+
+    _updateMediaSource(viewer, image, overlay, imgEl, videoEl, viewer.fullscreenViewState);
 
     preloadNextImage(viewer);
 }
 
 export function hideFullscreenView(viewer) {
-    viewer.fullscreenElements.overlay.style.display = 'none';
+    if (viewer.fullscreenElements && viewer.fullscreenElements.overlay) {
+        viewer.fullscreenElements.overlay.style.display = 'none';
+    }
+
+    // Pause fullscreen video
+    if (viewer.fullscreenElements && viewer.fullscreenElements.video) {
+        viewer.fullscreenElements.video.pause();
+    }
+
     return viewer._fullscreenSourceView;
 }
 
 export async function navigate(viewer, direction) {
     const action = await _handleUnsavedChanges(viewer);
     if (action === 'cancel') return;
-    
+
     const state = imageViewerState.getState();
     if (state.images.length === 0) return;
-    
+
     let newIndex = (state.currentNavIndex === -1) ? 0 : state.currentNavIndex + direction;
 
     if (newIndex < 0) {
@@ -177,31 +248,21 @@ export async function navigate(viewer, direction) {
     if (viewer.gallery?.render) viewer.gallery.render();
 
     preloadNextImage(viewer);
-    
+
     const currentViewMode = imageViewerState.getState().ui.view_mode;
-    
+
     if (currentViewMode === 'gallery') {
         if (viewer.gallery?.ensureImageVisible) {
             viewer.gallery.ensureImageVisible(newIndex);
         }
-    } else {
-        const newImageUrl = getFullImageUrl(newActiveImage);
-        const loader = new Image();
-        loader.onload = () => {
-            if (currentViewMode === 'zoom') {
-                const zImg = document.querySelector('#holaf-viewer-zoom-view img');
-                resetTransform(viewer.zoomViewState, zImg);
-                zImg.src = newImageUrl;
-                _applyEditorPreview(viewer, zImg);
-            } else if (currentViewMode === 'fullscreen') {
-                const fImg = viewer.fullscreenElements.img;
-                resetTransform(viewer.fullscreenViewState, fImg);
-                fImg.src = newImageUrl;
-                _applyEditorPreview(viewer, fImg);
-            }
-        };
-        loader.onerror = () => console.error(`Preload failed: ${newImageUrl}`);
-        loader.src = newImageUrl;
+    } else if (currentViewMode === 'zoom') {
+        const view = document.getElementById('holaf-viewer-zoom-view');
+        const imgEl = view.querySelector('img');
+        const videoEl = viewer.elements ? viewer.elements.zoomVideo : null;
+        _updateMediaSource(viewer, newActiveImage, view, imgEl, videoEl, viewer.zoomViewState);
+    } else if (currentViewMode === 'fullscreen') {
+        const { overlay, img, video } = viewer.fullscreenElements;
+        _updateMediaSource(viewer, newActiveImage, overlay, img, video, viewer.fullscreenViewState);
     }
 }
 
@@ -211,7 +272,7 @@ export function navigateGrid(viewer, direction) {
 
     const columnCount = viewer.gallery.getColumnCount();
     if (columnCount <= 0) return;
-    
+
     const currentIndex = state.currentNavIndex;
     if (currentIndex === -1) {
         const newActiveImage = state.images[0];
@@ -247,11 +308,20 @@ export async function handleEscape(viewer) {
         const sourceView = hideFullscreenView(viewer);
         const targetMode = sourceView === 'zoom' ? 'zoom' : 'gallery';
         imageViewerState.setState({ ui: { view_mode: targetMode } });
-        
+
         if (targetMode === 'zoom') {
             document.getElementById('holaf-viewer-zoom-view').style.display = 'flex';
-            const zImg = document.querySelector('#holaf-viewer-zoom-view img');
-            _applyEditorPreview(viewer, zImg);
+            const imgEl = document.querySelector('#holaf-viewer-zoom-view img');
+            const videoEl = viewer.elements ? viewer.elements.zoomVideo : null;
+
+            // Re-apply preview to the correct element (whichever is visible)
+            if (videoEl && videoEl.style.display !== 'none') {
+                _applyEditorPreview(viewer, videoEl);
+                videoEl.play().catch(() => { });
+            } else if (imgEl) {
+                _applyEditorPreview(viewer, imgEl);
+            }
+
         } else {
             const { currentNavIndex } = imageViewerState.getState();
             if (currentNavIndex !== -1 && viewer.gallery?.alignImageOnExit) {
@@ -259,7 +329,6 @@ export async function handleEscape(viewer) {
             }
         }
     } else if (currentMode === 'zoom') {
-        // Reuse the centralized hideZoomedView logic to ensure consistency
         await hideZoomedView(viewer);
     }
 }
@@ -267,10 +336,10 @@ export async function handleEscape(viewer) {
 export async function handleKeyDown(viewer, e) {
     if (dialogState.isOpen) return;
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
-    
+
     const isInputFocused = ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase());
     if (isInputFocused && e.key !== 'Escape' && e.key !== 'Delete') return;
-    
+
     const state = imageViewerState.getState();
     const currentMode = state.ui.view_mode;
     const galleryEl = document.getElementById('holaf-viewer-gallery');
@@ -298,18 +367,18 @@ export async function handleKeyDown(viewer, e) {
         case 'Delete': {
             e.preventDefault();
             const isPermanent = e.shiftKey;
-            
+
             if (currentMode !== 'gallery' && state.activeImage) {
                 const originalIndex = state.currentNavIndex;
                 const success = await handleDeletion(viewer, isPermanent, [state.activeImage]);
-                
+
                 if (success) {
                     await viewer.loadFilteredImages();
                     const newState = imageViewerState.getState();
 
                     if (newState.images.length === 0) {
                         if (currentMode === 'fullscreen') hideFullscreenView(viewer);
-                        hideZoomedView(viewer); // Pass viewer here too
+                        hideZoomedView(viewer);
                         imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
                     } else {
                         const newIndex = Math.min(originalIndex, newState.images.length - 1);
@@ -349,12 +418,12 @@ export async function handleKeyDown(viewer, e) {
             e.preventDefault();
             const { currentNavIndex, activeImage, images } = state;
             let targetImage = activeImage;
-            
+
             if (currentNavIndex === -1 && images.length > 0) {
                 targetImage = images[0];
                 imageViewerState.setState({ activeImage: targetImage, currentNavIndex: 0 });
             }
-            
+
             if (targetImage) {
                 if (e.ctrlKey) {
                     showFullscreenView(viewer, targetImage);
@@ -382,9 +451,21 @@ export async function handleKeyDown(viewer, e) {
     }
 }
 
-export function setupZoomAndPan(state, container, imageEl) {
-    const updateTransform = () => { imageEl.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; };
-    container.addEventListener('wheel', (e) => {
+export function setupZoomAndPan(state, container, element) {
+    if (!element || !container) return;
+
+    // CORRECTION : Nous n'utilisons PLUS de clonage. 
+    // Nous écrasons directement les propriétés onwheel/onmousedown.
+    // Cela préserve l'élément DOM original et ses références.
+
+    // Set origin to top-left to make math easier
+    element.style.transformOrigin = '0 0';
+
+    const updateTransform = () => { element.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; };
+
+    // Attach wheel event to the container (the viewport)
+    container.onwheel = (e) => {
+        if (container.style.display === 'none') return;
         e.preventDefault();
         const oldScale = state.scale;
         const newScale = e.deltaY < 0 ? oldScale * 1.1 : oldScale / 1.1;
@@ -398,19 +479,21 @@ export function setupZoomAndPan(state, container, imageEl) {
         state.tx = mouseX - (mouseX - state.tx) * (state.scale / oldScale);
         state.ty = mouseY - (mouseY - state.ty) * (state.scale / oldScale);
 
-        if (state.scale <= 1) resetTransform(state, imageEl);
-        else imageEl.style.cursor = 'grab';
+        if (state.scale <= 1) resetTransform(state, element);
+        else element.style.cursor = 'grab';
         updateTransform();
-    });
+    };
 
-    imageEl.addEventListener('mousedown', (e) => {
+    // Attach drag event to the element itself
+    element.onmousedown = (e) => {
+        if (e.button !== 0) return; // Only left click
         e.preventDefault();
         if (state.scale <= 1) return;
 
         let startX = e.clientX - state.tx;
         let startY = e.clientY - state.ty;
-        imageEl.style.cursor = 'grabbing';
-        imageEl.style.transition = 'none';
+        element.style.cursor = 'grabbing';
+        element.style.transition = 'none';
 
         const onMouseMove = (moveEvent) => {
             state.tx = moveEvent.clientX - startX;
@@ -418,12 +501,15 @@ export function setupZoomAndPan(state, container, imageEl) {
             updateTransform();
         };
         const onMouseUp = () => {
-            imageEl.style.cursor = 'grab';
-            imageEl.style.transition = 'transform .2s ease-out';
+            element.style.cursor = 'grab';
+            element.style.transition = 'transform .2s ease-out';
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
         };
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
-    });
+    };
+
+    // Prevent default drag behavior (ghost image)
+    element.ondragstart = (e) => e.preventDefault();
 }
