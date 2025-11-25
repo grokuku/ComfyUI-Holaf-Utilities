@@ -31,10 +31,12 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 *   **Key Libraries:**
     *   `aiohttp` (Server/API)
     *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
-    *   `Pillow` (Image processing)
+    *   `Pillow` (Image processing) - Used for applying edits to static images.
     *   `python-xmp-toolkit` (XMP Metadata support)
 *   **System Dependencies:**
-    *   **FFmpeg** : Requis dans le PATH système pour le support vidéo (thumbnails, metadata extraction).
+    *   **FFmpeg** : Requis dans le PATH système. Indispensable pour :
+        *   Thumbnails Vidéo.
+        *   **Hard Bake Export** (Transcodage MP4/GIF avec application des filtres).
     *   `psutil`, `pywinpty` (Windows only) for System Monitor/Terminal.
 
 ---
@@ -47,19 +49,22 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
     > Modular API route handlers.
     📄 __init__.py
     📄 edit_routes.py
-      > [**UPDATED**] Gestion des fichiers `.edt`. Architecture : sous-dossier `edit/`. Auto-migration des anciens fichiers legacy.
+      > Gestion des fichiers `.edt` (JSON) dans sous-dossier `edit/`.
     📄 export_routes.py
+      > [**UPDATED**] Supporte l'export MP4 et GIF. Logique de sélection intelligente du format selon le contenu.
     📄 file_ops_routes.py
-      > [**UPDATED**] Suppression/Restauration gère intelligemment le déplacement des sidecars dans `edit/`.
     📄 image_routes.py
-      > [**OPTIMIZED**] Listing API. Utilise maintenant des index composites pour une performance < 200ms.
+      > Listing API optimisé (Index Composite).
     📄 metadata_routes.py
     📄 thumbnail_routes.py
-      > Gestion des thumbnails. Supporte la priorisation via file d'attente.
+      > [**UPDATED**] "Dynamic Thumbnails" : Charge les fichiers `.edt` pour appliquer les edits (Luma/Contrast/Hue) lors de la génération.
     📄 utility_routes.py
   📄 __init__.py
   📄 logic.py
-    > [**CRITICAL**] Core logic. Scanner de fichiers (Ignore `trashcan` et `edit/`), Sync DB.
+    > [**CRITICAL**] Core logic.
+    > - Scanner de fichiers (Ignore `trashcan` et `edit/`).
+    > - **Video Transcoding** : Fonctions `transcode_video_with_edits` (FFmpeg filter_complex) pour MP4 et GIF.
+    > - **Image Processing** : `apply_edits_to_image` supporte maintenant Hue (via conversion HSV).
   📄 routes.py
   📄 worker.py
 
@@ -67,25 +72,20 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
   > Frontend assets.
   📁 css/
     📄 holaf_image_viewer.css
-      > Includes styles for Video Player and Filters.
   📁 image_viewer/
     📄 image_viewer_actions.js
+      > [**UPDATED**] Dialogue d'export contextuel (propose MP4/GIF si vidéo sélectionnée).
     📄 image_viewer_editor.js
-      > [**UPDATED**] Supporte "Playback Rate" pour les vidéos. Filtres appliqués via CSS (Soft Edit).
     📄 image_viewer_gallery.js
-      > [**UPDATED**] Virtual Scroller. **Video Hover Preview** implémenté (lecture native muette au survol).
+      > [**UPDATED**] "Soft Edit Preview" : Applique les filtres CSS dynamiquement sur le `<video>` au survol de la souris.
     📄 image_viewer_infopane.js
     📄 image_viewer_navigation.js
-      > [**CRITICAL**] Gestion centralisée Zoom/Fullscreen. Bascule dynamique `<img>` vs `<video>`. Gestion propre des événements DOM (plus de cloneNode).
     📄 image_viewer_settings.js
     📄 image_viewer_state.js
-      > [**OPTIMIZED**] Gestion d'état optimisée pour éviter les clonages profonds inutiles sur les grands datasets.
     📄 image_viewer_ui.js
-      > Expose `this.elements` pour l'accès inter-modules.
   📁 model_manager/
   📄 holaf_main.js
   📄 holaf_image_viewer.js
-    > Contrôleur principal. Initialise l'overlay fullscreen avec support vidéo.
 
 📁 nodes/
   📄 holaf_model_manager.py
@@ -96,7 +96,6 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 📄 context.txt
 📄 holaf_config.py
 📄 holaf_database.py
-  > [**UPDATED**] Gestion SQLite optimisée (PRAGMA mmap_size, cache_size, synchronous=NORMAL).
 📄 holaf_server_management.py
 📄 holaf_system_monitor.py
 📄 holaf_terminal.py
@@ -108,18 +107,18 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 ### SECTION 3: KEY CONCEPTS
 
 *   **Editing Architecture (Sidecars):**
-    *   **Storage:** Les fichiers d'édition (`.edt`) sont stockés dans un sous-dossier `edit/` situé dans le même dossier que l'image.
-    *   **Migration:** Le backend détecte automatiquement les anciens fichiers `.edt` (legacy) situés à la racine et les déplace dans `edit/` lors de la sauvegarde.
-    *   **Isolation:** Le scanner (`logic.py`) ignore le dossier `edit/` pour ne pas indexer ces fichiers.
-*   **Video Handling (Frontend):**
-    *   **Playback:** Native HTML5 `<video>`. Loop enabled by default.
-    *   **Hover Preview:** Chargement direct du fichier source (muted/autoplay) au survol de la miniature.
-    *   **Editing:** "Soft Edit" uniquement. Les filtres et la vitesse sont sauvegardés dans le `.edt`.
+    *   **Storage:** Fichiers `.edt` dans `image_folder/edit/`.
+    *   **Format:** JSON stockant Brightness, Contrast, Saturation, Hue.
+    *   **Application:**
+        *   **Frontend:** Filtres CSS (Soft Edit) pour l'affichage temps réel.
+        *   **Backend (Thumbnails):** Pillow/FFmpeg appliquent les filtres lors de la génération de la miniature.
+        *   **Backend (Export):** FFmpeg "Hard Bake" (réencodage) pour les vidéos/GIFs.
+*   **Video Handling:**
+    *   **Playback:** Native HTML5.
+    *   **Hover Preview:** Lecture muette au survol. Récupère le `.edt` pour appliquer les filtres CSS correspondants.
+    *   **Export:** Support MP4 (x264) et GIF (PaletteGen optimisée).
 *   **Sync Strategy:** `logic.py` scanne le dossier output. Il compare mtime/size/hash avec la DB.
-*   **Thumbnailing (Frontend):** Virtual Scroller personnalisé avec Network Cancellation et Timeout (30s).
-*   **Filtering Logic:**
-    *   **Backend:** Requêtes SQL optimisées via Index Composite.
-    *   **Frontend:** État centralisé (`imageViewerState`).
+*   **Filtering Logic:** Requêtes SQL optimisées via Index Composite `idx_gallery_composite`.
 
 ---
 
@@ -129,13 +128,10 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
 *   **Current Version:** 13
 *   **Table `images` (Key Columns):**
     *   `path_canon` (Unique ID path)
-    *   `top_level_subfolder` (Indexed for fast folder switching)
-    *   `mtime` (Indexed for sorting)
-    *   `thumb_hash` (Used for thumbnail caching)
-    *   `is_trashed`
-    *   `format` (MP4, WEBM, PNG, JPG...)
+    *   `top_level_subfolder`, `mtime`, `is_trashed`, `format`
+    *   `has_edit_file` (Boolean flag for fast UI feedback)
 *   **Indexes:**
-    *   `idx_gallery_composite`: (is_trashed, top_level_subfolder, mtime DESC) -> **Performance Critique**.
+    *   `idx_gallery_composite`: (is_trashed, top_level_subfolder, mtime DESC).
 
 ---
 
@@ -147,17 +143,18 @@ RÈGLES OPÉRATIONNELLES (LLM INSTRUCTIONS) :
     - (Aucune tâche active - Fin de session)
 
   COMPLETED_FEATURES (Recent):
-    - **[feature, backend, edit_architecture]** : Implémentation du dossier `edit/` pour les sidecars (.edt). Migration auto + support corbeille.
-    - **[feature, ui, video_player_modal]** : Support complet vidéo (MP4/WEBM) en Zoom et Plein écran.
-    - **[feature, ui, video_hover_preview]** : Prévisualisation immédiate au survol de la souris.
-    - **[feature, ui, video_soft_editor]** : Éditeur "Soft" pour vidéo (Playback Speed + Filtres CSS).
-    - **[fix, navigation]** : Réécriture de la logique d'événements (suppression `cloneNode`) pour corriger les crashs "parentNode null".
-    - **[perf, backend, db_optimization]** : Passage DB v13. Index composites + WAL mode.
+    - **[feature, backend, edit_architecture]** : Migration sidecars `.edt` vers dossier `edit/`.
+    - **[feature, ui, video_player_modal]** : Support complet vidéo (Zoom/Fullscreen).
+    - **[feature, backend, dynamic_thumbnails]** : Les miniatures (img/vidéo) reflètent les édits (luminosité, teinte, etc.).
+    - **[feature, backend, video_hard_bake_export]** : Export vidéo avec application définitive des filtres via FFmpeg.
+    - **[feature, backend, video_gif_export]** : Export vidéo vers GIF haute qualité.
+    - **[feature, ui, video_hover_soft_edit]** : Prévisualisation au survol avec application dynamique des filtres CSS.
+    - **[feature, ui, smart_export_dialog]** : Dialogue d'export contextuel (formats adaptés au contenu).
 
   ROADMAP:
     Global:
       - [new_tool, session_log_tool]
       - [backend, periodic_maintenance_worker]
-    ImageViewer Backend (Video):
-      - **[feature, video_hard_bake_export]** : Transcoding FFmpeg pour appliquer définitivement les filtres lors de l'export.
+    ImageViewer Backend:
       - **[feature, video_remux_fps]** : Modification des métadonnées du conteneur (MP4) pour changer les FPS sans réencodage.
+      - **[perf, batch_processing]** : Amélioration des performances pour les opérations de masse (delete/move).

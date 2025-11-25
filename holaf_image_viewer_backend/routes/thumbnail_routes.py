@@ -127,14 +127,36 @@ async def get_thumbnail_route(request: web.Request):
             if not os.path.isfile(original_abs_path):
                  return web.Response(status=404, text="ERR: Source file missing for generation.")
 
+            # --- NEW: Check for edits to apply to thumbnail ---
+            edit_data = None
+            try:
+                original_dir = os.path.dirname(original_abs_path)
+                base_filename = os.path.splitext(os.path.basename(original_abs_path))[0]
+                
+                edit_file_new = os.path.join(original_dir, EDIT_DIR_NAME, base_filename + ".edt")
+                edit_file_legacy = os.path.join(original_dir, base_filename + ".edt")
+                
+                target_edit_file = None
+                if os.path.isfile(edit_file_new): target_edit_file = edit_file_new
+                elif os.path.isfile(edit_file_legacy): target_edit_file = edit_file_legacy
+                
+                if target_edit_file:
+                    async with aiofiles.open(target_edit_file, 'r', encoding='utf-8') as f:
+                        content = await f.read()
+                        edit_data = json.loads(content)
+            except Exception as e:
+                logger.warning(f"Failed to load edit data for thumbnail generation {original_rel_path}: {e}")
+            # --------------------------------------------------
+
             loop = asyncio.get_event_loop()
-            # Pass explicit args to blocking logic
+            # Pass explicit args to blocking logic, including edit_data
             gen_success = await loop.run_in_executor(
                 None, 
                 logic._create_thumbnail_blocking, 
                 original_abs_path, 
                 thumb_path_abs, 
-                original_rel_path # path_canon for DB update
+                original_rel_path, # path_canon for DB update
+                edit_data
             )
             if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
         

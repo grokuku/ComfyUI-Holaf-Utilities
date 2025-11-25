@@ -6,7 +6,7 @@
  * INCLUDES: Built-in Benchmark Tool to test concurrency limits.
  * FIX: Added strict 30s TIMEOUT to prevent queue deadlocks on stalled requests.
  * UPDATE: Added video click handler.
- * UPDATE: Added Video Hover Preview logic.
+ * UPDATE: Added Video Hover Preview logic with Soft Edit support.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -449,11 +449,23 @@ function createPlaceholder(viewer, image, index) {
             viewer._showZoomedView(image);
         };
 
-        // --- HOVER PREVIEW LOGIC FOR VIDEO ---
-        placeholder.addEventListener('mouseenter', () => {
+        // --- HOVER PREVIEW LOGIC FOR VIDEO (WITH EDIT SUPPORT) ---
+        placeholder.addEventListener('mouseenter', async () => {
             // Clear any existing timeout to avoid overlaps
             if (hoverTimeouts.has(image.path_canon)) {
                 clearTimeout(hoverTimeouts.get(image.path_canon));
+            }
+
+            // Fetch potential edits (Soft Edit)
+            let editData = null;
+            if (image.has_edit_file) {
+                 try {
+                     const response = await fetch(`/holaf/images/edits?path_canon=${encodeURIComponent(image.path_canon)}`);
+                     if (response.ok) {
+                         const result = await response.json();
+                         if (result.status === 'ok') editData = result.edits;
+                     }
+                 } catch (e) { console.warn("Failed to load hover edits", e); }
             }
 
             // Set a delay to avoid playing if just passing through
@@ -471,8 +483,22 @@ function createPlaceholder(viewer, image, index) {
                 vid.loop = true;
                 vid.autoplay = true;
                 vid.playsInline = true;
+                
+                // Construct filter string
+                let filterStr = "";
+                if (editData) {
+                    if (editData.brightness) filterStr += `brightness(${editData.brightness}) `;
+                    if (editData.contrast) filterStr += `contrast(${editData.contrast}) `;
+                    if (editData.saturation) filterStr += `saturate(${editData.saturation}) `;
+                    if (editData.hue && parseFloat(editData.hue) !== 0) filterStr += `hue-rotate(${editData.hue}deg) `;
+                }
+
                 // Style to cover the thumbnail completely
-                vid.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none;';
+                vid.style.cssText = `
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+                    object-fit: cover; z-index: 2; pointer-events: none;
+                    filter: ${filterStr};
+                `;
 
                 // Hide image while video is playing (optional, z-index covers it)
                 const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');

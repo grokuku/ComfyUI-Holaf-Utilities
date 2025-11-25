@@ -7,16 +7,12 @@ import uuid
 
 import aiofiles
 from aiohttp import web
-from PIL import Image # <-- MODIFICATION: ImageEnhance n'est plus nécessaire ici
+from PIL import Image 
 import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
 from ... import holaf_utils
-
-# --- MODIFICATION START: La fonction _apply_pil_edits a été déplacée dans logic.py ---
-# (L'ancienne fonction a été supprimée de ce fichier)
-# --- MODIFICATION END ---
 
 
 # --- API Route Handlers ---
@@ -30,7 +26,9 @@ async def prepare_export_route(request: web.Request):
 
         if not paths_canon:
             return web.json_response({"status": "error", "message": "No images selected for export."}, status=400)
-        if export_format not in ['png', 'jpg', 'tiff']:
+        
+        # Supported formats update: Added 'gif'
+        if export_format not in ['png', 'jpg', 'tiff', 'mp4', 'gif']:
             return web.json_response({"status": "error", "message": f"Invalid export format: {export_format}"}, status=400)
 
         export_id = str(uuid.uuid4())
@@ -54,16 +52,35 @@ async def prepare_export_route(request: web.Request):
             os.makedirs(dest_subfolder_abs_path, exist_ok=True)
             
             base_name, original_ext = os.path.splitext(original_filename)
-            dest_filename = f"{base_name}.{export_format}"
+            file_ext_lower = original_ext.lower()
+            
+            # --- DETECTION DU TYPE ---
+            is_video = file_ext_lower in logic.VIDEO_FORMATS
+            
+            # --- Format Override Logic ---
+            target_ext = export_format
+            
+            if is_video:
+                # Video source: Only allow mp4 or gif. Fallback to mp4 if user asked for image format.
+                if export_format not in ['mp4', 'gif']:
+                    target_ext = 'mp4'
+            else:
+                # Image source: Cannot export to mp4/gif (unless we did slideshows, which we don't yet).
+                # Keep user format.
+                pass
+                
+            dest_filename = f"{base_name}.{target_ext}"
             dest_abs_path = os.path.join(dest_subfolder_abs_path, dest_filename)
 
             try:
                 prompt_data, workflow_data = None, None
                 
+                # Metadata logic
                 effective_meta_method = meta_method
-                if include_meta and effective_meta_method == 'embed' and export_format != 'png':
+                # Videos or non-PNG images often fall back to sidecar
+                if include_meta and effective_meta_method == 'embed' and (is_video or export_format != 'png'):
                     effective_meta_method = 'sidecar'
-                    errors.append({"path": path_canon, "error": f"Embed not supported for .{export_format}, fell back to sidecar."})
+                    # Don't error, just fallback silently or handle appropriately
                 
                 if include_meta:
                     metadata = await loop.run_in_executor(None, logic._extract_image_metadata_blocking, source_abs_path)
@@ -71,38 +88,60 @@ async def prepare_export_route(request: web.Request):
                         prompt_data = metadata.get("prompt")
                         workflow_data = metadata.get("workflow")
                 
-                edit_file_path = os.path.join(os.path.dirname(source_abs_path), f"{base_name}.edt")
+                # Check for edits
                 edit_data = None
-                if os.path.isfile(edit_file_path) and os.path.getsize(edit_file_path) > 0:
-                    try:
-                        with open(edit_file_path, 'r', encoding='utf-8') as f: edit_data = json.load(f)
-                    except Exception as e:
-                        print(f"🟡 [Holaf-Export] Warning: Could not read or parse edit file {edit_file_path}: {e}")
-                        errors.append({"path": path_canon, "error": f"Failed to apply edits: {e}"})
-
-                with Image.open(source_abs_path) as img:
-                    img_to_save = img.copy()
-                    # --- MODIFICATION: Utilisation de la fonction centralisée de logic.py ---
-                    if edit_data: img_to_save = logic.apply_edits_to_image(img_to_save, edit_data)
-                    save_params = {}
-
-                    if export_format == 'png' and include_meta and effective_meta_method == 'embed':
-                        png_info = logic.PngImagePlugin.PngInfo()
-                        if prompt_data: png_info.add_text("prompt", json.dumps(prompt_data))
-                        if workflow_data: png_info.add_text("workflow", json.dumps(workflow_data))
-                        if png_info.chunks: save_params['pnginfo'] = png_info
-                    
-                    if export_format == 'jpg':
-                        if img_to_save.mode in ['RGBA', 'P', 'LA']: img_to_save = img_to_save.convert('RGB')
-                        save_params['quality'] = 95
-                    elif export_format == 'tiff':
-                        save_params['compression'] = 'tiff_lzw'
-
-                    img_to_save.save(dest_abs_path, format='JPEG' if export_format == 'jpg' else export_format.upper(), **save_params)
+                edit_file_new = os.path.join(os.path.dirname(source_abs_path), "edit", f"{base_name}.edt")
+                edit_file_legacy = os.path.join(os.path.dirname(source_abs_path), f"{base_name}.edt")
                 
+                target_edit_path = None
+                if os.path.isfile(edit_file_new): target_edit_path = edit_file_new
+                elif os.path.isfile(edit_file_legacy): target_edit_path = edit_file_legacy
+                
+                if target_edit_path and os.path.getsize(target_edit_path) > 0:
+                    try:
+                        with open(target_edit_path, 'r', encoding='utf-8') as f: edit_data = json.load(f)
+                    except Exception as e:
+                        print(f"🟡 [Holaf-Export] Warning: Could not read edit file {target_edit_path}: {e}")
+                        errors.append({"path": path_canon, "error": f"Failed to load edits: {e}"})
+
+                # --- EXPORT PROCESSING ---
+                if is_video:
+                    # Video Export (Transcoding)
+                    # Supports MP4 and GIF
+                    await loop.run_in_executor(
+                        None, 
+                        logic.transcode_video_with_edits, 
+                        source_abs_path, 
+                        dest_abs_path, 
+                        edit_data if edit_data else {},
+                        target_ext # Pass 'gif' or 'mp4'
+                    )
+                else:
+                    # Image Export (Pillow)
+                    with Image.open(source_abs_path) as img:
+                        img_to_save = img.copy()
+                        if edit_data: img_to_save = logic.apply_edits_to_image(img_to_save, edit_data)
+                        save_params = {}
+
+                        if export_format == 'png' and include_meta and effective_meta_method == 'embed':
+                            png_info = logic.PngImagePlugin.PngInfo()
+                            if prompt_data: png_info.add_text("prompt", json.dumps(prompt_data))
+                            if workflow_data: png_info.add_text("workflow", json.dumps(workflow_data))
+                            if png_info.chunks: save_params['pnginfo'] = png_info
+                        
+                        if export_format == 'jpg':
+                            if img_to_save.mode in ['RGBA', 'P', 'LA']: img_to_save = img_to_save.convert('RGB')
+                            save_params['quality'] = 95
+                        elif export_format == 'tiff':
+                            save_params['compression'] = 'tiff_lzw'
+
+                        img_to_save.save(dest_abs_path, format='JPEG' if export_format == 'jpg' else export_format.upper(), **save_params)
+                
+                # --- MANIFEST ---
                 rel_path = os.path.join(subfolder, dest_filename).replace(os.sep, '/')
                 manifest.append({'path': rel_path, 'size': os.path.getsize(dest_abs_path)})
                 
+                # Sidecar Metadata
                 if include_meta and effective_meta_method == 'sidecar':
                     if prompt_data:
                         txt_path = os.path.join(dest_subfolder_abs_path, f"{base_name}.txt")

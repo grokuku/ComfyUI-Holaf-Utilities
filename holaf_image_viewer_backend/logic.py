@@ -9,9 +9,7 @@ import traceback
 import uuid
 import shutil
 import subprocess
-from PIL import PngImagePlugin
-
-from PIL import Image, ImageOps, UnidentifiedImageError, ImageEnhance
+from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance
 import folder_paths
 
 # --- NEW DEPENDENCY: Required for reading XMP sidecar files for tags ---
@@ -271,6 +269,10 @@ def sync_image_database_blocking():
     current_time = time.time()
     conn = None
     sync_exception = None
+    
+    # --- BATCH OPTIMIZATION CONFIG ---
+    BATCH_SIZE = 50 # Commit to DB every 50 operations to release write lock for UI interactions
+    ops_counter = 0
 
     try:
         conn = holaf_database.get_db_connection()
@@ -290,11 +292,9 @@ def sync_image_database_blocking():
                     continue
 
                 # --- IGNORE EDIT FOLDERS ---
-                # This modifies 'dirs' in-place so os.walk skips descending into them
                 if EDIT_DIR_NAME in dirs:
                     dirs.remove(EDIT_DIR_NAME)
                 
-                # Double check we are not currently inside an edit folder (should be covered above but safety first)
                 if os.path.basename(root) == EDIT_DIR_NAME:
                     continue
 
@@ -308,7 +308,6 @@ def sync_image_database_blocking():
                         subfolder_str = os.path.relpath(root, output_dir).replace(os.sep, '/')
                         if subfolder_str == '.': subfolder_str = ''
                         
-                        # Extra safety check
                         if subfolder_str.startswith(TRASHCAN_DIR_NAME + '/') or subfolder_str == TRASHCAN_DIR_NAME:
                             continue
 
@@ -319,22 +318,31 @@ def sync_image_database_blocking():
                         top_level_subfolder = 'root'
                         if subfolder_str: top_level_subfolder = subfolder_str.split('/')[0]
 
-                        meta = _extract_image_metadata_blocking(full_path)
-                        has_prompt_flag = (meta.get('prompt_source', 'none') not in ['none', 'error'])
-                        has_workflow_flag = (meta.get('workflow_source', 'none') not in ['none', 'error'])
-                        has_edits_flag = meta.get('has_edits', False)
-                        has_edit_file = has_edits_flag
-                        
-                        tags_list = meta.get('tags', [])
-                        has_tags_flag = bool(tags_list)
-                        
+                        # --- ONLY PROCESS IF CHANGED OR NEW ---
                         existing_record = db_images.get(path_canon)
-                        image_id = None
-                        if existing_record:
-                            image_id = existing_record['id']
-                            if (existing_record['mtime'] != file_stat.st_mtime or
-                                existing_record['size_bytes'] != file_stat.st_size or
-                                existing_record.get('thumb_hash') != thumb_hash):
+                        should_process = False
+                        
+                        if not existing_record:
+                            should_process = True
+                        elif (existing_record['mtime'] != file_stat.st_mtime or
+                              existing_record['size_bytes'] != file_stat.st_size or
+                              existing_record.get('thumb_hash') != thumb_hash):
+                            should_process = True
+                            
+                        if should_process:
+                            # Only extract metadata if we actually need to write to DB
+                            meta = _extract_image_metadata_blocking(full_path)
+                            has_prompt_flag = (meta.get('prompt_source', 'none') not in ['none', 'error'])
+                            has_workflow_flag = (meta.get('workflow_source', 'none') not in ['none', 'error'])
+                            has_edits_flag = meta.get('has_edits', False)
+                            has_edit_file = has_edits_flag
+                            
+                            tags_list = meta.get('tags', [])
+                            has_tags_flag = bool(tags_list)
+                            
+                            image_id = None
+                            if existing_record:
+                                image_id = existing_record['id']
                                 cursor.execute("""
                                     UPDATE images SET mtime=?, size_bytes=?, last_synced_at=?, subfolder=?, 
                                     top_level_subfolder=?, prompt_text=?, workflow_json=?, prompt_source=?, 
@@ -346,26 +354,37 @@ def sync_image_database_blocking():
                                       meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None, meta.get('prompt_source'),
                                       meta.get('workflow_source'), meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
                                       has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
-                        else:
-                            cursor.execute("""
-                                INSERT INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
-                                size_bytes, last_synced_at, has_edit_file, thumb_hash, has_prompt, has_workflow, has_edits, has_tags,
-                                prompt_text, workflow_json, prompt_source, workflow_source, width, height, aspect_ratio_str,
-                                thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                            """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
-                                  file_stat.st_mtime, file_stat.st_size, current_time, has_edit_file, thumb_hash,
-                                  has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag,
-                                  meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
-                                  meta.get('prompt_source'), meta.get('workflow_source'),
-                                  meta.get('width'), meta.get('height'), meta.get('ratio'),
-                                  0, 1000, None))
-                            image_id = cursor.lastrowid
-                        
-                        if image_id:
-                            _update_image_tags_in_db(cursor, image_id, tags_list)
+                            else:
+                                cursor.execute("""
+                                    INSERT INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
+                                    size_bytes, last_synced_at, has_edit_file, thumb_hash, has_prompt, has_workflow, has_edits, has_tags,
+                                    prompt_text, workflow_json, prompt_source, workflow_source, width, height, aspect_ratio_str,
+                                    thumbnail_status, thumbnail_priority_score, thumbnail_last_generated_at)
+                                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                """, (filename, subfolder_str, top_level_subfolder, path_canon, file_ext[1:].upper(),
+                                      file_stat.st_mtime, file_stat.st_size, current_time, has_edit_file, thumb_hash,
+                                      has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag,
+                                      meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None,
+                                      meta.get('prompt_source'), meta.get('workflow_source'),
+                                      meta.get('width'), meta.get('height'), meta.get('ratio'),
+                                      0, 1000, None))
+                                image_id = cursor.lastrowid
+                            
+                            if image_id:
+                                _update_image_tags_in_db(cursor, image_id, tags_list)
+                            
+                            # --- BATCH COMMIT LOGIC ---
+                            ops_counter += 1
+                            if ops_counter >= BATCH_SIZE:
+                                conn.commit() # Release lock
+                                ops_counter = 0
+                                # Small sleep to let other threads grab the lock if needed
+                                time.sleep(0.01) 
+                                
                     except Exception as e:
                         print(f"🔴 [Holaf-ImageViewer] Error processing file {filename} during sync: {e}")
+            
+            # Final commit for remaining updates
             conn.commit()
 
         stale_canons = set(db_images.keys()) - disk_images_canons
@@ -594,11 +613,125 @@ def _extract_image_metadata_blocking(image_path_abs):
     return result
 
 def apply_edits_to_image(image, edit_data):
+    """
+    Applies adjustments (brightness, contrast, saturation, hue) to a PIL Image.
+    """
     if not isinstance(edit_data, dict): return image
-    if 'brightness' in edit_data: image = ImageEnhance.Brightness(image).enhance(float(edit_data['brightness']))
-    if 'contrast' in edit_data: image = ImageEnhance.Contrast(image).enhance(float(edit_data['contrast']))
-    if 'saturation' in edit_data: image = ImageEnhance.Color(image).enhance(float(edit_data['saturation']))
+    
+    # 1. Brightness
+    if 'brightness' in edit_data:
+        image = ImageEnhance.Brightness(image).enhance(float(edit_data['brightness']))
+        
+    # 2. Contrast
+    if 'contrast' in edit_data:
+        image = ImageEnhance.Contrast(image).enhance(float(edit_data['contrast']))
+        
+    # 3. Saturation
+    if 'saturation' in edit_data:
+        image = ImageEnhance.Color(image).enhance(float(edit_data['saturation']))
+        
+    # 4. Hue
+    if 'hue' in edit_data and edit_data['hue'] != 0:
+        try:
+            hue_deg = float(edit_data['hue']) 
+            image_hsv = image.convert('HSV')
+            h, s, v = image_hsv.split()
+            shift = int((hue_deg % 360) * (255 / 360))
+            h = h.point(lambda i: (i + shift) % 255)
+            image_hsv = Image.merge('HSV', (h, s, v))
+            image = image_hsv.convert('RGB')
+        except Exception as e:
+            print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
+
     return image
+
+def build_ffmpeg_filter_string(edit_data):
+    """
+    Translates edit_data dictionary into an FFmpeg filter string (-vf).
+    Matches the logic of apply_edits_to_image.
+    """
+    filters = []
+    
+    # eq filter handles brightness, contrast, saturation
+    eq_parts = []
+    if 'contrast' in edit_data:
+        eq_parts.append(f"contrast={edit_data['contrast']}")
+    
+    if 'saturation' in edit_data:
+        eq_parts.append(f"saturation={edit_data['saturation']}")
+        
+    if 'brightness' in edit_data:
+        # Mapping Issue:
+        # CSS/Pillow brightness(N) is a multiplier (N=1 is identity).
+        # FFmpeg eq=brightness=N is an additive shift (-1.0 to 1.0).
+        # Approximating: If CSS is 1.2 (+20%), we shift FFmpeg slightly.
+        # A rough approximation for "soft" edits is (val - 1) / 2.
+        b_val = float(edit_data['brightness'])
+        ffmpeg_b = (b_val - 1.0) / 2.0
+        eq_parts.append(f"brightness={ffmpeg_b:.3f}")
+        
+    if eq_parts:
+        filters.append(f"eq={':'.join(eq_parts)}")
+        
+    # hue filter
+    if 'hue' in edit_data and float(edit_data['hue']) != 0:
+        # FFmpeg 'hue' filter takes degrees directly in 'h'
+        filters.append(f"hue=h={edit_data['hue']}")
+        
+    return ",".join(filters)
+
+def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp4'):
+    """
+    Transcodes a video file applying the edits "baked in" via FFmpeg.
+    Supports .mp4 (x264) and .gif (palettegen).
+    """
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg not found")
+
+    filter_str = build_ffmpeg_filter_string(edit_data)
+    
+    cmd = [ffmpeg, "-y", "-i", source_path]
+    
+    if format_ext == 'gif':
+        # GIF Generation Strategy:
+        # 1. Apply visual filters (eq/hue)
+        # 2. Split stream: one for palette generation, one for usage
+        # 3. Use paletteuse to map colors properly
+        
+        # Base filter chain: edits + scaling (optional, keeps orig size here)
+        base_filter = filter_str if filter_str else "null"
+        
+        # Complex filter graph for GIF optimization
+        # [0:v] edits [x]; [x] split [a][b]; [a] palettegen [p]; [b][p] paletteuse
+        complex_filter = f"{base_filter},split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+        
+        # If no edits, base_filter is "null" which FFmpeg handles or we can simplify
+        if not filter_str:
+            complex_filter = "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+            
+        cmd.extend(["-filter_complex", complex_filter])
+        # GIF doesn't use -c:v libx264 or -c:a
+    else:
+        # MP4 / Standard Video
+        if filter_str:
+            cmd.extend(["-vf", filter_str])
+            cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
+            cmd.extend(["-c:a", "copy"]) # Copy audio
+        else:
+            cmd.extend(["-c", "copy"])
+
+    cmd.append(dest_path)
+    
+    print(f"🔵 [Holaf-Logic] Starting video export ({format_ext}) with filters: {filter_str if filter_str else 'None'}")
+    
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    
+    if process.returncode != 0:
+        raise RuntimeError(f"FFmpeg transcode failed: {stderr.decode('utf-8')}")
+        
+    return True
 
 def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_canon_for_db_update=None, edit_data=None):
     conn_update_db = None
@@ -633,6 +766,7 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
 
         with img:
             img_copy = img.copy()
+            # Apply Edits (Supports Hue now)
             if edit_data: img_copy = apply_edits_to_image(img_copy, edit_data)
             
             target_dim_w, target_dim_h = holaf_utils.THUMBNAIL_SIZE if isinstance(holaf_utils.THUMBNAIL_SIZE, tuple) else (holaf_utils.THUMBNAIL_SIZE, holaf_utils.THUMBNAIL_SIZE)

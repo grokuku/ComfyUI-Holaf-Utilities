@@ -485,19 +485,47 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     
     const imageCount = imagesToExport.length;
     const savedSettings = viewer.settings;
+    
+    // --- MODIFICATION: Format Filter Logic ---
+    const hasVideo = imagesToExport.some(img => ['MP4', 'WEBM'].includes(img.format));
+    const hasImage = imagesToExport.some(img => !['MP4', 'WEBM'].includes(img.format));
+    
+    // Determine default based on content type
+    let defaultFormat = savedSettings.export_format;
+    if (hasVideo && !['mp4', 'gif'].includes(defaultFormat)) {
+        defaultFormat = 'mp4';
+    } else if (!hasVideo && hasImage && ['mp4', 'gif'].includes(defaultFormat)) {
+        defaultFormat = 'png';
+    }
+
+    let formatOptionsHTML = '';
+    
+    if (hasImage) {
+        formatOptionsHTML += `
+            <label><input type="radio" name="export-format" value="png" ${defaultFormat === 'png' ? 'checked' : ''}> PNG</label>
+            <label><input type="radio" name="export-format" value="jpg" ${defaultFormat === 'jpg' ? 'checked' : ''}> JPG</label>
+            <label><input type="radio" name="export-format" value="tiff" ${defaultFormat === 'tiff' ? 'checked' : ''}> TIFF</label>
+        `;
+    }
+    
+    if (hasVideo) {
+        formatOptionsHTML += `
+            <label><input type="radio" name="export-format" value="mp4" ${defaultFormat === 'mp4' ? 'checked' : ''}> MP4</label>
+            <label><input type="radio" name="export-format" value="gif" ${defaultFormat === 'gif' ? 'checked' : ''}> GIF</label>
+        `;
+    }
+    // ------------------------------------------
 
     overlay.innerHTML = `
         <div id="holaf-viewer-export-dialog">
             <div class="holaf-viewer-export-header">
-                Exporting ${imageCount} image(s)
+                Exporting ${imageCount} item(s)
             </div>
             <div class="holaf-viewer-export-content">
                 <div class="holaf-viewer-export-option-group">
-                    <label>Image Format:</label>
+                    <label>Format:</label>
                     <div class="holaf-export-choices">
-                        <label><input type="radio" name="export-format" value="png" ${savedSettings.export_format === 'png' ? 'checked' : ''}> PNG</label>
-                        <label><input type="radio" name="export-format" value="jpg" ${savedSettings.export_format === 'jpg' ? 'checked' : ''}> JPG</label>
-                        <label><input type="radio" name="export-format" value="tiff" ${savedSettings.export_format === 'tiff' ? 'checked' : ''}> TIFF</label>
+                        ${formatOptionsHTML}
                     </div>
                 </div>
                 <div class="holaf-viewer-export-option-group">
@@ -508,7 +536,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                             Include Prompt & Workflow
                         </label>
                         <div id="holaf-export-meta-method-group" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px;">
-                            <label><input type="radio" name="meta-method" value="embed" ${savedSettings.export_meta_method === 'embed' ? 'checked' : ''}> Embed in image file</label>
+                            <label><input type="radio" name="meta-method" value="embed" ${savedSettings.export_meta_method === 'embed' ? 'checked' : ''}> Embed in file (if supported)</label>
                             <label><input type="radio" name="meta-method" value="sidecar" ${savedSettings.export_meta_method === 'sidecar' ? 'checked' : ''}> Save as .txt/.json sidecar</label>
                         </div>
                     </div>
@@ -668,7 +696,8 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     overlay.querySelector('#holaf-export-start-btn').addEventListener('click', async () => {
         cleanupAndClose();
 
-        const format = overlay.querySelector('input[name="export-format"]:checked').value;
+        const formatEl = overlay.querySelector('input[name="export-format"]:checked');
+        const format = formatEl ? formatEl.value : 'png'; // Fallback
         const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
         const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
 

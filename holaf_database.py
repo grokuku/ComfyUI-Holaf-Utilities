@@ -27,7 +27,8 @@ def get_db_connection():
             if not os.path.exists(DB_DIR):
                 os.makedirs(DB_DIR, exist_ok=True)
 
-            local_data.connection = sqlite3.connect(DB_PATH, timeout=10)
+            # --- CORRECTION: Increased timeout to 30s to handle long transactions (Video Export/Scan) ---
+            local_data.connection = sqlite3.connect(DB_PATH, timeout=30)
             local_data.connection.row_factory = sqlite3.Row
             
             # --- PERFORMANCE TUNING (CRITICAL FOR LISTING SPEED) ---
@@ -49,7 +50,9 @@ def get_db_connection():
             local_data.connection.execute("PRAGMA temp_store = MEMORY;")
             
             local_data.connection.execute("PRAGMA foreign_keys = ON;")
-            local_data.connection.execute("PRAGMA busy_timeout = 10000;") # Increased timeout to 10s
+            
+            # --- CORRECTION: Increased busy_timeout to 30000ms (30s) ---
+            local_data.connection.execute("PRAGMA busy_timeout = 30000;") 
             
         except sqlite3.Error as e:
             print(f"🔴 [Holaf-DB] Thread {threading.get_ident()}: Error connecting to database at {DB_PATH}: {e}")
