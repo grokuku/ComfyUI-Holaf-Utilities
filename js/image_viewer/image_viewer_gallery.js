@@ -7,6 +7,10 @@
  * FIX: Added strict 30s TIMEOUT to prevent queue deadlocks on stalled requests.
  * UPDATE: Added video click handler.
  * UPDATE: Added Video Hover Preview logic with Soft Edit support.
+ * UPDATE (Optim): Integrated LRU Cache to prevent re-fetching recent thumbnails.
+ * UPDATE (Optim): Standard concurrency limit (6) restored thanks to In-Memory Stats.
+ * FIX: Removed JS-forced object-fit for images (let CSS handle it).
+ * FIX: Video preview now inherits object-fit from the underlying image via getComputedStyle.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -17,12 +21,52 @@ const SCROLLBAR_DEBOUNCE_MS = 50;
 const FETCH_TIMEOUT_MS = 30000; // 30 seconds timeout per image
 const HOVER_DELAY_MS = 100; // Slight delay before playing video to prevent crazy flashing when moving mouse fast
 
-// Default concurrency. Can be overridden by the benchmark tool.
+// Standard browser limit is 6. With the new backend architecture (In-Memory Stats),
+// we can safely use the full pipe without fearing DB locks.
 let currentConcurrencyLimit = 6;
 let benchmarkCacheBuster = ''; // Used to bypass browser cache during tests
 let benchmarkStartTime = 0;
 let benchmarkTotalItems = 0;
 let isBenchmarking = false;
+
+// --- LRU CACHE IMPLEMENTATION ---
+class ThumbnailLRUCache {
+    constructor(capacity = 300) {
+        this.capacity = capacity;
+        this.cache = new Map(); // path_canon -> blobURL
+    }
+
+    get(key) {
+        if (!this.cache.has(key)) return null;
+        // Refresh item (delete and re-add to mark as recently used)
+        const val = this.cache.get(key);
+        this.cache.delete(key);
+        this.cache.set(key, val);
+        return val;
+    }
+
+    put(key, val) {
+        if (this.cache.has(key)) {
+            this.cache.delete(key);
+        } else if (this.cache.size >= this.capacity) {
+            // Evict oldest (first item in Map)
+            const oldestKey = this.cache.keys().next().value;
+            const oldestVal = this.cache.get(oldestKey);
+            URL.revokeObjectURL(oldestVal); // Free memory
+            this.cache.delete(oldestKey);
+        }
+        this.cache.set(key, val);
+    }
+
+    clear() {
+        for (const url of this.cache.values()) {
+            URL.revokeObjectURL(url);
+        }
+        this.cache.clear();
+    }
+}
+
+const thumbnailCache = new ThumbnailLRUCache();
 
 // --- Module-level state ---
 let viewerInstance = null;
@@ -61,6 +105,7 @@ window.holaf.runBenchmark = (concurrency = 6) => {
     currentConcurrencyLimit = concurrency;
     benchmarkCacheBuster = `bench_${Date.now()}`; // Unique ID to bypass browser cache
     isBenchmarking = true;
+    thumbnailCache.clear(); // Clear cache for fair test
 
     // 2. Reset Gallery
     if (viewerInstance) {
@@ -199,7 +244,8 @@ function renderVisibleItems() {
         const viewportHeight = galleryEl.clientHeight;
         const scrollTop = galleryEl.scrollTop;
 
-        const buffer = viewportHeight * 0.5;
+        // Increased buffer to smooth out fast scrolling
+        const buffer = viewportHeight * 0.75;
         const visibleAreaStart = Math.max(0, scrollTop - buffer);
         const visibleAreaEnd = scrollTop + viewportHeight + buffer;
 
@@ -226,6 +272,14 @@ function renderVisibleItems() {
             } else {
                 placeholder = createPlaceholder(viewerInstance, image, i);
                 fragment.appendChild(placeholder);
+                // Try to load immediately from Cache
+                applyCachedThumbnail(placeholder, path);
+            }
+
+            // --- FIX: REMOVED forced JS style for images. CSS classes handle it. ---
+            const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
+            if (img) {
+                img.style.objectFit = ''; // Ensure no inline style overrides CSS
             }
 
             const row = Math.floor(i / columnCount);
@@ -248,7 +302,7 @@ function renderVisibleItems() {
             newPlaceholdersToRender.set(path, placeholder);
         }
 
-        // Cleanup
+        // Cleanup: Handle elements leaving the viewport
         for (const [path, element] of renderedPlaceholders) {
             // Cancel any pending hover video
             if (hoverTimeouts.has(path)) {
@@ -257,6 +311,7 @@ function renderVisibleItems() {
             }
 
             element.remove();
+
             if (activeFetches.has(path)) {
                 // Abort user-cancelled fetches (scroll away)
                 activeFetches.get(path).abort('scroll-away');
@@ -264,10 +319,8 @@ function renderVisibleItems() {
                 activeThumbnailLoads--;
                 if (activeThumbnailLoads < 0) activeThumbnailLoads = 0;
             }
-            const img = element.querySelector('img');
-            if (img && img.src.startsWith('blob:')) {
-                URL.revokeObjectURL(img.src);
-            }
+            
+            // OPTIMIZATION: Instead of revoking, we rely on the LRU Cache.
         }
 
         if (fragment.childElementCount > 0) {
@@ -277,6 +330,50 @@ function renderVisibleItems() {
         renderedPlaceholders = newPlaceholdersToRender;
         debouncedLoadVisibleThumbnails();
     });
+}
+
+function applyCachedThumbnail(placeholder, pathCanon) {
+    const cachedUrl = thumbnailCache.get(pathCanon);
+    if (cachedUrl) {
+        const img = document.createElement('img');
+        img.className = "holaf-image-viewer-thumbnail";
+        img.src = cachedUrl;
+        
+        // --- FIX: REMOVED forced JS style for images. CSS classes handle it. ---
+        img.style.objectFit = '';
+
+        img.onload = () => {
+             addFullscreenIcon(placeholder, imageViewerState.getState().images[parseInt(placeholder.dataset.index)]);
+        };
+
+        const oldImg = placeholder.querySelector('img');
+        if (oldImg) oldImg.remove();
+
+        placeholder.prepend(img);
+        placeholder.dataset.thumbnailLoadingOrLoaded = "true";
+        return true;
+    }
+    return false;
+}
+
+function addFullscreenIcon(placeholder, image) {
+    if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
+        const fsIcon = document.createElement('div');
+        fsIcon.className = 'holaf-viewer-fullscreen-icon';
+        fsIcon.innerHTML = '⛶';
+        fsIcon.title = 'View fullscreen';
+        fsIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (image) {
+                const imageIndex = parseInt(placeholder.dataset.index, 10);
+                if (!isNaN(imageIndex)) {
+                    imageViewerState.setState({ activeImage: image, currentNavIndex: imageIndex });
+                }
+                showFullscreenView(viewerInstance, image);
+            }
+        });
+        placeholder.appendChild(fsIcon);
+    }
 }
 
 function debouncedLoadVisibleThumbnails() {
@@ -296,6 +393,13 @@ function loadVisibleThumbnails() {
         );
 
         if (nextPlaceholder) {
+            // Double check cache just in case
+            if (applyCachedThumbnail(nextPlaceholder, nextPlaceholder.dataset.pathCanon)) {
+                // Was cached, move to next
+                setTimeout(process, 0);
+                return;
+            }
+
             activeThumbnailLoads++;
             const imageIndex = parseInt(nextPlaceholder.dataset.index, 10);
             const image = imageViewerState.getState().images[imageIndex];
@@ -323,6 +427,10 @@ function loadVisibleThumbnails() {
 
 async function fetchThumbnail(placeholder, image, forceReload = false) {
     const pathCanon = image.path_canon;
+    
+    // Cache Check (Early return)
+    if (!forceReload && applyCachedThumbnail(placeholder, pathCanon)) return;
+
     if (activeFetches.has(pathCanon)) return;
 
     // Flag as loading to prevent duplicate queueing
@@ -366,36 +474,29 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         const blob = await response.blob();
         const objectURL = URL.createObjectURL(blob);
 
+        // Add to LRU Cache
+        thumbnailCache.put(pathCanon, objectURL);
+
         if (!placeholder.isConnected) {
-            URL.revokeObjectURL(objectURL);
+            // If placeholder is gone, we cached it, but we don't need to render it now.
             return;
         }
 
         const img = document.createElement('img');
         img.className = "holaf-image-viewer-thumbnail";
         img.src = objectURL;
+        
+        // --- FIX: REMOVED forced JS style for images. CSS classes handle it. ---
+        img.style.objectFit = '';
 
         img.onload = () => {
-            if (!placeholder.querySelector('.holaf-viewer-fullscreen-icon')) {
-                const fsIcon = document.createElement('div');
-                fsIcon.className = 'holaf-viewer-fullscreen-icon';
-                fsIcon.innerHTML = '⛶';
-                fsIcon.title = 'View fullscreen';
-                fsIcon.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const imageIndex = parseInt(placeholder.dataset.index, 10);
-                    if (!isNaN(imageIndex)) {
-                        imageViewerState.setState({ activeImage: image, currentNavIndex: imageIndex });
-                    }
-                    showFullscreenView(viewerInstance, image);
-                });
-                placeholder.appendChild(fsIcon);
-            }
+            addFullscreenIcon(placeholder, image);
         };
 
         const oldImg = placeholder.querySelector('img');
         if (oldImg) {
-            URL.revokeObjectURL(oldImg.src);
+            // Don't revoke here if it came from cache, let LRU handle it.
+            // But if it was a temporary placeholder, removing is fine.
             oldImg.remove();
         }
 
@@ -493,15 +594,24 @@ function createPlaceholder(viewer, image, index) {
                     if (editData.hue && parseFloat(editData.hue) !== 0) filterStr += `hue-rotate(${editData.hue}deg) `;
                 }
 
+                // --- FIX: READ COMPUTED STYLE FROM THE IMAGE TO MATCH CSS ---
+                // Instead of guessing the state key, we trust the CSS that applies to the image.
+                const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
+                let fitMode = 'cover';
+                if (img) {
+                    // This reads what CSS (and the 'nocrop' class on parent) actually did to the image.
+                    fitMode = getComputedStyle(img).objectFit || 'cover';
+                }
+
                 // Style to cover the thumbnail completely
                 vid.style.cssText = `
                     position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-                    object-fit: cover; z-index: 2; pointer-events: none;
+                    object-fit: ${fitMode}; z-index: 2; pointer-events: none;
                     filter: ${filterStr};
                 `;
 
                 // Hide image while video is playing (optional, z-index covers it)
-                const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
+                // const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
 
                 // Handling load errors smoothly
                 vid.onerror = () => { vid.remove(); };
@@ -643,6 +753,7 @@ function syncGallery(viewer, images) {
         controller.abort();
     }
     activeFetches.clear();
+    thumbnailCache.clear(); // Clear cache on full sync
 
     galleryGridEl.innerHTML = '';
     renderedPlaceholders.clear();

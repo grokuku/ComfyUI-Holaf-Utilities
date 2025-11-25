@@ -5,6 +5,7 @@
  * This module manages the image editing panel, its state,
  * and interactions with the backend for saving/loading edits.
  * REFACTOR: Added Playback Rate support for video.
+ * FIX: Immediate UI reset on image switch to prevent "ghost" filters.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
@@ -90,8 +91,20 @@ export class ImageEditor {
         this.activeImage = image;
         this.isDirty = false;
 
-        await this._loadEditsForCurrentImage();
+        // --- UX FIX: RESET UI IMMEDIATELY ---
+        // Don't wait for the network to reset the sliders and filters.
+        // This prevents the previous image's settings from applying to the new one
+        // while the fetch is pending (which can take seconds if queue is full).
+        this.currentState = { ...DEFAULT_EDIT_STATE };
+        this.originalState = { ...DEFAULT_EDIT_STATE }; // Sync original state too to avoid "Save" button flashing enabled
+        
+        this._updateUIFromState();
+        this.applyPreview(); // Clear filters on the Zoom View immediately
         this._updateButtonStates();
+        // ------------------------------------
+
+        await this._loadEditsForCurrentImage();
+        // Button states updated again inside _loadEditsForCurrentImage
     }
 
     /**
@@ -132,14 +145,15 @@ export class ImageEditor {
     async _loadEditsForCurrentImage() {
         if (!this.activeImage) return;
 
-        this.currentState = { ...DEFAULT_EDIT_STATE };
-
+        // We already reset to default in _show, so we only need to update if there's data.
+        
         if (this.activeImage.has_edit_file) {
             try {
                 const response = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(this.activeImage.path_canon)}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.status === 'ok') {
+                        // Merge loaded edits into current state
                         this.currentState = { ...DEFAULT_EDIT_STATE, ...data.edits };
                         // Ensure playbackRate is numeric
                         if (typeof this.currentState.playbackRate !== 'number') {
@@ -151,6 +165,8 @@ export class ImageEditor {
                 console.error("[Holaf Editor] Failed to load edits:", e);
             }
         }
+        
+        // Update original state to match what we just loaded (or failed to load, keeping default)
         this.originalState = { ...this.currentState };
         this.isDirty = false;
 
@@ -164,8 +180,8 @@ export class ImageEditor {
      */
     applyPreview() {
         const currentViewMode = imageViewerState.getState().ui.view_mode;
-        if (currentViewMode !== 'zoom' && currentViewMode !== 'fullscreen') return;
-
+        // Even if not strictly in zoom/fullscreen, we might want to ensure elements are cleaned if they exist
+        
         const zoomedImg = document.querySelector('#holaf-viewer-zoom-view img');
         const zoomedVideo = document.querySelector('#holaf-viewer-zoom-view video');
         const fullscreenImg = document.querySelector('#holaf-viewer-fullscreen-overlay img');

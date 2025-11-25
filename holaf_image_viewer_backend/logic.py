@@ -9,6 +9,7 @@ import traceback
 import uuid
 import shutil
 import subprocess
+import threading
 from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance
 import folder_paths
 
@@ -40,6 +41,67 @@ STANDARD_RATIOS = [
     {"name": "9:21", "value": 9/21},
 ]
 RATIO_THRESHOLD = 0.02
+
+# --- ARCHITECTURE CHANGE: IN-MEMORY STATS MANAGER ---
+class GlobalStatsManager:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __init__(self):
+        self.total_images = 0
+        self.generated_thumbnails = 0
+        self.initialized = False
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    def initialize_from_db(self):
+        """Called once at startup to populate counters from DB."""
+        conn = None
+        try:
+            conn = holaf_database.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0")
+            self.total_images = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM images WHERE thumbnail_status = 2 AND is_trashed = 0")
+            self.generated_thumbnails = cursor.fetchone()[0]
+            self.initialized = True
+            print(f"🔵 [Holaf-Stats] Stats initialized: {self.total_images} images, {self.generated_thumbnails} thumbnails.")
+        except Exception as e:
+            print(f"🔴 [Holaf-Stats] Failed to initialize stats: {e}")
+        finally:
+            if conn: holaf_database.close_db_connection()
+
+    def increment_total(self):
+        with self._lock: self.total_images += 1
+
+    def decrement_total(self):
+        with self._lock: 
+            if self.total_images > 0: self.total_images -= 1
+
+    def increment_thumbnail(self):
+        with self._lock: self.generated_thumbnails += 1
+    
+    # Note: We rarely decrement thumbnails individually, usually mass reset via SQL which requires re-init.
+
+    def get_stats(self):
+        if not self.initialized:
+            self.initialize_from_db()
+        return {
+            "total_db_count": self.total_images,
+            "generated_thumbnails_count": self.generated_thumbnails
+        }
+    
+    def force_refresh(self):
+        self.initialize_from_db()
+
+# Global Accessor
+stats_manager = GlobalStatsManager.get_instance()
 
 # --- MODIFICATION START: Live Update Tracking ---
 LAST_DB_UPDATE_TIME = time.time()
@@ -217,6 +279,9 @@ def add_or_update_single_image(image_abs_path):
                   meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
                   has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag))
             image_id = cursor.lastrowid
+            
+            # --- NOTIFY STATS ---
+            stats_manager.increment_total()
         
         _update_image_tags_in_db(cursor, image_id, tags_list)
         _update_folder_metadata_cache_blocking(cursor)
@@ -253,6 +318,10 @@ def delete_single_image_by_path(image_abs_path):
             conn.commit()
             print(f"✅ [Holaf-Logic-DB] Successfully deleted from DB: {path_canon}")
             update_last_db_update_time()
+            
+            # --- NOTIFY STATS ---
+            stats_manager.decrement_total()
+            
     except Exception as e:
         delete_exception = e
         print(f"🔴 [Holaf-Logic] Error in delete_single_image_by_path for {image_abs_path}: {e}")
@@ -273,6 +342,8 @@ def sync_image_database_blocking():
     # --- BATCH OPTIMIZATION CONFIG ---
     BATCH_SIZE = 50 # Commit to DB every 50 operations to release write lock for UI interactions
     ops_counter = 0
+    added_count = 0
+    deleted_count = 0
 
     try:
         conn = holaf_database.get_db_connection()
@@ -369,6 +440,7 @@ def sync_image_database_blocking():
                                       meta.get('width'), meta.get('height'), meta.get('ratio'),
                                       0, 1000, None))
                                 image_id = cursor.lastrowid
+                                added_count += 1
                             
                             if image_id:
                                 _update_image_tags_in_db(cursor, image_id, tags_list)
@@ -389,6 +461,7 @@ def sync_image_database_blocking():
 
         stale_canons = set(db_images.keys()) - disk_images_canons
         if stale_canons:
+            deleted_count = len(stale_canons)
             print(f"🔵 [Holaf-ImageViewer] Found {len(stale_canons)} stale image entries to remove from DB.")
             placeholders = ','.join('?' for _ in stale_canons)
             cursor.execute(f"DELETE FROM images WHERE path_canon IN ({placeholders}) AND is_trashed = 0", tuple(stale_canons))
@@ -396,6 +469,11 @@ def sync_image_database_blocking():
         
         _update_folder_metadata_cache_blocking(cursor)
         conn.commit()
+
+        # --- REFRESH GLOBAL STATS ---
+        # Since sync is massive, we just force a refresh at the end
+        if added_count > 0 or deleted_count > 0:
+            stats_manager.force_refresh()
 
         print("✅ [Holaf-ImageViewer] Periodic image database synchronization complete.")
         update_last_db_update_time()
@@ -473,6 +551,9 @@ def clean_thumbnails_blocking():
             print(f"🔵 [Holaf-ImageViewer] Marked {regenerated_corrupt_count} images for thumbnail regeneration (corrupt).")
 
         conn.commit()
+
+        # --- REFRESH GLOBAL STATS ---
+        stats_manager.force_refresh()
 
         print(f"✅ [Holaf-ImageViewer] Thumbnail cleaning complete. "
                 f"Deleted: {deleted_orphans_count}, "
@@ -574,8 +655,16 @@ def _extract_image_metadata_blocking(image_path_abs):
                     "-show_entries", "stream=width,height",
                     "-of", "json", image_path_abs
                 ]
+                
+                # --- PROTECTION TIMEOUT ADDED ---
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                stdout, stderr = process.communicate()
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    raise RuntimeError("ffprobe timed out")
+                # --------------------------------
                 
                 if process.returncode == 0:
                     info = json.loads(stdout)
@@ -753,8 +842,15 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
                 "-frames:v", "1", "-f", "image2", "pipe:1"
             ]
             
+            # --- PROTECTION TIMEOUT ADDED ---
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
+            try:
+                stdout, stderr = process.communicate(timeout=10) # 10s max for thumbnail extraction
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise RuntimeError("ffmpeg thumbnail extraction timed out")
+            # --------------------------------
             
             if process.returncode != 0:
                 raise RuntimeError(f"ffmpeg extraction failed: {stderr.decode('utf-8')}")
@@ -788,6 +884,9 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             cursor = conn_update_db.cursor()
             cursor.execute("UPDATE images SET thumbnail_status = 2, thumbnail_last_generated_at = ? WHERE path_canon = ?", (time.time(), image_path_canon_for_db_update))
             conn_update_db.commit()
+            
+            # --- NOTIFY STATS ---
+            stats_manager.increment_thumbnail()
             
     except UnidentifiedImageError as e:
         update_exception = e

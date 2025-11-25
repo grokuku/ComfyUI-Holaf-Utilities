@@ -9,9 +9,9 @@
  * MODIFIED: Added `bringToFront` on any panel mousedown, not just header.
  * MODIFIED: Added fullscreen toggling on header double-click.
  * MODIFICATION: Added dialog keyboard navigation and global state.
+ * CRITICAL FIX: Removed unused import of 'app' which caused crashes in standalone mode.
  */
 
-import { app } from "../../../../scripts/app.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
 
 // MODIFICATION: Global state to track if a dialog is open

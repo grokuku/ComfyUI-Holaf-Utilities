@@ -2,14 +2,28 @@
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Image Viewer Info Pane Module
  *
- * This module is responsible for fetching and displaying detailed
- * image information and metadata in the right-hand side pane.
- * REFACTOR: Subscribes to imageViewerState to update automatically.
+ * REFACTOR: Uses HolafComfyBridge to support standalone gallery mode.
  */
 
-import { app } from "../../../scripts/app.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
+import { holafBridge } from "../holaf_comfy_bridge.js";
+
+// Safe access to app (only available in main tab)
+let comfyApp = null;
+
+// --- CRITICAL FIX: Prevent import attempt in Standalone Mode ---
+// Accessing app.js triggers immediate execution which crashes if window.comfyAPI is missing.
+if (!window.location.pathname.startsWith('/holaf/view')) {
+    try {
+        const module = await import("../../../scripts/app.js");
+        comfyApp = module.app;
+    } catch (e) {
+        console.log("[Holaf InfoPane] ComfyUI app not available or failed to load (expected in standalone).");
+    }
+} else {
+    console.log("[Holaf InfoPane] Standalone mode detected: Skipping ComfyUI app integration.");
+}
 
 // Module-level variables to manage state
 let abortController = null;
@@ -141,12 +155,28 @@ async function displayInfoForImage(image) {
         finalMetadataContainer.innerHTML += `<p style="margin-top:15px;"><span class="holaf-viewer-metadata-label">Workflow:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.workflow_source)}</span></p>`;
         const workflowActions = document.createElement('div');
         workflowActions.className = 'holaf-viewer-info-actions';
+        
+        // --- BUTTON: Load Workflow with BRIDGE Support ---
         workflowActions.appendChild(createButton('⚡ Load Workflow', async () => {
             if (await HolafPanelManager.createDialog({
                     title: 'Load Workflow',
-                    message: 'Load image workflow?',
+                    message: 'Load image workflow? Current workspace will be overwritten.',
                     buttons: [{ text: 'Cancel', value: false }, { text: 'Load', value: true }]
-                })) app.loadGraphData(data.workflow);
+                })) {
+                    // BRIDGE LOGIC HERE
+                    if (comfyApp) {
+                        // We are in the main tab, load directly
+                        comfyApp.loadGraphData(data.workflow);
+                    } else {
+                        // We are in standalone mode, send via bridge
+                        holafBridge.send('LOAD_WORKFLOW', data.workflow);
+                        
+                        // Optional: Show feedback
+                        if (window.holaf && window.holaf.toastManager) {
+                            window.holaf.toastManager.show({ message: "Workflow sent to main window!", type: "success" });
+                        }
+                    }
+                }
         }, !data.workflow || !!data.workflow.error));
         finalMetadataContainer.appendChild(workflowActions);
 

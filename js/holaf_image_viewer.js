@@ -5,14 +5,14 @@
  * This script provides the client-side logic for the Holaf Image Viewer.
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
- * FIX: Exposes UI elements to viewer instance for navigation module access.
- * UPDATE: Added 'loop' attribute to fullscreen video.
+ * REFACTOR: Added Standalone Mode & Bridge Communication.
  */
 
-import { app } from "../../../scripts/app.js";
+// Global variable for the ComfyUI App instance (only populated in main tab)
+let app = null;
+
 import { HolafPanelManager } from "./holaf_panel_manager.js";
-import { HOLAF_THEMES } from "./holaf_themes.js";
-import { imageViewerState } from './image_viewer/image_viewer_state.js';
+import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
 import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';
@@ -20,6 +20,7 @@ import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
 import { ImageEditor } from './image_viewer/image_viewer_editor.js';
+import { imageViewerState } from './image_viewer/image_viewer_state.js';
 
 const STATS_REFRESH_INTERVAL_MS = 2000;
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
@@ -58,6 +59,11 @@ const holafImageViewer = {
         if (this.isInitialized) return;
         this.isInitialized = true;
 
+        // --- FIX: Tag body for CSS to recognize standalone mode ---
+        if (window.location.pathname === '/holaf/view') {
+            document.body.classList.add('holaf-standalone-mode');
+        }
+
         document.addEventListener("keydown", (e) => this._handleKeyDown(e));
         const cssId = "holaf-image-viewer-css";
         if (!document.getElementById(cssId)) {
@@ -65,7 +71,8 @@ const holafImageViewer = {
             link.id = cssId;
             link.rel = "stylesheet";
             link.type = "text/css";
-            link.href = "extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css";
+            // Adjust path slightly to ensure it works in both modes if needed
+            link.href = "/extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css";
             document.head.appendChild(link);
         }
 
@@ -81,8 +88,13 @@ const holafImageViewer = {
 
         const panelIsVisible = this.panelElements?.panelEl && this.panelElements.panelEl.style.display === "flex";
         if (panelIsVisible) {
-            this.hide();
-            return;
+            // In standalone mode, force visibility or re-layout if needed
+            if (window.location.pathname === '/holaf/view') {
+                 // Already visible, do nothing or refresh
+            } else {
+                 this.hide();
+                 return;
+            }
         }
 
         if (this.panelElements?.panelEl) {
@@ -174,6 +186,23 @@ const holafImageViewer = {
         const state = imageViewerState.getState();
         const headerControls = document.createElement("div");
         headerControls.className = "holaf-header-button-group";
+        
+        // --- BUTTON: Pop-out / Standalone ---
+        // Only show this button if we are NOT already in standalone mode
+        if (window.location.pathname !== '/holaf/view') {
+            const popOutButton = document.createElement("button");
+            popOutButton.className = "holaf-header-button";
+            popOutButton.title = "Open in New Tab (Standalone Mode)";
+            popOutButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+            popOutButton.onclick = (e) => {
+                e.stopPropagation();
+                window.open('/holaf/view', '_blank');
+                this.hide();
+            };
+            headerControls.append(popOutButton);
+        }
+        
+        // --- BUTTON: Theme ---
         const themeButtonContainer = document.createElement("div");
         themeButtonContainer.style.position = 'relative';
         const themeButton = document.createElement("button");
@@ -963,7 +992,94 @@ const holafImageViewer = {
     },
 };
 
-app.holafImageViewer = holafImageViewer;
-app.registerExtension({ name: "Holaf.ImageViewer.Panel", async setup() { await holafImageViewer.init(); } });
+// --- DYNAMIC APP IMPORT & REGISTRATION ---
+(async () => {
+    // CRITICAL: DO NOT LOAD 'app.js' IN STANDALONE MODE
+    // 'app.js' expects 'window.comfyAPI' and other globals, crashing the standalone page.
+    const isStandalone = window.location.pathname.startsWith('/holaf/view');
+    
+    if (isStandalone) {
+        console.log("[Holaf] Standalone mode detected. Skipping ComfyUI app import.");
+        return; 
+    }
+
+    try {
+        const module = await import("../../scripts/app.js");
+        app = module.app;
+
+        if (app) {
+            app.holafImageViewer = holafImageViewer;
+
+            app.registerExtension({
+                name: "Holaf.ImageViewer.Panel",
+                async setup() {
+                    await holafImageViewer.init();
+
+                    // --- COMFY BRIDGE LISTENER ---
+                    holafBridge.listen((data) => {
+                        if (data.type === 'LOAD_WORKFLOW') {
+                            console.log("[Holaf Bridge] Received workflow from standalone gallery.");
+                            try {
+                                app.loadGraphData(data.payload);
+                                if (window.holaf && window.holaf.toastManager) {
+                                    window.holaf.toastManager.show({message: "Workflow loaded from external gallery", type: "success"});
+                                }
+                            } catch (e) {
+                                console.error("Failed to load workflow from bridge:", e);
+                            }
+                        }
+                    });
+
+                    // --- INJECT "OPEN IN NEW TAB" BUTTON (Robust Method) ---
+                    const injectButton = () => {
+                        const menu = document.querySelector(".comfy-menu");
+                        if (!menu) return false;
+
+                        // Check if already injected
+                        if (menu.querySelector("#holaf-standalone-btn")) return true;
+
+                        const buttons = Array.from(menu.querySelectorAll('button'));
+                        // Use includes for loose matching
+                        const mainButton = buttons.find(b => b.textContent && b.textContent.includes("Holaf Image Viewer"));
+                        
+                        if (mainButton) {
+                            const standaloneLink = document.createElement("button");
+                            standaloneLink.id = "holaf-standalone-btn"; // Prevent duplicates
+                            standaloneLink.textContent = "Holaf Viewer (New Tab) ⧉";
+                            standaloneLink.style.fontSize = "0.8em";
+                            standaloneLink.style.opacity = "0.8";
+                            standaloneLink.style.marginTop = "-5px";
+                            standaloneLink.onclick = () => {
+                                window.open('/holaf/view', '_blank');
+                            };
+                            mainButton.parentNode.insertBefore(standaloneLink, mainButton.nextSibling);
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    // Retry for up to 10 seconds
+                    let attempts = 0;
+                    const interval = setInterval(() => {
+                        if (injectButton() || attempts > 20) {
+                            clearInterval(interval);
+                        }
+                        attempts++;
+                    }, 500);
+                }
+            });
+        }
+    } catch (e) {
+        console.log("[Holaf] Error importing app.js (possibly standalone or unexpected error):", e);
+    }
+})();
+
+// --- EXPORT FOR STANDALONE MODE ---
+export function initStandaloneGallery() {
+    console.log("[Holaf] Initializing Standalone Gallery...");
+    holafImageViewer.init().then(() => {
+        holafImageViewer.show();
+    });
+}
 
 export default holafImageViewer;

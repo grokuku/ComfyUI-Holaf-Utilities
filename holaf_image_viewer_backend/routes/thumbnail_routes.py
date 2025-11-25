@@ -5,6 +5,7 @@ import hashlib
 import json
 import traceback
 import logging
+import time # Ensure time is imported
 
 import aiofiles
 from aiohttp import web
@@ -324,28 +325,12 @@ async def prioritize_thumbnails_route(request: web.Request):
 
 
 async def get_thumbnail_stats_route(request: web.Request):
-    conn = None
-    current_exception = None
-    default_response = {"total_db_count": 0, "generated_thumbnails_count": 0}
+    # --- ARCHITECTURAL FIX: READ FROM RAM ONLY ---
     try:
-        conn = holaf_database.get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0") # Only non-trashed
-        total_db_count = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM images WHERE thumbnail_status = 2 AND is_trashed = 0") # Only non-trashed
-        generated_thumbnails_count = cursor.fetchone()[0]
-        conn.commit() 
-
-        return web.json_response({
-            "total_db_count": total_db_count,
-            "generated_thumbnails_count": generated_thumbnails_count,
-        })
+        # No DB Connection here! Pure memory access.
+        # This will respond in 0.0001s regardless of DB load.
+        stats = logic.stats_manager.get_stats()
+        return web.json_response(stats)
     except Exception as e:
-        current_exception = e
-        logger.error(f"Error getting thumbnail stats: {e}", exc_info=True)
-        return web.json_response({"error": str(e), **default_response}, status=500)
-    finally:
-        if conn:
-            holaf_database.close_db_connection(exception=current_exception)
+        logger.error(f"Error getting thumbnail stats from manager: {e}", exc_info=True)
+        return web.json_response({"error": str(e)}, status=500)

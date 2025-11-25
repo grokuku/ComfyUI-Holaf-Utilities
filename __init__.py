@@ -72,9 +72,78 @@ reload_global_config() # Load initial config
 print("🔵 [Holaf-Init] Live image updates now handled by Filesystem Watcher.")
 # --- MODIFICATION END ---
 
+# --- STANDALONE GALLERY HTML TEMPLATE ---
+# Defines the separate window structure with CORRECT PATHS
+GALLERY_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holaf Gallery</title>
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css">
+    <style>
+        /* Shim for ComfyUI variables to maintain dark theme */
+        :root {
+            --bg-color: #202020;
+            --comfy-menu-bg: #353535;
+            --comfy-input-bg: #222;
+            --input-text: #ddd;
+            --descrip-text: #999;
+            --drag-text: #ccc;
+            --error-text: #ff4444;
+            --border-color: #4e4e4e;
+            --holaf-accent-color: #236696;
+            --holaf-bg-color: #2b2b2b;
+            --holaf-text-color: #eeeeee;
+            --holaf-border-radius: 4px;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--holaf-text-color);
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            overflow: hidden; /* Gallery handles scroll */
+        }
+        /* Hide the close button in standalone mode */
+        #holaf-viewer-close-btn { display: none !important; }
+        
+        /* Ensure modal content takes full screen */
+        .holaf-modal-content {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+        }
+        .holaf-modal {
+            padding: 0 !important;
+            background: transparent !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- The script will inject the gallery UI here -->
+    <script type="module">
+        import { initStandaloneGallery } from '/extensions/ComfyUI-Holaf-Utilities/holaf_image_viewer.js';
+        // Initialize immediately
+        initStandaloneGallery();
+    </script>
+</body>
+</html>
+"""
 
 # --- API Route Definitions ---
 routes = server.PromptServer.instance.routes
+
+# --- NEW ROUTE: Standalone Gallery View ---
+@routes.get("/holaf/view")
+async def gallery_view_route(request: web.Request):
+    return web.Response(text=GALLERY_HTML, content_type='text/html')
+# ------------------------------------------
 
 # Shared/Utility Routes
 @routes.get("/holaf/utilities/settings")

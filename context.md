@@ -1,6 +1,4 @@
-# AiKore: Technical Project Context & Manifest
-    
-    ## 0. META: Interaction Rules & Protocols
+## 0. META: Interaction Rules & Protocols
     
     ### Purpose
     This file serves as the **primary source of truth** and **cognitive map** for the Large Language Model (LLM) working on AiKore. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
@@ -57,135 +55,104 @@
     *   **The Final Product**: Absolutely all deliverables (code, comments, docstrings, variable names, logs, interface texts, etc.) are written exclusively in **English**.
     
     ---
-    
-    ## 1. System Overview
-    
-    AiKore is a monolithic orchestration platform designed to manage AI WebUIs inside a **single Docker container**.
-    
-    ### Core Stack
-    *   **Orchestration**: `s6-overlay` (manages backend services and NGINX).
-    *   **Backend**: Python 3.12 + **FastAPI** + **SQLAlchemy** (SQLite).
-    *   **Frontend**: Vanilla JavaScript (ES Modules). Uses `Split.js`, `xterm.js`, `CodeMirror`.
-    *   **Networking**: **NGINX** (Dynamic Reverse Proxy) + **KasmVNC** (Persistent Desktop Sessions).
-    
-    ---
-    
-    ## 2. Project Structure & File Tree
-    
-    This tree represents the complete architecture. Key files are annotated with their specific responsibilities.
-    
-    ```text
-    .
-    ├── aikore/                             # MAIN APPLICATION PACKAGE
-    │   ├── api/                            # API Endpoints (Routers)
-    │   │   ├── __init__.py
-    │   │   ├── instances.py                # CORE: CRUD, Actions (Start/Stop), Port Self-Healing, Websockets
-    │   │   └── system.py                   # System Stats (NVML), Blueprint listing
-    │   │
-    │   ├── core/                           # Business Logic
-    │   │   ├── __init__.py
-    │   │   ├── blueprint_parser.py         # Reads metadata headers from .sh files
-    │   │   └── process_manager.py          # BRAIN: Subprocess mgmt, PTY generation, NGINX config generation
-    │   │
-    │   ├── database/                       # Persistence Layer
-    │   │   ├── __init__.py
-    │   │   ├── crud.py                     # DB Operations (Create/Read/Update/Delete)
-    │   │   ├── migration.py                # Auto-migration logic on startup
-    │   │   ├── models.py                   # SQLAlchemy definitions (Instances, Meta)
-    │   │   └── session.py                  # SQLite connection setup
-    │   │
-    │   ├── schemas/                        # Pydantic Models (Validation)
-    │   │   ├── __init__.py
-    │   │   └── instance.py                 # Instance schemas (Base, Create, Read, Update)
-    │   │
-    │   ├── static/                         # FRONTEND ASSETS
-    │   │   ├── css/
-    │   │   │   ├── base.css                # Layout & Split.js
-    │   │   │   ├── components.css          # Context Menus, Progress Bars
-    │   │   │   ├── instances.css           # Instance Table styling (Grouping logic)
-    │   │   │   ├── modals.css              # Popups
-    │   │   │   └── tools.css               # Terminal/Editor styling
-    │   │   ├── js/
-    │   │   │   ├── api.js                  # Fetch wrappers
-    │   │   │   ├── eventHandlers.js        # Click/Input events & Global Save
-    │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering
-    │   │   │   ├── modals.js               # Modal logic
-    │   │   │   ├── state.js                # Centralized State Store
-    │   │   │   ├── tools.js                # Tools (Terminal, Editor, Welcome) logic
-    │   │   │   └── ui.js                   # DOM Manipulation (Dirty rows, Normalization)
-    │   │   ├── welcome/                    # "CRT Style" Welcome Screen
-    │   │   └── index.html                  # Main HTML Entry Point
-    │   │
-    │   ├── main.py                         # FastAPI Entry Point (Startup logic)
-    │   └── requirements.txt                # Backend Python Dependencies
-    │
-    ├── blueprints/                         # INSTALLATION SCRIPTS
-    │   ├── legacy/                         # Old scripts archive
-    │   ├── ComfyUI.sh                      # Example Blueprint
-    │   ├── FluxGym.sh                      # Example Blueprint
-    │   └── ...
-    │
-    ├── docker/                             # CONTAINER OVERLAY
-    │   └── root/
-    │       └── etc/
-    │           ├── nginx/conf.d/aikore.conf # Main NGINX Config (Proxy & Websockets)
-    │           ├── s6-overlay/             # S6 Services Definition
-    │           │   ├── s6-init.d/          # Init scripts (Permissions)
-    │           │   └── s6-rc.d/            # Service Run Scripts (svc-app, svc-nginx)
-    │           └── sudoers.d/              # Sudo rules for 'abc' user
-    │
-    ├── scripts/                            # HELPER SCRIPTS
-    │   ├── kasm_launcher.sh                # Orchestrates Persistent Mode (Xvnc + Openbox + App)
-    │   └── version_check.sh                # Env diagnostics tool
-    │
-    ├── Dockerfile                          # Main Image Definition
-    ├── Dockerfile.buildbase                # Builder Image (Wheels compilation)
-    ├── docker-compose.yml                  # Production Deployment
-    ├── docker-compose.dev.yml              # Development Deployment
-    ├── entry.sh                            # Container Runtime Entrypoint (Activates Conda -> Python)
-    ├── functions.sh                        # Bash Library for Blueprints (Symlinks, Git Sync)
-    ├── Makefile                            # Command shortcuts
-    └── requirements.txt                    # (Root reqs, usually symlinked or copied to aikore/)
-    ```
-    
-    ---
-    
-    ## 3. Key Concepts & Logic
-    
-    ### Instance Types & Families
-    1.  **Standard**: Headless (NGINX proxy).
-    2.  **Persistent**: GUI (KasmVNC via dedicated port).
-    3.  **Satellite**:
-        *   **Concept**: A lightweight instance that reuses the Parent's installation (venv, code) but has its own Output folder and runtime config (GPU, Port).
-        *   **UI Representation**: Grouped visually with the Parent in a single block (via `<tbody>` tags in `main.js`). Dragging affects the whole family.
-        *   **Constraints**: `base_blueprint` and `output_path` are inherited from the Parent and **locked** (read-only) in the UI.
-    
-    ### Port Management
-    *   **Public Pool**: Range defined in Docker Compose (`AIKORE_INSTANCE_PORT_RANGE`, default `19001-19020`).
-    *   **Normal Mode**: `port` (internal app) = Public Pool Port.
-    *   **Persistent Mode**: `persistent_port` (VNC) = Public Pool Port. `port` (internal app) = Ephemeral (Random).
-    *   **Self-Healing**: Auto-allocation occurs in `api/instances.py` on startup if ports are missing/null.
-    
-    ### Lazy Filesystem Provisioning
-    *   **Principle**: Creating an instance in the DB (especially Satellites) does **not** create a folder immediately in `/config/instances`.
-    *   **Trigger**: The folder structure is created by `core/process_manager.py` only when the instance is **started** for the first time, to store `output.log` and the PID file.
-    
-    ---
-    
-    ## 4. Database Schema (V5)
-    
-    | Column | Type | Description |
-    | :--- | :--- | :--- |
-    | `id` | Int | Primary Key. |
-    | `parent_instance_id` | Int | **(V5)** Links Satellite to Parent. Null for Root instances. |
-    | `name` | String | Unique name (folder name). |
-    | `base_blueprint` | String | Script filename (e.g., `ComfyUI.sh`). |
-    | `status` | String | `stopped`, `starting`, `started`, `installing`, `error`. |
-    | `gpu_ids` | String | `CUDA_VISIBLE_DEVICES` string (e.g., "0,1"). |
-    | `port` | Int | Internal HTTP port for the application. |
-    | `persistent_mode` | Bool | True = Launches KasmVNC stack. |
-    | `persistent_port` | Int | Public VNC port (if enabled). |
-    | `persistent_display`| Int | X11 Display ID (e.g., 10 for :10). |
-    | `output_path` | String | Override output folder path. |
-    | `hostname` | String | Custom URL override (for local DNS). |
-    | `use_custom_hostname`| Bool | Toggle for hostname usage. |
+
+---
+
+### SECTION 1: STACK & DEPENDENCIES
+
+*   **Python Environment:** ComfyUI embedded python.
+*   **Key Libraries:**
+    *   `aiohttp` (Server/API)
+    *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
+    *   `Pillow` (Image processing) - Used for applying edits to static images.
+    *   `python-xmp-toolkit` (XMP Metadata support)
+*   **Frontend:**
+    *   Vanilla JS (ES Modules).
+    *   **BroadcastChannel API** : Communication inter-onglets (Mode Standalone).
+    *   **No-Bundler Strategy** : Chargement direct des modules ES6.
+
+---
+
+### SECTION 2: FILE STRUCTURE
+
+📁 holaf_image_viewer_backend/
+  > Backend logic for the Image Viewer.
+  📁 routes/
+    📄 thumbnail_routes.py
+      > [**OPTIMIZED**] Utilise `GlobalStatsManager` (RAM) pour les stats.
+  📄 logic.py
+    > [**CRITICAL**] Core logic. In-Memory Stats singleton.
+
+📁 js/
+  > Frontend assets.
+  📁 css/
+    📄 holaf_image_viewer.css
+      > [**UPDATED**] Support du mode Standalone (Body class `holaf-standalone-mode`, `:root` fallbacks pour les variables de thème).
+  📁 image_viewer/
+    📄 image_viewer_actions.js
+    📄 image_viewer_editor.js
+    📄 image_viewer_gallery.js
+      > [**PERF**] Virtual Scrolling, Cache LRU, Network Cancellation.
+    📄 image_viewer_infopane.js
+      > [**STANDALONE SAFE**] Chargement conditionnel de `app.js` (évite les crashs hors de ComfyUI).
+    📄 image_viewer_navigation.js
+    📄 image_viewer_settings.js
+    📄 image_viewer_state.js
+    📄 image_viewer_ui.js
+  📄 holaf_comfy_bridge.js
+    > [**NEW**] Wrapper `BroadcastChannel` pour la communication Onglet <-> Onglet.
+  📄 holaf_image_viewer.js
+    > [**ENTRY POINT**] Gère l'initialisation "Safe". Applique la classe CSS `holaf-standalone-mode` sur le body si URL détectée.
+  📄 holaf_panel_manager.js
+    > [**FIXED**] Suppression totale des imports vers `app.js` pour éviter les crashs en standalone.
+
+📄 __init__.py
+  > [**ROUTE**] `/holaf/view` sert la coquille HTML vide pour le mode Standalone.
+
+---
+
+### SECTION 3: KEY CONCEPTS
+
+*   **Standalone Mode Architecture (The "Iron Wall"):**
+    *   **Isolation:** Le code JS doit être strictement agnostique de l'objet global `app` ou `window.comfyAPI` lorsqu'il tourne sur `/holaf/view`.
+    *   **Dynamic Imports:** Les fichiers qui *doivent* interagir avec ComfyUI (ex: `infopane.js` pour charger un workflow) doivent utiliser `if (!isStandalone) import(...)` pour ne pas déclencher l'exécution de `app.js` dans l'onglet autonome.
+    *   **Styling:** Le mode Standalone applique la classe `holaf-standalone-mode` sur le `<body>`. Le CSS utilise cette classe pour :
+        *   Forcer le plein écran (`fixed`, `100vw`, `100vh`).
+        *   Masquer la barre de titre flottante (`.holaf-utility-header`).
+        *   Utiliser des variables de couleur de repli (`:root`) car les thèmes ComfyUI ne sont pas chargés.
+*   **Communication (Bridge):**
+    *   Utilise `BroadcastChannel` (`holaf_comfy_bridge.js`).
+    *   Le Viewer envoie : `LOAD_WORKFLOW`.
+    *   L'onglet Principal écoute et exécute : `app.loadGraphData(...)`.
+
+---
+
+### SECTION 4: DATABASE SCHEMA
+
+*   **File:** `holaf_utilities.sqlite`
+*   **Current Version:** 13
+*   **Table `images`:** `path_canon` (PK), `thumbnail_status`, `thumbnail_priority_score`, `has_edit_file`, etc.
+
+---
+
+### PROJECT STATE
+
+  ACTIVE_BUGS: {}
+
+  IN_PROGRESS:
+    - (Aucune tâche active - Fin de session Standalone)
+
+  COMPLETED_FEATURES (Session "Standalone & UI"):
+    - **[feature, standalone]** : Mode "Nouvel Onglet" fonctionnel et stable.
+    - **[fix, crash]** : Suppression des imports statiques de `app.js` dans `holaf_panel_manager.js` et `infopane.js` pour empêcher le crash de la page blanche.
+    - **[feature, bridge]** : Communication bidirectionnelle (Load Workflow) via `BroadcastChannel`.
+    - **[fix, ui]** : CSS adapté pour gérer le plein écran (Layout Flexbox corrigé, barre de titre masquée via classe body).
+
+  ROADMAP:
+    Global:
+      - [new_tool, session_log_tool]
+    ImageViewer Frontend:
+      - **[fix, ui]** : Corriger l'apparence des popups (dialogs) en mode Standalone (actuellement style ComfyUI manquant).
+    ImageViewer Backend:
+      - [feature, video_remux_fps]
+      - [perf, batch_processing]

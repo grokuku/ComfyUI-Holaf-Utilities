@@ -1,21 +1,62 @@
 /*
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Image Viewer Stylesheet
- * MODIFICATION: Remplacement de CSS Grid par Flexbox pour la galerie afin de corriger un bug de rendu persistant.
- * CORRECTION: Padding déplacé du conteneur central vers la galerie pour permettre à la vue agrandie de remplir l'espace.
- * MODIFICATION: Added styles for Display Options panel and thumbnail fit toggle.
- * CORRECTION: Fixed a CSS syntax error that was preventing the thumbnail fit toggle from working.
- * MODIFICATION: Added styles for thumbnail size slider and used CSS variable for dynamic sizing.
- * MODIFICATION: Added styles for action buttons and thumbnail checkboxes.
- * MODIFICATION: Redesigned left panel layout for fixed and scrollable sections.
- * MODIFICATION: Refined date range layout for label/input alignment.
- * CORRECTION: Fixed right column layout and edit icon styling.
- * MODIFICATION: Made UI more compact by reducing margins, gaps, and title font sizes.
- * CORRECTION: Fixed missing scrollbar on the right info pane when the editor is open.
- * MODIFICATION: Added a loading overlay effect for non-blocking filter changes.
- * MODIFICATION: Added fade-in/out transitions for differential gallery rendering.
- * MODIFICATION: Added Video Player styles (zoom view & fullscreen).
+ *
+ * STANDALONE FIXES:
+ * - Added :root fallback variables to restore Theme Colors (Purple) in new tab.
+ * - Added SPECIFIC rule using body class to hide header ONLY in standalone mode.
  */
+
+/* --- THEME DEFAULTS (Fallback for Standalone Mode) --- */
+:root {
+    /* Default to Midnight Purple look if no theme class is applied */
+    --holaf-accent-color: #9c27b0; /* Purple accent */
+    --holaf-background-primary: #202020;
+    --holaf-background-secondary: #2b2b2b;
+    --holaf-text-primary: #eeeeee;
+    --holaf-text-secondary: #aaaaaa;
+    --holaf-border-color: #444444;
+    --holaf-input-background: #1a1a1a;
+    --holaf-button-background: #353535;
+    --holaf-button-text: #eeeeee;
+    --holaf-scrollbar-thumb: #555;
+    --holaf-scrollbar-track: #2b2b2b;
+    --holaf-tag-background: #4a148c;
+    --holaf-border-radius: 4px;
+}
+
+/* --- GLOBAL LAYOUT FIX FOR STANDALONE MODE --- */
+body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden; /* App handles scrolling internally */
+    background-color: var(--holaf-background-primary);
+}
+
+/* Ensure the panel takes full space in standalone mode */
+/* Only apply this override when the dedicated class is present on body */
+body.holaf-standalone-mode #holaf-viewer-panel {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    top: 0 !important;
+    left: 0 !important;
+    transform: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    position: fixed !important; /* Force fixed to cover viewport */
+    box-shadow: none !important;
+}
+
+/* HIDE THE HEADER ONLY in Standalone Mode */
+body.holaf-standalone-mode .holaf-utility-header {
+    display: none !important;
+}
+
+/* --- END GLOBAL LAYOUT FIX --- */
 
 #holaf-viewer-panel .holaf-viewer-container {
     /* --holaf-thumbnail-size is set by JS */
@@ -34,16 +75,18 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    box-sizing: border-box;
 }
 
 #holaf-viewer-left-pane {
-    flex: 0 0 220px;
+    flex: 0 0 240px;
     padding: 10px;
     border-right: 1px solid var(--holaf-border-color);
     background-color: var(--holaf-background-secondary);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    z-index: 2;
 }
 
 .holaf-viewer-scrollable-section {
@@ -62,12 +105,10 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    /* MODIFIED: was 20px */
 }
 
 .holaf-viewer-filter-group {
     margin-bottom: 12px;
-    /* MODIFIED: was 20px */
 }
 
 .holaf-viewer-fixed-sections .holaf-viewer-filter-group,
@@ -78,16 +119,12 @@
 
 .holaf-viewer-filter-group h4 {
     margin: 0 0 8px 0;
-    /* MODIFIED: was 10px */
     color: var(--holaf-text-primary);
     border-bottom: 1px solid var(--holaf-border-color);
     padding-bottom: 4px;
-    /* MODIFIED: was 5px */
     font-size: 13px;
-    /* MODIFIED: was 14px */
 }
 
-/* CORRECTIF: Cible le titre 'Filters' (qui est le seul enfant de son groupe) pour corriger sa position. */
 .holaf-viewer-filter-group h4:only-child {
     border-bottom: none;
     margin-bottom: 0;
@@ -103,7 +140,6 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    /* MODIFIED: was 8px for compactness */
     font-size: 13px;
     cursor: pointer;
     user-select: none;
@@ -154,19 +190,15 @@
     accent-color: var(--holaf-accent-color);
     cursor: pointer;
     margin-left: 0;
-    /* MODIFIED: Reset margin for compactness */
     margin-right: 0;
 }
 
 .holaf-viewer-actions-group h4 {
     margin: 0 0 8px 0;
-    /* MODIFIED: was 10px */
     color: var(--holaf-text-primary);
     border-bottom: 1px solid var(--holaf-border-color);
     padding-bottom: 4px;
-    /* MODIFIED: was 5px */
     font-size: 13px;
-    /* MODIFIED: was 14px */
 }
 
 .holaf-viewer-actions-buttons-container {
@@ -230,10 +262,8 @@
 
 .holaf-viewer-display-options h4 {
     margin: 0 0 8px 0;
-    /* MODIFIED: was 10px */
     color: var(--holaf-text-primary);
     font-size: 13px;
-    /* MODIFIED: was 14px */
 }
 
 .holaf-viewer-slider-container {
@@ -259,6 +289,9 @@
 #holaf-viewer-center-pane {
     flex: 1 1 auto;
     position: relative;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 #holaf-viewer-toolbar {
@@ -278,13 +311,10 @@
     padding: 10px;
     box-sizing: border-box;
     position: relative;
-    /* Needed for the ::before overlay */
 }
 
-/* --- MODIFICATION START: Loading Overlay --- */
 #holaf-viewer-gallery.loading-overlay {
     pointer-events: none;
-    /* Prevent clicks during load */
     user-select: none;
 }
 
@@ -303,14 +333,10 @@
     font-size: 1.5em;
     font-weight: bold;
     z-index: 20;
-    /* Ensure it's on top of thumbnails */
     border-radius: 4px;
     transition: opacity 0.15s ease-in-out;
     opacity: 1;
 }
-
-/* --- MODIFICATION END --- */
-
 
 .holaf-viewer-message {
     width: 100%;
@@ -322,7 +348,6 @@
 
 .holaf-viewer-thumbnail-placeholder {
     flex-basis: var(--holaf-thumbnail-size);
-    /* CORRECTIF : Empêche les miniatures de grandir pour remplir l'espace. */
     flex-grow: 0;
     max-width: calc(var(--holaf-thumbnail-size) * 1.8);
     position: relative;
@@ -335,7 +360,6 @@
     background-color: var(--holaf-input-background);
 }
 
-/* --- MODIFICATION START: Styles for gallery diffing animations --- */
 .holaf-viewer-thumbnail-placeholder.entering {
     opacity: 0;
     transform: scale(0.9);
@@ -345,10 +369,7 @@
     opacity: 0;
     transform: scale(0.9);
     pointer-events: none;
-    /* Prevent interaction during exit animation */
 }
-
-/* --- MODIFICATION END --- */
 
 .holaf-viewer-thumbnail-placeholder:hover {
     border-color: var(--holaf-accent-color);
@@ -458,7 +479,6 @@
     opacity: 1;
 }
 
-
 #holaf-viewer-zoom-view {
     position: absolute;
     top: 0;
@@ -483,22 +503,18 @@
     transform-origin: top left;
 }
 
-/* --- VIDEO PLAYER STYLES --- */
 #holaf-viewer-zoom-view video {
     width: 100%;
     height: 100%;
     object-fit: contain;
     outline: none;
     display: none;
-    /* Managed by JS */
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
 }
 
 #holaf-viewer-zoom-view video.filtered {
     transition: filter 0.2s ease-out;
 }
-
-/* --- END VIDEO PLAYER STYLES --- */
 
 .holaf-viewer-zoom-close {
     position: absolute;
@@ -539,7 +555,6 @@
     background-color: rgba(30, 30, 30, 0.8);
 }
 
-/* --- MODIFICATION START: Styles for right column layout and editor --- */
 #holaf-viewer-right-column {
     flex: 0 0 300px;
     border-left: 1px solid var(--holaf-border-color);
@@ -547,20 +562,18 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    z-index: 2;
 }
 
 #holaf-viewer-right-pane {
     flex: 1 1 0;
-    /* MODIFIED: was '1 1 auto' */
     padding: 10px;
     overflow-y: auto;
     min-height: 0;
-    /* Prevents flexbox overflow issue */
 }
 
 #holaf-viewer-editor-pane {
     flex-shrink: 0;
-    /* Prevents the editor panel from shrinking */
     padding: 10px;
     border-top: 1px solid var(--holaf-border-color);
     background-color: var(--holaf-background-primary);
@@ -569,19 +582,13 @@
 #holaf-viewer-right-pane h4,
 #holaf-viewer-editor-pane h4 {
     margin: 0 0 8px 0;
-    /* MODIFIED: was 10px */
     padding-bottom: 4px;
-    /* MODIFIED: was 5px */
     border-bottom: 1px solid var(--holaf-border-color);
     font-size: 13px;
-    /* MODIFIED */
 }
-
-/* --- END RIGHT COLUMN LAYOUT --- */
 
 #holaf-viewer-info-content p {
     margin: 0 0 5px 0;
-    /* MODIFIED: was 8px */
     font-size: 13px;
     color: var(--holaf-text-secondary);
     word-break: break-all;
@@ -607,7 +614,6 @@
     border-color: var(--holaf-border-color);
     opacity: 0.5;
     margin: 10px 0;
-    /* MODIFIED: was 15px */
 }
 
 .holaf-viewer-info-actions {
@@ -650,17 +656,14 @@
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 140px;
-    /* MODIFIED: was 250px */
     overflow-y: auto;
     color: var(--holaf-text-primary);
 }
 
-/* --- START EDITOR STYLES --- */
 #holaf-editor-content {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    /* MODIFIED: was 10px */
 }
 
 .holaf-editor-tabs {
@@ -698,14 +701,12 @@
 
 .holaf-editor-tab-content {
     padding: 8px 0;
-    /* MODIFIED: was 10px */
 }
 
 .holaf-editor-section {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    /* MODIFIED: was 12px */
 }
 
 .holaf-editor-slider-container {
@@ -738,13 +739,9 @@
     justify-content: flex-end;
     gap: 10px;
     margin-top: 8px;
-    /* MODIFIED: was 10px */
     border-top: 1px solid var(--holaf-border-color);
     padding-top: 8px;
-    /* MODIFIED: was 10px */
 }
-
-/* --- END EDITOR STYLES --- */
 
 #holaf-viewer-fullscreen-overlay {
     position: fixed;
@@ -770,7 +767,6 @@
     transform-origin: top left;
 }
 
-/* --- FULLSCREEN VIDEO STYLES --- */
 #holaf-viewer-fullscreen-overlay video {
     width: 100%;
     height: 100%;
@@ -778,12 +774,9 @@
     outline: none;
 }
 
-/* Ensure controls are clickable */
 video::-webkit-media-controls {
     z-index: 20;
 }
-
-/* --- END FULLSCREEN VIDEO STYLES --- */
 
 .holaf-viewer-fs-close {
     position: absolute;
@@ -955,7 +948,6 @@ video::-webkit-media-controls {
     font-size: 13px;
     box-sizing: border-box;
     margin-bottom: 12px;
-    /* MODIFIED: was 20px */
 }
 
 .holaf-viewer-filter-header {
@@ -1022,7 +1014,6 @@ video::-webkit-media-controls {
     font-weight: bold;
 }
 
-/* --- START EDIT ICON STYLES (CORRECTED) --- */
 .holaf-viewer-edit-icon {
     position: absolute;
     top: 5px;
@@ -1030,7 +1021,6 @@ video::-webkit-media-controls {
     width: 26px;
     height: 26px;
     background-color: transparent;
-    /* MODIFIED: was rgba(0, 0, 0, 0.6) */
     color: var(--holaf-text-primary);
     border-radius: 4px;
     display: flex;
@@ -1052,25 +1042,18 @@ video::-webkit-media-controls {
     color: var(--holaf-accent-color);
 }
 
-
-/* --- END EDIT ICON STYLES --- */
-
-/* --- START FOLDER LOCK STYLES (SVG VERSION) --- */
 .holaf-folder-lock-icon {
     text-decoration: none;
     color: var(--holaf-text-secondary);
     opacity: 0.3;
-    /* Visible but faded when unlocked */
     transition: opacity 0.2s, color 0.2s;
     cursor: pointer;
     display: flex;
-    /* Helps with vertical alignment */
     align-items: center;
 }
 
 .holaf-folder-lock-icon svg {
     vertical-align: middle;
-    /* Better alignment with text */
 }
 
 .holaf-viewer-filter-item:hover .holaf-folder-lock-icon {
@@ -1082,13 +1065,8 @@ video::-webkit-media-controls {
     color: var(--holaf-accent-color);
 }
 
-/* --- END FOLDER LOCK STYLES --- */
-
-/* --- MODIFICATION START: Formats Grid Layout --- */
 #holaf-viewer-formats-filter {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 4px;
 }
-
-/* --- MODIFICATION END --- */
