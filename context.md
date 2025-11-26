@@ -1,7 +1,7 @@
 ## 0. META: Interaction Rules & Protocols
     
     ### Purpose
-    This file serves as the **primary source of truth** and **cognitive map** for the Large Language Model (LLM) working on AiKore. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
+    This file serves as the **primary source of truth** and **cognitive map**. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
     
     ### Protocol for Updates
     When the user requests a "context update" or when a major feature is implemented, the following information MUST be integrated/updated in this file:
@@ -66,10 +66,15 @@
     *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
     *   `Pillow` (Image processing) - Used for applying edits to static images.
     *   `python-xmp-toolkit` (XMP Metadata support)
+*   **System Dependencies:**
+    *   **FFmpeg** : Requis dans le PATH système. Indispensable pour :
+        *   Thumbnails Vidéo.
+        *   **Hard Bake Export** (Transcodage MP4/GIF avec application des filtres).
+    *   `psutil` (System Stats), `pywinpty` (Windows Terminal).
 *   **Frontend:**
     *   Vanilla JS (ES Modules).
     *   **BroadcastChannel API** : Communication inter-onglets (Mode Standalone).
-    *   **No-Bundler Strategy** : Chargement direct des modules ES6.
+    *   **Chart.js** : Utilisé pour `holaf_monitor.js`.
 
 ---
 
@@ -78,81 +83,106 @@
 📁 holaf_image_viewer_backend/
   > Backend logic for the Image Viewer.
   📁 routes/
+    > Modular API route handlers.
+    📄 __init__.py
+    📄 edit_routes.py
+    📄 export_routes.py
+    📄 file_ops_routes.py
+    📄 image_routes.py
+    📄 metadata_routes.py
     📄 thumbnail_routes.py
-      > [**OPTIMIZED**] Utilise `GlobalStatsManager` (RAM) pour les stats.
+      > [**OPTIMIZED**] Utilise `GlobalStatsManager` (RAM) pour les stats au lieu de SQL (Anti-Lock).
+    📄 utility_routes.py
+  📄 __init__.py
   📄 logic.py
-    > [**CRITICAL**] Core logic. In-Memory Stats singleton.
+    > [**CRITICAL**] Core logic.
+    > - **In-Memory Stats** : `GlobalStatsManager` singleton pour éviter la contention SQL.
+    > - **Process Safety** : Timeouts ajoutés sur `subprocess.Popen` (ffmpeg/ffprobe).
+  📄 routes.py
+  📄 worker.py
 
 📁 js/
   > Frontend assets.
   📁 css/
     📄 holaf_image_viewer.css
-      > [**UPDATED**] Support du mode Standalone (Body class `holaf-standalone-mode`, `:root` fallbacks pour les variables de thème).
   📁 image_viewer/
     📄 image_viewer_actions.js
     📄 image_viewer_editor.js
+      > [**UX FIX**] Reset immédiat de l'interface au changement d'image (plus d'image "fantôme").
     📄 image_viewer_gallery.js
-      > [**PERF**] Virtual Scrolling, Cache LRU, Network Cancellation.
+      > [**PERF**] Virtual Scrolling optimisé : Cache LRU pour thumbnails, Annulation réseau agressive (AbortController).
+      > [**FIX**] Support correct du paramètre `nocrop` (Images & Vidéos).
     📄 image_viewer_infopane.js
-      > [**STANDALONE SAFE**] Chargement conditionnel de `app.js` (évite les crashs hors de ComfyUI).
+      > [**STANDALONE**] Envoie les workflows via `holafBridge` si hors de ComfyUI.
     📄 image_viewer_navigation.js
     📄 image_viewer_settings.js
     📄 image_viewer_state.js
     📄 image_viewer_ui.js
+  📁 model_manager/
   📄 holaf_comfy_bridge.js
     > [**NEW**] Wrapper `BroadcastChannel` pour la communication Onglet <-> Onglet.
+  📄 holaf_main.js
   📄 holaf_image_viewer.js
-    > [**ENTRY POINT**] Gère l'initialisation "Safe". Applique la classe CSS `holaf-standalone-mode` sur le body si URL détectée.
-  📄 holaf_panel_manager.js
-    > [**FIXED**] Suppression totale des imports vers `app.js` pour éviter les crashs en standalone.
+    > [**UPDATED**] Point d'entrée unifié. Gère le mode "Modal" (Comfy) et "Standalone" (Nouvel Onglet).
+  📄 holaf_monitor.js
+    > [**BUGGED**] System Monitor Overlay. Problèmes de redimensionnement vertical du graphique Chart.js.
+
+📁 nodes/
+  📄 holaf_model_manager.py
+  📄 holaf_nodes_manager.py
 
 📄 __init__.py
-  > [**ROUTE**] `/holaf/view` sert la coquille HTML vide pour le mode Standalone.
+  > [**UPDATED**] Route `/holaf/view` pour servir la galerie autonome (HTML léger).
+📄 __main__.py
+📄 context.txt
+📄 holaf_config.py
+📄 holaf_database.py
+📄 holaf_server_management.py
+📄 holaf_system_monitor.py
+  > Backend pour le monitoring (psutil/nvidia-smi).
+📄 holaf_terminal.py
+📄 holaf_utils.py
+📄 requirements.txt
 
 ---
 
 ### SECTION 3: KEY CONCEPTS
 
-*   **Standalone Mode Architecture (The "Iron Wall"):**
-    *   **Isolation:** Le code JS doit être strictement agnostique de l'objet global `app` ou `window.comfyAPI` lorsqu'il tourne sur `/holaf/view`.
-    *   **Dynamic Imports:** Les fichiers qui *doivent* interagir avec ComfyUI (ex: `infopane.js` pour charger un workflow) doivent utiliser `if (!isStandalone) import(...)` pour ne pas déclencher l'exécution de `app.js` dans l'onglet autonome.
-    *   **Styling:** Le mode Standalone applique la classe `holaf-standalone-mode` sur le `<body>`. Le CSS utilise cette classe pour :
-        *   Forcer le plein écran (`fixed`, `100vw`, `100vh`).
-        *   Masquer la barre de titre flottante (`.holaf-utility-header`).
-        *   Utiliser des variables de couleur de repli (`:root`) car les thèmes ComfyUI ne sont pas chargés.
-*   **Communication (Bridge):**
-    *   Utilise `BroadcastChannel` (`holaf_comfy_bridge.js`).
-    *   Le Viewer envoie : `LOAD_WORKFLOW`.
-    *   L'onglet Principal écoute et exécute : `app.loadGraphData(...)`.
-
----
-
-### SECTION 4: DATABASE SCHEMA
-
-*   **File:** `holaf_utilities.sqlite`
-*   **Current Version:** 13
-*   **Table `images`:** `path_canon` (PK), `thumbnail_status`, `thumbnail_priority_score`, `has_edit_file`, etc.
+*   **Standalone Mode (New Tab):**
+    *   **Access:** Via bouton "Holaf Viewer (New Tab)" dans le menu.
+    *   **Architecture:** Route `/holaf/view` sert une coquille HTML vide qui charge les JS.
+    *   **Communication:** Utilise `BroadcastChannel` (`holaf_comfy_bridge.js`) pour envoyer des commandes (ex: Load Workflow) à l'onglet ComfyUI principal.
+*   **Performance Optimization (RAM vs Disk):**
+    *   **Stats:** Le backend maintient un compteur d'images en RAM (`GlobalStatsManager`). La route `/thumbnail-stats` ne touche plus la DB. Élimine les verrous SQL lors de la génération massive de thumbnails.
+    *   **Frontend:** Cache LRU (Least Recently Used) pour stocker les Blob URLs des thumbnails.
+*   **System Monitor (Overlay):**
+    *   Overlay flottant affichant CPU/RAM (Barres) et GPU (Graphique).
+    *   **Architecture:** Backend WebSocket -> Frontend Chart.js.
+    *   **Problème Actuel:** Le graphique GPU refuse de s'étirer verticalement lors du redimensionnement de la fenêtre, malgré l'utilisation de `maintainAspectRatio: false`, Flexbox, Grid, ou calcul manuel JS. Une limite horizontale "fantôme" empêche aussi l'élargissement correct.
 
 ---
 
 ### PROJECT STATE
 
-  ACTIVE_BUGS: {}
+  ACTIVE_BUGS:
+    - **[monitor, ui]** : Le graphique Chart.js ne suit pas le redimensionnement vertical de la fenêtre (reste écrasé).
+    - **[monitor, ui]** : Présence d'une limite de largeur maximale ("max-width" fantôme) empêchant d'agrandir la fenêtre horizontalement au-delà d'un certain point, provoquant un débordement du contenu.
 
   IN_PROGRESS:
-    - (Aucune tâche active - Fin de session Standalone)
+    - **[monitor]** : Tentative de refonte du layout `holaf_monitor.js`.
+      - *Méthodes échouées* : Flexbox Grow, Grid Layout, Absolute Positioning (top/bottom anchors), JS Manual Pixel Force (`canvas.width = x`), CSS `calc()`.
+      - *Suspect* : Conflit CSS global ComfyUI ou comportement interne de la version Chart.js utilisée.
 
-  COMPLETED_FEATURES (Session "Standalone & UI"):
-    - **[feature, standalone]** : Mode "Nouvel Onglet" fonctionnel et stable.
-    - **[fix, crash]** : Suppression des imports statiques de `app.js` dans `holaf_panel_manager.js` et `infopane.js` pour empêcher le crash de la page blanche.
-    - **[feature, bridge]** : Communication bidirectionnelle (Load Workflow) via `BroadcastChannel`.
-    - **[fix, ui]** : CSS adapté pour gérer le plein écran (Layout Flexbox corrigé, barre de titre masquée via classe body).
+  COMPLETED_FEATURES:
+    - **[perf, backend]** : `GlobalStatsManager` (In-Memory Stats).
+    - **[perf, frontend]** : Cache LRU Galerie + AbortController.
+    - **[feature, standalone]** : Mode "Nouvel Onglet" complet avec Bridge.
+    - **[ux]** : Correction "nocrop" vidéo et "ghosting" éditeur.
 
   ROADMAP:
     Global:
       - [new_tool, session_log_tool]
-    ImageViewer Frontend:
-      - **[fix, ui]** : Corriger l'apparence des popups (dialogs) en mode Standalone (actuellement style ComfyUI manquant).
+      - [backend, periodic_maintenance_worker]
     ImageViewer Backend:
-      - [feature, video_remux_fps]
-      - [perf, batch_processing]
+      - **[feature, video_remux_fps]** : Modification des métadonnées du conteneur (MP4).
+      - **[perf, batch_processing]** : Amélioration des performances pour les opérations de masse.
