@@ -17,7 +17,7 @@ except ImportError:
     psutil = None
     print("🔴 [Holaf-SysMon] CRITICAL: 'psutil' library not found! CPU/RAM stats will be 0.")
 
-from aiohttp import web
+from aiohttp import web, WSMsgType
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -69,8 +69,8 @@ def _get_system_stats_blocking():
     # 1. CPU & RAM
     if psutil:
         try:
-            # Interval 0.1 is crucial for non-blocking yet accurate instant usage
-            stats["cpu_percent"] = psutil.cpu_percent(interval=0.1)
+            # Interval 0.0 to be non-blocking (we handle interval in the loop)
+            stats["cpu_percent"] = psutil.cpu_percent(interval=0.0)
             mem = psutil.virtual_memory()
             stats["ram"]["percent"] = mem.percent
             stats["ram"]["used_gb"] = round(mem.used / (1024**3), 2)
@@ -123,8 +123,6 @@ def _get_system_stats_blocking():
                     pass
 
         except Exception as e:
-            # Only print once or verbose logging to avoid spamming console
-            # print(f"🔴 [Holaf-SysMon] GPU Read Error: {e}") 
             pass
 
     return stats
@@ -135,16 +133,47 @@ async def websocket_handler(request: web.Request, global_app_config):
     MONITOR_ACTIVE_WEBSOCKETS.add(ws)
     
     loop = asyncio.get_event_loop()
+    
+    # State shared between listener and sender
+    state = {"interval": 1.5} 
+
+    # --- Listener Task (Receives commands from Frontend) ---
+    async def listener():
+        try:
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    try:
+                        data = json.loads(msg.data)
+                        if "cmd" in data:
+                            if data["cmd"] == "turbo_on":
+                                state["interval"] = 0.25 # 250ms
+                            elif data["cmd"] == "turbo_off":
+                                state["interval"] = 1.5  # 1.5s
+                    except: pass
+                elif msg.type == WSMsgType.ERROR:
+                    break
+        except Exception: pass
+
+    listener_task = asyncio.create_task(listener())
+
+    # --- Sender Loop ---
     try:
-        while True:
+        while not ws.closed:
+            start_time = time.time()
+            
             stats = await loop.run_in_executor(None, _get_system_stats_blocking)
-            if ws.closed: break
             await ws.send_json(stats)
-            await asyncio.sleep(1.5)
+            
+            # Smart sleep: subtract processing time to keep rhythm, but ensure min sleep
+            elapsed = time.time() - start_time
+            sleep_time = max(0.1, state["interval"] - elapsed)
+            
+            await asyncio.sleep(sleep_time)
             
     except Exception as e:
         print(f"🔴 [Holaf-SysMon] WS Error: {e}")
     finally:
+        listener_task.cancel()
         MONITOR_ACTIVE_WEBSOCKETS.discard(ws)
         if not ws.closed: await ws.close()
     return ws

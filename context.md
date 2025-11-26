@@ -1,35 +1,35 @@
 ## 0. META: Interaction Rules & Protocols
-    
+
     ### Purpose
     This file serves as the **primary source of truth** and **cognitive map**. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
-    
+
     ### Protocol for Updates
     When the user requests a "context update" or when a major feature is implemented, the following information MUST be integrated/updated in this file:
     1.  **Structural Changes**: If files are created, renamed, moved, or deleted, update **Section 2 (File Structure)** to reflect the new tree and the responsibility of the new files.
     2.  **Schema Evolutions**: If `models.py` or `migration.py` changes, update **Section 4 (Database Schema)** to reflect the current V-version and columns.
     3.  **Logic Shifts**: If the core way the backend handles processes, ports, saving, or networking changes, update **Section 3 (Key Concepts)**.
     4.  **New Dependencies**: If `Dockerfile` or `requirements.txt` changes significantly (new tools like KasmVNC, new libs), update **Section 1 (Stack)**.
-    
+
     **Golden Rule**: Never paste raw code blocks in this file. Use concise, high-level functional descriptions to minimize token usage while maximizing understanding.
-    
+
     ---
     ### FUNDAMENTAL SESSION AXIOMS
     ---
-    
+
     #### **AXIOM 1: BEHAVIORAL (The Spirit of Collaboration)**
     
     *   **Expert Stance**: I act as a software development expert, meticulous and proactive. I anticipate potential errors and suggest relevant verification points after each modification.
     *   **Principle of Least Intervention**: I only modify what is strictly necessary to fulfill the request. I do not introduce any unsolicited modifications (e.g., refactoring, optimization).
     *   **Active Partnership**: I position myself as a development partner who analyzes and proposes, not just a simple executor.
     *   **Ambiguity Management**: If a request is ambiguous or if information necessary for its proper execution is missing, I will ask for clarifications before proposing a solution.
-    
+
     #### **AXIOM 2: ANALYSIS AND SECURITY (No Blind Action)**
     
     *   **Knowledge of Current State**: Before ANY file modification, if I do not have its full and up-to-date content in our session, I must imperatively ask you for it. Once received, I will consider it up-to-date and will not ask for it again, unless explicitly notified of an external modification.
     *   **Mandatory Prior Analysis**: I will never propose a code modification command (e.g., `sed`) without having analyzed the content of the concerned file in the current session beforehand.
     *   **Proactive Dependency Verification**: My knowledge base ends in early 2023. Therefore, before integrating or using a new tool, library, or package, I must systematically perform a search. I will summarize key points (stable version, breaking changes, new usage practices) in the `project_context.md` file.
     *   **Data Protection**: I will never propose a destructive action (e.g., `rm`, `DROP TABLE`) on data in a development environment without proposing a workaround (e.g., renaming, backup).
-    
+
     #### **AXIOM 3: CODE DELIVERY (Clarity and Reliability)**
     
     *   **Method 1 - Atomic Modification via `sed`**:
@@ -42,18 +42,18 @@
     *   **Formatting of Delivery Blocks**:
         *   **Markdown Files (`.md`)**: I will use a non-indented markdown code block (```md) non indenté. The full content of the file will be systematically indented by four spaces inside this block.
         *   **Other Files (Code, Config, etc.)**: I will use a standard code block (```language). Opening and closing tags will never be indented, but the code inside will be systematically indented by four spaces.
-    
+
     #### **AXIOM 4: WORKFLOW (One Step at a Time)**
     
     1.  **Explicit Validation**: After each modification proposal (whether by `sed` or full file), I pause. I wait for your explicit agreement ("OK", "Applied", "Validated", etc.) before moving to another file or task.
     2.  **Continuous Dependency Documentation**: If a dependency version proves to be newer than my knowledge base, I log its version number and relevant usage notes in the `project_context.md` file.
     3.  **End of Feature Documentation**: At the end of the development of a major feature and after your final validation, I will proactively propose updating project tracking files, notably `project_context.md` and `features.md`.
-    
+
     #### **AXIOM 5: LINGUISTICS (Strict Bilingualism)**
     
     *   **Our Interactions**: All our discussions, my explanations, and my questions are conducted exclusively in **French**.
     *   **The Final Product**: Absolutely all deliverables (code, comments, docstrings, variable names, logs, interface texts, etc.) are written exclusively in **English**.
-    
+
     ---
 
 ---
@@ -105,6 +105,8 @@
   > Frontend assets.
   📁 css/
     📄 holaf_image_viewer.css
+    📄 holaf_system_monitor_styles.css
+      > [**DEPRECATED**] Contenu commenté. Le style est maintenant géré dynamiquement par JS pour éviter les conflits.
   📁 image_viewer/
     📄 image_viewer_actions.js
     📄 image_viewer_editor.js
@@ -125,7 +127,10 @@
   📄 holaf_image_viewer.js
     > [**UPDATED**] Point d'entrée unifié. Gère le mode "Modal" (Comfy) et "Standalone" (Nouvel Onglet).
   📄 holaf_monitor.js
-    > [**BUGGED**] System Monitor Overlay. Problèmes de redimensionnement vertical du graphique Chart.js.
+    > [**REFACTORED**] System Monitor Overlay.
+    > - **Turbo Mode**: Polling 250ms pendant le rendu, 1500ms en idle.
+    > - **Engine**: Interpolation temporelle pour une vitesse de défilement constante (1px = 250ms).
+    > - **UX**: Drag&Drop global, redimensionnement, persistance (position, taille, courbes masquées).
 
 📁 nodes/
   📄 holaf_model_manager.py
@@ -139,7 +144,8 @@
 📄 holaf_database.py
 📄 holaf_server_management.py
 📄 holaf_system_monitor.py
-  > Backend pour le monitoring (psutil/nvidia-smi).
+  > Backend pour le monitoring.
+  > [**UPDATED**] WebSocket bidirectionnel. Accepte les commandes `turbo_on` / `turbo_off` pour ajuster la boucle de polling dynamiquement.
 📄 holaf_terminal.py
 📄 holaf_utils.py
 📄 requirements.txt
@@ -155,25 +161,23 @@
 *   **Performance Optimization (RAM vs Disk):**
     *   **Stats:** Le backend maintient un compteur d'images en RAM (`GlobalStatsManager`). La route `/thumbnail-stats` ne touche plus la DB. Élimine les verrous SQL lors de la génération massive de thumbnails.
     *   **Frontend:** Cache LRU (Least Recently Used) pour stocker les Blob URLs des thumbnails.
-*   **System Monitor (Overlay):**
-    *   Overlay flottant affichant CPU/RAM (Barres) et GPU (Graphique).
-    *   **Architecture:** Backend WebSocket -> Frontend Chart.js.
-    *   **Problème Actuel:** Le graphique GPU refuse de s'étirer verticalement lors du redimensionnement de la fenêtre, malgré l'utilisation de `maintainAspectRatio: false`, Flexbox, Grid, ou calcul manuel JS. Une limite horizontale "fantôme" empêche aussi l'élargissement correct.
+*   **System Monitor (Overlay - Refactored):**
+    *   **Architecture Hybrid:** Le backend ajuste sa fréquence (polling `nvidia-smi` ou `psutil`) selon l'état de ComfyUI (Exécution = Rapide, Idle = Lent).
+    *   **Time-Consistent Scrolling:** Le frontend interpole les points reçus. Que le backend envoie 1 point (Turbo) ou 1 point valant pour 6 (Idle), le graphique défile visuellement à la même vitesse (1 pixel pour 250ms de temps réel).
+    *   **Visualisation:** Axe Y dynamique (Zoom auto sur le min/max visible). VRAM en ligne pleine, Load en pointillés. Valeurs réelles affichées dans la légende.
 
 ---
 
 ### PROJECT STATE
 
   ACTIVE_BUGS:
-    - **[monitor, ui]** : Le graphique Chart.js ne suit pas le redimensionnement vertical de la fenêtre (reste écrasé).
-    - **[monitor, ui]** : Présence d'une limite de largeur maximale ("max-width" fantôme) empêchant d'agrandir la fenêtre horizontalement au-delà d'un certain point, provoquant un débordement du contenu.
+    - (Aucun bug critique connu sur le monitor actuellement).
 
   IN_PROGRESS:
-    - **[monitor]** : Tentative de refonte du layout `holaf_monitor.js`.
-      - *Méthodes échouées* : Flexbox Grow, Grid Layout, Absolute Positioning (top/bottom anchors), JS Manual Pixel Force (`canvas.width = x`), CSS `calc()`.
-      - *Suspect* : Conflit CSS global ComfyUI ou comportement interne de la version Chart.js utilisée.
+    - [None]
 
   COMPLETED_FEATURES:
+    - **[monitor, engine]** : Refonte totale. Mode Turbo (250ms), Interpolation temporelle, Layout Flexbox, Drag&Drop, Persistance complète.
     - **[perf, backend]** : `GlobalStatsManager` (In-Memory Stats).
     - **[perf, frontend]** : Cache LRU Galerie + AbortController.
     - **[feature, standalone]** : Mode "Nouvel Onglet" complet avec Bridge.
