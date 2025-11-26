@@ -5,12 +5,14 @@
  * STANDALONE FIXES:
  * - Added :root fallback variables to restore Theme Colors (Purple) in new tab.
  * - Added SPECIFIC rule using body class to hide header ONLY in standalone mode.
+ * - Added generic .holaf-utility-panel styling for dialogs in standalone mode.
  */
 
 /* --- THEME DEFAULTS (Fallback for Standalone Mode) --- */
 :root {
     /* Default to Midnight Purple look if no theme class is applied */
-    --holaf-accent-color: #9c27b0; /* Purple accent */
+    --holaf-accent-color: #9c27b0;
+    /* Purple accent */
     --holaf-background-primary: #202020;
     --holaf-background-secondary: #2b2b2b;
     --holaf-text-primary: #eeeeee;
@@ -31,8 +33,11 @@ body {
     padding: 0;
     width: 100vw;
     height: 100vh;
-    overflow: hidden; /* App handles scrolling internally */
+    overflow: hidden;
+    /* App handles scrolling internally */
     background-color: var(--holaf-background-primary);
+    font-family: sans-serif;
+    /* Basic fallback font */
 }
 
 /* Ensure the panel takes full space in standalone mode */
@@ -47,13 +52,50 @@ body.holaf-standalone-mode #holaf-viewer-panel {
     transform: none !important;
     border: none !important;
     border-radius: 0 !important;
-    position: fixed !important; /* Force fixed to cover viewport */
+    position: fixed !important;
+    /* Force fixed to cover viewport */
     box-shadow: none !important;
 }
 
 /* HIDE THE HEADER ONLY in Standalone Mode */
 body.holaf-standalone-mode .holaf-utility-header {
     display: none !important;
+}
+
+/* --- PANEL & DIALOG STYLES (Standalone Support) --- */
+/* Ensures dialogs have a background even without ComfyUI global CSS */
+.holaf-utility-panel {
+    background-color: var(--holaf-background-secondary);
+    color: var(--holaf-text-primary);
+    border: 1px solid var(--holaf-border-color);
+    border-radius: var(--holaf-border-radius);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.holaf-utility-header {
+    background-color: var(--holaf-input-background);
+    border-bottom: 1px solid var(--holaf-border-color);
+    padding: 8px 10px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    border-top-left-radius: var(--holaf-border-radius);
+    border-top-right-radius: var(--holaf-border-radius);
+}
+
+.holaf-utility-close-button {
+    background: transparent;
+    border: none;
+    color: var(--holaf-text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.holaf-utility-close-button:hover {
+    color: var(--holaf-text-primary);
 }
 
 /* --- END GLOBAL LAYOUT FIX --- */

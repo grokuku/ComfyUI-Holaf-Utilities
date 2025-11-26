@@ -6,6 +6,7 @@
  * It acts as a central coordinator, importing and orchestrating functionality
  * from specialized modules in the `js/image_viewer/` directory.
  * REFACTOR: Added Standalone Mode & Bridge Communication.
+ * FIX: Added ToastManager polyfill for standalone mode.
  */
 
 // Global variable for the ComfyUI App instance (only populated in main tab)
@@ -64,6 +65,65 @@ const holafImageViewer = {
             document.body.classList.add('holaf-standalone-mode');
         }
 
+        // --- FIX: Polyfill for toastManager in Standalone Mode ---
+        if (!window.holaf) window.holaf = {};
+        if (!window.holaf.toastManager) {
+            console.log("[Holaf] Initializing standalone ToastManager polyfill.");
+            window.holaf.toastManager = {
+                show: (opts) => {
+                    const id = opts.id || 'holaf-toast-' + Date.now();
+                    let toast = document.getElementById(id);
+                    if (!toast) {
+                        toast = document.createElement('div');
+                        toast.id = id;
+                        toast.style.cssText = `
+                            position: fixed; bottom: 20px; right: 20px;
+                            background: var(--holaf-accent-color, #9c27b0);
+                            color: white; padding: 12px 20px;
+                            border-radius: 4px; z-index: 10000;
+                            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+                            font-family: sans-serif; font-size: 14px;
+                            opacity: 0; transition: opacity 0.3s;
+                            max-width: 300px;
+                        `;
+                        if (opts.type === 'error') toast.style.backgroundColor = '#d32f2f';
+                        if (opts.type === 'success') toast.style.backgroundColor = '#2e7d32';
+
+                        document.body.appendChild(toast);
+
+                        // Force reflow
+                        void toast.offsetWidth;
+                        toast.style.opacity = '1';
+                    }
+                    toast.innerHTML = opts.message || "Operation processed.";
+
+                    if (!opts.duration || opts.duration > 0) {
+                        setTimeout(() => {
+                            if (toast.parentNode) {
+                                toast.style.opacity = '0';
+                                setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+                            }
+                        }, opts.duration || 3000);
+                    }
+                },
+                update: (id, opts) => {
+                    const toast = document.getElementById(id);
+                    if (toast) {
+                        toast.innerHTML = opts.message;
+                        if (opts.type === 'error') toast.style.backgroundColor = '#d32f2f';
+                        if (opts.type === 'success') toast.style.backgroundColor = '#2e7d32';
+                    }
+                },
+                hide: (id) => {
+                    const toast = document.getElementById(id);
+                    if (toast) {
+                        toast.style.opacity = '0';
+                        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+                    }
+                }
+            };
+        }
+
         document.addEventListener("keydown", (e) => this._handleKeyDown(e));
         const cssId = "holaf-image-viewer-css";
         if (!document.getElementById(cssId)) {
@@ -90,10 +150,10 @@ const holafImageViewer = {
         if (panelIsVisible) {
             // In standalone mode, force visibility or re-layout if needed
             if (window.location.pathname === '/holaf/view') {
-                 // Already visible, do nothing or refresh
+                // Already visible, do nothing or refresh
             } else {
-                 this.hide();
-                 return;
+                this.hide();
+                return;
             }
         }
 
@@ -186,7 +246,7 @@ const holafImageViewer = {
         const state = imageViewerState.getState();
         const headerControls = document.createElement("div");
         headerControls.className = "holaf-header-button-group";
-        
+
         // --- BUTTON: Pop-out / Standalone ---
         // Only show this button if we are NOT already in standalone mode
         if (window.location.pathname !== '/holaf/view') {
@@ -201,7 +261,7 @@ const holafImageViewer = {
             };
             headerControls.append(popOutButton);
         }
-        
+
         // --- BUTTON: Theme ---
         const themeButtonContainer = document.createElement("div");
         themeButtonContainer.style.position = 'relative';
@@ -997,10 +1057,10 @@ const holafImageViewer = {
     // CRITICAL: DO NOT LOAD 'app.js' IN STANDALONE MODE
     // 'app.js' expects 'window.comfyAPI' and other globals, crashing the standalone page.
     const isStandalone = window.location.pathname.startsWith('/holaf/view');
-    
+
     if (isStandalone) {
         console.log("[Holaf] Standalone mode detected. Skipping ComfyUI app import.");
-        return; 
+        return;
     }
 
     try {
@@ -1022,7 +1082,7 @@ const holafImageViewer = {
                             try {
                                 app.loadGraphData(data.payload);
                                 if (window.holaf && window.holaf.toastManager) {
-                                    window.holaf.toastManager.show({message: "Workflow loaded from external gallery", type: "success"});
+                                    window.holaf.toastManager.show({ message: "Workflow loaded from external gallery", type: "success" });
                                 }
                             } catch (e) {
                                 console.error("Failed to load workflow from bridge:", e);
@@ -1041,7 +1101,7 @@ const holafImageViewer = {
                         const buttons = Array.from(menu.querySelectorAll('button'));
                         // Use includes for loose matching
                         const mainButton = buttons.find(b => b.textContent && b.textContent.includes("Holaf Image Viewer"));
-                        
+
                         if (mainButton) {
                             const standaloneLink = document.createElement("button");
                             standaloneLink.id = "holaf-standalone-btn"; // Prevent duplicates
