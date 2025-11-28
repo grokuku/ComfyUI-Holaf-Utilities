@@ -18,3 +18,8 @@ watchdog
 
 # python-xmp-toolkit is used for reading/writing XMP metadata (tags) in images.
 python-xmp-toolkit
+
+aiohttp
+Pillow
+python-xmp-toolkit
+pynvml

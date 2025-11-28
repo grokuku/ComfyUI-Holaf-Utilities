@@ -14,6 +14,7 @@
  * REFACTOR CSS: Modified loadSharedCss to load multiple split CSS files.
  * REFACTOR RESTART: Implemented a new multi-stage restart sequence with fixed dialog size.
  * MODIFICATION: Integrated the new HolafToastManager for non-blocking notifications.
+ * MODIFICATION: Added "Workflow Profiler" and Bridge Listener logic.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -107,6 +108,7 @@ const HolafUtilitiesMenu = {
 
     init() {
         this.loadSharedCss();
+        this.initBridgeListener(); // [NEW] Start listening for Profiler commands
 
         // --- [FIX] Ensure a default theme is present on the body ---
         if (!document.body.className.includes("holaf-theme-")) {
@@ -148,6 +150,8 @@ const HolafUtilitiesMenu = {
             { label: "Model Manager", handlerName: "holafModelManager" },
             { label: "Custom Nodes Manager", handlerName: "holafNodesManager" },
             { label: "Image Viewer", handlerName: "holafImageViewer" },
+            // [NEW] Workflow Profiler Entry
+            { label: "Workflow Profiler", special: "profiler_standalone" },
             { type: 'separator' },
             { label: "Toggle Monitor", special: "toggle_monitor" },
             { type: 'separator' },
@@ -293,6 +297,9 @@ const HolafUtilitiesMenu = {
                         console.error("[Holaf Utilities] HolafSystemMonitor is not available.");
                         HolafModal.show("Error", "System Monitor module not loaded.", () => { }, "OK", null);
                     }
+                } else if (itemInfo.special === "profiler_standalone") {
+                    // Open Profiler in new tab
+                    window.open('/holaf/profiler/view', '_blank');
                 } else {
                     // Handle standard panel opening
                     const handler = app[itemInfo.handlerName];
@@ -345,6 +352,43 @@ const HolafUtilitiesMenu = {
         console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
+    // [NEW] BRIDGE LISTENER: Responds to requests from other tabs (Profiler, Gallery)
+    initBridgeListener() {
+        const bc = new BroadcastChannel('holaf_channel');
+        bc.onmessage = async (event) => {
+            const { command, data } = event.data;
+            
+            if (command === 'get_workflow_for_profiler') {
+                console.log("[Holaf Bridge] Received workflow request from Profiler.");
+                try {
+                    // Serialize current graph
+                    const workflowData = await app.graphToPrompt(); 
+                    // NOTE: graphToPrompt returns { workflow: ..., output: ... }
+                    // We also want the visual part (nodes positions etc, usually in app.graph.serialize())
+                    // but for profiling, 'graphToPrompt' logic is closest to what is executed.
+                    // However, to get "Titles" and "Positions", we need the visual graph.
+                    
+                    const visualGraph = app.graph.serialize();
+                    
+                    // Send to backend
+                    await fetch('/holaf/profiler/update-context', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(visualGraph)
+                    });
+                    
+                    // Notify Profiler via Toast? (Optional, Profiler UI updates itself via checking API? No, one-way is fine for now)
+                    window.holaf.toastManager.show("Workflow synced with Profiler.", "success");
+                    
+                } catch(e) {
+                    console.error("[Holaf Bridge] Error syncing workflow:", e);
+                    window.holaf.toastManager.show("Error syncing workflow.", "error");
+                }
+            }
+            // Add other listeners here if needed (e.g. load_workflow from Gallery)
+        };
+    },
+
     showDropdown(buttonElement) {
         if (!this.dropdownMenuEl) {
             console.error("[Holaf Utilities] showDropdown: dropdownMenuEl is null!");
@@ -383,7 +427,8 @@ const HolafUtilitiesMenu = {
             "holaf_settings_panel_styles.css",
             "holaf_system_monitor_styles.css",
             "holaf_image_viewer_styles.css",
-            "holaf_toasts.css" // <-- Added this line
+            "holaf_toasts.css",
+            "holaf_profiler.css" // [NEW] Added Profiler CSS
         ];
 
         const basePath = "extensions/ComfyUI-Holaf-Utilities/css/"; // Corrected base path

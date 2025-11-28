@@ -66,6 +66,7 @@
     *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
     *   `Pillow` (Image processing) - Used for applying edits to static images.
     *   `python-xmp-toolkit` (XMP Metadata support)
+    *   **`pynvml`** (NVIDIA Management Library) - Used for high-frequency GPU profiling.
 *   **System Dependencies:**
     *   **FFmpeg** : Requis dans le PATH système. Indispensable pour :
         *   Thumbnails Vidéo.
@@ -142,11 +143,20 @@
 📄 context.txt
 📄 holaf_config.py
 📄 holaf_database.py
+📄 holaf_profiler_database.py
+  > [**NEW**] Dedicated SQLite DB for performance metrics.
+  > Stores Runs, Steps (Nodes), and Groups.
+📄 holaf_profiler_engine.py
+  > [**NEW**] Core logic for profiling.
+  > Handles high-frequency polling (pynvml) and node hooks.
 📄 holaf_server_management.py
 📄 holaf_system_monitor.py
   > Backend pour le monitoring.
   > [**UPDATED**] WebSocket bidirectionnel. Accepte les commandes `turbo_on` / `turbo_off` pour ajuster la boucle de polling dynamiquement.
 📄 holaf_terminal.py
+📄 holaf_user_data_manager.py
+  > [**NEW**] Manages storage paths in `ComfyUI/user/`.
+  > Ensures correct structure: `user/[user]/ComfyUI-Holaf-Utilities/[tool]/`.
 📄 holaf_utils.py
 📄 requirements.txt
 
@@ -165,6 +175,10 @@
     *   **Architecture Hybrid:** Le backend ajuste sa fréquence (polling `nvidia-smi` ou `psutil`) selon l'état de ComfyUI (Exécution = Rapide, Idle = Lent).
     *   **Time-Consistent Scrolling:** Le frontend interpole les points reçus. Que le backend envoie 1 point (Turbo) ou 1 point valant pour 6 (Idle), le graphique défile visuellement à la même vitesse (1 pixel pour 250ms de temps réel).
     *   **Visualisation:** Axe Y dynamique (Zoom auto sur le min/max visible). VRAM en ligne pleine, Load en pointillés. Valeurs réelles affichées dans la légende.
+*   **Workflow Profiler (Performance Analysis):**
+    *   **Storage:** Stores data in `ComfyUI/user/[user]/ComfyUI-Holaf-Utilities/profiler/holaf_profiler.db` to separate it from user workflow/image data.
+    *   **Engine:** Uses `pynvml` for high-speed GPU polling (ms precision) during node execution.
+    *   **Structure:** Separates "Runs" (execution) from "Groups" (logic). Matches nodes via ID stability.
 
 ---
 
@@ -174,9 +188,10 @@
     - (Aucun bug critique connu sur le monitor actuellement).
 
   IN_PROGRESS:
-    - [None]
+    - **[backend, profiler_engine]** : Implementation of the Profiler logic (pynvml, hooks).
 
   COMPLETED_FEATURES:
+    - **[infra, profiler]** : Database setup, User folder management, Requirements.
     - **[monitor, engine]** : Refonte totale. Mode Turbo (250ms), Interpolation temporelle, Layout Flexbox, Drag&Drop, Persistance complète.
     - **[perf, backend]** : `GlobalStatsManager` (In-Memory Stats).
     - **[perf, frontend]** : Cache LRU Galerie + AbortController.

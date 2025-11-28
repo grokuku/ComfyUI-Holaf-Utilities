@@ -1,0 +1,126 @@
+/* Holaf Profiler Styles */
+:root {
+    --bg-color: #202020;
+    --panel-bg: #2b2b2b;
+    --text-color: #eeeeee;
+    --accent-color: #236696;
+    --border-color: #444;
+    --hover-bg: #383838;
+    --success-color: #4caf50;
+    --warning-color: #ff9800;
+    --error-color: #f44336;
+}
+
+#holaf-profiler-root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    box-sizing: border-box;
+}
+
+/* Header */
+.profiler-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background-color: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.header-title h1 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--accent-color);
+}
+
+.header-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn {
+    padding: 8px 16px;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+}
+
+.btn:hover {
+    filter: brightness(1.1);
+}
+
+.btn-secondary {
+    background-color: #444;
+}
+
+/* Toolbar (Filters) */
+.profiler-toolbar {
+    padding: 10px 20px;
+    background-color: var(--bg-color);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.toggle-chip {
+    padding: 4px 10px;
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-chip.active {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+/* Main Table */
+.profiler-content {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.data-table th, .data-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.data-table th {
+    background-color: var(--panel-bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.data-table tr:hover {
+    background-color: var(--hover-bg);
+}
+
+.metric-cell {
+    font-family: monospace;
+    color: #bbb;
+}
+
+.status-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    background-color: #444;
+}
