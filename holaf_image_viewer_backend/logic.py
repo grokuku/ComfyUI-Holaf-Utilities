@@ -739,8 +739,21 @@ def build_ffmpeg_filter_string(edit_data):
     Translates edit_data dictionary into an FFmpeg filter string (-vf).
     Matches the logic of apply_edits_to_image.
     """
+    if not edit_data:
+        return ""
+
     filters = []
     
+    # --- [FEATURE] SPEED CONTROL (setpts) ---
+    if 'playbackRate' in edit_data:
+        try:
+            rate = float(edit_data['playbackRate'])
+            if rate > 0 and abs(rate - 1.0) > 0.01:
+                # PTS = Presentation Timestamp. To speed up (2x), frames must be presented 2x faster, so timestamp / 2.
+                # setpts=PTS/RATE
+                filters.append(f"setpts=PTS/{rate}")
+        except ValueError: pass
+
     # eq filter handles brightness, contrast, saturation
     eq_parts = []
     if 'contrast' in edit_data:
@@ -755,17 +768,24 @@ def build_ffmpeg_filter_string(edit_data):
         # FFmpeg eq=brightness=N is an additive shift (-1.0 to 1.0).
         # Approximating: If CSS is 1.2 (+20%), we shift FFmpeg slightly.
         # A rough approximation for "soft" edits is (val - 1) / 2.
-        b_val = float(edit_data['brightness'])
-        ffmpeg_b = (b_val - 1.0) / 2.0
-        eq_parts.append(f"brightness={ffmpeg_b:.3f}")
+        try:
+            b_val = float(edit_data['brightness'])
+            # Only apply if significantly different from 1.0 to avoid floats weirdness
+            if abs(b_val - 1.0) > 0.001:
+                ffmpeg_b = (b_val - 1.0) / 2.0
+                eq_parts.append(f"brightness={ffmpeg_b:.3f}")
+        except ValueError: pass
         
     if eq_parts:
         filters.append(f"eq={':'.join(eq_parts)}")
         
     # hue filter
-    if 'hue' in edit_data and float(edit_data['hue']) != 0:
-        # FFmpeg 'hue' filter takes degrees directly in 'h'
-        filters.append(f"hue=h={edit_data['hue']}")
+    if 'hue' in edit_data:
+        try:
+            h_val = float(edit_data['hue'])
+            if abs(h_val) > 0.01:
+                filters.append(f"hue=h={h_val}")
+        except ValueError: pass
         
     return ",".join(filters)
 
@@ -782,6 +802,16 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
     
     cmd = [ffmpeg, "-y", "-i", source_path]
     
+    action_log = "Copy (No edits)"
+    
+    # --- CHECK FOR SPEED CHANGE ---
+    speed_changed = False
+    if 'playbackRate' in edit_data:
+        try:
+            if abs(float(edit_data['playbackRate']) - 1.0) > 0.01:
+                speed_changed = True
+        except: pass
+
     if format_ext == 'gif':
         # GIF Generation Strategy:
         # 1. Apply visual filters (eq/hue)
@@ -795,24 +825,32 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
         # [0:v] edits [x]; [x] split [a][b]; [a] palettegen [p]; [b][p] paletteuse
         complex_filter = f"{base_filter},split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
         
-        # If no edits, base_filter is "null" which FFmpeg handles or we can simplify
         if not filter_str:
             complex_filter = "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
             
         cmd.extend(["-filter_complex", complex_filter])
-        # GIF doesn't use -c:v libx264 or -c:a
+        action_log = "Transcode to GIF"
     else:
         # MP4 / Standard Video
         if filter_str:
             cmd.extend(["-vf", filter_str])
             cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
-            cmd.extend(["-c:a", "copy"]) # Copy audio
+            
+            # --- AUDIO HANDLING ---
+            # If speed changes, -c:a copy breaks synchronization or fails.
+            # Safe bet for AI Video tools: remove audio if speed is altered.
+            if speed_changed:
+                cmd.extend(["-an"]) # Remove audio
+                action_log = f"Transcode (Filters: {filter_str}, Audio Removed due to speed change)"
+            else:
+                cmd.extend(["-c:a", "copy"]) # Copy audio if speed is normal
+                action_log = f"Transcode (Filters: {filter_str})"
         else:
             cmd.extend(["-c", "copy"])
 
     cmd.append(dest_path)
     
-    print(f"🔵 [Holaf-Logic] Starting video export ({format_ext}) with filters: {filter_str if filter_str else 'None'}")
+    print(f"🔵 [Holaf-VideoExport] {action_log} -> {os.path.basename(dest_path)}")
     
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()

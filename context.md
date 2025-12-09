@@ -56,152 +56,126 @@
 
     ---
 
----
+    ---
 
-### SECTION 1: STACK & DEPENDENCIES
+    ### SECTION 1: STACK & DEPENDENCIES
 
-*   **Python Environment:** ComfyUI embedded python.
-*   **Key Libraries:**
-    *   `aiohttp` (Server/API)
-    *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
-    *   `Pillow` (Image processing) - Used for applying edits to static images.
-    *   `python-xmp-toolkit` (XMP Metadata support)
-    *   **`pynvml`** (NVIDIA Management Library) - Used for high-frequency GPU profiling.
-*   **System Dependencies:**
-    *   **FFmpeg** : Requis dans le PATH système. Indispensable pour :
-        *   Thumbnails Vidéo.
-        *   **Hard Bake Export** (Transcodage MP4/GIF avec application des filtres).
-    *   `psutil` (System Stats), `pywinpty` (Windows Terminal).
-*   **Frontend:**
-    *   Vanilla JS (ES Modules).
-    *   **BroadcastChannel API** : Communication inter-onglets (Mode Standalone).
-    *   **Chart.js** : Utilisé pour `holaf_monitor.js`.
+    *   **Python Environment:** ComfyUI embedded python.
+    *   **Key Libraries:**
+        *   `aiohttp` (Server/API)
+        *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
+        *   `Pillow` (Image processing) - Used for applying edits to static images.
+        *   `python-xmp-toolkit` (XMP Metadata support)
+        *   `pynvml` (NVIDIA Management Library) - GPU profiling.
+    *   **System Dependencies:**
+        *   **FFmpeg** : Requis dans le PATH système. Indispensable pour :
+            *   Thumbnails Vidéo.
+            *   **Hard Bake Export** (Transcodage MP4/GIF avec application des filtres : Luminosité, Contraste, Vitesse).
+        *   `psutil` (System Stats), `pywinpty` (Windows Terminal).
+    *   **Frontend:**
+        *   Vanilla JS (ES Modules).
+        *   **BroadcastChannel API** : Communication inter-onglets (Mode Standalone).
+        *   **Chart.js** : Utilisé pour `holaf_monitor.js`.
 
----
+    ---
 
-### SECTION 2: FILE STRUCTURE
+    ### SECTION 2: FILE STRUCTURE
 
-📁 holaf_image_viewer_backend/
-  > Backend logic for the Image Viewer.
-  📁 routes/
-    > Modular API route handlers.
+    📁 holaf_image_viewer_backend/
+      > Backend logic for the Image Viewer.
+      📁 routes/
+        > Modular API route handlers.
+        📄 __init__.py
+        📄 edit_routes.py
+        📄 export_routes.py
+          > [**FIXED**] Robust path handling for `.edt` files (Windows separator fix).
+        📄 file_ops_routes.py
+        📄 image_routes.py
+        📄 metadata_routes.py
+        📄 thumbnail_routes.py
+        📄 utility_routes.py
+      📄 __init__.py
+      📄 logic.py
+        > [**UPDATED**] Supporte le filtre `setpts` (Vitesse) pour FFmpeg et désactive l'audio si la vitesse change.
+        > [**CRITICAL**] `GlobalStatsManager` (RAM) pour les stats.
+      📄 routes.py
+      📄 worker.py
+
+    📁 js/
+      > Frontend assets.
+      📁 css/
+        📄 holaf_image_viewer.css
+      📁 image_viewer/
+        📄 image_viewer_actions.js
+        📄 image_viewer_editor.js
+        📄 image_viewer_gallery.js
+          > [**OPTIMIZED**] Nettoyage DOM/Réseau agressif (AbortController) lors des rechargements.
+          > [**FEATURE**] Support de la vitesse (`playbackRate`) sur les miniatures vidéo au survol.
+        📄 image_viewer_infopane.js
+        📄 image_viewer_navigation.js
+        📄 image_viewer_settings.js
+        📄 image_viewer_state.js
+        📄 image_viewer_ui.js
+      📁 model_manager/
+      📄 holaf_comfy_bridge.js
+      📄 holaf_main.js
+      📄 holaf_image_viewer.js
+        > [**PERF**] Implémentation du **Debouncing** sur les filtres pour éviter le gel de l'UI.
+      📄 holaf_monitor.js
+
+    📁 nodes/
+      📄 holaf_model_manager.py
+      📄 holaf_nodes_manager.py
+
     📄 __init__.py
-    📄 edit_routes.py
-    📄 export_routes.py
-    📄 file_ops_routes.py
-    📄 image_routes.py
-    📄 metadata_routes.py
-    📄 thumbnail_routes.py
-      > [**OPTIMIZED**] Utilise `GlobalStatsManager` (RAM) pour les stats au lieu de SQL (Anti-Lock).
-    📄 utility_routes.py
-  📄 __init__.py
-  📄 logic.py
-    > [**CRITICAL**] Core logic.
-    > - **In-Memory Stats** : `GlobalStatsManager` singleton pour éviter la contention SQL.
-    > - **Process Safety** : Timeouts ajoutés sur `subprocess.Popen` (ffmpeg/ffprobe).
-  📄 routes.py
-  📄 worker.py
+    📄 __main__.py
+    📄 context.txt
+    📄 holaf_config.py
+    📄 holaf_database.py
+    📄 holaf_profiler_database.py
+    📄 holaf_profiler_engine.py
+    📄 holaf_server_management.py
+    📄 holaf_system_monitor.py
+    📄 holaf_terminal.py
+    📄 holaf_user_data_manager.py
+    📄 holaf_utils.py
+    📄 requirements.txt
 
-📁 js/
-  > Frontend assets.
-  📁 css/
-    📄 holaf_image_viewer.css
-    📄 holaf_system_monitor_styles.css
-      > [**DEPRECATED**] Contenu commenté. Le style est maintenant géré dynamiquement par JS pour éviter les conflits.
-  📁 image_viewer/
-    📄 image_viewer_actions.js
-    📄 image_viewer_editor.js
-      > [**UX FIX**] Reset immédiat de l'interface au changement d'image (plus d'image "fantôme").
-    📄 image_viewer_gallery.js
-      > [**PERF**] Virtual Scrolling optimisé : Cache LRU pour thumbnails, Annulation réseau agressive (AbortController).
-      > [**FIX**] Support correct du paramètre `nocrop` (Images & Vidéos).
-    📄 image_viewer_infopane.js
-      > [**STANDALONE**] Envoie les workflows via `holafBridge` si hors de ComfyUI.
-    📄 image_viewer_navigation.js
-    📄 image_viewer_settings.js
-    📄 image_viewer_state.js
-    📄 image_viewer_ui.js
-  📁 model_manager/
-  📄 holaf_comfy_bridge.js
-    > [**NEW**] Wrapper `BroadcastChannel` pour la communication Onglet <-> Onglet.
-  📄 holaf_main.js
-  📄 holaf_image_viewer.js
-    > [**UPDATED**] Point d'entrée unifié. Gère le mode "Modal" (Comfy) et "Standalone" (Nouvel Onglet).
-  📄 holaf_monitor.js
-    > [**REFACTORED**] System Monitor Overlay.
-    > - **Turbo Mode**: Polling 250ms pendant le rendu, 1500ms en idle.
-    > - **Engine**: Interpolation temporelle pour une vitesse de défilement constante (1px = 250ms).
-    > - **UX**: Drag&Drop global, redimensionnement, persistance (position, taille, courbes masquées).
+    ---
 
-📁 nodes/
-  📄 holaf_model_manager.py
-  📄 holaf_nodes_manager.py
+    ### SECTION 3: KEY CONCEPTS
 
-📄 __init__.py
-  > [**UPDATED**] Route `/holaf/view` pour servir la galerie autonome (HTML léger).
-📄 __main__.py
-📄 context.txt
-📄 holaf_config.py
-📄 holaf_database.py
-📄 holaf_profiler_database.py
-  > [**NEW**] Dedicated SQLite DB for performance metrics.
-  > Stores Runs, Steps (Nodes), and Groups.
-📄 holaf_profiler_engine.py
-  > [**NEW**] Core logic for profiling.
-  > Handles high-frequency polling (pynvml) and node hooks.
-📄 holaf_server_management.py
-📄 holaf_system_monitor.py
-  > Backend pour le monitoring.
-  > [**UPDATED**] WebSocket bidirectionnel. Accepte les commandes `turbo_on` / `turbo_off` pour ajuster la boucle de polling dynamiquement.
-📄 holaf_terminal.py
-📄 holaf_user_data_manager.py
-  > [**NEW**] Manages storage paths in `ComfyUI/user/`.
-  > Ensures correct structure: `user/[user]/ComfyUI-Holaf-Utilities/[tool]/`.
-📄 holaf_utils.py
-📄 requirements.txt
+    *   **Gallery Performance (Anti-Freeze):**
+        *   **Debounce:** Les clics rapides sur les filtres n'envoient pas de requête immédiate. Le frontend attend une stabilisation (300ms) avant de charger.
+        *   **Cleanup:** Avant chaque rechargement de galerie, les requêtes d'images en cours sont annulées (`AbortController`) et le DOM est purgé proprement pour éviter les fuites de mémoire et les Race Conditions.
+    *   **Video Export (Hard Bake):**
+        *   **Filtres:** Utilise FFmpeg pour "cuire" les modifications (`.edt`) dans le fichier final.
+        *   **Vitesse:** Gérée via le filtre `setpts`.
+        *   **Audio:** Si la vitesse est modifiée, la piste audio est supprimée pour garantir la stabilité du fichier (éviter désynchro/corruption). Si vitesse normale, audio copié (`-c:a copy`).
+    *   **Standalone Mode (New Tab):**
+        *   Route `/holaf/view` pour l'interface isolée. Communication via `BroadcastChannel`.
 
----
+    ---
 
-### SECTION 3: KEY CONCEPTS
+    ### PROJECT STATE
 
-*   **Standalone Mode (New Tab):**
-    *   **Access:** Via bouton "Holaf Viewer (New Tab)" dans le menu.
-    *   **Architecture:** Route `/holaf/view` sert une coquille HTML vide qui charge les JS.
-    *   **Communication:** Utilise `BroadcastChannel` (`holaf_comfy_bridge.js`) pour envoyer des commandes (ex: Load Workflow) à l'onglet ComfyUI principal.
-*   **Performance Optimization (RAM vs Disk):**
-    *   **Stats:** Le backend maintient un compteur d'images en RAM (`GlobalStatsManager`). La route `/thumbnail-stats` ne touche plus la DB. Élimine les verrous SQL lors de la génération massive de thumbnails.
-    *   **Frontend:** Cache LRU (Least Recently Used) pour stocker les Blob URLs des thumbnails.
-*   **System Monitor (Overlay - Refactored):**
-    *   **Architecture Hybrid:** Le backend ajuste sa fréquence (polling `nvidia-smi` ou `psutil`) selon l'état de ComfyUI (Exécution = Rapide, Idle = Lent).
-    *   **Time-Consistent Scrolling:** Le frontend interpole les points reçus. Que le backend envoie 1 point (Turbo) ou 1 point valant pour 6 (Idle), le graphique défile visuellement à la même vitesse (1 pixel pour 250ms de temps réel).
-    *   **Visualisation:** Axe Y dynamique (Zoom auto sur le min/max visible). VRAM en ligne pleine, Load en pointillés. Valeurs réelles affichées dans la légende.
-*   **Workflow Profiler (Performance Analysis):**
-    *   **Storage:** Stores data in `ComfyUI/user/[user]/ComfyUI-Holaf-Utilities/profiler/holaf_profiler.db` to separate it from user workflow/image data.
-    *   **Engine:** Uses `pynvml` for high-speed GPU polling (ms precision) during node execution.
-    *   **Structure:** Separates "Runs" (execution) from "Groups" (logic). Matches nodes via ID stability.
+      ACTIVE_BUGS:
+        - (Aucun bug critique connu sur le viewer ou l'export).
 
----
+      IN_PROGRESS:
+        - **[backend, profiler_engine]** : Implementation of the Profiler logic.
 
-### PROJECT STATE
+      COMPLETED_FEATURES:
+        - **[perf, gallery]** : Correction du gel navigateur (Debouncing + Cleanup Optimisé).
+        - **[feature, export]** : Export Vidéo fonctionnel avec application des filtres (Luminosité, Contraste, Vitesse).
+        - **[infra, pathing]** : Correction robuste des chemins Windows pour les fichiers `.edt`.
+        - **[feature, video_preview]** : Application de la vitesse (`playbackRate`) sur les miniatures au survol.
+        - **[infra, profiler]** : Database setup, User folder management.
+        - **[monitor, engine]** : Refonte totale (Turbo Mode, Interpolation).
 
-  ACTIVE_BUGS:
-    - (Aucun bug critique connu sur le monitor actuellement).
-
-  IN_PROGRESS:
-    - **[backend, profiler_engine]** : Implementation of the Profiler logic (pynvml, hooks).
-
-  COMPLETED_FEATURES:
-    - **[infra, profiler]** : Database setup, User folder management, Requirements.
-    - **[monitor, engine]** : Refonte totale. Mode Turbo (250ms), Interpolation temporelle, Layout Flexbox, Drag&Drop, Persistance complète.
-    - **[perf, backend]** : `GlobalStatsManager` (In-Memory Stats).
-    - **[perf, frontend]** : Cache LRU Galerie + AbortController.
-    - **[feature, standalone]** : Mode "Nouvel Onglet" complet avec Bridge.
-    - **[ux]** : Correction "nocrop" vidéo et "ghosting" éditeur.
-
-  ROADMAP:
-    Global:
-      - [new_tool, session_log_tool]
-      - [backend, periodic_maintenance_worker]
-    ImageViewer Backend:
-      - **[feature, video_remux_fps]** : Modification des métadonnées du conteneur (MP4).
-      - **[perf, batch_processing]** : Amélioration des performances pour les opérations de masse.
+      ROADMAP:
+        ImageViewer Backend:
+          - **[perf, batch_processing]** : Amélioration des performances pour les opérations de masse (Delete/Move).
+        Global:
+          - [new_tool, session_log_tool]
+          - [backend, periodic_maintenance_worker]

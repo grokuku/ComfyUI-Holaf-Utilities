@@ -47,8 +47,12 @@ async def prepare_export_route(request: web.Request):
                 errors.append({"path": path_canon, "error": "File not found on disk."})
                 continue
             
-            subfolder, original_filename = os.path.split(path_canon)
-            dest_subfolder_abs_path = os.path.join(export_dir, subfolder)
+            # Robust filename extraction (independent of OS separators in path_canon)
+            original_filename = os.path.basename(source_abs_path)
+            
+            # Subfolder structure relative to export dir
+            subfolder_rel = os.path.dirname(path_canon.replace('/', os.sep))
+            dest_subfolder_abs_path = os.path.join(export_dir, subfolder_rel)
             os.makedirs(dest_subfolder_abs_path, exist_ok=True)
             
             base_name, original_ext = os.path.splitext(original_filename)
@@ -65,8 +69,7 @@ async def prepare_export_route(request: web.Request):
                 if export_format not in ['mp4', 'gif']:
                     target_ext = 'mp4'
             else:
-                # Image source: Cannot export to mp4/gif (unless we did slideshows, which we don't yet).
-                # Keep user format.
+                # Image source: Keep user format.
                 pass
                 
             dest_filename = f"{base_name}.{target_ext}"
@@ -80,7 +83,6 @@ async def prepare_export_route(request: web.Request):
                 # Videos or non-PNG images often fall back to sidecar
                 if include_meta and effective_meta_method == 'embed' and (is_video or export_format != 'png'):
                     effective_meta_method = 'sidecar'
-                    # Don't error, just fallback silently or handle appropriately
                 
                 if include_meta:
                     metadata = await loop.run_in_executor(None, logic._extract_image_metadata_blocking, source_abs_path)
@@ -88,10 +90,16 @@ async def prepare_export_route(request: web.Request):
                         prompt_data = metadata.get("prompt")
                         workflow_data = metadata.get("workflow")
                 
-                # Check for edits
+                # --- CHECK FOR EDITS ---
                 edit_data = None
-                edit_file_new = os.path.join(os.path.dirname(source_abs_path), "edit", f"{base_name}.edt")
-                edit_file_legacy = os.path.join(os.path.dirname(source_abs_path), f"{base_name}.edt")
+                
+                # Construct paths relative to the source file location
+                source_dir = os.path.dirname(source_abs_path)
+                
+                # New Structure: /path/to/image_folder/edit/image.edt
+                edit_file_new = os.path.join(source_dir, "edit", f"{base_name}.edt")
+                # Legacy Structure: /path/to/image_folder/image.edt
+                edit_file_legacy = os.path.join(source_dir, f"{base_name}.edt")
                 
                 target_edit_path = None
                 if os.path.isfile(edit_file_new): target_edit_path = edit_file_new
@@ -99,7 +107,9 @@ async def prepare_export_route(request: web.Request):
                 
                 if target_edit_path and os.path.getsize(target_edit_path) > 0:
                     try:
-                        with open(target_edit_path, 'r', encoding='utf-8') as f: edit_data = json.load(f)
+                        with open(target_edit_path, 'r', encoding='utf-8') as f: 
+                            edit_data = json.load(f)
+                            # print(f"🔵 [Holaf-Export] Found edits for {original_filename}")
                     except Exception as e:
                         print(f"🟡 [Holaf-Export] Warning: Could not read edit file {target_edit_path}: {e}")
                         errors.append({"path": path_canon, "error": f"Failed to load edits: {e}"})
@@ -107,7 +117,6 @@ async def prepare_export_route(request: web.Request):
                 # --- EXPORT PROCESSING ---
                 if is_video:
                     # Video Export (Transcoding)
-                    # Supports MP4 and GIF
                     await loop.run_in_executor(
                         None, 
                         logic.transcode_video_with_edits, 
@@ -138,7 +147,8 @@ async def prepare_export_route(request: web.Request):
                         img_to_save.save(dest_abs_path, format='JPEG' if export_format == 'jpg' else export_format.upper(), **save_params)
                 
                 # --- MANIFEST ---
-                rel_path = os.path.join(subfolder, dest_filename).replace(os.sep, '/')
+                # Use forward slashes for manifest paths (web compatibility)
+                rel_path = os.path.join(subfolder_rel, dest_filename).replace(os.sep, '/')
                 manifest.append({'path': rel_path, 'size': os.path.getsize(dest_abs_path)})
                 
                 # Sidecar Metadata
@@ -146,12 +156,12 @@ async def prepare_export_route(request: web.Request):
                     if prompt_data:
                         txt_path = os.path.join(dest_subfolder_abs_path, f"{base_name}.txt")
                         async with aiofiles.open(txt_path, 'w', encoding='utf-8') as f: await f.write(prompt_data)
-                        txt_rel_path = os.path.join(subfolder, f"{base_name}.txt").replace(os.sep, '/')
+                        txt_rel_path = os.path.join(subfolder_rel, f"{base_name}.txt").replace(os.sep, '/')
                         manifest.append({'path': txt_rel_path, 'size': os.path.getsize(txt_path)})
                     if workflow_data:
                         json_path = os.path.join(dest_subfolder_abs_path, f"{base_name}.json")
                         async with aiofiles.open(json_path, 'w', encoding='utf-8') as f: await f.write(json.dumps(workflow_data, indent=2))
-                        json_rel_path = os.path.join(subfolder, f"{base_name}.json").replace(os.sep, '/')
+                        json_rel_path = os.path.join(subfolder_rel, f"{base_name}.json").replace(os.sep, '/')
                         manifest.append({'path': json_rel_path, 'size': os.path.getsize(json_path)})
                 
             except Exception as e:

@@ -11,6 +11,7 @@
  * UPDATE (Optim): Standard concurrency limit (6) restored thanks to In-Memory Stats.
  * FIX: Removed JS-forced object-fit for images (let CSS handle it).
  * FIX: Video preview now inherits object-fit from the underlying image via getComputedStyle.
+ * FIX: Playback Rate applied to hover preview video.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -592,6 +593,11 @@ function createPlaceholder(viewer, image, index) {
                     if (editData.contrast) filterStr += `contrast(${editData.contrast}) `;
                     if (editData.saturation) filterStr += `saturate(${editData.saturation}) `;
                     if (editData.hue && parseFloat(editData.hue) !== 0) filterStr += `hue-rotate(${editData.hue}deg) `;
+                    
+                    // --- FIX: Apply playback rate for hover preview ---
+                    if (editData.playbackRate) {
+                        vid.playbackRate = parseFloat(editData.playbackRate);
+                    }
                 }
 
                 // --- FIX: READ COMPUTED STYLE FROM THE IMAGE TO MATCH CSS ---
@@ -748,14 +754,24 @@ function syncGallery(viewer, images) {
 
     viewerInstance = viewer;
 
+    // --- FIX: Robust Cleanup ---
+    // Cancel all fetches
     activeThumbnailLoads = 0;
     for (const controller of activeFetches.values()) {
         controller.abort();
     }
     activeFetches.clear();
-    thumbnailCache.clear(); // Clear cache on full sync
+    
+    // Clear LRU Cache to free memory if list changes drastically
+    thumbnailCache.clear(); 
 
-    galleryGridEl.innerHTML = '';
+    // DOM Cleanup
+    if (galleryGridEl) {
+        // Explicitly remove child elements to help GC detach listeners
+        while(galleryGridEl.firstChild) {
+            galleryGridEl.removeChild(galleryGridEl.firstChild);
+        }
+    }
     renderedPlaceholders.clear();
 
     const messageEl = galleryEl.querySelector('.holaf-viewer-message');
