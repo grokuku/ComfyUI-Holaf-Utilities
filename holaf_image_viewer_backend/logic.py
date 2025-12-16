@@ -27,8 +27,9 @@ from .. import holaf_database
 from .. import holaf_utils
 
 # --- Constants ---
-VIDEO_FORMATS = {'.mp4', '.webm'}
-SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}.union(VIDEO_FORMATS)
+# MODIFIED: Expanded video format support to ensure FPS detection works for more files
+VIDEO_FORMATS = {'.mp4', '.webm', '.mkv', '.avi', '.mov', '.m4v'}
+SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff'}.union(VIDEO_FORMATS)
 
 TRASHCAN_DIR_NAME = "trashcan"
 EDIT_DIR_NAME = "edit"  # New reserved folder name
@@ -136,6 +137,58 @@ def get_ffmpeg_path():
 def get_ffprobe_path():
     """Returns the path to the ffprobe executable, or None if not found."""
     return shutil.which("ffprobe")
+
+def get_proc_video_path(original_abs_path):
+    """
+    Returns the absolute path where the processed preview video (_proc.mp4) should be stored.
+    It is stored in the 'edit' subfolder next to the original file.
+    """
+    directory, filename = os.path.split(original_abs_path)
+    base_name, _ = os.path.splitext(filename)
+    edit_dir = os.path.join(directory, EDIT_DIR_NAME)
+    if not os.path.exists(edit_dir):
+        os.makedirs(edit_dir, exist_ok=True)
+    return os.path.join(edit_dir, f"{base_name}_proc.mp4")
+
+# --- NEW HELPER FOR FPS ---
+def get_video_fps(video_path):
+    """
+    Uses ffprobe to extract the exact frame rate of a video.
+    Returns a float (e.g. 23.976, 30.0, 60.0). Returns 30.0 on failure.
+    """
+    ffprobe = get_ffprobe_path()
+    if not ffprobe:
+        return 30.0
+        
+    try:
+        # Command to get e.g., "30000/1001" or "30/1"
+        cmd = [
+            ffprobe, "-v", "0", "-of", "csv=p=0", 
+            "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", 
+            video_path
+        ]
+        
+        # Run with timeout to avoid hanging
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            stdout, _ = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            return 30.0
+            
+        if process.returncode == 0:
+            rate_str = stdout.decode('utf-8').strip()
+            if '/' in rate_str:
+                num, den = rate_str.split('/')
+                if float(den) > 0:
+                    return float(num) / float(den)
+            elif rate_str:
+                return float(rate_str)
+                
+        return 30.0
+    except Exception as e:
+        print(f"🟡 [Holaf-Logic] Failed to extract FPS for {video_path}: {e}")
+        return 30.0
 
 def _update_folder_metadata_cache_blocking(cursor):
     """
@@ -793,25 +846,48 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
     """
     Transcodes a video file applying the edits "baked in" via FFmpeg.
     Supports .mp4 (x264) and .gif (palettegen).
+    
+    UPDATED: Supports targetFps logic.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         raise RuntimeError("FFmpeg not found")
+        
+    # --- CALCULATE EFFECTIVE SPEED ---
+    native_fps = get_video_fps(source_path)
+    target_fps = edit_data.get('targetFps', None)
+    
+    # Clone edit data to manipulate just for filter generation
+    filter_edit_data = edit_data.copy()
+    
+    speed_changed = False
+    
+    if target_fps:
+        try:
+            target_fps_val = float(target_fps)
+            if native_fps > 0:
+                # Calculate required playback rate to achieve target FPS
+                # Rate = Target / Native. e.g. 60 / 30 = 2.0x speed.
+                calculated_rate = target_fps_val / native_fps
+                filter_edit_data['playbackRate'] = calculated_rate
+                
+                if abs(calculated_rate - 1.0) > 0.01:
+                    speed_changed = True
+        except ValueError: pass
+    else:
+        # Fallback to direct multiplier if no target FPS
+        if 'playbackRate' in filter_edit_data:
+            try:
+                if abs(float(filter_edit_data['playbackRate']) - 1.0) > 0.01:
+                    speed_changed = True
+            except: pass
 
-    filter_str = build_ffmpeg_filter_string(edit_data)
+    filter_str = build_ffmpeg_filter_string(filter_edit_data)
     
     cmd = [ffmpeg, "-y", "-i", source_path]
     
     action_log = "Copy (No edits)"
     
-    # --- CHECK FOR SPEED CHANGE ---
-    speed_changed = False
-    if 'playbackRate' in edit_data:
-        try:
-            if abs(float(edit_data['playbackRate']) - 1.0) > 0.01:
-                speed_changed = True
-        except: pass
-
     if format_ext == 'gif':
         # GIF Generation Strategy:
         # 1. Apply visual filters (eq/hue)
@@ -829,11 +905,22 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
             complex_filter = "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
             
         cmd.extend(["-filter_complex", complex_filter])
+        
+        # Force frame rate if requested
+        if target_fps:
+             cmd.extend(["-r", str(target_fps)])
+             
         action_log = "Transcode to GIF"
     else:
         # MP4 / Standard Video
-        if filter_str:
-            cmd.extend(["-vf", filter_str])
+        if filter_str or speed_changed or target_fps:
+            if filter_str:
+                cmd.extend(["-vf", filter_str])
+            
+            # If target FPS is set, force output framerate
+            if target_fps:
+                cmd.extend(["-r", str(target_fps)])
+
             cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
             
             # --- AUDIO HANDLING ---
@@ -841,7 +928,7 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
             # Safe bet for AI Video tools: remove audio if speed is altered.
             if speed_changed:
                 cmd.extend(["-an"]) # Remove audio
-                action_log = f"Transcode (Filters: {filter_str}, Audio Removed due to speed change)"
+                action_log = f"Transcode (Filters: {filter_str}, FPS: {target_fps}, Audio Removed due to speed change)"
             else:
                 cmd.extend(["-c:a", "copy"]) # Copy audio if speed is normal
                 action_log = f"Transcode (Filters: {filter_str})"

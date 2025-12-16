@@ -11,12 +11,13 @@ import folder_paths # ComfyUI global
 
 from ... import holaf_utils
 from ... import holaf_database
+from .. import logic 
 
 EDIT_DIR_NAME = "edit"
 
 def _get_edit_paths(output_dir, path_canon):
     """
-    Returns a tuple (new_edit_path, legacy_edit_path, edit_dir) based on the image path.
+    Returns a tuple (new_edit_path, legacy_edit_path, edit_dir, safe_path_canon) based on the image path.
     """
     # 1. Resolve absolute path of the image
     safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
@@ -61,23 +62,50 @@ async def load_edits_route(request: web.Request):
         if not new_path.startswith(os.path.normpath(output_dir)):
             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
         
+        # Check if the IMAGE (or video) file itself exists
+        abs_image_path = os.path.join(output_dir, safe_path)
+        if not os.path.isfile(abs_image_path):
+             return web.json_response({"status": "error", "message": "Image/Video file not found"}, status=404)
+             
+        # Resolve Edits Path
         target_path = None
-        
-        # 1. Check new 'edit/' folder
         if os.path.isfile(new_path):
             target_path = new_path
-        # 2. Check legacy location
         elif os.path.isfile(legacy_path):
             target_path = legacy_path
+
+        # --- LOAD EDIT DATA (IF EXISTS) ---
+        edit_data = {}
+        if target_path:
+            async with aiofiles.open(target_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+                edit_data = json.loads(content)
+                
+        # --- ENRICH WITH METADATA (FPS & SIDE-LOAD) ---
+        response_data = {"status": "ok", "edits": edit_data}
+        
+        # Check if video format to inject FPS
+        _, ext = os.path.splitext(safe_path)
+        if ext.lower() in logic.VIDEO_FORMATS:
+            loop = asyncio.get_event_loop()
             
-        if not target_path:
-            return web.json_response({"status": "error", "message": "Edit file not found"}, status=404)
-
-        async with aiofiles.open(target_path, 'r', encoding='utf-8') as f:
-            content = await f.read()
-            edit_data = json.loads(content)
-
-        return web.json_response({"status": "ok", "edits": edit_data})
+            # 1. Native FPS
+            native_fps = await loop.run_in_executor(None, logic.get_video_fps, abs_image_path)
+            response_data["native_fps"] = native_fps
+            
+            # 2. Check for Processed Side-Load File (_proc.mp4)
+            # Logic module handles the path resolution
+            proc_path = logic.get_proc_video_path(abs_image_path)
+            if os.path.isfile(proc_path):
+                # Construct URL for the frontend to play it
+                # We use the standard ComfyUI view route mechanism
+                rel_dir = os.path.dirname(safe_path)
+                edit_subfolder = os.path.join(rel_dir, EDIT_DIR_NAME).replace("\\", "/")
+                proc_filename = os.path.basename(proc_path)
+                
+                response_data["processed_video_url"] = f"/view?filename={proc_filename}&subfolder={edit_subfolder}&type=output"
+            
+        return web.json_response(response_data)
 
     except json.JSONDecodeError:
         return web.json_response({"status": "error", "message": "Invalid JSON format in edit file"}, status=500)
@@ -191,3 +219,58 @@ async def delete_edits_route(request: web.Request):
     finally:
         if conn:
             holaf_database.close_db_connection(exception=current_exception)
+
+# --- NEW: SIDE-LOAD PROCESSING ROUTES ---
+
+async def process_video_route(request: web.Request):
+    """
+    Generates a _proc.mp4 video based on current edits (RIFE, Filters).
+    """
+    try:
+        data = await request.json()
+        path_canon = data.get("path_canon")
+        edit_data = data.get("edits", {})
+        
+        if not path_canon: return web.json_response({"status": "error", "message": "Missing path"}, status=400)
+        
+        output_dir = folder_paths.get_output_directory()
+        safe_path = holaf_utils.sanitize_path_canon(path_canon)
+        abs_image_path = os.path.join(output_dir, safe_path)
+        
+        if not os.path.isfile(abs_image_path):
+            return web.json_response({"status": "error", "message": "Source file not found"}, status=404)
+            
+        loop = asyncio.get_event_loop()
+        # Run heavy logic in thread
+        await loop.run_in_executor(None, logic.generate_proc_video, abs_image_path, edit_data)
+        
+        return web.json_response({"status": "ok", "message": "Preview generated successfully"})
+        
+    except Exception as e:
+        traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+async def rollback_video_route(request: web.Request):
+    """
+    Deletes the _proc.mp4 video to revert to original view.
+    """
+    try:
+        data = await request.json()
+        path_canon = data.get("path_canon")
+        
+        output_dir = folder_paths.get_output_directory()
+        safe_path = holaf_utils.sanitize_path_canon(path_canon)
+        abs_image_path = os.path.join(output_dir, safe_path)
+        
+        # Get location of proc file
+        proc_path = logic.get_proc_video_path(abs_image_path)
+        
+        if os.path.isfile(proc_path):
+            os.remove(proc_path)
+            return web.json_response({"status": "ok", "message": "Rollback successful"})
+        else:
+             return web.json_response({"status": "warning", "message": "No processed file found to delete"})
+             
+    except Exception as e:
+        traceback.print_exc()
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
