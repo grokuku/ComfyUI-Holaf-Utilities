@@ -5,12 +5,11 @@
  * This module manages the image editing panel, its state,
  * and interactions with the backend for saving/loading edits.
  * REFACTOR: Safe Toast usage. Non-blocking Background Process.
- * UPDATE: Auto FPS Doubling for RIFE.
+ * UPDATE: Auto FPS Doubling for RIFE. UI Cleanup. State Sync.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
-// Removed broken import of HolafToastManager to rely on window.holaf instance
 
 const DEFAULT_EDIT_STATE = {
     brightness: 1,
@@ -22,41 +21,27 @@ const DEFAULT_EDIT_STATE = {
 };
 
 export class ImageEditor {
-    /**
-     * @param {Object} viewer - The main HolafImageViewer instance (required for DOM access)
-     */
     constructor(viewer) {
-        this.viewer = viewer; // Store reference to access UI elements safely
+        this.viewer = viewer;
         this.panelEl = null;
         this.activeImage = null;
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
         this.isDirty = false;
 
-        // Runtime properties
         this.nativeFps = 0;
-        this.processedVideoUrl = null; // URL of side-load video if exists
+        this.processedVideoUrl = null;
     }
 
-    /**
-     * Initializes the editor, creates its UI, and subscribes to state changes.
-     */
     init() {
         this.createPanel();
         imageViewerState.subscribe(this._handleStateChange.bind(this));
     }
 
-    /**
-     * Public method used by Navigation module to check for unsaved work.
-     * @returns {boolean} True if there are unsaved edits.
-     */
     hasUnsavedChanges() {
         return this.isDirty;
     }
 
-    /**
-     * Helper for safe Toast usage
-     */
     _showToast(message, type = 'info', duration = 3000) {
         if (window.holaf && window.holaf.toastManager) {
             return window.holaf.toastManager.show({ message, type, duration });
@@ -72,13 +57,8 @@ export class ImageEditor {
         }
     }
 
-    /**
-     * Handles changes from the central state manager.
-     */
     _handleStateChange(state) {
-        // Safety check: ensure panel exists before trying to manipulate it
         if (!this.panelEl) {
-            // Try one last time to create it if context is ready (lazy init recovery)
             this.createPanel();
             if (!this.panelEl) return;
         }
@@ -131,7 +111,6 @@ export class ImageEditor {
         this.nativeFps = 0;
         this.processedVideoUrl = null;
 
-        // Reset UI immediately
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
 
@@ -153,10 +132,8 @@ export class ImageEditor {
             this.panelEl.style.display = 'none';
         }
 
-        // Clean up visual overrides using Event
         this._dispatchVideoOverride(null);
 
-        // Clean up filters on exit
         const elements = this._getPreviewElements();
         elements.forEach(el => {
             if (el) {
@@ -171,6 +148,25 @@ export class ImageEditor {
     _dispatchVideoOverride(url) {
         const event = new CustomEvent('holaf-video-override', { detail: { url: url } });
         document.dispatchEvent(event);
+    }
+
+    // [NEW] Helper to update global state without fetching full list
+    _updateGlobalImageState(pathCanon, hasEdits) {
+        const state = imageViewerState.getState();
+        const images = state.images.map(img => {
+            if (img.path_canon === pathCanon) {
+                return { ...img, has_edit_file: hasEdits };
+            }
+            return img;
+        });
+
+        // Also update selected/active if it matches
+        let activeImage = state.activeImage;
+        if (activeImage && activeImage.path_canon === pathCanon) {
+            activeImage = { ...activeImage, has_edit_file: hasEdits };
+        }
+
+        imageViewerState.setState({ images, activeImage });
     }
 
     async _loadEditsForCurrentImage() {
@@ -223,7 +219,6 @@ export class ImageEditor {
             effectiveRate = this.currentState.playbackRate || 1.0;
         }
 
-        // If we have a processed video, frame doubling is baked in, so we play at 1.0x
         if (this.processedVideoUrl) {
             effectiveRate = 1.0;
         }
@@ -249,15 +244,11 @@ export class ImageEditor {
         ];
     }
 
-    /**
-     * This function runs in the "background". It doesn't block the UI.
-     */
     async _triggerProcessVideoBackground(pathCanon) {
-        // Capture context at start
         const isInteractive = (pathCanon === this.activeImage?.path_canon);
 
-        // Show persistent toast
-        const toastId = this._showToast("Generating Video Preview... (You can navigate away)", 'info', 0);
+        // [UPDATED] Trigger Overlay
+        document.dispatchEvent(new Event('holaf-video-processing-start'));
 
         try {
             const response = await fetch('/holaf/images/process-video', {
@@ -270,10 +261,8 @@ export class ImageEditor {
             });
 
             const result = await response.json();
-            this._dismissToast(toastId);
 
             if (response.ok) {
-                // Show Stats Toast
                 if (result.stats) {
                     const msg = `Preview Ready!<br>Time: ${result.stats.duration}s<br>FPS: ${result.stats.fps_out}`;
                     this._showToast(msg, 'success', 5000);
@@ -281,7 +270,6 @@ export class ImageEditor {
                     this._showToast("Preview Generated", 'success');
                 }
 
-                // Only update UI if user is still on the same image
                 if (this.activeImage && this.activeImage.path_canon === pathCanon) {
                     await this._loadEditsForCurrentImage();
                 }
@@ -289,33 +277,10 @@ export class ImageEditor {
                 HolafPanelManager.createDialog({ title: "Process Error", message: result.message });
             }
         } catch (e) {
-            this._dismissToast(toastId);
             this._showToast(`Process Failed: ${e.message}`, 'error');
-        }
-    }
-
-    async _triggerRollbackVideo() {
-        if (!this.activeImage) return;
-
-        if (!await HolafPanelManager.createDialog({
-            title: "Confirm Rollback",
-            message: "This will delete the generated preview and return to the original video.",
-            buttons: [{ text: "Cancel", value: false }, { text: "Rollback", value: true, type: "danger" }]
-        })) return;
-
-        try {
-            const response = await fetch('/holaf/images/rollback-video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: this.activeImage.path_canon })
-            });
-
-            if (response.ok) {
-                await this._loadEditsForCurrentImage();
-                this._showToast("Rolled back to original.", 'success');
-            }
-        } catch (e) {
-            console.error(e);
+        } finally {
+            // [UPDATED] Remove Overlay
+            document.dispatchEvent(new Event('holaf-video-processing-end'));
         }
     }
 
@@ -325,7 +290,6 @@ export class ImageEditor {
         if (!this.activeImage) return;
         const pathCanonToSave = this.activeImage.path_canon;
 
-        // Prepare data
         if (this.nativeFps > 0 && this.currentState.targetFps) {
             this.currentState.playbackRate = this.currentState.targetFps / this.nativeFps;
         }
@@ -336,7 +300,6 @@ export class ImageEditor {
         this._showToast("Saving settings...", 'info', 1000);
 
         try {
-            // 1. Save Settings (Fast, Await this)
             const response = await fetch('/holaf/images/save-edits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -344,23 +307,21 @@ export class ImageEditor {
             });
 
             if (response.ok) {
-                // --- IMMEDIATE UI UNLOCK ---
                 this.isDirty = false;
                 this.originalState = { ...this.currentState };
                 this._updateButtonStates();
                 this._updateUIFromState();
 
-                // Refresh thumbnail in gallery immediately
+                // [UPDATED] Update global state AND refresh gallery icon
+                this._updateGlobalImageState(pathCanonToSave, true);
                 if (this.viewer && this.viewer.gallery) {
                     this.viewer.gallery.refreshThumbnail(pathCanonToSave);
                 }
 
-                // 2. Trigger Background Processing if needed
                 if (this.nativeFps > 0) {
                     const needsProcessing = this.currentState.interpolate || (this.currentState.targetFps && this.currentState.targetFps !== this.nativeFps);
 
                     if (needsProcessing) {
-                        // DO NOT AWAIT - Fire and forget
                         this._triggerProcessVideoBackground(pathCanonToSave);
                     } else {
                         this._showToast("Edits Saved", 'success');
@@ -374,7 +335,6 @@ export class ImageEditor {
             console.error(e);
             HolafPanelManager.createDialog({ title: "Save Error", message: e.message });
         } finally {
-            // Always re-enable button (though logic above handles isDirty)
             if (btn) btn.disabled = !this.isDirty;
         }
     }
@@ -395,16 +355,18 @@ export class ImageEditor {
             buttons: [{ text: "Cancel", value: false }, { text: "Reset", value: true, type: "danger" }]
         })) return;
 
+        const pathCanonToReset = this.activeImage.path_canon;
+
         try {
             await fetch('/holaf/images/delete-edits', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: this.activeImage.path_canon })
+                body: JSON.stringify({ path_canon: pathCanonToReset })
             });
 
             if (this.processedVideoUrl) {
                 await fetch('/holaf/images/rollback-video', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path_canon: this.activeImage.path_canon })
+                    body: JSON.stringify({ path_canon: pathCanonToReset })
                 });
             }
 
@@ -418,6 +380,12 @@ export class ImageEditor {
             this._updateUIFromState();
             this.applyPreview();
             this._updateButtonStates();
+
+            // [UPDATED] Update global state AND refresh gallery icon
+            this._updateGlobalImageState(pathCanonToReset, false);
+            if (this.viewer && this.viewer.gallery) {
+                this.viewer.gallery.refreshThumbnail(pathCanonToReset);
+            }
 
             this._showToast("Edits Reset", 'success');
 
@@ -435,7 +403,6 @@ export class ImageEditor {
         }
 
         const videoSection = this.panelEl.querySelector('#holaf-editor-video-section');
-        const rollbackControls = this.panelEl.querySelector('#holaf-editor-rollback-controls');
 
         if (videoSection) {
             if (this.nativeFps > 0) {
@@ -450,12 +417,6 @@ export class ImageEditor {
 
                 const interpCheckbox = this.panelEl.querySelector('#holaf-editor-interpolate-check');
                 if (interpCheckbox) interpCheckbox.checked = !!this.currentState.interpolate;
-
-                if (this.processedVideoUrl) {
-                    if (rollbackControls) rollbackControls.style.display = 'block';
-                } else {
-                    if (rollbackControls) rollbackControls.style.display = 'none';
-                }
 
             } else {
                 videoSection.style.display = 'none';
@@ -501,7 +462,6 @@ export class ImageEditor {
         const fpsSlider = this.panelEl.querySelector('#holaf-editor-fps-slider');
         const fpsContainer = this.panelEl.querySelector('#holaf-editor-video-section');
         const interpCheckbox = this.panelEl.querySelector('#holaf-editor-interpolate-check');
-        const rollbackBtn = this.panelEl.querySelector('#holaf-editor-rollback-btn');
 
         const updateFpsState = (newVal) => {
             const val = parseFloat(newVal);
@@ -526,20 +486,15 @@ export class ImageEditor {
                 this.currentState.interpolate = isChecked;
                 this.isDirty = true;
 
-                // [NEW] AUTO FPS ADJUSTMENT
                 if (isChecked && this.nativeFps > 0) {
-                    // Force slider to 2x
                     updateFpsState(this.nativeFps * 2);
                 } else if (!isChecked && this.nativeFps > 0) {
-                    // Revert to native (or stay? let's reset to safe native)
                     updateFpsState(this.nativeFps);
                 }
 
                 this._updateButtonStates();
             });
         }
-
-        if (rollbackBtn) rollbackBtn.onclick = () => this._triggerRollbackVideo();
 
         const saveBtn = this.panelEl.querySelector('#holaf-editor-save-btn');
         const resetBtn = this.panelEl.querySelector('#holaf-editor-reset-btn');
@@ -558,6 +513,7 @@ export class ImageEditor {
             </div>
         `;
 
+        // [MODIFIED] Removed Rollback btn, updated text
         return `
             <h4>Image Editor</h4>
             <div id="holaf-editor-content">
@@ -588,14 +544,7 @@ export class ImageEditor {
                         
                         <div class="holaf-editor-slider-container" style="justify-content: flex-start; margin-top: 6px;">
                             <input type="checkbox" id="holaf-editor-interpolate-check" style="margin-right: 8px;">
-                            <label for="holaf-editor-interpolate-check" style="cursor: pointer; opacity: 0.8;" title="Uses AI (RIFE) to generate intermediate frames (2x).">AI Interpolation (Smooth)</label>
-                        </div>
-                        <div class="holaf-editor-note" style="font-size: 0.8em; color: var(--descrip-text); margin-bottom: 5px;">
-                            Note: Save to generate preview.
-                        </div>
-
-                         <div id="holaf-editor-rollback-controls" style="margin-top: 8px; text-align: right; display: none;">
-                            <button id="holaf-editor-rollback-btn" class="comfy-button" style="width:100%; font-size: 0.9em; padding: 4px; background: var(--error-text);" title="Delete generated preview and return to original.">↺ Rollback to Original</button>
+                            <label for="holaf-editor-interpolate-check" style="cursor: pointer; opacity: 0.8;" title="Uses AI (RIFE) to generate intermediate frames (2x).">AI Interpolation (RIFE)</label>
                         </div>
                     </div>
                 </div>
