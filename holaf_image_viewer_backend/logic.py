@@ -1057,11 +1057,15 @@ def _inject_png_metadata_and_get_mtime(image_abs_path, prompt_text=None, workflo
         return os.path.getmtime(image_abs_path)
     except Exception as e: raise RuntimeError(f"Failed to inject metadata: {e}") from e
 
-def generate_proc_video(abs_image_path, edit_data):
+def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
     """
     Generates a processed preview video (_proc.mp4) in the edit folder.
     Pipeline: Extract -> (Optional RIFE) -> Assemble + Filters.
+    
+    :param preview_mode: If True, skips Color/Contrast filters (but applies RIFE/FPS).
+                         This allows CSS to handle colors in real-time in the browser.
     """
+    start_time = time.time()
     if not os.path.exists(abs_image_path):
         raise FileNotFoundError("Source video not found")
 
@@ -1079,14 +1083,10 @@ def generate_proc_video(abs_image_path, edit_data):
     use_rife = edit_data.get('interpolate', False)
     target_fps = edit_data.get('targetFps', None)
     
-    # If no RIFE and no Filters and no FPS change -> Copy? 
-    # Actually, user clicked "Generate", usually implies they want to see edits.
-    
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg: raise RuntimeError("FFmpeg not found")
     
     # 3. Create Temp Work Area
-    # We use a context manager to ensure cleanup
     with tempfile.TemporaryDirectory() as temp_root:
         frames_in_dir = os.path.join(temp_root, "frames_in")
         frames_out_dir = os.path.join(temp_root, "frames_out")
@@ -1106,6 +1106,8 @@ def generate_proc_video(abs_image_path, edit_data):
         # 5. RIFE Interpolation (Optional)
         assemble_source_dir = frames_in_dir
         native_fps = get_video_fps(abs_image_path)
+        
+        # Determine the base FPS for assembly
         assemble_fps = native_fps
 
         if use_rife:
@@ -1114,23 +1116,19 @@ def generate_proc_video(abs_image_path, edit_data):
                 raise RuntimeError("RIFE executable not found or installation failed.")
             
             print(f"🔵 [Holaf-Logic] Running RIFE Interpolation (2x)...")
-            # RIFE Usage: rife -i input -o output
-            # Note: RIFE ncnn vulkan uses GPU.
             cmd_rife = [rife_exe, "-i", frames_in_dir, "-o", frames_out_dir]
             
-            # Run RIFE
-            # We capture output to debug if needed, but RIFE logs to stderr usually
             try:
-                subprocess.check_call(cmd_rife) # stdout/stderr inherit is fine for logs
+                subprocess.check_call(cmd_rife)
                 assemble_source_dir = frames_out_dir
+                # RIFE strictly doubles the frames
                 assemble_fps = native_fps * 2
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"RIFE execution failed (Code {e.returncode}). Check server logs.")
 
         # 6. Assemble & Apply Filters
-        print(f"🔵 [Holaf-Logic] Assembling preview video...")
+        print(f"🔵 [Holaf-Logic] Assembling video (FPS: {assemble_fps})...")
         
-        # Input framerate for assembly needs to match what we have in the folder
         cmd_assemble = [
             ffmpeg, 
             "-framerate", str(assemble_fps),
@@ -1140,32 +1138,42 @@ def generate_proc_video(abs_image_path, edit_data):
         # Build Filter Chain
         filters = []
         
-        # Edits (Color/Brightness)
-        vf_string = build_ffmpeg_filter_string(edit_data)
-        if vf_string:
-            filters.append(vf_string)
+        # Only bake colors if NOT in preview mode
+        if not preview_mode:
+            vf_string = build_ffmpeg_filter_string(edit_data)
+            if vf_string:
+                filters.append(vf_string)
             
-        # Target FPS (Speed/Smoothness control)
-        # If user asked for specific target FPS, we output at that rate.
-        # This might drop frames or duplicate them if different from assemble_fps
+        # Target FPS Handling
+        # If user requests a specific FPS, we force it here.
         if target_fps:
              cmd_assemble.extend(["-r", str(target_fps)])
+        else:
+             # If no target FPS but RIFE was used, we MUST output at 2x native
+             # Otherwise ffmpeg might default to 25 or 30
+             cmd_assemble.extend(["-r", str(assemble_fps)])
         
         if filters:
             cmd_assemble.extend(["-vf", ",".join(filters)])
             
         # Encoding Settings
-        # No Audio for preview (simplifies sync logic)
         cmd_assemble.extend([
             "-c:v", "libx264", 
-            "-pix_fmt", "yuv420p", # Essential for browser compatibility
+            "-pix_fmt", "yuv420p", 
             "-crf", "23", 
             "-preset", "fast",
-            "-an", # No audio
+            "-an", # No audio for now (sync is hard with RIFE)
             "-y", proc_path
         ])
         
         subprocess.check_call(cmd_assemble, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-    print(f"✅ [Holaf-Logic] Preview generated: {proc_path}")
-    return proc_path
+    duration = time.time() - start_time
+    print(f"✅ [Holaf-Logic] Generated: {proc_path} in {duration:.2f}s")
+    
+    # Return stats for the frontend toast
+    return {
+        "path": proc_path,
+        "duration": round(duration, 2),
+        "fps_out": target_fps if target_fps else assemble_fps
+    }

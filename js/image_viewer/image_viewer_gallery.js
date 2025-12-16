@@ -12,6 +12,7 @@
  * FIX: Removed JS-forced object-fit for images (let CSS handle it).
  * FIX: Video preview now inherits object-fit from the underlying image via getComputedStyle.
  * FIX: Playback Rate applied to hover preview video.
+ * FIX: Active video edit indicator.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -320,7 +321,7 @@ function renderVisibleItems() {
                 activeThumbnailLoads--;
                 if (activeThumbnailLoads < 0) activeThumbnailLoads = 0;
             }
-            
+
             // OPTIMIZATION: Instead of revoking, we rely on the LRU Cache.
         }
 
@@ -339,12 +340,12 @@ function applyCachedThumbnail(placeholder, pathCanon) {
         const img = document.createElement('img');
         img.className = "holaf-image-viewer-thumbnail";
         img.src = cachedUrl;
-        
+
         // --- FIX: REMOVED forced JS style for images. CSS classes handle it. ---
         img.style.objectFit = '';
 
         img.onload = () => {
-             addFullscreenIcon(placeholder, imageViewerState.getState().images[parseInt(placeholder.dataset.index)]);
+            addFullscreenIcon(placeholder, imageViewerState.getState().images[parseInt(placeholder.dataset.index)]);
         };
 
         const oldImg = placeholder.querySelector('img');
@@ -428,7 +429,7 @@ function loadVisibleThumbnails() {
 
 async function fetchThumbnail(placeholder, image, forceReload = false) {
     const pathCanon = image.path_canon;
-    
+
     // Cache Check (Early return)
     if (!forceReload && applyCachedThumbnail(placeholder, pathCanon)) return;
 
@@ -486,7 +487,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         const img = document.createElement('img');
         img.className = "holaf-image-viewer-thumbnail";
         img.src = objectURL;
-        
+
         // --- FIX: REMOVED forced JS style for images. CSS classes handle it. ---
         img.style.objectFit = '';
 
@@ -545,6 +546,12 @@ function createPlaceholder(viewer, image, index) {
     if (['MP4', 'WEBM'].includes(image.format)) {
         actionIcon.innerHTML = '🎥';
         actionIcon.title = "Play Video";
+
+        // [MODIFIED] Logic to show filled/active icon if edited
+        if (image.has_edit_file) {
+            actionIcon.classList.add('active'); // CSS should handle opacity
+        }
+
         actionIcon.onclick = (e) => {
             e.stopPropagation();
             imageViewerState.setState({ activeImage: image, currentNavIndex: index });
@@ -561,13 +568,13 @@ function createPlaceholder(viewer, image, index) {
             // Fetch potential edits (Soft Edit)
             let editData = null;
             if (image.has_edit_file) {
-                 try {
-                     const response = await fetch(`/holaf/images/edits?path_canon=${encodeURIComponent(image.path_canon)}`);
-                     if (response.ok) {
-                         const result = await response.json();
-                         if (result.status === 'ok') editData = result.edits;
-                     }
-                 } catch (e) { console.warn("Failed to load hover edits", e); }
+                try {
+                    const response = await fetch(`/holaf/images/edits?path_canon=${encodeURIComponent(image.path_canon)}`);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.status === 'ok') editData = result.edits;
+                    }
+                } catch (e) { console.warn("Failed to load hover edits", e); }
             }
 
             // Set a delay to avoid playing if just passing through
@@ -585,7 +592,7 @@ function createPlaceholder(viewer, image, index) {
                 vid.loop = true;
                 vid.autoplay = true;
                 vid.playsInline = true;
-                
+
                 // Construct filter string
                 let filterStr = "";
                 if (editData) {
@@ -593,7 +600,7 @@ function createPlaceholder(viewer, image, index) {
                     if (editData.contrast) filterStr += `contrast(${editData.contrast}) `;
                     if (editData.saturation) filterStr += `saturate(${editData.saturation}) `;
                     if (editData.hue && parseFloat(editData.hue) !== 0) filterStr += `hue-rotate(${editData.hue}deg) `;
-                    
+
                     // --- FIX: Apply playback rate for hover preview ---
                     if (editData.playbackRate) {
                         vid.playbackRate = parseFloat(editData.playbackRate);
@@ -761,14 +768,14 @@ function syncGallery(viewer, images) {
         controller.abort();
     }
     activeFetches.clear();
-    
+
     // Clear LRU Cache to free memory if list changes drastically
-    thumbnailCache.clear(); 
+    thumbnailCache.clear();
 
     // DOM Cleanup
     if (galleryGridEl) {
         // Explicitly remove child elements to help GC detach listeners
-        while(galleryGridEl.firstChild) {
+        while (galleryGridEl.firstChild) {
             galleryGridEl.removeChild(galleryGridEl.firstChild);
         }
     }

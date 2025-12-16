@@ -57,29 +57,27 @@ class ImageViewerUI {
 
         imageViewerState.subscribe(this._render.bind(this));
         this._render(imageViewerState.getState());
-        
-        // --- [ADDED] EVENT LISTENER FOR PREVIEW OVERRIDE ---
+
+        // --- EVENT LISTENER FOR PREVIEW OVERRIDE ---
         document.addEventListener('holaf-video-override', (e) => {
             this._handleVideoOverride(e.detail.url);
         });
     }
-    
-    // --- [ADDED] VIDEO OVERRIDE HANDLER ---
+
+    // --- VIDEO OVERRIDE HANDLER ---
     _handleVideoOverride(url) {
         const videoEl = this.elements.zoomVideo;
-        const badgeEl = this.elements.centerPane.querySelector('#holaf-preview-badge');
-        
+        const indicatorEl = this.elements.centerPane.querySelector('#holaf-preview-indicator');
+
         if (url) {
             const cacheBustUrl = url + (url.includes('?') ? '&' : '?') + `t=${Date.now()}`;
             if (videoEl) {
                 videoEl.src = cacheBustUrl;
                 videoEl.load();
-                // videoEl.play(); // Let browser handle autoplay policies
             }
-            if (badgeEl) badgeEl.style.display = 'block';
+            if (indicatorEl) indicatorEl.style.display = 'block';
         } else {
-            if (badgeEl) badgeEl.style.display = 'none';
-            // Note: Standard gallery logic will reset video src when changing images
+            if (indicatorEl) indicatorEl.style.display = 'none';
         }
     }
 
@@ -218,12 +216,12 @@ class ImageViewerUI {
         const pane = document.createElement('div');
         pane.id = 'holaf-viewer-center-pane';
         pane.className = 'holaf-viewer-pane';
-        // MODIFIED: Added Preview Badge
+        // MODIFIED: Removed Badge, added subtle indicator
         pane.innerHTML = `
             <div id="holaf-viewer-toolbar"></div>
             <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">Loading images...</p></div>
             <div id="holaf-viewer-zoom-view" style="display: none;">
-                <div id="holaf-preview-badge" style="display:none; position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(255, 100, 0, 0.8); color:white; padding:5px 10px; border-radius:4px; font-weight:bold; z-index:100; pointer-events:none;">PREVIEW MODE (Edited)</div>
+                <div id="holaf-preview-indicator" style="display:none; position:absolute; bottom:15px; left:15px; color:rgba(255,255,255,0.7); font-size:0.8em; z-index:100; pointer-events:none; text-shadow: 1px 1px 2px black;">⚡ Preview</div>
                 <button class="holaf-viewer-zoom-close" title="Close (or double-click image)">✖</button>
                 <img src="" draggable="false" />
                 <video controls loop id="holaf-viewer-zoom-video" style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
@@ -272,9 +270,8 @@ class ImageViewerUI {
         this.elements.thumbSizeSlider = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-slider');
         this.elements.thumbSizeValue = this.elements.leftPane.querySelector('#holaf-viewer-thumb-size-value');
 
-        // --- Added: Cache Video Element & Badge ---
+        // --- Added: Cache Video Element ---
         this.elements.zoomVideo = this.elements.centerPane.querySelector('#holaf-viewer-zoom-video');
-        this.elements.previewBadge = this.elements.centerPane.querySelector('#holaf-preview-badge');
     }
 
     _setupEventListeners() {

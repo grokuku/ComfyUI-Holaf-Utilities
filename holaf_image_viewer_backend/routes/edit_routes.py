@@ -261,10 +261,12 @@ async def process_video_route(request: web.Request):
             return web.json_response({"status": "error", "message": "Source file not found"}, status=404)
             
         loop = asyncio.get_event_loop()
-        # Run heavy logic in thread
-        await loop.run_in_executor(None, logic.generate_proc_video, abs_image_path, edit_data)
         
-        return web.json_response({"status": "ok", "message": "Preview generated successfully"})
+        # [UPDATED] Use preview_mode=True to skip baking colors (letting CSS handle it)
+        # and receive stats back
+        stats = await loop.run_in_executor(None, logic.generate_proc_video, abs_image_path, edit_data, True)
+        
+        return web.json_response({"status": "ok", "message": "Preview generated successfully", "stats": stats})
         
     except Exception as e:
         traceback.print_exc()
