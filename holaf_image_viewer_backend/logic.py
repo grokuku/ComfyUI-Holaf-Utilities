@@ -10,6 +10,7 @@ import uuid
 import shutil
 import subprocess
 import threading
+import tempfile
 from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance
 import folder_paths
 
@@ -25,6 +26,7 @@ except ImportError:
 # Relative imports to sibling modules in the main package
 from .. import holaf_database
 from .. import holaf_utils
+from . import dependency_manager
 
 # --- Constants ---
 # MODIFIED: Expanded video format support to ensure FPS detection works for more files
@@ -1054,3 +1056,116 @@ def _inject_png_metadata_and_get_mtime(image_abs_path, prompt_text=None, workflo
         img.save(image_abs_path, "PNG", pnginfo=png_info)
         return os.path.getmtime(image_abs_path)
     except Exception as e: raise RuntimeError(f"Failed to inject metadata: {e}") from e
+
+def generate_proc_video(abs_image_path, edit_data):
+    """
+    Generates a processed preview video (_proc.mp4) in the edit folder.
+    Pipeline: Extract -> (Optional RIFE) -> Assemble + Filters.
+    """
+    if not os.path.exists(abs_image_path):
+        raise FileNotFoundError("Source video not found")
+
+    # 1. Paths Setup
+    proc_path = get_proc_video_path(abs_image_path)
+    
+    # Try to clean up existing proc file
+    if os.path.exists(proc_path):
+        try:
+            os.remove(proc_path)
+        except OSError as e:
+            raise RuntimeError(f"Cannot overwrite existing preview (File locked?): {e}")
+
+    # 2. Parse Options
+    use_rife = edit_data.get('interpolate', False)
+    target_fps = edit_data.get('targetFps', None)
+    
+    # If no RIFE and no Filters and no FPS change -> Copy? 
+    # Actually, user clicked "Generate", usually implies they want to see edits.
+    
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg: raise RuntimeError("FFmpeg not found")
+    
+    # 3. Create Temp Work Area
+    # We use a context manager to ensure cleanup
+    with tempfile.TemporaryDirectory() as temp_root:
+        frames_in_dir = os.path.join(temp_root, "frames_in")
+        frames_out_dir = os.path.join(temp_root, "frames_out")
+        os.makedirs(frames_in_dir)
+        os.makedirs(frames_out_dir)
+
+        # 4. Extract Frames
+        # We use png for quality.
+        print(f"🔵 [Holaf-Logic] Extracting frames from {os.path.basename(abs_image_path)}...")
+        cmd_extract = [
+            ffmpeg, "-i", abs_image_path, 
+            "-vsync", "0", 
+            os.path.join(frames_in_dir, "%08d.png")
+        ]
+        subprocess.check_call(cmd_extract, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # 5. RIFE Interpolation (Optional)
+        assemble_source_dir = frames_in_dir
+        native_fps = get_video_fps(abs_image_path)
+        assemble_fps = native_fps
+
+        if use_rife:
+            rife_exe = dependency_manager.ensure_rife_ready()
+            if not rife_exe:
+                raise RuntimeError("RIFE executable not found or installation failed.")
+            
+            print(f"🔵 [Holaf-Logic] Running RIFE Interpolation (2x)...")
+            # RIFE Usage: rife -i input -o output
+            # Note: RIFE ncnn vulkan uses GPU.
+            cmd_rife = [rife_exe, "-i", frames_in_dir, "-o", frames_out_dir]
+            
+            # Run RIFE
+            # We capture output to debug if needed, but RIFE logs to stderr usually
+            try:
+                subprocess.check_call(cmd_rife) # stdout/stderr inherit is fine for logs
+                assemble_source_dir = frames_out_dir
+                assemble_fps = native_fps * 2
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"RIFE execution failed (Code {e.returncode}). Check server logs.")
+
+        # 6. Assemble & Apply Filters
+        print(f"🔵 [Holaf-Logic] Assembling preview video...")
+        
+        # Input framerate for assembly needs to match what we have in the folder
+        cmd_assemble = [
+            ffmpeg, 
+            "-framerate", str(assemble_fps),
+            "-i", os.path.join(assemble_source_dir, "%08d.png")
+        ]
+        
+        # Build Filter Chain
+        filters = []
+        
+        # Edits (Color/Brightness)
+        vf_string = build_ffmpeg_filter_string(edit_data)
+        if vf_string:
+            filters.append(vf_string)
+            
+        # Target FPS (Speed/Smoothness control)
+        # If user asked for specific target FPS, we output at that rate.
+        # This might drop frames or duplicate them if different from assemble_fps
+        if target_fps:
+             cmd_assemble.extend(["-r", str(target_fps)])
+        
+        if filters:
+            cmd_assemble.extend(["-vf", ",".join(filters)])
+            
+        # Encoding Settings
+        # No Audio for preview (simplifies sync logic)
+        cmd_assemble.extend([
+            "-c:v", "libx264", 
+            "-pix_fmt", "yuv420p", # Essential for browser compatibility
+            "-crf", "23", 
+            "-preset", "fast",
+            "-an", # No audio
+            "-y", proc_path
+        ])
+        
+        subprocess.check_call(cmd_assemble, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+    print(f"✅ [Holaf-Logic] Preview generated: {proc_path}")
+    return proc_path

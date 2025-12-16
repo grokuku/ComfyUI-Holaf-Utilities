@@ -118,6 +118,7 @@ async def save_edits_route(request: web.Request):
     """
     Saves edit data to 'edit/' folder.
     Migrates legacy files by deleting them after successful save in new location.
+    Forces thumbnail regeneration to reflect changes.
     """
     conn, current_exception = None, None
     try:
@@ -156,7 +157,16 @@ async def save_edits_route(request: web.Request):
         # Update the database
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE images SET has_edit_file = 1, last_synced_at = ? WHERE path_canon = ?", (time.time(), path_canon))
+        
+        # [MODIFIED] Set thumbnail_status = 0 and high priority to force regeneration
+        cursor.execute("""
+            UPDATE images 
+            SET has_edit_file = 1, 
+                last_synced_at = ?, 
+                thumbnail_status = 0, 
+                thumbnail_priority_score = 2000 
+            WHERE path_canon = ?
+        """, (time.time(), path_canon))
         conn.commit()
 
         return web.json_response({"status": "ok", "message": "Edits saved successfully"})
@@ -204,7 +214,17 @@ async def delete_edits_route(request: web.Request):
         # Update the database
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE images SET has_edit_file = 0, last_synced_at = ? WHERE path_canon = ?", (time.time(), path_canon))
+        
+        # [MODIFIED] Reset thumbnail too when deleting edits
+        cursor.execute("""
+            UPDATE images 
+            SET has_edit_file = 0, 
+                last_synced_at = ?,
+                thumbnail_status = 0, 
+                thumbnail_priority_score = 2000 
+            WHERE path_canon = ?
+        """, (time.time(), path_canon))
+        
         conn.commit()
 
         return web.json_response({"status": "ok", "message": "Edits reset successfully"})
