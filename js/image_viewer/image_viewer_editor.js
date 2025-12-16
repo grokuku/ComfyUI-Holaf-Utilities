@@ -5,6 +5,7 @@
  * This module manages the image editing panel, its state,
  * and interactions with the backend for saving/loading edits.
  * REFACTOR: Safe Toast usage. Non-blocking Background Process.
+ * UPDATE: Auto FPS Doubling for RIFE.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
@@ -521,8 +522,19 @@ export class ImageEditor {
 
         if (interpCheckbox) {
             interpCheckbox.addEventListener('change', (e) => {
-                this.currentState.interpolate = e.target.checked;
+                const isChecked = e.target.checked;
+                this.currentState.interpolate = isChecked;
                 this.isDirty = true;
+
+                // [NEW] AUTO FPS ADJUSTMENT
+                if (isChecked && this.nativeFps > 0) {
+                    // Force slider to 2x
+                    updateFpsState(this.nativeFps * 2);
+                } else if (!isChecked && this.nativeFps > 0) {
+                    // Revert to native (or stay? let's reset to safe native)
+                    updateFpsState(this.nativeFps);
+                }
+
                 this._updateButtonStates();
             });
         }

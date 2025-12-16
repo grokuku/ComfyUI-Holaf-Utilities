@@ -1127,11 +1127,18 @@ def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
                 raise RuntimeError(f"RIFE execution failed (Code {e.returncode}). Check server logs.")
 
         # 6. Assemble & Apply Filters
-        print(f"🔵 [Holaf-Logic] Assembling video (FPS: {assemble_fps})...")
+        
+        # [CRITICAL FIX] We control speed by telling FFmpeg the INPUT framerate.
+        # This preserves all frames but changes duration.
+        final_framerate = assemble_fps
+        if target_fps:
+            final_framerate = target_fps
+            
+        print(f"🔵 [Holaf-Logic] Assembling video (Output FPS: {final_framerate}, Input Source Frames: {assemble_fps} equivalent)...")
         
         cmd_assemble = [
             ffmpeg, 
-            "-framerate", str(assemble_fps),
+            "-framerate", str(final_framerate),
             "-i", os.path.join(assemble_source_dir, "%08d.png")
         ]
         
@@ -1144,15 +1151,6 @@ def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
             if vf_string:
                 filters.append(vf_string)
             
-        # Target FPS Handling
-        # If user requests a specific FPS, we force it here.
-        if target_fps:
-             cmd_assemble.extend(["-r", str(target_fps)])
-        else:
-             # If no target FPS but RIFE was used, we MUST output at 2x native
-             # Otherwise ffmpeg might default to 25 or 30
-             cmd_assemble.extend(["-r", str(assemble_fps)])
-        
         if filters:
             cmd_assemble.extend(["-vf", ",".join(filters)])
             
@@ -1171,9 +1169,8 @@ def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
     duration = time.time() - start_time
     print(f"✅ [Holaf-Logic] Generated: {proc_path} in {duration:.2f}s")
     
-    # Return stats for the frontend toast
     return {
         "path": proc_path,
         "duration": round(duration, 2),
-        "fps_out": target_fps if target_fps else assemble_fps
+        "fps_out": final_framerate
     }

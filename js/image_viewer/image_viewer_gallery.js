@@ -13,6 +13,7 @@
  * FIX: Video preview now inherits object-fit from the underlying image via getComputedStyle.
  * FIX: Playback Rate applied to hover preview video.
  * FIX: Active video edit indicator.
+ * FIX: Corrected API endpoint for hover edits.
  */
 
 import { imageViewerState } from "./image_viewer_state.js";
@@ -569,7 +570,8 @@ function createPlaceholder(viewer, image, index) {
             let editData = null;
             if (image.has_edit_file) {
                 try {
-                    const response = await fetch(`/holaf/images/edits?path_canon=${encodeURIComponent(image.path_canon)}`);
+                    // --- FIX: Correct URL for edits ---
+                    const response = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(image.path_canon)}`);
                     if (response.ok) {
                         const result = await response.json();
                         if (result.status === 'ok') editData = result.edits;
