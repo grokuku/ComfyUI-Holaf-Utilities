@@ -4,12 +4,12 @@
  *
  * This module manages the image editing panel, its state,
  * and interactions with the backend for saving/loading edits.
- * REFACTOR: Automated "Save & Process" workflow. Toast Integration.
+ * REFACTOR: Safe Toast usage. Non-blocking Background Process.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
-import { HolafToastManager } from "../holaf_toast_manager.js"; // Ensure Toast Manager is available
+// Removed broken import of HolafToastManager to rely on window.holaf instance
 
 const DEFAULT_EDIT_STATE = {
     brightness: 1,
@@ -51,6 +51,24 @@ export class ImageEditor {
      */
     hasUnsavedChanges() {
         return this.isDirty;
+    }
+
+    /**
+     * Helper for safe Toast usage
+     */
+    _showToast(message, type = 'info', duration = 3000) {
+        if (window.holaf && window.holaf.toastManager) {
+            return window.holaf.toastManager.show({ message, type, duration });
+        } else {
+            console.log(`[Holaf Toast] ${type}: ${message}`);
+            return null;
+        }
+    }
+
+    _dismissToast(id) {
+        if (id && window.holaf && window.holaf.toastManager) {
+            window.holaf.toastManager.dismiss(id);
+        }
     }
 
     /**
@@ -195,10 +213,6 @@ export class ImageEditor {
     }
 
     applyPreview() {
-        // [UPDATED] Even if processed video is playing, we MIGHT apply filters 
-        // because we switched the backend to "Preview Mode" (no baked colors).
-        // So we ALWAYS apply CSS filters now.
-
         const elements = this._getPreviewElements();
 
         let effectiveRate = 1.0;
@@ -208,9 +222,7 @@ export class ImageEditor {
             effectiveRate = this.currentState.playbackRate || 1.0;
         }
 
-        // If we have a processed video, the FPS is already handled by the video file itself
-        // (because RIFE doubles frames, and backend sets output FPS).
-        // So we reset playback rate to 1.0 for the VIDEO element if using processed url.
+        // If we have a processed video, frame doubling is baked in, so we play at 1.0x
         if (this.processedVideoUrl) {
             effectiveRate = 1.0;
         }
@@ -236,9 +248,15 @@ export class ImageEditor {
         ];
     }
 
-    async _triggerProcessVideo(pathCanon) {
-        // Called automatically by save() if needed
-        const toastId = HolafToastManager.show({ message: "Generating Video Preview (RIFE)...", type: 'info', duration: 0 }); // 0 = persistent
+    /**
+     * This function runs in the "background". It doesn't block the UI.
+     */
+    async _triggerProcessVideoBackground(pathCanon) {
+        // Capture context at start
+        const isInteractive = (pathCanon === this.activeImage?.path_canon);
+
+        // Show persistent toast
+        const toastId = this._showToast("Generating Video Preview... (You can navigate away)", 'info', 0);
 
         try {
             const response = await fetch('/holaf/images/process-video', {
@@ -251,23 +269,27 @@ export class ImageEditor {
             });
 
             const result = await response.json();
-            HolafToastManager.dismiss(toastId); // Remove "Generating..."
+            this._dismissToast(toastId);
 
             if (response.ok) {
                 // Show Stats Toast
                 if (result.stats) {
                     const msg = `Preview Ready!<br>Time: ${result.stats.duration}s<br>FPS: ${result.stats.fps_out}`;
-                    HolafToastManager.show({ message: msg, type: 'success', duration: 4000 });
+                    this._showToast(msg, 'success', 5000);
                 } else {
-                    HolafToastManager.show({ message: "Preview Generated", type: 'success' });
+                    this._showToast("Preview Generated", 'success');
                 }
-                await this._loadEditsForCurrentImage();
+
+                // Only update UI if user is still on the same image
+                if (this.activeImage && this.activeImage.path_canon === pathCanon) {
+                    await this._loadEditsForCurrentImage();
+                }
             } else {
                 HolafPanelManager.createDialog({ title: "Process Error", message: result.message });
             }
         } catch (e) {
-            HolafToastManager.dismiss(toastId);
-            HolafPanelManager.createDialog({ title: "Error", message: e.message });
+            this._dismissToast(toastId);
+            this._showToast(`Process Failed: ${e.message}`, 'error');
         }
     }
 
@@ -289,7 +311,7 @@ export class ImageEditor {
 
             if (response.ok) {
                 await this._loadEditsForCurrentImage();
-                HolafToastManager.show({ message: "Rolled back to original.", type: 'success' });
+                this._showToast("Rolled back to original.", 'success');
             }
         } catch (e) {
             console.error(e);
@@ -310,10 +332,10 @@ export class ImageEditor {
         const btn = this.panelEl.querySelector('#holaf-editor-save-btn');
         if (btn) btn.disabled = true;
 
-        HolafToastManager.show({ message: "Saving edits...", type: 'info', duration: 1000 });
+        this._showToast("Saving settings...", 'info', 1000);
 
         try {
-            // 1. Save Settings
+            // 1. Save Settings (Fast, Await this)
             const response = await fetch('/holaf/images/save-edits', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -321,29 +343,29 @@ export class ImageEditor {
             });
 
             if (response.ok) {
+                // --- IMMEDIATE UI UNLOCK ---
                 this.isDirty = false;
                 this.originalState = { ...this.currentState };
                 this._updateButtonStates();
-                this._updateUIFromState(); // Refresh UI in case values normalized
+                this._updateUIFromState();
 
-                // 2. Check if we need to generate a video preview (Video + (Interpolate OR FPS changed))
+                // Refresh thumbnail in gallery immediately
+                if (this.viewer && this.viewer.gallery) {
+                    this.viewer.gallery.refreshThumbnail(pathCanonToSave);
+                }
+
+                // 2. Trigger Background Processing if needed
                 if (this.nativeFps > 0) {
                     const needsProcessing = this.currentState.interpolate || (this.currentState.targetFps && this.currentState.targetFps !== this.nativeFps);
 
                     if (needsProcessing) {
-                        await this._triggerProcessVideo(pathCanonToSave);
+                        // DO NOT AWAIT - Fire and forget
+                        this._triggerProcessVideoBackground(pathCanonToSave);
                     } else {
-                        // If we are just changing colors and had a preview, maybe we should warn? 
-                        // Or just reload edits which updates the timestamp.
-                        HolafToastManager.show({ message: "Edits Saved", type: 'success' });
+                        this._showToast("Edits Saved", 'success');
                     }
                 } else {
-                    HolafToastManager.show({ message: "Edits Saved", type: 'success' });
-                }
-
-                // Refresh thumbnail in gallery immediately to show status icon change
-                if (this.viewer && this.viewer.gallery) {
-                    this.viewer.gallery.refreshThumbnail(pathCanonToSave);
+                    this._showToast("Edits Saved", 'success');
                 }
 
             }
@@ -351,7 +373,8 @@ export class ImageEditor {
             console.error(e);
             HolafPanelManager.createDialog({ title: "Save Error", message: e.message });
         } finally {
-            if (btn) btn.disabled = false;
+            // Always re-enable button (though logic above handles isDirty)
+            if (btn) btn.disabled = !this.isDirty;
         }
     }
 
@@ -395,7 +418,7 @@ export class ImageEditor {
             this.applyPreview();
             this._updateButtonStates();
 
-            HolafToastManager.show({ message: "Edits Reset", type: 'success' });
+            this._showToast("Edits Reset", 'success');
 
         } catch (e) { console.error(e); }
     }
@@ -412,7 +435,6 @@ export class ImageEditor {
 
         const videoSection = this.panelEl.querySelector('#holaf-editor-video-section');
         const rollbackControls = this.panelEl.querySelector('#holaf-editor-rollback-controls');
-        // Removed processControls reference
 
         if (videoSection) {
             if (this.nativeFps > 0) {
