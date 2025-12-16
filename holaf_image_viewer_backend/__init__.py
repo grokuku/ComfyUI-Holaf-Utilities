@@ -36,7 +36,9 @@ from .routes.export_routes import (
 from .routes.edit_routes import (
     load_edits_route,
     save_edits_route,
-    delete_edits_route
+    delete_edits_route,
+    process_video_route,  # <-- NEW: Added
+    rollback_video_route  # <-- NEW: Added
 )
 from .routes.utility_routes import (
     set_viewer_activity_route,
@@ -71,7 +73,7 @@ __all__ = [
     # Thumbnails
     'get_thumbnail_route',
     'prioritize_thumbnails_route',
-    'regenerate_thumbnail_route', # <-- MODIFICATION: Ajout de la nouvelle route
+    'regenerate_thumbnail_route', 
     'iv_get_thumbnail_stats_route',
 
     # Export
@@ -82,6 +84,8 @@ __all__ = [
     'load_edits_route',
     'save_edits_route',
     'delete_edits_route',
+    'process_video_route', # <-- NEW: Added
+    'rollback_video_route', # <-- NEW: Added
 
     # Utility
     'set_viewer_activity_route',

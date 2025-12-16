@@ -456,6 +456,12 @@ async def iv_save_edits_route(r): return await holaf_image_viewer_backend.save_e
 @routes.post("/holaf/images/delete-edits")
 async def iv_delete_edits_route(r): return await holaf_image_viewer_backend.delete_edits_route(r)
 
+@routes.post("/holaf/images/process-video") # <-- NEW: Register Process Video
+async def iv_process_video_route(r): return await holaf_image_viewer_backend.process_video_route(r)
+
+@routes.post("/holaf/images/rollback-video") # <-- NEW: Register Rollback
+async def iv_rollback_video_route(r): return await holaf_image_viewer_backend.rollback_video_route(r)
+
 @routes.post("/holaf/images/maintenance/sync-database")
 async def iv_sync_database_route(r): return await holaf_image_viewer_backend.sync_database_route(r)
 
