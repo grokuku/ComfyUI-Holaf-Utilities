@@ -20,6 +20,8 @@
 # MODIFIED: Changed update logic to use 'git fetch' and 'git reset --hard FETCH_HEAD' for existing git repos.
 # MODIFIED: Implemented update strategy for non-Git nodes: backup, clone, restore missing files.
 # MODIFIED: update_node_from_git now returns new_status (is_git_repo, repo_url) on successful clone.
+# MODIFIED: Added install_custom_node function to clone repositories from URLs.
+# MODIFIED: Added search_custom_nodes function to query GitHub API for ComfyUI nodes.
 # === End Documentation ===
 
 import os
@@ -423,3 +425,73 @@ def install_node_requirements(node_name: str) -> dict:
         output_log += f"Unexpected Error: {str(e)}\n"
         print(f"🔴 [Holaf-NodesManager] {err_msg}")
         return {"status": "error", "message": err_msg, "output": output_log}
+
+def install_custom_node(repo_url: str) -> dict:
+    if not repo_url or not repo_url.startswith(('http://', 'https://')):
+        return {"status": "error", "message": "Invalid URL protocol. Must be http:// or https://"}
+
+    # Extract folder name from URL
+    clean_url = repo_url.rstrip('/')
+    if clean_url.endswith('.git'):
+        clean_url = clean_url[:-4]
+    
+    base_name = clean_url.split('/')[-1]
+    folder_name = _sanitize_node_name(base_name)
+    
+    if not folder_name:
+         return {"status": "error", "message": "Could not determine a valid folder name from URL."}
+
+    custom_nodes_dir = os.path.join(folder_paths.base_path, 'custom_nodes')
+    target_path = os.path.join(custom_nodes_dir, folder_name)
+
+    if os.path.exists(target_path):
+        return {"status": "error", "message": f"Destination folder '{folder_name}' already exists in custom_nodes."}
+
+    try:
+        print(f"🔵 [Holaf-NodesManager] Cloning '{repo_url}' into '{target_path}'...")
+        cmd = ['git', 'clone', '--depth', '1', repo_url, target_path]
+        
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True, 
+            timeout=300, encoding='utf-8', errors='replace'
+        )
+        print(f"🟢 [Holaf-NodesManager] Successfully cloned '{folder_name}'.")
+        return {"status": "success", "message": f"Successfully installed '{folder_name}'."}
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.strip() if e.stderr else e.stdout.strip()
+        print(f"🔴 [Holaf-NodesManager] Clone failed: {error_msg}")
+        return {"status": "error", "message": f"Git clone failed: {error_msg}"}
+    except Exception as e:
+        print(f"🔴 [Holaf-NodesManager] Unexpected error during install: {e}")
+        return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
+async def search_custom_nodes(query: str):
+    if not query:
+        return {"results": []}
+    
+    # Add context to search to find relevant nodes
+    search_query = f"{query} ComfyUI"
+    search_url = f"https://api.github.com/search/repositories?q={search_query}&sort=stars&order=desc"
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    
+    results = []
+    async with aiohttp.ClientSession(headers=headers) as session:
+        try:
+            async with session.get(search_url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    items = data.get('items', [])
+                    # Limit to top 20 results
+                    for item in items[:20]:
+                        results.append({
+                            "name": item.get('name'),
+                            "description": item.get('description'),
+                            "url": item.get('html_url'),
+                            "stars": item.get('stargazers_count')
+                        })
+        except Exception as e:
+            print(f"🔴 [Holaf-NodesManager] Error searching GitHub nodes: {e}")
+            return {"error": str(e)}
+            
+    return {"results": results}

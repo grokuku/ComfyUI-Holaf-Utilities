@@ -1,185 +1,159 @@
---- START OF FILE context.md ---
+## 0. META: Interaction Rules & Protocols
 
-    ## 0. META: Interaction Rules & Protocols
+### Purpose
+This file serves as the **primary source of truth** and **cognitive map**. It provides a complete architectural understanding without requiring the LLM to read the source code of every file in every session.
 
-    ### Purpose
-    This file serves as the **primary source of truth** and **cognitive map**. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
+### Protocol for Updates
+When the user requests a "context update" or when a major feature is implemented, this file MUST be updated:
+1.  **Structural Changes**: Update **Section 2 (File Structure)**.
+2.  **Schema Evolutions**: Update **Section 4 (Database Schema)**.
+3.  **Logic Shifts**: Update **Section 3 (Key Concepts)**.
+4.  **New Dependencies**: Update **Section 1 (Stack)**.
 
-    ### Protocol for Updates
-    When the user requests a "context update" or when a major feature is implemented, the following information MUST be integrated/updated in this file:
-    1.  **Structural Changes**: If files are created, renamed, moved, or deleted, update **Section 2 (File Structure)** to reflect the new tree and the responsibility of the new files.
-    2.  **Schema Evolutions**: If `models.py` or `migration.py` changes, update **Section 4 (Database Schema)** to reflect the current V-version and columns.
-    3.  **Logic Shifts**: If the core way the backend handles processes, ports, saving, or networking changes, update **Section 3 (Key Concepts)**.
-    4.  **New Dependencies**: If `Dockerfile` or `requirements.txt` changes significantly (new tools like KasmVNC, new libs), update **Section 1 (Stack)**.
+**Golden Rule**: Never paste raw code blocks. Use concise, high-level functional descriptions.
 
-    **Golden Rule**: Never paste raw code blocks in this file. Use concise, high-level functional descriptions to minimize token usage while maximizing understanding.
+---
+### FUNDAMENTAL SESSION AXIOMS
+---
 
-    ---
-    ### FUNDAMENTAL SESSION AXIOMS
-    ---
+*   **Expert Stance**: Act as a meticulous software expert. Anticipate errors.
+*   **Least Intervention**: Modify only what is necessary. No unsolicited refactoring.
+*   **Active Partnership**: Analyze and propose, don't just execute.
+*   **Truth Hierarchy**: Code > Context. Use context for mapping, code for editing.
+*   **Output**: Interaction in **French**, Code/Comments/Commits in **English**.
 
-    #### **AXIOM 1: BEHAVIORAL (The Spirit of Collaboration)**
+---
 
-    *   **Expert Stance**: I act as a software development expert, meticulous and proactive. I anticipate potential errors and suggest relevant verification points after each modification.
-    *   **Principle of Least Intervention**: I only modify what is strictly necessary to fulfill the request. I do not introduce any unsolicited modifications (e.g., refactoring, optimization).
-    *   **Active Partnership**: I position myself as a development partner who analyzes and proposes, not just a simple executor.
-    *   **Ambiguity Management**: If a request is ambiguous or if information necessary for its proper execution is missing, I will ask for clarifications before proposing a solution.
+### SECTION 1: STACK & DEPENDENCIES
 
-    #### **AXIOM 2: ANALYSIS AND SECURITY (No Blind Action)**
+*   **Python Environment:** ComfyUI embedded python.
+*   **Core Libraries:**
+    *   `aiohttp` (Server/API/WebSockets)
+    *   `sqlite3` (Data storage) - **Optimized:** WAL Mode, Memory Mapping.
+    *   `watchdog` (Real-time filesystem monitoring).
+    *   `orjson` (Fast JSON serialization, optional fallback to json).
+    *   `aiofiles` (Async file I/O).
+*   **Specialized Libraries:**
+    *   `Pillow` (Image processing).
+    *   `python-xmp-toolkit` (XMP Metadata).
+    *   `pynvml` (NVIDIA Management Library) - GPU profiling for Profiler & Monitor.
+    *   `pywinpty` (Windows) / `pty` (Linux/Mac) - Terminal emulation.
+*   **System Binaries:**
+    *   **FFmpeg & FFprobe**: Required in PATH for video analysis, thumbnails, and transcoding.
+    *   **RIFE ncnn Vulkan**: Managed binary (auto-downloaded) for AI video interpolation.
+*   **Frontend:**
+    *   Vanilla JS (ES Modules).
+    *   **Libraries**: `Chart.js` (Monitor), `xterm.js` (Terminal), `marked.js` (Markdown rendering).
+    *   **Communication**: `BroadcastChannel` (Inter-tab sync), WebSockets (Terminal/Monitor), HTTP API.
 
-    *   **Knowledge of Current State**: Before ANY file modification, if I do not have its full and up-to-date content in our session, I must imperatively ask you for it. Once received, I will consider it up-to-date and will not ask for it again, unless explicitly notified of an external modification.
-    *   **Mandatory Prior Analysis**: I will never propose a code modification command (e.g., `sed`) without having analyzed the content of the concerned file in the current session beforehand.
-    *   **Proactive Dependency Verification**: My knowledge base ends in early 2023. Therefore, before integrating or using a new tool, library, or package, I must systematically perform a search. I will summarize key points (stable version, breaking changes, new usage practices) in the `project_context.md` file.
-    *   **Data Protection**: I will never propose a destructive action (e.g., `rm`, `DROP TABLE`) on data in a development environment without proposing a workaround (e.g., renaming, backup).
+---
 
-    #### **AXIOM 3: CODE DELIVERY (Clarity and Reliability)**
+### SECTION 2: FILE STRUCTURE
 
-    *   **Method 1 - Atomic Modification via `sed`**:
-        *   **Usage**: Only for a simple modification, targeted at a single line (content modification, addition, or deletion), and without any risk of syntax or context error.
-        *   **Format**: The `sed` command must be provided on a single line for Git Bash, with the main argument encapsulated in single quotes (`'`). The new file content will not be displayed.
-        *   **Exclusivity**: No other command-line tool (`awk`, `patch`, `tee`, etc.) will be used for file modification.
-    *   **Method 2 - Full File (Default)**:
-        *   **Usage**: This is the default method. It is mandatory if a `sed` command is too complex, risky, or if modifications are substantial.
-        *   **Format**: I provide the full and updated content of the file.
-    *   **Formatting of Delivery Blocks**:
-        *   **Markdown Files (`.md`)** : J'utiliserai un bloc de code markdown (```md) non indenté. Le contenu intégral du fichier sera systématiquement indenté de quatre espaces à l'intérieur de ce bloc.
-        *   **Autres Fichiers (Code, Config, etc.)** : J'utiliserai un bloc de code standard (```langue). Les balises d'ouverture et de fermeture ne seront jamais indentées, mais le code à l'intérieur le sera systématiquement de quatre espaces.
+📁 holaf_image_viewer_backend/
+  > Core backend for Image Viewer functionality.
+  📁 routes/
+    > API Route Handlers (Modularized).
+    📄 edit_routes.py : Handles `.edt` sidecars, video processing/rollback.
+    📄 export_routes.py : Export queue preparation, transcoding, metadata embedding.
+    📄 file_ops_routes.py : Delete (Trashcan), Restore, Permanent Delete.
+    📄 image_routes.py : Listing (advanced filtering), Filter options.
+    📄 metadata_routes.py : Extract/Inject metadata, Get info.
+    📄 thumbnail_routes.py : Thumbnail generation, Prioritization, Stats.
+    📄 utility_routes.py : Database sync triggers, Maintenance tasks, Node Manager actions (Install/Search).
+  📁 bin/
+    > Managed external binaries (RIFE).
+  📄 dependency_manager.py : Auto-installer for RIFE ncnn Vulkan.
+  📄 logic.py : Core business logic. Image/Video metadata extraction, FFmpeg/RIFE pipeline, DB sync logic.
+  📄 worker.py : Background threads: `watchdog` (Filesystem Events) & Thumbnail Generator.
 
-    #### **AXIOME 4 : WORKFLOW (Un Pas Après l'Autre)**
+📁 js/
+  > Frontend modules.
+  📁 css/ : Modular CSS files (Theming, Panels, specific components).
+  📁 image_viewer/
+    📄 image_viewer_gallery.js : Virtualized scrolling grid, LRU Cache for thumbnails, Network cancellation.
+    📄 image_viewer_editor.js : Non-destructive editor UI, Video preview pipeline.
+    📄 image_viewer_state.js : Centralized Pub/Sub state management.
+    📄 image_viewer_ui.js : Main UI layout, Filter controls.
+  📁 model_manager/ : UI for Model Manager (Upload/Download/Scan).
+  📁 nodes/ : UI for Custom Nodes Manager.
+    📄 holaf_nodes_manager.js : Logic for Node listing, updates, install (URL/Git) & search.
+  📁 profiler/ : UI for Workflow Profiler (Standalone view).
+  📄 holaf_main.js : Entry point. Static menu registration, Global modal/toast managers.
+  📄 holaf_comfy_bridge.js : Cross-tab communication (`BroadcastChannel`).
+  📄 holaf_panel_manager.js : Window management (Floating/Dialogs).
+  📄 holaf_settings_manager.js : Global settings UI.
+  📄 holaf_terminal.js : xterm.js integration (WebSocket).
+  📄 holaf_monitor.js : System Monitor overlay (WebSocket, Chart.js).
 
-    1.  **Validation Explicite** : Après chaque proposition de modification (que ce soit par `sed` ou par fichier complet), je marque une pause. J'attends votre accord explicite ("OK", "Appliqué", "Validé", etc.) avant de passer à un autre fichier ou à une autre tâche.
-    2.  **Documentation Continue des Dépendances** : Si la version d'une dépendance s'avère plus récente que ma base de connaissances, je consigne son numéro de version et les notes d'utilisation pertinentes dans le fichier `project_context.md`.
-    3.  **Documentation de Fin de Fonctionnalité** : À la fin du développement d'une fonctionnalité majeure et après votre validation finale, je proposerai de manière proactive la mise à jour des fichiers de suivi du projet, notamment `project_context.md` et `features.md`.
+📁 nodes/
+  > ComfyUI Custom Nodes (Python).
+  📄 holaf_model_manager.py : Backend logic for Model scanning/hashing.
+  📄 holaf_nodes_manager.py : Backend logic for nodes. Includes Git detection, GitHub API Search, Install via URL.
 
-    #### **AXIOME 5 : LINGUISTIQUE (Bilinguisme Strict)**
+📄 __init__.py : Main extension entry. Registers routes (including new Node Install/Search routes), starts background workers, initializes DBs.
+📄 holaf_config.py : `config.ini` manager.
+📄 holaf_database.py : Main SQLite manager (`holaf_utilities.sqlite`).
+📄 holaf_profiler_database.py : Profiler SQLite manager (`holaf_profiler.db`).
+📄 holaf_profiler_engine.py : Profiling logic (Hooks + Polling).
+📄 holaf_user_data_manager.py : Path management (`ComfyUI/user/...`).
+📄 holaf_utils.py : Shared utilities (Hashing, Chunking).
 
-    *   **Nos Interactions** : Toutes nos discussions, mes explications et mes questions se déroulent exclusivement en **français**.
-    *   **Le Produit Final** : Absolument tout le livrable (code, commentaires, docstrings, noms de variables, logs, textes d'interface, etc.) est rédigé exclusivement en **anglais**.
+---
 
-    ---
+### SECTION 3: KEY CONCEPTS & LOGIC
 
-    ### SECTION 1: STACK & DEPENDENCIES
+#### 1. Image Viewer Architecture
+*   **Data Source:** SQLite Database (`images` table) synchronized with filesystem via `watchdog` (real-time) and periodic full scans.
+*   **Thumbnails:** Generated on-demand via background worker. Prioritized queue. Stored in `.cache/thumbnails`. Served via HTTP. Frontend uses **Virtualized Scrolling** + **LRU Cache** + **AbortController** for high performance.
+*   **Non-Destructive Editing:** Edits stored in `.edt` JSON sidecars in `edit/` subfolder. 
+    *   **Images:** Applied via CSS `filter` in frontend. Applied via `Pillow` on export/thumbnail generation.
+    *   **Videos:** Preview generated as `_proc.mp4` (FFmpeg/RIFE). Playback rate logic handled in JS for preview, FFmpeg filters for export.
+*   **Standalone Mode:** `/holaf/view`. Communicates with main ComfyUI tab via `HolafComfyBridge` (BroadcastChannel) to load workflows.
 
-    *   **Python Environment:** ComfyUI embedded python.
-    *   **Key Libraries:**
-        *   `aiohttp` (Server/API)
-        *   `sqlite3` (Database) - **Optimized:** WAL Mode enabled, Memory Mapping active.
-        *   `Pillow` (Image processing) - Used for applying edits to static images.
-        *   `python-xmp-toolkit` (XMP Metadata support)
-        *   `pynvml` (NVIDIA Management Library) - GPU profiling.
-    *   **System Dependencies:**
-        *   **FFmpeg & FFprobe** : Requis dans le PATH système. Indispensables pour les thumbnails, l'analyse FPS et l'export.
-        *   **RIFE ncnn Vulkan** : Binaire externe géré automatiquement par `dependency_manager.py` pour l'interpolation vidéo par IA.
-    *   **Frontend:**
-        *   Vanilla JS (ES Modules).
-        *   **BroadcastChannel API** : Communication inter-onglets (Mode Standalone).
-        *   **Chart.js** : Utilisé pour `holaf_monitor.js`.
+#### 2. Workflow Profiler
+*   **Philosophy:** "Measure on Demand". Explicit start/stop.
+*   **Storage:** `holaf_profiler.db` in User Data directory.
+*   **Mechanism:** Hooks into ComfyUI execution. High-frequency polling (50ms) of CPU/RAM/GPU (`pynvml`) in a separate thread.
+*   **Sync:** Frontend requests workflow context from Main Tab via Bridge before run.
 
-    ---
+#### 3. Terminal & Security
+*   **Access:** Secured by hashed password in `config.ini`.
+*   **Transport:** WebSocket transmitting raw PTY data.
+*   **Backend:** Uses `pywinpty` (Windows) or `pty` (Linux/Mac).
 
-    ### SECTION 2: FILE STRUCTURE
+#### 4. Model & Node Management
+*   **Models:** Scans standard ComfyUI paths. Uploads via chunked HTTP. Deep Scan calculates SHA256 and reads `.safetensors` metadata.
+*   **Nodes:** 
+    *   **Management**: Update (Git pull or re-clone strategy), Delete, Install `requirements.txt`.
+    *   **Discovery**: Local scan of `custom_nodes`.
+    *   **Installation**: Support for **Direct Git URL** installation and **GitHub Search** (API integration).
 
-    📁 holaf_image_viewer_backend/
-      > Backend logic for the Image Viewer.
-      📁 routes/
-        > Modular API route handlers.
-        📄 __init__.py
-          > [**UPDATED**] Expose `process_video_route` et `rollback_video_route`.
-        📄 edit_routes.py
-          > [**UPDATED**] `/process-video` utilise le mode "preview" (pas de filtres couleurs). `/save-edits` déclenche la régénération de miniature.
-        📄 export_routes.py
-        📄 file_ops_routes.py
-        📄 image_routes.py
-        📄 metadata_routes.py
-        📄 thumbnail_routes.py
-        📄 utility_routes.py
-      📁 bin/
-        > Dossier géré automatiquement contenant les exécutables externes (ex: RIFE).
-      📄 __init__.py
-      📄 dependency_manager.py
-        > Téléchargement et installation automatique de `rife-ncnn-vulkan`.
-      📄 logic.py
-        > [**UPDATED**] `generate_proc_video` supporte `preview_mode` (skip baking colors) et force FPS via `-framerate` (input) pour changer la vitesse sans supprimer de frames.
-      📄 routes.py
-      📄 worker.py
+---
 
-    📁 js/
-      > Frontend assets.
-      📁 css/
-        📄 holaf_image_viewer.css
-      📁 image_viewer/
-        📄 image_viewer_actions.js
-        📄 image_viewer_editor.js
-          > [**REFACTORED**] "Save" déclenche le processing en arrière-plan (Fire & Forget). Toasts de progression. Auto-FPS pour RIFE.
-        📄 image_viewer_gallery.js
-          > [**UPDATED**] Icône vidéo active si édité. API endpoint `/load-edits` corrigé.
-        📄 image_viewer_infopane.js
-        📄 image_viewer_navigation.js
-        📄 image_viewer_settings.js
-        📄 image_viewer_state.js
-        📄 image_viewer_ui.js
-          > [**UPDATED**] Supporte overlay "Processing...", lecture auto et indicateur "⚡ Preview".
-      📁 model_manager/
-      📄 holaf_comfy_bridge.js
-      📄 holaf_main.js
-      📄 holaf_image_viewer.js
-      📄 holaf_monitor.js
+### SECTION 4: DATABASE SCHEMAS
 
-    📁 nodes/
-      📄 holaf_model_manager.py
-      📄 holaf_nodes_manager.py
+#### Main DB (`holaf_utilities.sqlite`)
+*   **`images`**: Stores metadata for all output images.
+    *   Cols: `id`, `path_canon` (Unique), `mtime`, `size_bytes`, `width`, `height`, `format`, `prompt_text`, `workflow_json`, `thumbnail_status` (0=Pending, 1=Queued, 2=Ready, 3=Error), `is_trashed`, `thumb_hash`, `has_edit_file`, `has_workflow` (bool), `has_prompt` (bool), `has_tags` (bool).
+    *   **Optimization:** Composite Indexes for Gallery & Timeline queries.
+*   **`tags`** & **`imagetags`**: Many-to-many relationship for image tagging.
+*   **`models`**: Stores scanned model info.
+    *   Cols: `path_canon`, `type`, `family`, `sha256`, `metadata_json`.
 
-    📄 __init__.py
-      > [**UPDATED**] Enregistrement des routes POST pour `/process-video` et `/rollback-video`.
-    📄 __main__.py
-    📄 context.txt
-    📄 holaf_config.py
-    📄 holaf_database.py
-    📄 holaf_profiler_database.py
-    📄 holaf_profiler_engine.py
-    📄 holaf_server_management.py
-    📄 holaf_system_monitor.py
-    📄 holaf_terminal.py
-    📄 holaf_user_data_manager.py
-    📄 holaf_utils.py
-    📄 requirements.txt
+#### Profiler DB (`holaf_profiler.db`)
+*   **`profiler_runs`**: `id`, `timestamp`, `name`, `total_time`.
+*   **`profiler_steps`**: Per-node execution data.
+    *   Cols: `run_id`, `node_id`, `vram_max`, `exec_time`, `gpu_load_max`, `inputs_json`.
 
-    ---
+---
 
-    ### SECTION 3: KEY CONCEPTS
+### PROJECT STATE
 
-    *   **Smart Video Workflow (Save & Process):**
-        *   **Action:** L'utilisateur modifie FPS ou coche RIFE et clique sur "Save".
-        *   **Process:** Le JSON est sauvegardé immédiatement (UI débloquée). Une tâche de fond lance FFmpeg/RIFE.
-        *   **Feedback:** Notifications Toast (Start -> End). Overlay "Processing" sur la vidéo si l'utilisateur reste dessus.
-        *   **Preview Mode:** La vidéo générée pour la prévisualisation (`_proc.mp4`) contient la géométrie (FPS/Interpolation) mais **pas** les corrections couleurs (Luminosité/Contraste). Celles-ci sont appliquées en temps réel par CSS par le navigateur pour garantir la fluidité des réglages.
-    *   **Speed Control (FPS):**
-        *   Le réglage FPS contrôle la vitesse de lecture (Speed ramp) en modifiant l'interprétation du framerate d'entrée (`-framerate` avant `-i` dans FFmpeg). Aucune frame n'est supprimée ou dupliquée artificiellement par FFmpeg (sauf doublage strict par RIFE).
-    *   **RIFE Interpolation:**
-        *   Double strictement le nombre de frames (x2).
-        *   Le slider FPS est automatiquement ajusté à `Native * 2` quand RIFE est activé.
+*   **[Stable] Image Viewer**: Full virtualization, Watchdog integration, Editing pipeline.
+*   **[Stable] Terminal**: Secure PTY access.
+*   **[Stable] Model/Node Managers**: Full CRUD actions. Added Search & Install via URL capabilities.
+*   **[Beta] Profiler**: Core engine and DB ready. UI basics implemented.
+*   **[New] System Monitor**: Turbo mode, Persistence, Multi-GPU support.
 
-    ---
-
-    ### PROJECT STATE
-
-      ACTIVE_BUGS:
-        - **[Frontend, Gallery]** : Au survol d'une miniature vidéo, c'est toujours la vidéo originale qui est jouée, même si une version `_proc.mp4` (RIFE/Editée) existe.
-            - *Cause suspectée :* `image_viewer_gallery.js` construit l'URL source sans vérifier l'existence ou le lien vers la version processed.
-
-      IN_PROGRESS:
-        - **[feature, video_workflow]** : Finalisation UX.
-
-      COMPLETED_FEATURES:
-        - **[backend, rife_logic]** : Pipeline complet Extraction -> RIFE -> Assemblage.
-        - **[backend, speed_control]** : Gestion correcte de la vitesse via framerate input.
-        - **[frontend, editor_ux]** : Workflow non-bloquant, Toasts, indicateurs visuels.
-        - **[fix, routes]** : Correction des erreurs 405 et 404 sur les endpoints API.
-
-      ROADMAP:
-        Immediate:
-          - **[fix, gallery_hover]** : Faire jouer la vidéo `_proc` au survol dans la galerie.
-        ImageViewer Backend:
-          - **[perf, batch_processing]** : Opérations de masse.
-        Global:
-          - [new_tool, session_log_tool]
+**Current Focus**: Stability, Performance optimization (Batch ops), and refining the Profiler UX.

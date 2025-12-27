@@ -620,6 +620,14 @@ if nodes_manager_helper:
             return web.json_response({"url": repo_url})
         except Exception as e: return web.json_response({"error": str(e)}, status=500)
 
+    # --- MODIFICATION START: New Node Manager Routes for Install & Search ---
+    @routes.post("/holaf/nodes/install")
+    async def nm_install_route(r): return await holaf_image_viewer_backend.install_custom_node_route(r)
+
+    @routes.post("/holaf/nodes/search")
+    async def nm_search_route(r): return await holaf_image_viewer_backend.search_custom_nodes_route(r)
+    # --- MODIFICATION END ---
+
 
 # System Monitor Routes
 @routes.get("/holaf/monitor/ws") # WebSocket

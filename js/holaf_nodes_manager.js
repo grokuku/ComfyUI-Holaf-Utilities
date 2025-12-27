@@ -26,6 +26,7 @@
  * MODIFICATION: Implemented persistence for filterText.
  * CORRECTION: Ensured panel position is correctly loaded using x/y from settings if panel_x/panel_y are null.
  * CORRECTION: Ensured `init` awaits `loadSettings` for proper filter text loading on startup.
+ * MODIFICATION: Added "Search GitHub" and "Install via URL" buttons with associated logic and UI dialogs.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -272,10 +273,13 @@ const holafNodesManager = {
                     <div id="holaf-nodes-manager-list" class="holaf-nodes-manager-list">
                         <p class="holaf-manager-message">Click Refresh to scan...</p>
                     </div>
-                    <div class="holaf-nodes-manager-actions-toolbar" style="padding: 8px; border-top: 1px solid var(--holaf-border-color); display: flex; gap: 5px; flex-wrap: wrap;">
-                        <button id="holaf-nodes-manager-update-btn" class="comfy-button" disabled title="Update selected nodes. For Git repos: overwrites local changes. For others with URL: attempts re-clone & restore.">Update</button>
-                        <button id="holaf-nodes-manager-req-btn" class="comfy-button" disabled title="Install requirements.txt for selected nodes">Install Req.</button>
-                        <button id="holaf-nodes-manager-delete-btn" class="comfy-button" disabled title="Delete selected nodes (Warning: This is permanent!)" style="background-color: #c0392b;">Delete</button>
+                    <div class="holaf-nodes-manager-actions-toolbar" style="padding: 8px; border-top: 1px solid var(--holaf-border-color); display: flex; gap: 5px; flex-wrap: wrap; align-items: center;">
+                        <button id="holaf-nodes-manager-update-btn" class="comfy-button" disabled title="Update selected nodes">Update</button>
+                        <button id="holaf-nodes-manager-req-btn" class="comfy-button" disabled title="Install requirements">Install Req.</button>
+                        <button id="holaf-nodes-manager-delete-btn" class="comfy-button" disabled title="Delete selected nodes" style="background-color: #c0392b;">Delete</button>
+                        <div style="flex-grow: 1;"></div>
+                        <button id="holaf-nodes-manager-install-url-btn" class="comfy-button" title="Install via Git URL" style="border: 1px solid var(--holaf-accent-color);">Install URL</button>
+                        <button id="holaf-nodes-manager-search-github-btn" class="comfy-button" title="Search GitHub" style="background-color: var(--holaf-accent-color); color: white;">Search GitHub</button>
                     </div>
                 </div>
                 <div id="holaf-nodes-manager-right-pane" class="holaf-nodes-manager-right-pane">
@@ -295,7 +299,6 @@ const holafNodesManager = {
         filterInputEl.value = this.filterText;
         filterInputEl.oninput = (e) => {
             this.filterText = e.target.value.toLowerCase();
-            // this.settings.filter_text = this.filterText; // No longer needed here, saveSettings handles it
             this.saveSettings();
             this.renderNodesList();
         };
@@ -305,6 +308,8 @@ const holafNodesManager = {
         document.getElementById("holaf-nodes-manager-update-btn").onclick = () => this.handleUpdateSelected();
         document.getElementById("holaf-nodes-manager-req-btn").onclick = () => this.handleInstallRequirementsSelected();
         document.getElementById("holaf-nodes-manager-delete-btn").onclick = () => this.handleDeleteSelected();
+        document.getElementById("holaf-nodes-manager-install-url-btn").onclick = () => this.handleInstallViaUrl();
+        document.getElementById("holaf-nodes-manager-search-github-btn").onclick = () => this.handleSearchGithub();
 
         this.updateActionButtonsState();
     },
@@ -547,6 +552,8 @@ const holafNodesManager = {
         const refreshBtn = document.getElementById("holaf-nodes-manager-refresh-btn");
         const selectAllCb = document.getElementById("holaf-nodes-manager-select-all-cb");
         const filterInput = document.getElementById("holaf-nodes-manager-filter-input");
+        const installUrlBtn = document.getElementById("holaf-nodes-manager-install-url-btn");
+        const searchGithubBtn = document.getElementById("holaf-nodes-manager-search-github-btn");
 
 
         if (!updateBtn || !reqBtn || !deleteBtn || !refreshBtn || !selectAllCb || !filterInput) return;
@@ -555,6 +562,8 @@ const holafNodesManager = {
         refreshBtn.disabled = baseDisabled;
         selectAllCb.disabled = baseDisabled;
         filterInput.disabled = baseDisabled;
+        installUrlBtn.disabled = baseDisabled;
+        searchGithubBtn.disabled = baseDisabled;
 
         if (baseDisabled) {
             updateBtn.disabled = true;
@@ -910,6 +919,166 @@ const holafNodesManager = {
         );
     },
 
+    async handleInstallViaUrl() {
+        if (this.isActionInProgress) return;
+
+        // Simple prompt for now, could be improved with a custom dialog later
+        let url = prompt("Enter the Git URL of the node to install:");
+        if (!url) return;
+        url = url.trim();
+        if (!url.startsWith("http")) {
+            alert("Please enter a valid URL starting with http/https");
+            return;
+        }
+
+        await this._performInstall(url);
+    },
+
+    async handleSearchGithub() {
+        if (this.isActionInProgress) return;
+
+        const dialog = document.createElement("div");
+        dialog.className = "holaf-utility-panel";
+        dialog.classList.add(this.panelElements.panelEl.className.match(/holaf-theme-\S+/)?.[0] || HOLAF_THEMES[0].className);
+        dialog.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 600px; max-width: 90vw; height: 500px;
+            z-index: 10000; box-shadow: 0 5px 30px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column;
+        `;
+
+        const header = document.createElement("div");
+        header.className = "holaf-utility-header";
+        header.innerHTML = `
+            <span>Search GitHub for Custom Nodes</span>
+            <div class="holaf-window-controls">
+                 <button class="holaf-window-control-btn close" title="Close">×</button>
+            </div>
+        `;
+        header.querySelector(".close").onclick = () => document.body.removeChild(overlay);
+
+        const content = document.createElement("div");
+        content.className = "holaf-utility-content";
+        content.style.padding = "10px";
+        content.style.display = "flex";
+        content.style.flexDirection = "column";
+        content.style.height = "100%";
+
+        const searchBar = document.createElement("div");
+        searchBar.style.display = "flex";
+        searchBar.style.marginBottom = "10px";
+        searchBar.innerHTML = `
+            <input type="text" placeholder="Search query..." style="flex: 1; margin-right: 5px;" class="holaf-nodes-manager-filter-input">
+            <button class="comfy-button">Search</button>
+        `;
+
+        const resultsContainer = document.createElement("div");
+        resultsContainer.style.flex = "1";
+        resultsContainer.style.overflowY = "auto";
+        resultsContainer.style.border = "1px solid var(--holaf-border-color)";
+        resultsContainer.style.padding = "5px";
+
+        content.append(searchBar, resultsContainer);
+        dialog.append(header, content);
+
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;";
+        overlay.append(dialog);
+        document.body.append(overlay);
+
+        const input = searchBar.querySelector("input");
+        const btn = searchBar.querySelector("button");
+
+        const performSearch = async () => {
+            const query = input.value.trim();
+            if (!query) return;
+            resultsContainer.innerHTML = "<p>Searching...</p>";
+            try {
+                const res = await fetch("/holaf/nodes/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query })
+                });
+                if (!res.ok) throw new Error("Search failed");
+                const data = await res.json();
+                
+                resultsContainer.innerHTML = "";
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(r => {
+                        const row = document.createElement("div");
+                        row.style.cssText = "border-bottom: 1px solid var(--holaf-border-color); padding: 5px; display: flex; align-items: center; justify-content: space-between;";
+                        row.innerHTML = `
+                            <div>
+                                <div style="font-weight: bold;">${r.name}</div>
+                                <div style="font-size: 0.8em; opacity: 0.7;">${r.description || 'No description'}</div>
+                                <div style="font-size: 0.7em; opacity: 0.5;"><a href="${r.url}" target="_blank">View on GitHub</a></div>
+                            </div>
+                            <button class="comfy-button" style="margin-left: 10px;">Install</button>
+                        `;
+                        row.querySelector("button").onclick = () => {
+                             document.body.removeChild(overlay);
+                             this._performInstall(r.url);
+                        };
+                        resultsContainer.appendChild(row);
+                    });
+                } else {
+                    resultsContainer.innerHTML = "<p>No results found.</p>";
+                }
+
+            } catch (e) {
+                resultsContainer.innerHTML = `<p style="color:red">Error: ${e.message}</p>`;
+            }
+        };
+
+        btn.onclick = performSearch;
+        input.onkeydown = (e) => { if (e.key === "Enter") performSearch(); };
+        input.focus();
+    },
+
+    async _performInstall(url) {
+        if (this.isActionInProgress) return;
+        this.isActionInProgress = true;
+        this.updateActionButtonsState();
+
+        // Create overlay
+        const overlay = document.createElement("div");
+        overlay.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); z-index: 200000; 
+            display: flex; align-items: center; justify-content: center;
+        `;
+        const dialog = document.createElement("div");
+        dialog.className = "holaf-utility-panel";
+        dialog.classList.add(this.panelElements.panelEl.className.match(/holaf-theme-\S+/)?.[0] || HOLAF_THEMES[0].className);
+        dialog.style.cssText = "position:relative;width:auto;min-width:300px;padding:20px;background:var(--holaf-bg-secondary);border:1px solid var(--holaf-border-color);";
+        dialog.innerHTML = `<h3>Installing...</h3><p>Cloning ${url}...</p>`;
+        overlay.append(dialog);
+        document.body.append(overlay);
+
+        try {
+            const response = await fetch('/holaf/nodes/install', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            });
+            const result = await response.json();
+            
+            document.body.removeChild(overlay);
+
+            if (response.ok && result.status === 'success') {
+                HolafPanelManager.createDialog({ title: "Install Complete", message: `Successfully installed node from ${url}.\n\nA restart of ComfyUI is likely required to load the new node.` });
+                this.refreshNodesList();
+            } else {
+                throw new Error(result.message || "Unknown error");
+            }
+        } catch (e) {
+            if (document.body.contains(overlay)) document.body.removeChild(overlay);
+            HolafPanelManager.createDialog({ title: "Install Failed", message: `Error installing node: ${e.message}` });
+        } finally {
+            this.isActionInProgress = false;
+            this.updateActionButtonsState();
+        }
+    },
 
 
     applyCurrentTheme() {
