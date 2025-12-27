@@ -28,7 +28,7 @@ When the user requests a "context update" or when a major feature is implemented
 
 *   **Python Environment:** ComfyUI embedded python.
 *   **Core Libraries:**
-    *   `aiohttp` (Server/API/WebSockets)
+    *   `aiohttp` (Server/API/WebSockets/HTTP Client). *Used for backend routes and GitHub API queries.*
     *   `sqlite3` (Data storage) - **Optimized:** WAL Mode, Memory Mapping.
     *   `watchdog` (Real-time filesystem monitoring).
     *   `orjson` (Fast JSON serialization, optional fallback to json).
@@ -41,9 +41,10 @@ When the user requests a "context update" or when a major feature is implemented
 *   **System Binaries:**
     *   **FFmpeg & FFprobe**: Required in PATH for video analysis, thumbnails, and transcoding.
     *   **RIFE ncnn Vulkan**: Managed binary (auto-downloaded) for AI video interpolation.
+    *   **Git**: Required in PATH for Node Manager operations (clone/pull).
 *   **Frontend:**
     *   Vanilla JS (ES Modules).
-    *   **Libraries**: `Chart.js` (Monitor), `xterm.js` (Terminal), `marked.js` (Markdown rendering).
+    *   **Libraries**: `Chart.js` (Monitor), `xterm.js` (Terminal), `marked.js` (Markdown rendering for READMEs).
     *   **Communication**: `BroadcastChannel` (Inter-tab sync), WebSockets (Terminal/Monitor), HTTP API.
 
 ---
@@ -51,7 +52,8 @@ When the user requests a "context update" or when a major feature is implemented
 ### SECTION 2: FILE STRUCTURE
 
 📁 holaf_image_viewer_backend/
-  > Core backend for Image Viewer functionality.
+  > Core backend logic & Route Facade.
+  📄 __init__.py : **Crucial**. Exposes all routes from submodules to the main application.
   📁 routes/
     > API Route Handlers (Modularized).
     📄 edit_routes.py : Handles `.edt` sidecars, video processing/rollback.
@@ -59,8 +61,8 @@ When the user requests a "context update" or when a major feature is implemented
     📄 file_ops_routes.py : Delete (Trashcan), Restore, Permanent Delete.
     📄 image_routes.py : Listing (advanced filtering), Filter options.
     📄 metadata_routes.py : Extract/Inject metadata, Get info.
-    📄 thumbnail_routes.py : Thumbnail generation, Prioritization, Stats.
-    📄 utility_routes.py : Database sync triggers, Maintenance tasks, Node Manager actions (Install/Search).
+    📄 thumbnail_routes.py : Thumbnail generation (Regen/Stats), Prioritization.
+    📄 utility_routes.py : Maintenance tasks (DB Sync), **Node Manager Facade** (Install/Search routes).
   📁 bin/
     > Managed external binaries (RIFE).
   📄 dependency_manager.py : Auto-installer for RIFE ncnn Vulkan.
@@ -77,7 +79,7 @@ When the user requests a "context update" or when a major feature is implemented
     📄 image_viewer_ui.js : Main UI layout, Filter controls.
   📁 model_manager/ : UI for Model Manager (Upload/Download/Scan).
   📁 nodes/ : UI for Custom Nodes Manager.
-    📄 holaf_nodes_manager.js : Logic for Node listing, updates, install (URL/Git) & search.
+    📄 holaf_nodes_manager.js : UI Logic. GitHub Search integration, Markdown rendering, Install/Update actions.
   📁 profiler/ : UI for Workflow Profiler (Standalone view).
   📄 holaf_main.js : Entry point. Static menu registration, Global modal/toast managers.
   📄 holaf_comfy_bridge.js : Cross-tab communication (`BroadcastChannel`).
@@ -89,9 +91,9 @@ When the user requests a "context update" or when a major feature is implemented
 📁 nodes/
   > ComfyUI Custom Nodes (Python).
   📄 holaf_model_manager.py : Backend logic for Model scanning/hashing.
-  📄 holaf_nodes_manager.py : Backend logic for nodes. Includes Git detection, GitHub API Search, Install via URL.
+  📄 holaf_nodes_manager.py : Backend logic for nodes. Git operations, `aiohttp` GitHub Search, `pip` requirements install.
 
-📄 __init__.py : Main extension entry. Registers routes (including new Node Install/Search routes), starts background workers, initializes DBs.
+📄 __init__.py : Main extension entry. Registers routes, initializes DBs, starts background workers.
 📄 holaf_config.py : `config.ini` manager.
 📄 holaf_database.py : Main SQLite manager (`holaf_utilities.sqlite`).
 📄 holaf_profiler_database.py : Profiler SQLite manager (`holaf_profiler.db`).
@@ -105,29 +107,30 @@ When the user requests a "context update" or when a major feature is implemented
 
 #### 1. Image Viewer Architecture
 *   **Data Source:** SQLite Database (`images` table) synchronized with filesystem via `watchdog` (real-time) and periodic full scans.
-*   **Thumbnails:** Generated on-demand via background worker. Prioritized queue. Stored in `.cache/thumbnails`. Served via HTTP. Frontend uses **Virtualized Scrolling** + **LRU Cache** + **AbortController** for high performance.
-*   **Non-Destructive Editing:** Edits stored in `.edt` JSON sidecars in `edit/` subfolder. 
-    *   **Images:** Applied via CSS `filter` in frontend. Applied via `Pillow` on export/thumbnail generation.
-    *   **Videos:** Preview generated as `_proc.mp4` (FFmpeg/RIFE). Playback rate logic handled in JS for preview, FFmpeg filters for export.
-*   **Standalone Mode:** `/holaf/view`. Communicates with main ComfyUI tab via `HolafComfyBridge` (BroadcastChannel) to load workflows.
+*   **Thumbnails:** Generated on-demand via background worker. Prioritized queue. Stored in `.cache/thumbnails`. Served via HTTP.
+*   **Non-Destructive Editing:** Edits stored in `.edt` JSON sidecars in `edit/` subfolder.
+*   **Video Handling:** Preview generated as `_proc.mp4` (FFmpeg/RIFE).
 
 #### 2. Workflow Profiler
 *   **Philosophy:** "Measure on Demand". Explicit start/stop.
-*   **Storage:** `holaf_profiler.db` in User Data directory.
-*   **Mechanism:** Hooks into ComfyUI execution. High-frequency polling (50ms) of CPU/RAM/GPU (`pynvml`) in a separate thread.
-*   **Sync:** Frontend requests workflow context from Main Tab via Bridge before run.
+*   **Storage:** `holaf_profiler.db`.
+*   **Mechanism:** Hooks into ComfyUI execution + High-frequency polling (50ms).
 
 #### 3. Terminal & Security
-*   **Access:** Secured by hashed password in `config.ini`.
+*   **Access:** Secured by hashed password.
 *   **Transport:** WebSocket transmitting raw PTY data.
-*   **Backend:** Uses `pywinpty` (Windows) or `pty` (Linux/Mac).
 
 #### 4. Model & Node Management
-*   **Models:** Scans standard ComfyUI paths. Uploads via chunked HTTP. Deep Scan calculates SHA256 and reads `.safetensors` metadata.
-*   **Nodes:** 
-    *   **Management**: Update (Git pull or re-clone strategy), Delete, Install `requirements.txt`.
-    *   **Discovery**: Local scan of `custom_nodes`.
-    *   **Installation**: Support for **Direct Git URL** installation and **GitHub Search** (API integration).
+*   **Models:** Scans standard ComfyUI paths. Uploads via chunked HTTP. Deep Scan (SHA256).
+*   **Nodes Architecture:**
+    *   **Backend (`holaf_nodes_manager.py`)**: Executes system commands (`git`, `pip`).
+    *   **GitHub Integration**: Uses `aiohttp` to search repositories and fetch raw READMEs directly from GitHub.
+    *   **Installation**:
+        *   **Git Clone**: For URLs ending in `.git` or detected as repositories.
+        *   **Manual**: Search allows discovering nodes not yet installed.
+    *   **Updates**: 
+        *   *Standard*: `git pull` for tracked repos.
+        *   *Hybrid*: For manually installed nodes converted to Git, performs backup -> clone -> restore untracked files.
 
 ---
 
@@ -152,8 +155,9 @@ When the user requests a "context update" or when a major feature is implemented
 
 *   **[Stable] Image Viewer**: Full virtualization, Watchdog integration, Editing pipeline.
 *   **[Stable] Terminal**: Secure PTY access.
-*   **[Stable] Model/Node Managers**: Full CRUD actions. Added Search & Install via URL capabilities.
+*   **[Stable] Node Manager**: Full CRUD, Git integration, GitHub Search & Install via URL fully functional.
+*   **[Stable] Model Manager**: Scan, Upload, Hash, Search.
 *   **[Beta] Profiler**: Core engine and DB ready. UI basics implemented.
 *   **[New] System Monitor**: Turbo mode, Persistence, Multi-GPU support.
 
-**Current Focus**: Stability, Performance optimization (Batch ops), and refining the Profiler UX.
+**Current Focus**: Stability, Batch operations performance, and refining the Profiler UX.
