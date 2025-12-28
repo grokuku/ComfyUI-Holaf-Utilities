@@ -33,6 +33,7 @@ When the user requests a "context update" or when a major feature is implemented
     *   `watchdog` (Real-time filesystem monitoring).
     *   `orjson` (Fast JSON serialization).
     *   `aiofiles` (Async file I/O).
+    *   `torch` (Used for active GPU device detection).
 *   **Specialized Libraries:**
     *   `Pillow` (Image processing), `python-xmp-toolkit` (XMP), `pynvml` (GPU).
     *   `pywinpty` (Windows) / `pty` (Linux/Mac) - Terminal emulation.
@@ -57,8 +58,8 @@ When the user requests a "context update" or when a major feature is implemented
   📁 css/ : Modular CSS files (themes, panels, layout tools, profiler).
   📁 image_viewer/ : Gallery, Editor, State, UI logic.
   📁 profiler/
-    📄 holaf_profiler.js : UI Logic. State-driven table rendering, Filters, Sorting, Metrics display.
-    📄 holaf_profiler_listener.js : Main tab logic. Calculates Group geometry, syncs context via API & LocalStorage.
+    📄 holaf_profiler.js : UI Logic. State-driven table rendering, Smart Filters (Non-Executed), Sorting, Metrics display.
+    📄 holaf_profiler_listener.js : Main tab logic. Calculates Group geometry using Live Graph, syncs context via API, Bridge, and LocalStorage.
   📄 holaf_main.js : Core extension entry and menu registration.
   📄 holaf_layout_tools.js : Floating toolbar, Mouse coordinates, Graph recentering.
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
@@ -68,7 +69,7 @@ When the user requests a "context update" or when a major feature is implemented
   📄 holaf_model_manager.py : Backend logic for Model scanning/hashing.
   📄 holaf_nodes_manager.py : Backend logic for nodes (Git/Pip operations).
 
-📄 holaf_profiler_engine.py : Measurement logic (Hooks execution, monitors VRAM/Time).
+📄 holaf_profiler_engine.py : Measurement logic. Handles Execution Hooks and Robust GPU detection (Logical vs Physical mapping).
 📄 holaf_profiler_database.py : SQLite manager specific to Profiler data.
 📄 holaf_database.py : Main SQLite manager (Images/General).
 📄 __init__.py : Main entry point. Contains API Routes, MIME type fixes, and Execution Hooks.
@@ -91,11 +92,13 @@ When the user requests a "context update" or when a major feature is implemented
 *   **Multi-GPU**: Dynamic detection and legend generation with VRAM/Load stats.
 
 #### 4. Workflow Profiler (Architecture)
-*   **Backend Hooks**: Monkey-patches `server.PromptServer` to detect start/end times and VRAM usage.
+*   **Robust GPU Detection**: The engine identifies the active PyTorch device and maps its Logical Index to the NVML Physical Index, handling `CUDA_VISIBLE_DEVICES` environment variables correctly.
 *   **Smart Sync Strategy (Groups)**: Group association is calculated in the `Listener` (Main Tab) using Live Graph geometry. This mapping is transmitted to the Profiler UI via `localStorage` (primary buffer) and `BroadcastChannel`, ensuring data persists even if the backend strips custom JSON fields.
 *   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state. This allows:
     *   **Dynamic Sorting**: Sort by ID, Name, Group, Time, VRAM, or Execution Order.
-    *   **Smart Filters**: Hide Disabled nodes, Exclude by Type string, and "Smart Min Time" (hides fast nodes only if they have finished executing).
+    *   **Smart Filters**: 
+        *   `Hide Non-Executed`: Hides nodes with 0ms time *only if* at least one node has finished (prevents empty table on start).
+        *   `Smart Min Time`: Only filters finished nodes; pending nodes remain visible.
     *   **Subgraph Logic**: Detects composite IDs (`ParentID:SubID`) to display "Parent Name > Subnode".
     *   **Runtime Ordering**: Tracks execution sequence (1, 2, 3...) in real-time.
 
@@ -127,8 +130,8 @@ When the user requests a "context update" or when a major feature is implemented
 *   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
 *   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization.
 *   **[Stable] Profiler**: 
-    *   Backend Hooks & Engine: **Active**.
-    *   UI: **Advanced** (Real-time charts, Group detection via LocalStorage, Sorting, Smart Filtering, Runtime Ordering).
-    *   Subgraph Support: **Active** (Parent resolution).
+    *   Backend Engine: **Robust** (Smart multi-GPU targeting).
+    *   UI: **Advanced** (Real-time, Group detection via LocalStorage, Smart Filters, Runtime Ordering).
+    *   Subgraph Support: **Active**.
 
 **Next Priority**: Enhance Profiler visual analytics (Charts.js integration for visual timeline) or History Navigation.
