@@ -9,19 +9,39 @@ export function initProfiler() {
     let currentRunId = null;
     let pollInterval = null;
     let nodesMap = new Map();
-    let executionCounter = 0; // Tracks the order (1, 2, 3...)
+    let executionCounter = 0;
+    
+    // Group Mapping (Loaded from Storage or Bridge)
+    let groupMapping = {}; 
 
-    // Config
     let config = {
         filterDisabled: false,
         filterTypeExclude: "",
         minTime: 0.0,
-        sortBy: 'exec_order', // Default sort by execution order now
+        sortBy: 'exec_order',
         sortDir: 'asc'
     };
 
     const root = document.getElementById('holaf-profiler-root');
     
+    // --- LOAD SAVED GROUPS ON INIT ---
+    try {
+        const saved = localStorage.getItem('holaf_profiler_groups');
+        if (saved) {
+            groupMapping = JSON.parse(saved);
+            console.log("Loaded cached groups:", Object.keys(groupMapping).length);
+        }
+    } catch(e) { console.error("Error loading groups cache", e); }
+
+    // --- BRIDGE LISTENER ---
+    bridge.listen((data) => {
+        if (data && data.type === 'profiler_group_data') {
+            console.log("Received group mapping via Bridge");
+            groupMapping = data.map;
+            applyGroupsAndRender();
+        }
+    });
+
     // --- UI STRUCTURE ---
     root.innerHTML = `
         <header class="profiler-header">
@@ -34,7 +54,6 @@ export function initProfiler() {
             </div>
         </header>
 
-        <!-- TOOLBAR -->
         <div class="profiler-toolbar">
             <div class="filter-group">
                 <label><input type="checkbox" id="chk-hide-disabled"> Hide Disabled</label>
@@ -74,32 +93,26 @@ export function initProfiler() {
     `;
 
     // --- EVENT LISTENERS ---
-
-    // 1. Hide Disabled
     const chkDisabled = document.getElementById('chk-hide-disabled');
     if (chkDisabled) chkDisabled.addEventListener('change', (e) => {
         config.filterDisabled = e.target.checked;
         renderTable();
     });
 
-    // 2. Min Time Slider
     const rangeTime = document.getElementById('rng-min-time');
     const labelTime = document.getElementById('lbl-min-time');
     if (rangeTime) rangeTime.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value);
-        config.minTime = val;
-        labelTime.textContent = val.toFixed(1) + "s";
+        config.minTime = parseFloat(e.target.value);
+        labelTime.textContent = config.minTime.toFixed(1) + "s";
         renderTable();
     });
 
-    // 3. Filter Type
     const inpType = document.getElementById('inp-filter-type');
     if (inpType) inpType.addEventListener('input', (e) => {
         config.filterTypeExclude = e.target.value.toLowerCase();
         renderTable();
     });
 
-    // 4. Sorting Headers
     document.querySelectorAll('th.sortable').forEach(th => {
         th.addEventListener('click', () => {
             const key = th.dataset.sort;
@@ -108,7 +121,6 @@ export function initProfiler() {
             } else {
                 config.sortBy = key;
                 config.sortDir = 'desc'; 
-                // Exceptions for intuitive sorting
                 if (key === 'exec_order' || key === 'id') config.sortDir = 'asc';
             }
             renderTable();
@@ -147,6 +159,17 @@ export function initProfiler() {
         return nodeData.title || nodeData.type || "Unknown";
     }
 
+    function applyGroupsAndRender() {
+        if (nodesMap.size > 0 && Object.keys(groupMapping).length > 0) {
+            nodesMap.forEach((node, id) => {
+                if (groupMapping[id]) {
+                    node.holaf_group = groupMapping[id];
+                }
+            });
+            renderTable();
+        }
+    }
+
     // --- RENDER LOGIC ---
 
     function updateHeaderIcons() {
@@ -180,18 +203,14 @@ export function initProfiler() {
             return;
         }
 
-        // --- FILTERING ---
         const excludeTypes = config.filterTypeExclude.split(',').map(s => s.trim()).filter(s => s);
 
         const filteredRows = rows.filter(row => {
-            // Disabled
             if (config.filterDisabled && row.mode === 2) return false;
             
-            // Min Time (SMART: Only filter if executed > 0)
             const t = row.exec_time || 0;
             if (t > 0 && t < config.minTime) return false;
 
-            // Exclude Types
             if (excludeTypes.length > 0) {
                 const rowType = (row.type || "").toLowerCase();
                 for (let ex of excludeTypes) {
@@ -201,12 +220,10 @@ export function initProfiler() {
             return true;
         });
 
-        // --- SORTING ---
         filteredRows.sort((a, b) => {
             let valA = a[config.sortBy];
             let valB = b[config.sortBy];
 
-            // Order handling (put unexecuted at end if sorting by order)
             if (config.sortBy === 'exec_order') {
                 if (!valA) valA = 999999;
                 if (!valB) valB = 999999;
@@ -215,7 +232,6 @@ export function initProfiler() {
                 if (valB === undefined) valB = 0;
             }
             
-            // Strings
             if (['title', 'type', 'group'].includes(config.sortBy)) {
                 valA = (valA || "").toString().toLowerCase();
                 valB = (valB || "").toString().toLowerCase();
@@ -223,12 +239,9 @@ export function initProfiler() {
                 if (valA > valB) return config.sortDir === 'asc' ? 1 : -1;
                 return 0;
             }
-
-            // Numbers
             return config.sortDir === 'asc' ? valA - valB : valB - valA;
         });
 
-        // --- HTML GENERATION ---
         tbody.innerHTML = filteredRows.map(row => {
             const isSubNode = String(row.id).includes(':');
             const rowStyle = isSubNode ? 'background-color: rgba(255,255,255,0.02);' : '';
@@ -261,6 +274,10 @@ export function initProfiler() {
 
     async function refreshContextView() {
         try {
+            // Also check localStorage in case Bridge missed it
+            const saved = localStorage.getItem('holaf_profiler_groups');
+            if (saved) groupMapping = JSON.parse(saved);
+
             const resp = await fetch('/holaf/profiler/context');
             if (!resp.ok) throw new Error("Context fetch failed");
             
@@ -275,8 +292,8 @@ export function initProfiler() {
                         title: node.title,
                         type: node.type,
                         mode: node.mode,
-                        holaf_group: node.holaf_group || null,
-                        // Metrics
+                        // Apply map immediately
+                        holaf_group: groupMapping[String(node.id)] || null,
                         exec_order: null,
                         vram_max: 0,
                         exec_time: 0,
@@ -292,65 +309,49 @@ export function initProfiler() {
 
     async function pollRunData() {
         if (!currentRunId) return;
-        
         try {
             const resp = await fetch(`/holaf/profiler/run/${currentRunId}`);
             if (!resp.ok) return;
 
             const data = await resp.json();
-            
             if (data.steps && Array.isArray(data.steps)) {
                 let hasUpdates = false;
-
                 data.steps.forEach(step => {
                     const idStr = String(step.node_id);
-                    
                     let nodeData = nodesMap.get(idStr);
+                    
                     if (!nodeData) {
                         nodeData = {
                             id: idStr,
                             title: step.node_title || "Unknown",
                             type: step.node_type || "Unknown",
-                            holaf_group: null,
+                            holaf_group: groupMapping[idStr] || null, 
                             mode: 0,
                             exec_order: null,
                             vram_max: 0, exec_time: 0, gpu_load_max: 0
                         };
-                        // Attempt group inheritance
-                        if (idStr.includes(':')) {
+                        if (!nodeData.holaf_group && idStr.includes(':')) {
                             const parentId = idStr.split(':')[0];
                             const parent = nodesMap.get(parentId);
-                            if (parent && parent.holaf_group) {
-                                nodeData.holaf_group = parent.holaf_group;
-                            }
+                            if (parent && parent.holaf_group) nodeData.holaf_group = parent.holaf_group;
                         }
                         nodesMap.set(idStr, nodeData);
                     }
 
-                    // Update metrics
                     nodeData.vram_max = step.vram_max;
                     nodeData.exec_time = step.exec_time;
                     nodeData.gpu_load_max = step.gpu_load_max;
-                    
-                    // Assign Order (Runtime) if finished and not yet assigned
                     if (step.exec_time > 0 && !nodeData.exec_order) {
                         executionCounter++;
                         nodeData.exec_order = executionCounter;
                     }
-
                     hasUpdates = true;
                 });
-
-                if (hasUpdates) {
-                    renderTable();
-                }
+                if (hasUpdates) renderTable();
             }
-        } catch (e) {
-            console.error("Polling error:", e);
-        }
+        } catch (e) { console.error("Polling error:", e); }
     }
 
-    // BUTTON HANDLERS
     const btnUpdate = document.getElementById('btn-update-nodes');
     if (btnUpdate) {
         btnUpdate.addEventListener('click', async () => {
@@ -372,8 +373,6 @@ export function initProfiler() {
     if (btnRun) {
         btnRun.addEventListener('click', async () => {
             const runName = prompt("Enter a name for this run (Optional):", "Run " + new Date().toLocaleTimeString());
-            
-            // RESET Logic
             executionCounter = 0;
             nodesMap.forEach(node => {
                 node.vram_max = 0;
@@ -389,17 +388,13 @@ export function initProfiler() {
                     body: JSON.stringify({ name: runName })
                 });
                 const data = await resp.json();
-                
                 if (data.status === 'ok') {
                     currentRunId = data.run_id;
                     bridge.send('queue_prompt');
                     if (pollInterval) clearInterval(pollInterval);
                     pollInterval = setInterval(pollRunData, 1000);
                 }
-            } catch (e) {
-                console.error("Run start failed:", e);
-                alert("Could not start run.");
-            }
+            } catch (e) { console.error("Run start failed:", e); }
         });
     }
 }
