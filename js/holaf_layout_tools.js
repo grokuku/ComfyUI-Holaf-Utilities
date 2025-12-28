@@ -1,295 +1,246 @@
-import { app } from "../../scripts/app.js";
-
-const HolafLayoutTools = {
-    coordDisplay: null,
-    container: null,
-    isVisible: true, // Default state
+/* holaf_layout_tools.js */
+    import { app } from "../../scripts/app.js";
     
-    init() {
-        // Expose instance for external toggling
-        if (!window.holaf) window.holaf = {};
-        window.holaf.layoutTools = this;
-
-        setTimeout(() => {
-            this.createFloatingToolbar();
-            this.startCoordinatePoller();
-        }, 500);
-    },
-
-    toggle() {
-        this.isVisible = !this.isVisible;
-        if (this.container) {
-            this.container.style.display = this.isVisible ? "flex" : "none";
-        }
-        return this.isVisible;
-    },
-
-    createFloatingToolbar() {
-        if (document.getElementById("holaf-layout-toolbar")) return;
-
-        this.container = document.createElement("div");
-        this.container.id = "holaf-layout-toolbar";
+    const HolafLayoutTools = {
+        coordDisplay: null,
+        container: null,
+        isVisible: false,
+        STORAGE_KEY: "holaf_layout_tools_pos_v4",
+        VISIBILITY_KEY: "holaf_layout_tools_visible",
         
-        // Initial Style
-        Object.assign(this.container.style, {
-            position: "fixed",
-            bottom: "20px",
-            right: "360px",
-            zIndex: "10000",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "4px 8px",
-            backgroundColor: "var(--comfy-menu-bg)",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color)",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.3)",
-            fontFamily: "monospace",
-            fontSize: "12px",
-            color: "var(--fg-color, #ccc)",
-            userSelect: "none"
-        });
-
-        document.body.appendChild(this.container);
-
-        // 1. Drag Handle
-        this.injectDragHandle(this.container);
-
-        // 2. Coordinates Display
-        this.coordDisplay = document.createElement("div");
-        this.coordDisplay.innerText = "X: 0 | Y: 0";
-        this.coordDisplay.style.marginRight = "8px";
-        this.coordDisplay.style.minWidth = "120px";
-        this.coordDisplay.style.textAlign = "right";
-        this.coordDisplay.style.pointerEvents = "none";
-        this.coordDisplay.title = "Current View Center Coordinates";
-        this.container.appendChild(this.coordDisplay);
-
-        // Separator
-        const sep = document.createElement("div");
-        Object.assign(sep.style, {
-            width: "1px",
-            height: "20px",
-            backgroundColor: "var(--border-color)"
-        });
-        this.container.appendChild(sep);
-
-        // 3. Action Buttons
-        this.injectButtons(this.container);
+        // Internal state to keep track of the "ideal" position
+        storedPos: { right: 360, bottom: 20 },
         
-        console.log("[Holaf Layout] Toolbar created.");
-    },
-
-    injectDragHandle(container) {
-        const handle = document.createElement("div");
-        Object.assign(handle.style, {
-            width: "12px",
-            height: "24px",
-            cursor: "grab",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: "0.5",
-            marginRight: "4px"
-        });
-        
-        handle.innerHTML = `<svg viewBox="0 0 6 14" width="6" height="14" fill="currentColor"><circle cx="1" cy="1" r="1"/><circle cx="1" cy="7" r="1"/><circle cx="1" cy="13" r="1"/><circle cx="5" cy="1" r="1"/><circle cx="5" cy="7" r="1"/><circle cx="5" cy="13" r="1"/></svg>`;
-
-        let isDragging = false;
-        let startX, startY, initialLeft, initialTop;
-
-        const onMouseDown = (e) => {
-            isDragging = true;
-            handle.style.cursor = "grabbing";
-            const rect = container.getBoundingClientRect();
-            
-            container.style.bottom = "auto";
-            container.style.right = "auto";
-            container.style.left = rect.left + "px";
-            container.style.top = rect.top + "px";
-
-            startX = e.clientX;
-            startY = e.clientY;
-            initialLeft = rect.left;
-            initialTop = rect.top;
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-            e.preventDefault(); 
-        };
-
-        const onMouseMove = (e) => {
-            if (!isDragging) return;
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-            container.style.left = `${initialLeft + dx}px`;
-            container.style.top = `${initialTop + dy}px`;
-        };
-
-        const onMouseUp = () => {
-            isDragging = false;
-            handle.style.cursor = "grab";
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-        };
-
-        handle.addEventListener('mousedown', onMouseDown);
-        container.appendChild(handle);
-    },
-
-    injectButtons(container) {
-        const button = document.createElement("button");
-        button.className = "holaf-layout-btn";
-        button.title = "Move Visible Workflow to Origin (0,0)";
-        
-        Object.assign(button.style, {
-            width: "32px",
-            height: "32px",
-            cursor: "pointer",
-            backgroundColor: "var(--comfy-input-bg)",
-            border: "1px solid var(--border-color)",
-            borderRadius: "4px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "4px"
-        });
-
-        button.onmouseenter = () => button.style.backgroundColor = "var(--comfy-input-bg-hover, #555)";
-        button.onmouseleave = () => button.style.backgroundColor = "var(--comfy-input-bg)";
-
-        button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:100%; height:100%; color: var(--fg-color, white);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`;
-
-        button.onclick = () => this.moveGraphToOrigin();
-
-        container.appendChild(button);
-    },
-
-    startCoordinatePoller() {
-        setInterval(() => {
-            if (!this.coordDisplay || !this.isVisible || !app.canvas) return;
-            
-            const ds = app.canvas.ds;
-            const cvsWidth = app.canvas.canvas.width; 
-            const cvsHeight = app.canvas.canvas.height;
-
-            const centerX = (cvsWidth / 2 - ds.offset[0]) / ds.scale;
-            const centerY = (cvsHeight / 2 - ds.offset[1]) / ds.scale;
-
-            this.coordDisplay.innerText = `X: ${Math.round(centerX)} | Y: ${Math.round(centerY)}`;
-        }, 100);
-    },
-
-    moveGraphToOrigin() {
-        const graph = app.canvas.graph;
-        
-        if (!graph) return;
-
-        // --- FIX SUBGRAPH SUPPORT ---
-        // Collect ALL nodes, including standard nodes and Subgraph specific Input/Output nodes
-        // which are often stored separately in 'input_node'/'output_node' properties.
-        const allNodes = [];
-        
-        if (graph._nodes) {
-            allNodes.push(...graph._nodes);
-        }
-
-        // Subgraph boundary nodes (Inputs)
-        if (graph.input_node) {
-            allNodes.push(graph.input_node);
-        }
-        // Subgraph boundary nodes (Outputs)
-        if (graph.output_node) {
-            allNodes.push(graph.output_node);
-        }
-
-        const groups = graph._groups || [];
-
-        if (allNodes.length === 0) {
-            if (window.holaf && window.holaf.toastManager) {
-                 window.holaf.toastManager.show("No nodes to move.", "warning");
+        init() {
+            if (!window.holaf) window.holaf = {};
+            window.holaf.layoutTools = this;
+    
+            // Load visibility state before initialization
+            const savedVisibility = localStorage.getItem(this.VISIBILITY_KEY);
+            this.isVisible = savedVisibility === "true";
+    
+            setTimeout(() => {
+                this.createFloatingToolbar();
+                this.startCoordinatePoller();
+                
+                // Re-evaluate visual position on resize without changing storedPos
+                window.addEventListener("resize", () => this.updateVisualPosition());
+            }, 500);
+        },
+    
+        toggle() {
+            this.isVisible = !this.isVisible;
+            if (this.container) {
+                this.container.style.display = this.isVisible ? "flex" : "none";
             }
-            return;
-        }
-
-        // 1. Calculate Bounding Box
-        let minX = Infinity, minY = Infinity;
-        let maxX = -Infinity, maxY = -Infinity;
-
-        const getVal = (v) => (typeof v === 'number' && !isNaN(v)) ? v : 0;
-
-        for (const node of allNodes) {
-            if (!node.pos) continue;
-            const x = getVal(node.pos[0]);
-            const y = getVal(node.pos[1]);
-            const w = node.size ? getVal(node.size[0]) : 60; 
-            const h = node.size ? getVal(node.size[1]) : 30;
-
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if ((x + w) > maxX) maxX = x + w;
-            if ((y + h) > maxY) maxY = y + h;
-        }
-
-        for (const group of groups) {
-             if (!group.pos) continue;
-             const x = getVal(group.pos[0]);
-             const y = getVal(group.pos[1]);
-             const w = group.size ? getVal(group.size[0]) : 100;
-             const h = group.size ? getVal(group.size[1]) : 100;
-
-             if (x < minX) minX = x;
-             if (y < minY) minY = y;
-             if ((x + w) > maxX) maxX = x + w;
-             if ((y + h) > maxY) maxY = y + h;
-        }
-
-        if (minX === Infinity) return;
-
-        // 2. Calculate Center Delta
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-
-        const offsetX = 0 - centerX;
-        const offsetY = 0 - centerY;
-
-        // 3. Apply Offset to ALL nodes (including inputs/outputs)
-        let count = 0;
-        for (const node of allNodes) {
-            if (node.pos) {
-                node.pos[0] += offsetX;
-                node.pos[1] += offsetY;
-                count++;
+            // Persist visibility state
+            localStorage.setItem(this.VISIBILITY_KEY, this.isVisible);
+            return this.isVisible;
+        },
+    
+        createFloatingToolbar() {
+            if (document.getElementById("holaf-layout-toolbar")) return;
+    
+            this.container = document.createElement("div");
+            this.container.id = "holaf-layout-toolbar";
+            
+            Object.assign(this.container.style, {
+                position: "fixed",
+                zIndex: "10000",
+                display: this.isVisible ? "flex" : "none",
+                alignItems: "center",
+                gap: "8px",
+                padding: "4px 8px",
+                backgroundColor: "var(--comfy-menu-bg)",
+                borderRadius: "8px",
+                border: "1px solid var(--border-color)",
+                boxShadow: "0 4px 6px rgba(0,0,0,0.3)",
+                fontFamily: "monospace",
+                fontSize: "12px",
+                color: "var(--fg-color, #ccc)",
+                userSelect: "none"
+            });
+    
+            // Load reference position from storage
+            const saved = localStorage.getItem(this.STORAGE_KEY);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    this.storedPos.right = parseInt(parsed.right);
+                    this.storedPos.bottom = parseInt(parsed.bottom);
+                } catch (e) { console.warn("[Holaf Layout] Restore failed", e); }
+            }
+    
+            document.body.appendChild(this.container);
+            this.injectDragHandle(this.container);
+    
+            this.coordDisplay = document.createElement("div");
+            this.coordDisplay.innerText = "X: 0 | Y: 0";
+            this.coordDisplay.style.marginRight = "8px";
+            this.coordDisplay.style.minWidth = "120px";
+            this.coordDisplay.style.textAlign = "right";
+            this.coordDisplay.style.pointerEvents = "none";
+            this.container.appendChild(this.coordDisplay);
+    
+            const sep = document.createElement("div");
+            Object.assign(sep.style, { width: "1px", height: "20px", backgroundColor: "var(--border-color)" });
+            this.container.appendChild(sep);
+    
+            this.injectButtons(this.container);
+            
+            // Initial visual application
+            this.updateVisualPosition();
+        },
+    
+        /**
+         * Calculates the best visual position based on storedPos and current window size.
+         * Does NOT modify storedPos.
+         */
+        updateVisualPosition() {
+            if (!this.container) return;
+            
+            const rect = this.container.getBoundingClientRect();
+            
+            // Calculate maximum allowed values to keep the tool in the viewport
+            // (Tool width/height are needed to avoid overflow on the left/top)
+            const maxRightAllowed = window.innerWidth - rect.width;
+            const maxBottomAllowed = window.innerHeight - rect.height;
+    
+            // Visual clamping: we show the stored position, but capped by the screen edges
+            const visualRight = Math.max(0, Math.min(this.storedPos.right, maxRightAllowed));
+            const visualBottom = Math.max(0, Math.min(this.storedPos.bottom, maxBottomAllowed));
+    
+            this.container.style.left = "auto";
+            this.container.style.top = "auto";
+            this.container.style.right = visualRight + "px";
+            this.container.style.bottom = visualBottom + "px";
+        },
+    
+        injectDragHandle(container) {
+            const handle = document.createElement("div");
+            Object.assign(handle.style, { width: "12px", height: "24px", cursor: "grab", display: "flex", alignItems: "center", opacity: "0.5", marginRight: "4px" });
+            handle.innerHTML = `<svg viewBox="0 0 6 14" width="6" height="14" fill="currentColor"><circle cx="1" cy="1" r="1"/><circle cx="1" cy="7" r="1"/><circle cx="1" cy="13" r="1"/><circle cx="5" cy="1" r="1"/><circle cx="5" cy="7" r="1"/><circle cx="5" cy="13" r="1"/></svg>`;
+    
+            let isDragging = false;
+            let startX, startY, dragStartRight, dragStartBottom;
+    
+            const onMouseDown = (e) => {
+                isDragging = true;
+                handle.style.cursor = "grabbing";
+                
+                // We start dragging from the CURRENT visual position
+                const rect = container.getBoundingClientRect();
+                dragStartRight = window.innerWidth - rect.right;
+                dragStartBottom = window.innerHeight - rect.bottom;
+                
+                startX = e.clientX;
+                startY = e.clientY;
+    
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                e.preventDefault(); 
+            };
+    
+            const onMouseMove = (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                // During drag, we update the STORED position directly
+                this.storedPos.right = dragStartRight - dx;
+                this.storedPos.bottom = dragStartBottom - dy;
+                
+                // And we refresh the visual clamping
+                this.updateVisualPosition();
+            };
+    
+            const onMouseUp = () => {
+                if (isDragging) {
+                    // Save the new IDEAL position (even if it's currently clamped)
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.storedPos));
+                }
+                isDragging = false;
+                handle.style.cursor = "grab";
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+    
+            handle.addEventListener('mousedown', onMouseDown);
+            container.appendChild(handle);
+        },
+    
+        injectButtons(container) {
+            const button = document.createElement("button");
+            button.className = "holaf-layout-btn";
+            button.title = "Move Visible Workflow to Origin (0,0)";
+            Object.assign(button.style, { width: "32px", height: "32px", cursor: "pointer", backgroundColor: "var(--comfy-input-bg)", border: "1px solid var(--border-color)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", padding: "4px" });
+            button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:100%; height:100%; color: var(--fg-color, white);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`;
+            button.onclick = () => this.moveGraphToOrigin();
+            container.appendChild(button);
+        },
+    
+        startCoordinatePoller() {
+            setInterval(() => {
+                if (!this.coordDisplay || !this.isVisible || !app.canvas?.graph_mouse) return;
+                this.coordDisplay.innerText = `X: ${Math.round(app.canvas.graph_mouse[0])} | Y: ${Math.round(app.canvas.graph_mouse[1])}`;
+            }, 100);
+        },
+    
+        moveGraphToOrigin() {
+            const graph = app.canvas.graph;
+            if (!graph) return;
+    
+            const allEntitiesSet = new Set();
+            if (graph._nodes) graph._nodes.forEach(n => allEntitiesSet.add(n));
+            if (graph._groups) graph._groups.forEach(g => allEntitiesSet.add(g));
+    
+            for (let key in graph) {
+                const obj = graph[key];
+                if (obj && typeof obj === 'object' && obj.pos && typeof obj.pos.length === 'number') {
+                    allEntitiesSet.add(obj);
+                }
+            }
+    
+            const allEntities = Array.from(allEntitiesSet);
+            if (allEntities.length === 0) return;
+    
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const getVal = (v) => (typeof v === 'number' && !isNaN(v)) ? v : 0;
+    
+            allEntities.forEach(item => {
+                const x = getVal(item.pos[0]);
+                const y = getVal(item.pos[1]);
+                const w = (item.size && typeof item.size.length === 'number') ? getVal(item.size[0]) : 40;
+                const h = (item.size && typeof item.size.length === 'number') ? getVal(item.size[1]) : 20;
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if ((x + w) > maxX) maxX = x + w;
+                if ((y + h) > maxY) maxY = y + h;
+            });
+    
+            if (minX === Infinity) return;
+    
+            const offsetX = -((minX + maxX) / 2);
+            const offsetY = -((minY + maxY) / 2);
+    
+            allEntities.forEach(item => {
+                item.pos[0] += offsetX;
+                item.pos[1] += offsetY;
+            });
+    
+            graph.setDirtyCanvas(true, true);
+            if (app.canvas) {
+                app.canvas.ds.offset = [app.canvas.canvas.width / 2, app.canvas.canvas.height / 2];
+                app.canvas.setDirty(true, true);
+            }
+    
+            if (window.holaf?.toastManager) {
+                window.holaf.toastManager.show(`Recentered ${allEntities.length} elements`, "success");
             }
         }
-        for (const group of groups) {
-            group.pos[0] += offsetX;
-            group.pos[1] += offsetY;
-        }
-
-        // 4. Update Canvas
-        graph.setDirtyCanvas(true, true);
-        
-        // Recenter view to (0,0)
-        if (app.canvas) {
-            const cvsWidth = app.canvas.canvas.width;
-            const cvsHeight = app.canvas.canvas.height;
-            app.canvas.ds.offset = [cvsWidth / 2, cvsHeight / 2];
-            app.canvas.setDirty(true, true);
-        }
-        
-        if (window.holaf && window.holaf.toastManager) {
-            const msg = `Recenter: ${count} elements moved`;
-            window.holaf.toastManager.show(msg, "success");
-        } else {
-            console.log(`[Holaf Layout] ${count} elements moved to origin.`);
-        }
-    }
-};
-
-app.registerExtension({
-    name: "Holaf.Layout.Tools",
-    setup() {
-        HolafLayoutTools.init();
-    }
-});
+    };
+    
+    app.registerExtension({
+        name: "Holaf.Layout.Tools",
+        setup() { HolafLayoutTools.init(); }
+    });
