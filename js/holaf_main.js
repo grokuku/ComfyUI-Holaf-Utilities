@@ -15,6 +15,7 @@
  * REFACTOR RESTART: Implemented a new multi-stage restart sequence with fixed dialog size.
  * MODIFICATION: Integrated the new HolafToastManager for non-blocking notifications.
  * MODIFICATION: Added "Workflow Profiler" and Bridge Listener logic.
+ * MODIFICATION: Added "Toggle Layout Tools" menu item.
  */
 
 import { app } from "../../../scripts/app.js";
@@ -31,6 +32,7 @@ import "./holaf_nodes_manager.js";
 import "./holaf_image_viewer.js";
 import "./holaf_settings_manager.js";
 import "./holaf_monitor.js";
+import "./holaf_layout_tools.js";
 
 /**
  * A simple, themed modal dialog helper.
@@ -154,6 +156,7 @@ const HolafUtilitiesMenu = {
             { label: "Workflow Profiler", special: "profiler_standalone" },
             { type: 'separator' },
             { label: "Toggle Monitor", special: "toggle_monitor" },
+            { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
             { type: 'separator' },
             { label: "Settings", handlerName: "holafSettingsManager" },
             { type: 'separator' },
@@ -297,6 +300,12 @@ const HolafUtilitiesMenu = {
                         console.error("[Holaf Utilities] HolafSystemMonitor is not available.");
                         HolafModal.show("Error", "System Monitor module not loaded.", () => { }, "OK", null);
                     }
+                } else if (itemInfo.special === "toggle_layout_tools") {
+                    if (window.holaf && window.holaf.layoutTools) {
+                        window.holaf.layoutTools.toggle();
+                    } else {
+                        console.warn("[Holaf Utilities] Layout Tools module not loaded yet.");
+                    }
                 } else if (itemInfo.special === "profiler_standalone") {
                     // Open Profiler in new tab
                     window.open('/holaf/profiler/view', '_blank');
@@ -428,7 +437,8 @@ const HolafUtilitiesMenu = {
             "holaf_system_monitor_styles.css",
             "holaf_image_viewer_styles.css",
             "holaf_toasts.css",
-            "holaf_profiler.css" // [NEW] Added Profiler CSS
+            "holaf_profiler.css", // [NEW] Added Profiler CSS
+            "holaf_layout_tools.css"
         ];
 
         const basePath = "extensions/ComfyUI-Holaf-Utilities/css/"; // Corrected base path
