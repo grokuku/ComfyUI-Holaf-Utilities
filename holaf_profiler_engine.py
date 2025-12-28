@@ -3,6 +3,7 @@ import threading
 import psutil
 import logging
 import json
+import torch  # Required for GPU index detection
 
 try:
     import pynvml
@@ -47,10 +48,23 @@ class ProfilerEngine:
 
         # Hardware Handle
         self.gpu_handle = None
+        
         if PYNVML_AVAILABLE:
             try:
                 pynvml.nvmlInit()
-                self.gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                
+                # --- HOLAF FIX: Auto-detect active GPU index ---
+                target_gpu_index = 0
+                try:
+                    if torch.cuda.is_available():
+                        target_gpu_index = torch.cuda.current_device()
+                        gpu_name = torch.cuda.get_device_name(target_gpu_index)
+                        print(f"[Holaf Profiler] Auto-detected active GPU: Index {target_gpu_index} ({gpu_name})")
+                except Exception as e:
+                    print(f"[Holaf Profiler] Torch GPU detection failed, defaulting to 0. Error: {e}")
+                # -----------------------------------------------
+
+                self.gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(target_gpu_index)
             except Exception as e:
                 print(f"[Holaf Profiler] Failed to init pynvml: {e}")
                 self.gpu_handle = None

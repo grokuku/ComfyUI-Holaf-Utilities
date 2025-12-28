@@ -11,11 +11,11 @@ export function initProfiler() {
     let nodesMap = new Map();
     let executionCounter = 0;
     
-    // Group Mapping (Loaded from Storage or Bridge)
+    // Group Mapping
     let groupMapping = {}; 
 
     let config = {
-        filterDisabled: false,
+        filterNonExecuted: false,
         filterTypeExclude: "",
         minTime: 0.0,
         sortBy: 'exec_order',
@@ -24,19 +24,15 @@ export function initProfiler() {
 
     const root = document.getElementById('holaf-profiler-root');
     
-    // --- LOAD SAVED GROUPS ON INIT ---
+    // --- LOAD SAVED GROUPS ---
     try {
         const saved = localStorage.getItem('holaf_profiler_groups');
-        if (saved) {
-            groupMapping = JSON.parse(saved);
-            console.log("Loaded cached groups:", Object.keys(groupMapping).length);
-        }
-    } catch(e) { console.error("Error loading groups cache", e); }
+        if (saved) groupMapping = JSON.parse(saved);
+    } catch(e) {}
 
     // --- BRIDGE LISTENER ---
     bridge.listen((data) => {
         if (data && data.type === 'profiler_group_data') {
-            console.log("Received group mapping via Bridge");
             groupMapping = data.map;
             applyGroupsAndRender();
         }
@@ -56,10 +52,12 @@ export function initProfiler() {
 
         <div class="profiler-toolbar">
             <div class="filter-group">
-                <label><input type="checkbox" id="chk-hide-disabled"> Hide Disabled</label>
+                <label title="Only active if at least one node has finished execution">
+                    <input type="checkbox" id="chk-hide-non-executed"> Hide Non-Executed
+                </label>
             </div>
             <div class="filter-group">
-                <label title="Hide executed nodes faster than X seconds">Min Time: <span id="lbl-min-time" style="font-weight:bold; color:#4CAF50;">0.0s</span></label>
+                <label>Min Time: <span id="lbl-min-time" style="font-weight:bold; color:#4CAF50;">0.0s</span></label>
                 <input type="range" id="rng-min-time" min="0" max="5" step="0.1" value="0">
             </div>
             <div class="filter-group">
@@ -78,7 +76,8 @@ export function initProfiler() {
                         <th data-sort="exec_order" class="sortable" style="width:60px;">Order <span class="sort-icon"></span></th>
                         <th data-sort="id" class="sortable">ID <span class="sort-icon"></span></th>
                         <th data-sort="title" class="sortable">Node Name <span class="sort-icon"></span></th>
-                        <th data-sort="group" class="sortable">Group <span class="sort-icon"></span></th>
+                        <!-- CORRECTION: data-sort must match the property name 'holaf_group' -->
+                        <th data-sort="holaf_group" class="sortable">Group <span class="sort-icon"></span></th>
                         <th data-sort="type" class="sortable">Type <span class="sort-icon"></span></th>
                         <th data-sort="vram" class="sortable col-vram">VRAM Max <span class="sort-icon"></span></th>
                         <th data-sort="exec_time" class="sortable col-time">Time <span class="sort-icon"></span></th>
@@ -93,9 +92,10 @@ export function initProfiler() {
     `;
 
     // --- EVENT LISTENERS ---
-    const chkDisabled = document.getElementById('chk-hide-disabled');
-    if (chkDisabled) chkDisabled.addEventListener('change', (e) => {
-        config.filterDisabled = e.target.checked;
+    
+    const chkNonExec = document.getElementById('chk-hide-non-executed');
+    if (chkNonExec) chkNonExec.addEventListener('change', (e) => {
+        config.filterNonExecuted = e.target.checked;
         renderTable();
     });
 
@@ -121,7 +121,7 @@ export function initProfiler() {
             } else {
                 config.sortBy = key;
                 config.sortDir = 'desc'; 
-                if (key === 'exec_order' || key === 'id') config.sortDir = 'asc';
+                if (key === 'exec_order' || key === 'id' || key === 'holaf_group') config.sortDir = 'asc';
             }
             renderTable();
         });
@@ -204,9 +204,13 @@ export function initProfiler() {
         }
 
         const excludeTypes = config.filterTypeExclude.split(',').map(s => s.trim()).filter(s => s);
+        const anyNodeExecuted = rows.some(r => (r.exec_time || 0) > 0);
 
+        // --- FILTERING ---
         const filteredRows = rows.filter(row => {
-            if (config.filterDisabled && row.mode === 2) return false;
+            if (config.filterNonExecuted && anyNodeExecuted) {
+                if (!row.exec_time || row.exec_time <= 0) return false;
+            }
             
             const t = row.exec_time || 0;
             if (t > 0 && t < config.minTime) return false;
@@ -220,6 +224,7 @@ export function initProfiler() {
             return true;
         });
 
+        // --- SORTING ---
         filteredRows.sort((a, b) => {
             let valA = a[config.sortBy];
             let valB = b[config.sortBy];
@@ -232,7 +237,8 @@ export function initProfiler() {
                 if (valB === undefined) valB = 0;
             }
             
-            if (['title', 'type', 'group'].includes(config.sortBy)) {
+            // CORRECTION: Added 'holaf_group' to the text sort list
+            if (['title', 'type', 'holaf_group'].includes(config.sortBy)) {
                 valA = (valA || "").toString().toLowerCase();
                 valB = (valB || "").toString().toLowerCase();
                 if (valA < valB) return config.sortDir === 'asc' ? -1 : 1;
@@ -242,6 +248,7 @@ export function initProfiler() {
             return config.sortDir === 'asc' ? valA - valB : valB - valA;
         });
 
+        // --- HTML GEN ---
         tbody.innerHTML = filteredRows.map(row => {
             const isSubNode = String(row.id).includes(':');
             const rowStyle = isSubNode ? 'background-color: rgba(255,255,255,0.02);' : '';
@@ -255,6 +262,11 @@ export function initProfiler() {
                 ? `<span style="font-family:monospace; color:#4CAF50;">${formatOrder(row.exec_order)}</span>`
                 : `<span style="color:#444">-</span>`;
 
+            let gpuDisplay = "-";
+            if (row.gpu_load_max !== undefined && row.gpu_load_max !== null) {
+                gpuDisplay = row.gpu_load_max + "%";
+            }
+
             return `
                 <tr style="${rowStyle} ${finishedStyle}">
                     <td style="text-align:center;">${orderBadge}</td>
@@ -264,7 +276,7 @@ export function initProfiler() {
                     <td style="color:#888; font-size:0.85em;">${row.type}</td>
                     <td class="metric-cell vram">${formatBytes(row.vram_max)}</td>
                     <td class="metric-cell time">${formatTime(row.exec_time)}</td>
-                    <td class="metric-cell gpu">${row.gpu_load_max ? row.gpu_load_max + "%" : "-"}</td>
+                    <td class="metric-cell gpu">${gpuDisplay}</td>
                 </tr>
             `;
         }).join('');
@@ -274,7 +286,6 @@ export function initProfiler() {
 
     async function refreshContextView() {
         try {
-            // Also check localStorage in case Bridge missed it
             const saved = localStorage.getItem('holaf_profiler_groups');
             if (saved) groupMapping = JSON.parse(saved);
 
@@ -292,7 +303,6 @@ export function initProfiler() {
                         title: node.title,
                         type: node.type,
                         mode: node.mode,
-                        // Apply map immediately
                         holaf_group: groupMapping[String(node.id)] || null,
                         exec_order: null,
                         vram_max: 0,
@@ -341,6 +351,7 @@ export function initProfiler() {
                     nodeData.vram_max = step.vram_max;
                     nodeData.exec_time = step.exec_time;
                     nodeData.gpu_load_max = step.gpu_load_max;
+                    
                     if (step.exec_time > 0 && !nodeData.exec_order) {
                         executionCounter++;
                         nodeData.exec_order = executionCounter;

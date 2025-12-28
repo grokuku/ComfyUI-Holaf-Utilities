@@ -57,8 +57,8 @@ When the user requests a "context update" or when a major feature is implemented
   📁 css/ : Modular CSS files (themes, panels, layout tools, profiler).
   📁 image_viewer/ : Gallery, Editor, State, UI logic.
   📁 profiler/
-    📄 holaf_profiler.js : Standalone UI logic (Fetches, Polling, DOM).
-    📄 holaf_profiler_listener.js : Main tab listener (Exports graph, queues prompt).
+    📄 holaf_profiler.js : UI Logic. State-driven table rendering, Filters, Sorting, Metrics display.
+    📄 holaf_profiler_listener.js : Main tab logic. Calculates Group geometry, syncs context via API & LocalStorage.
   📄 holaf_main.js : Core extension entry and menu registration.
   📄 holaf_layout_tools.js : Floating toolbar, Mouse coordinates, Graph recentering.
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
@@ -91,14 +91,13 @@ When the user requests a "context update" or when a major feature is implemented
 *   **Multi-GPU**: Dynamic detection and legend generation with VRAM/Load stats.
 
 #### 4. Workflow Profiler (Architecture)
-*   **Execution Hooks**: Monkey-patches `server.PromptServer.instance.send_sync` in `__init__.py` to detect `executing` and `execution_error` events. This allows measuring exact node start/end times.
-*   **Polling Engine**: `ProfilerEngine` runs a background thread to poll GPU/CPU stats during node execution.
-*   **MIME Bypass**: To avoid strict MIME type blocking on some OS/Browsers, the Profiler JS is served via a custom Python route (`/holaf/profiler/app.js`) forcing `application/javascript` header.
-*   **Bridge & Sync**:
-    1.  Frontend clicks "Update Nodes".
-    2.  Message sent via `HolafComfyBridge`.
-    3.  `Listener` (Main Tab) serializes `app.graph` and posts it to `/holaf/profiler/context`.
-    4.  Frontend reads context from backend to build the UI table.
+*   **Backend Hooks**: Monkey-patches `server.PromptServer` to detect start/end times and VRAM usage.
+*   **Smart Sync Strategy (Groups)**: Group association is calculated in the `Listener` (Main Tab) using Live Graph geometry. This mapping is transmitted to the Profiler UI via `localStorage` (primary buffer) and `BroadcastChannel`, ensuring data persists even if the backend strips custom JSON fields.
+*   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state. This allows:
+    *   **Dynamic Sorting**: Sort by ID, Name, Group, Time, VRAM, or Execution Order.
+    *   **Smart Filters**: Hide Disabled nodes, Exclude by Type string, and "Smart Min Time" (hides fast nodes only if they have finished executing).
+    *   **Subgraph Logic**: Detects composite IDs (`ParentID:SubID`) to display "Parent Name > Subnode".
+    *   **Runtime Ordering**: Tracks execution sequence (1, 2, 3...) in real-time.
 
 #### 5. Interface Persistence & Menu Sync
 *   **Visibility State**: Tool visibility (`isVisible`) is saved in `localStorage`. Tools auto-restore their state on page reload.
@@ -124,12 +123,12 @@ When the user requests a "context update" or when a major feature is implemented
 ### PROJECT STATE
 
 *   **[Stable] Image Viewer, Terminal, Node Manager, Model Manager**.
-*   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence (Pos/Size/Visibility).
-*   **[Stable] Layout Tools**: Coordinates, Recentering (Subgraph support), Persistence (Pos/Visibility).
+*   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence.
+*   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
 *   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization.
-*   **[Functional] Profiler**: 
+*   **[Stable] Profiler**: 
     *   Backend Hooks & Engine: **Active**.
-    *   Communication (Bridge/API): **Active**.
-    *   UI: **Functional** (Table view, Run triggering, Real-time updates).
+    *   UI: **Advanced** (Real-time charts, Group detection via LocalStorage, Sorting, Smart Filtering, Runtime Ordering).
+    *   Subgraph Support: **Active** (Parent resolution).
 
-**Next Priority**: Enhance Profiler UI (Visual Charts, History navigation) or refine edge cases in node measurement.
+**Next Priority**: Enhance Profiler visual analytics (Charts.js integration for visual timeline) or History Navigation.
