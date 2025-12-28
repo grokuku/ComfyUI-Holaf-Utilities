@@ -3,7 +3,8 @@ import threading
 import psutil
 import logging
 import json
-import torch  # Required for GPU index detection
+import os
+import torch  # Required for GPU detection
 
 try:
     import pynvml
@@ -53,18 +54,56 @@ class ProfilerEngine:
             try:
                 pynvml.nvmlInit()
                 
-                # --- HOLAF FIX: Auto-detect active GPU index ---
-                target_gpu_index = 0
-                try:
-                    if torch.cuda.is_available():
-                        target_gpu_index = torch.cuda.current_device()
-                        gpu_name = torch.cuda.get_device_name(target_gpu_index)
-                        print(f"[Holaf Profiler] Auto-detected active GPU: Index {target_gpu_index} ({gpu_name})")
-                except Exception as e:
-                    print(f"[Holaf Profiler] Torch GPU detection failed, defaulting to 0. Error: {e}")
-                # -----------------------------------------------
+                # --- HOLAF DEBUG: ROBUST GPU DETECTION ---
+                print("\n[Holaf Profiler] --- GPU DETECTION DIAGNOSTIC ---")
+                
+                # 1. Get Torch Logic Index
+                torch_index = 0
+                if torch.cuda.is_available():
+                    torch_index = torch.cuda.current_device()
+                
+                print(f"[Holaf Profiler] PyTorch Current Device Index: {torch_index}")
 
-                self.gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(target_gpu_index)
+                # 2. Check Environment Remapping (CUDA_VISIBLE_DEVICES)
+                visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+                physical_index = torch_index # Default fallback
+
+                if visible_devices:
+                    print(f"[Holaf Profiler] CUDA_VISIBLE_DEVICES set to: '{visible_devices}'")
+                    # Parse "0,1" or "1" etc.
+                    device_list = [x.strip() for x in visible_devices.split(',') if x.strip()]
+                    
+                    if torch_index < len(device_list):
+                        try:
+                            physical_index = int(device_list[torch_index])
+                            print(f"[Holaf Profiler] Remapped Logical GPU {torch_index} -> Physical GPU {physical_index}")
+                        except ValueError:
+                            print("[Holaf Profiler] Error parsing CUDA_VISIBLE_DEVICES list.")
+                    else:
+                        print(f"[Holaf Profiler] Warning: Torch index {torch_index} out of bounds for visible devices list.")
+                else:
+                    print("[Holaf Profiler] No CUDA_VISIBLE_DEVICES set. Assuming direct mapping.")
+
+                # 3. Init NVML with Physical Index
+                try:
+                    handle = pynvml.nvmlDeviceGetHandleByIndex(physical_index)
+                    gpu_name = pynvml.nvmlDeviceGetName(handle)
+                    # Decode bytes if necessary (older pynvml returns bytes)
+                    if isinstance(gpu_name, bytes):
+                        gpu_name = gpu_name.decode('utf-8')
+                        
+                    print(f"[Holaf Profiler] Monitoring NVML Device {physical_index}: {gpu_name}")
+                    self.gpu_handle = handle
+                except Exception as e:
+                    print(f"[Holaf Profiler] Failed to get handle for index {physical_index}: {e}")
+                    # Fallback to 0 if mapping failed
+                    if physical_index != 0:
+                        print("[Holaf Profiler] Attempting fallback to index 0...")
+                        self.gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+
+                print("[Holaf Profiler] -----------------------------------\n")
+                # ---------------------------------------------------------
+
             except Exception as e:
                 print(f"[Holaf Profiler] Failed to init pynvml: {e}")
                 self.gpu_handle = None
@@ -72,10 +111,6 @@ class ProfilerEngine:
         self.monitor_thread = None
 
     def load_workflow_context(self, workflow_data):
-        """
-        Parses the workflow JSON (Graph format) to create a lookup map.
-        Expected format: {'nodes': [ {id, type, title, inputs, ...}, ... ]}
-        """
         self.node_lookup_map = {}
         nodes = workflow_data.get("nodes", []) if isinstance(workflow_data, dict) else []
         for n in nodes:
@@ -88,15 +123,11 @@ class ProfilerEngine:
             }
 
     def get_context_for_frontend(self):
-        """Returns the current loaded node list for the frontend."""
-        # Convert dict back to list for easy frontend iteration
-        # We sort by ID as a rough approximation of order before execution
         nodes = list(self.node_lookup_map.values())
         nodes.sort(key=lambda x: int(x['id']) if x['id'].isdigit() else x['id'])
         return nodes
 
     def start_run(self, name=None, workflow_hash=None, global_comment=""):
-        """Starts a new profiling session."""
         try:
             self.active_run_id = self.db.create_run(name, workflow_hash, global_comment)
             self.is_profiling = True
@@ -111,40 +142,27 @@ class ProfilerEngine:
             return None
 
     def stop_run(self):
-        """Stops the current session."""
         self.is_profiling = False
         self.active_run_id = None
         self.current_node_id = None
 
     def handle_execution_start(self, node_id):
-        """
-        Called by the Hook when a node starts. 
-        Looks up details from context and triggers logic.
-        """
         if not self.is_profiling: return
-        
         nid = str(node_id)
         node_data = self.node_lookup_map.get(nid, {})
-        
         title = node_data.get("title", f"Node {nid}")
         n_type = node_data.get("type", "Unknown")
         inputs = node_data.get("inputs", [])
-        
         self.on_node_start(nid, title, n_type, inputs)
 
     def on_node_start(self, node_id, node_title, node_type, inputs):
-        """Internal setup for the step."""
         self.current_node_id = node_id
         self.current_node_title = node_title
         self.current_node_type = node_type
         self.current_inputs = json.dumps(inputs) if inputs else "[]"
-        
         self.current_node_start_time = time.perf_counter()
-        
-        # Initial Readings
         self.current_node_vram_start = self._get_vram_usage()
         
-        # Reset Volatiles
         self.stat_vram_max = self.current_node_vram_start
         self.stat_gpu_load_max = 0
         self.stat_gpu_load_sum = 0
@@ -152,7 +170,6 @@ class ProfilerEngine:
         self.stat_cpu_max = 0
 
     def on_node_end(self):
-        """Hook called when a node finishes execution."""
         if not self.is_profiling or self.current_node_id is None:
             return
 
@@ -186,7 +203,6 @@ class ProfilerEngine:
         self.current_node_id = None
 
     def _monitor_loop(self):
-        """High frequency polling loop."""
         while self.is_profiling:
             try:
                 cpu = psutil.cpu_percent(interval=None)
