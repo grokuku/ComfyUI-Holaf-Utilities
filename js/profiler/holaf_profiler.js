@@ -141,7 +141,8 @@ export function initProfiler() {
             btn.disabled = true;
 
             // Ask main tab to push context to backend
-            bridge.sendCommand('get_workflow_for_profiler');
+            // FIX: Using .send() instead of .sendCommand()
+            bridge.send('get_workflow_for_profiler');
             
             // Wait 500ms for backend to update, then fetch context
             setTimeout(async () => {
@@ -180,7 +181,8 @@ export function initProfiler() {
             currentRunId = data.run_id;
             
             // Trigger Queue in Main Tab
-            bridge.sendCommand('queue_prompt');
+            // FIX: Using .send() instead of .sendCommand()
+            bridge.send('queue_prompt');
             
             // Start Polling
             if (pollInterval) clearInterval(pollInterval);

@@ -7,10 +7,8 @@
 # registers API routes, and loads custom nodes.
 #
 # Refactor Notes:
-# - Core functionalities (DB, Config, Terminal, Image Viewer, System Monitor, Utils)
-#   have been moved to separate modules for better organization.
-# - This file now primarily handles imports, initialization calls, route registration,
-#   and dynamic loading of nodes from the 'nodes' subdirectory.
+# - Added Profiler integration (Engine, Routes, Hooks).
+# - FIX: Corrected JS path in 'profiler_js_force_mime' to 'js/profiler/holaf_profiler.js'.
 # === End Documentation ===
 
 import server
@@ -37,10 +35,15 @@ from . import holaf_image_viewer_backend
 from . import holaf_system_monitor
 from . import holaf_server_management
 
+# --- Profiler Engine Import ---
+try:
+    from .holaf_profiler_engine import ProfilerEngine
+    PROFILER_AVAILABLE = True
+except ImportError as e:
+    print(f"🔴 [Holaf-Init] Profiler Engine import failed: {e}")
+    PROFILER_AVAILABLE = False
+
 # --- Holaf Node Helpers (Assumed to be in ./nodes/) ---
-# These are facades for actual logic in the nodes/ directory
-# If these files don't exist or don't have these functions,
-# the related routes will fail.
 try:
     from .nodes import holaf_model_manager as model_manager_helper
 except ImportError:
@@ -54,7 +57,6 @@ except ImportError:
     nodes_manager_helper = None
 
 # --- Global Application Configuration ---
-# Loaded once and can be updated by config saving routes
 CONFIG = {}
 
 def reload_global_config():
@@ -66,14 +68,20 @@ print("--- Initializing Holaf Utilities ---")
 holaf_database.init_database()
 reload_global_config() # Load initial config
 
+# --- Initialize Profiler Engine ---
+profiler_engine = None
+if PROFILER_AVAILABLE:
+    try:
+        profiler_engine = ProfilerEngine()
+        print("🔵 [Holaf-Init] Profiler Engine initialized.")
+    except Exception as e:
+        print(f"🔴 [Holaf-Init] Failed to instantiate Profiler Engine: {e}")
 
 # --- MODIFICATION START: Remove SaveImage patch ---
-# The patch has been removed and replaced by a robust filesystem watcher.
 print("🔵 [Holaf-Init] Live image updates now handled by Filesystem Watcher.")
 # --- MODIFICATION END ---
 
 # --- STANDALONE GALLERY HTML TEMPLATE ---
-# Defines the separate window structure with CORRECT PATHS
 GALLERY_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -136,8 +144,143 @@ GALLERY_HTML = """
 </html>
 """
 
+# --- PROFILER HTML TEMPLATE ---
+# We use a custom route for the JS to ensure correct MIME type
+PROFILER_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holaf Profiler</title>
+    <style>
+        body {
+            background-color: #202020;
+            color: #eeeeee;
+            font-family: sans-serif;
+            margin: 0; padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #holaf-profiler-root {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 20px;
+        }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #444; }
+        th { background-color: #333; }
+        .profiler-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn { padding: 8px 16px; background: #236696; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: #444; margin-right: 10px; }
+    </style>
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_profiler.css">
+</head>
+<body>
+    <div id="holaf-profiler-root"></div>
+    <script type="module">
+        // Import from our custom route to bypass MIME type issues
+        import { initProfiler } from '/holaf/profiler/app.js';
+        initProfiler();
+    </script>
+</body>
+</html>
+"""
+
 # --- API Route Definitions ---
 routes = server.PromptServer.instance.routes
+
+# --- PROFILER ROUTES & HOOKS ---
+if profiler_engine:
+    # 1. Routes
+    @routes.post("/holaf/profiler/context")
+    async def profiler_set_context(request: web.Request):
+        try:
+            data = await request.json()
+            profiler_engine.load_workflow_context(data)
+            return web.json_response({"status": "ok", "message": "Context loaded."})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.get("/holaf/profiler/context")
+    async def profiler_get_context(request: web.Request):
+        try:
+            nodes = profiler_engine.get_context_for_frontend()
+            return web.json_response({"nodes": nodes})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.post("/holaf/profiler/run-start")
+    async def profiler_run_start(request: web.Request):
+        try:
+            data = await request.json()
+            name = data.get("name", "Untitled Run")
+            run_id = profiler_engine.start_run(name=name)
+            return web.json_response({"status": "ok", "run_id": run_id})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.get("/holaf/profiler/run/{run_id}")
+    async def profiler_get_run_data(request: web.Request):
+        try:
+            run_id = request.match_info['run_id']
+            # Access DB directly via engine as a shortcut
+            steps = profiler_engine.db.get_run_steps(run_id)
+            return web.json_response({"steps": steps})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error fetching run: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+            
+    # --- NEW: Standalone Profiler View Route ---
+    @routes.get("/holaf/profiler/view")
+    async def profiler_view_route(request: web.Request):
+        return web.Response(text=PROFILER_HTML, content_type='text/html')
+
+    # --- NEW: Force MIME Type for JS ---
+    @routes.get("/holaf/profiler/app.js")
+    async def profiler_js_force_mime(request: web.Request):
+        try:
+            # FIX: Pointing to 'js/profiler/holaf_profiler.js'
+            js_path = os.path.join(os.path.dirname(__file__), "js", "profiler", "holaf_profiler.js")
+            if not os.path.exists(js_path):
+                 return web.Response(status=404, text=f"JS file not found at: {js_path}")
+            
+            with open(js_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return web.Response(text=content, content_type='application/javascript')
+        except Exception as e:
+            return web.Response(status=500, text=str(e))
+
+    # 2. Execution Hooks (Monkey Patching send_sync)
+    original_send_sync = server.PromptServer.instance.send_sync
+
+    def holaf_profiler_hook_send_sync(event, data, sid=None):
+        try:
+            if profiler_engine.is_profiling:
+                if event == 'executing':
+                    node_id = data.get('node')
+                    if node_id:
+                        if profiler_engine.current_node_id is not None:
+                            profiler_engine.on_node_end()
+                        profiler_engine.handle_execution_start(node_id)
+                    else:
+                        if profiler_engine.current_node_id is not None:
+                            profiler_engine.on_node_end()
+                        pass
+                elif event == 'execution_error':
+                    if profiler_engine.current_node_id is not None:
+                        profiler_engine.on_node_end()
+        except Exception as e:
+            print(f"🔴 [Holaf-Profiler-Hook] Error: {e}")
+            traceback.print_exc()
+        return original_send_sync(event, data, sid)
+
+    server.PromptServer.instance.send_sync = holaf_profiler_hook_send_sync
+    print("🔵 [Holaf-Init] Profiler hooks registered (send_sync patched).")
 
 # --- NEW ROUTE: Standalone Gallery View ---
 @routes.get("/holaf/view")
