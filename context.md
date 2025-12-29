@@ -63,6 +63,7 @@ When the user requests a "context update" or when a major feature is implemented
   📄 holaf_main.js : Core extension entry and menu registration.
   📄 holaf_layout_tools.js : Floating toolbar, Mouse coordinates, Graph recentering.
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
+  📄 holaf_shortcuts.js : Viewport Bookmarks (Pan/Zoom) with workflow persistence.
   📄 holaf_settings_manager.js : Global settings UI.
 
 📁 nodes/
@@ -79,7 +80,7 @@ When the user requests a "context update" or when a major feature is implemented
 ### SECTION 3: KEY CONCEPTS & LOGIC
 
 #### 1. Universal UI Position Strategy ("Ghost Position")
-*   **Logic**: Applied to `System Monitor` and `Layout Tools`. 
+*   **Logic**: Applied to `System Monitor`, `Layout Tools` and `Shortcuts`.
 *   **Persistence**: Stores an "ideal" reference position (`right`, `bottom`, `width`, `height`) in `localStorage`.
 *   **Visual Clamping**: On window resize, tools are visually pushed to stay within the viewport bounds.
 
@@ -94,17 +95,17 @@ When the user requests a "context update" or when a major feature is implemented
 #### 4. Workflow Profiler (Architecture)
 *   **Robust GPU Detection**: The engine identifies the active PyTorch device and maps its Logical Index to the NVML Physical Index, handling `CUDA_VISIBLE_DEVICES` environment variables correctly.
 *   **Smart Sync Strategy (Groups)**: Group association is calculated in the `Listener` (Main Tab) using Live Graph geometry. This mapping is transmitted to the Profiler UI via `localStorage` (primary buffer) and `BroadcastChannel`, ensuring data persists even if the backend strips custom JSON fields.
-*   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state. This allows:
-    *   **Dynamic Sorting**: Sort by ID, Name, Group, Time, VRAM, or Execution Order.
-    *   **Smart Filters**: 
-        *   `Hide Non-Executed`: Hides nodes with 0ms time *only if* at least one node has finished (prevents empty table on start).
-        *   `Smart Min Time`: Only filters finished nodes; pending nodes remain visible.
-    *   **Subgraph Logic**: Detects composite IDs (`ParentID:SubID`) to display "Parent Name > Subnode".
-    *   **Runtime Ordering**: Tracks execution sequence (1, 2, 3...) in real-time.
+*   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state. This allows dynamic sorting, smart filters, and real-time updates.
 
-#### 5. Interface Persistence & Menu Sync
+#### 5. Shortcuts (Viewport Bookmarks)
+*   **Dual Persistence**:
+    *   **Window State**: `localStorage` (Position, Size, Visibility).
+    *   **Data (Bookmarks)**: `app.graph.extra.holaf_shortcuts` (Saved inside the `.json` workflow file).
+*   **Functionality**: Captures `x`, `y`, `zoom`. Injecting these into `app.canvas.ds` triggers the view transition.
+
+#### 6. Interface Persistence & Menu Sync
 *   **Visibility State**: Tool visibility (`isVisible`) is saved in `localStorage`. Tools auto-restore their state on page reload.
-*   **Interactive Menu**: The dropdown menu features visual checkmarks (✓) for toggleable tools.
+*   **Interactive Menu**: The dropdown menu features visual checkmarks (✓) for toggleable tools (`Monitor`, `Layout`, `Shortcuts`).
 *   **State Sync**: The menu UI updates dynamically when a tool is toggled or when the menu is opened.
 
 ---
@@ -128,10 +129,8 @@ When the user requests a "context update" or when a major feature is implemented
 *   **[Stable] Image Viewer, Terminal, Node Manager, Model Manager**.
 *   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence.
 *   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
+*   **[Stable] Shortcuts**: Viewport Bookmarks, Graph-embedded data, Ghost Position.
 *   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization.
-*   **[Stable] Profiler**: 
-    *   Backend Engine: **Robust** (Smart multi-GPU targeting).
-    *   UI: **Advanced** (Real-time, Group detection via LocalStorage, Smart Filters, Runtime Ordering).
-    *   Subgraph Support: **Active**.
+*   **[Stable] Profiler**: Backend Engine (Robust), UI (Advanced), Subgraph Support (Active).
 
-**Next Priority**: Enhance Profiler visual analytics (Charts.js integration for visual timeline) or History Navigation.
+**Next Priority**: Enhance Profiler visual analytics or History Navigation.
