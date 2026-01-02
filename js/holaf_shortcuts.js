@@ -35,20 +35,18 @@ const HolafShortcuts = {
     // --- SUBGRAPH NAVIGATION LOGIC ---
 
     /**
-     * Identifie le chemin vers le subgraph actuel.
-     * Basé sur vos tests console : utilise la propriété .subgraph des nœuds.
+     * Identifie le nœud propriétaire du graphe actuel.
+     * Utilise la propriété .subgraph identifiée lors de vos tests.
      */
     getCurrentGraphPath() {
         const path = [];
         const currentGraph = app.canvas.graph;
 
-        // Si nous sommes déjà sur le graphe principal, le chemin est vide.
         if (!currentGraph || currentGraph === app.graph) {
             return path;
         }
 
-        // On cherche quel nœud dans le graphe racine possède ce sous-graphe
-        // Vos tests ont montré que n.subgraph existe sur vos nœuds.
+        // Recherche du nœud dans le graphe racine qui possède ce graphe comme .subgraph
         const ownerNode = app.graph._nodes.find(n => n.subgraph === currentGraph);
         if (ownerNode) {
             path.push(ownerNode.id);
@@ -58,62 +56,54 @@ const HolafShortcuts = {
     },
 
     /**
-     * Navigue vers le chemin spécifié.
+     * Navigue vers le chemin cible.
+     * Utilise setGraph qui est la méthode la plus stable chez vous.
      */
-    async navigateToPath(targetPath) {
-        targetPath = targetPath || [];
-        const currentPath = this.getCurrentGraphPath();
+    navigateToPath(targetPath) {
+        const isTargetRoot = !targetPath || targetPath.length === 0;
+        const currentGraph = app.canvas.graph;
 
-        // Si on est déjà dans le bon graphe, on ne fait rien
-        if (JSON.stringify(targetPath) === JSON.stringify(currentPath)) {
+        if (isTargetRoot) {
+            if (currentGraph !== app.graph) {
+                app.canvas.setGraph(app.graph);
+                return true;
+            }
             return false;
         }
 
-        console.log("[Holaf Shortcuts] Navigating to path:", targetPath);
-
-        // 1. Retour forcé à la racine (La méthode validée par votre Test 1)
-        if (app.canvas.graph !== app.graph) {
-            app.canvas.setGraph(app.graph);
-            // On laisse un court instant à LiteGraph pour mettre à jour ses références internes
-            await new Promise(r => setTimeout(r, 60));
-        }
-
-        // 2. Si le raccourci cible un subgraph, on y entre
-        if (targetPath.length > 0) {
-            for (const nodeId of targetPath) {
-                const node = app.graph.getNodeById(nodeId);
-                if (node) {
-                    // On tente d'entrer via la méthode standard, sinon fallback
-                    if (app.canvas.openSubgraph) {
-                        app.canvas.openSubgraph(node);
-                    } else if (node.onDblClick) {
-                        node.onDblClick();
-                    } else if (node.subgraph) {
-                        app.canvas.setGraph(node.subgraph);
-                    }
-                    await new Promise(r => setTimeout(r, 100));
-                }
+        // Navigation vers un subgraph (prend le premier niveau)
+        const nodeId = targetPath[0];
+        const node = app.graph.getNodeById(nodeId);
+        
+        if (node && node.subgraph) {
+            if (currentGraph !== node.subgraph) {
+                // On utilise setGraph directement sur l'instance de graphe du nœud
+                app.canvas.setGraph(node.subgraph);
+                return true;
             }
         }
-
-        return true;
+        
+        return false;
     },
 
-    async applyShortcut(id) {
+    applyShortcut(id) {
         const item = this.shortcuts.find(s => s.id === id);
         if (!item || !app.canvas || !app.canvas.ds) return;
 
-        // Navigation structurelle
-        const hasSwitched = await this.navigateToPath(item.path);
-
-        // Application de la vue
-        // Un délai est nécessaire si on a changé de graphe pour ne pas être écrasé
+        // On enveloppe la navigation dans un micro-délai pour sortir 
+        // de la pile d'événements du clic et éviter l'erreur 'inputNode'
         setTimeout(() => {
-            app.canvas.ds.offset[0] = item.x;
-            app.canvas.ds.offset[1] = item.y;
-            app.canvas.ds.scale = item.zoom;
-            app.canvas.setDirty(true, true);
-        }, hasSwitched ? 150 : 0);
+            const switched = this.navigateToPath(item.path);
+
+            // On applique la vue. Si on a changé de graphe, on attend 
+            // que le canvas se stabilise (100ms)
+            setTimeout(() => {
+                app.canvas.ds.offset[0] = item.x;
+                app.canvas.ds.offset[1] = item.y;
+                app.canvas.ds.scale = item.zoom;
+                app.canvas.setDirty(true, true);
+            }, switched ? 100 : 0);
+        }, 0);
     },
 
     // --- DATA LOGIC ---
