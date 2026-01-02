@@ -38,7 +38,6 @@ const HolafShortcuts = {
         const path = [];
         let currentGraph = app.canvas.graph;
         
-        // Traverse up using LiteGraph's subgraph_node link
         while (currentGraph && currentGraph.subgraph_node) {
             path.unshift(currentGraph.subgraph_node.id);
             currentGraph = currentGraph.subgraph_node.graph;
@@ -46,35 +45,65 @@ const HolafShortcuts = {
         return path;
     },
 
+    /**
+     * Navigates to the correct graph. Returns true if a graph switch occurred.
+     */
     navigateToPath(path) {
-        // 1. Si le chemin est vide, on s'assure juste d'être à la racine
-        if (!path || path.length === 0) {
-            if (app.canvas.graph !== app.graph) {
-                app.canvas.setGraph(app.graph);
-            }
-            return;
+        let changed = false;
+        const targetPath = path || [];
+        const currentPath = this.getCurrentGraphPath();
+
+        // Compare paths to see if we need to move
+        if (JSON.stringify(targetPath) === JSON.stringify(currentPath)) {
+            return false; 
         }
 
-        // 2. Retour forcé à la racine pour garantir un point de départ propre
+        // 1. Force return to root if path is different
         if (app.canvas.graph !== app.graph) {
             app.canvas.setGraph(app.graph);
+            changed = true;
         }
 
-        // 3. Descente dans les subgraphs
-        for (const nodeId of path) {
+        // 2. Drill down
+        for (const nodeId of targetPath) {
             const node = app.canvas.graph.getNodeById(nodeId);
             if (node) {
-                // ComfyUI / LiteGraph standard way to enter a subgraph
                 if (typeof app.canvas.openSubgraph === "function") {
                     app.canvas.openSubgraph(node);
+                    changed = true;
                 } else if (node.onDblClick) {
-                    // Fallback : simuler le double-clic si la méthode directe n'est pas exposée
                     node.onDblClick();
+                    changed = true;
                 }
             } else {
                 console.warn(`[Holaf Shortcuts] Broken path: Node ${nodeId} not found.`);
                 break;
             }
+        }
+        return changed;
+    },
+
+    applyShortcut(id) {
+        const item = this.shortcuts.find(s => s.id === id);
+        if (!item || !app.canvas || !app.canvas.ds) return;
+
+        // 1. Navigate
+        const hasSwitched = this.navigateToPath(item.path);
+
+        // 2. Apply positioning with a small delay if we switched graphs
+        // This prevents ComfyUI from overwriting our coordinates during its own initialization
+        const applyView = () => {
+            app.canvas.ds.offset[0] = item.x;
+            app.canvas.ds.offset[1] = item.y;
+            app.canvas.ds.scale = item.zoom;
+            app.canvas.setDirty(true, true);
+        };
+
+        if (hasSwitched) {
+            // Wait for 2 frames or a small timeout to let LiteGraph settle
+            setTimeout(applyView, 30); 
+        } else {
+            applyView();
         }
     },
 
@@ -144,22 +173,6 @@ const HolafShortcuts = {
             item.name = newName;
             this.syncToGraph();
         }
-    },
-
-    applyShortcut(id) {
-        const item = this.shortcuts.find(s => s.id === id);
-        if (!item || !app.canvas || !app.canvas.ds) return;
-
-        // 1. Navigation structurelle
-        this.navigateToPath(item.path);
-
-        // 2. Positionnement visuel (X, Y, Zoom)
-        // Note: On applique ça sur app.canvas.ds qui est maintenant lié au bon graphe
-        app.canvas.ds.offset[0] = item.x;
-        app.canvas.ds.offset[1] = item.y;
-        app.canvas.ds.scale = item.zoom;
-        
-        app.canvas.setDirty(true, true); 
     },
 
     // --- UI CONSTRUCTION ---
