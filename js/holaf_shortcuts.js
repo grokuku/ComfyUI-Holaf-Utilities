@@ -38,6 +38,7 @@ const HolafShortcuts = {
         const path = [];
         let currentGraph = app.canvas.graph;
         
+        // Remonte la pile des subgraphs
         while (currentGraph && currentGraph.subgraph_node) {
             path.unshift(currentGraph.subgraph_node.id);
             currentGraph = currentGraph.subgraph_node.graph;
@@ -46,65 +47,63 @@ const HolafShortcuts = {
     },
 
     /**
-     * Navigates to the correct graph. Returns true if a graph switch occurred.
+     * Navigue vers le graphe cible.
+     * Utilise les méthodes natives de ComfyUI pour mettre à jour l'UI correctement.
      */
-    navigateToPath(path) {
-        let changed = false;
-        const targetPath = path || [];
+    async navigateToPath(targetPath) {
+        targetPath = targetPath || [];
         const currentPath = this.getCurrentGraphPath();
 
-        // Compare paths to see if we need to move
+        // Si on est déjà dans le bon graphe, on ne fait rien
         if (JSON.stringify(targetPath) === JSON.stringify(currentPath)) {
-            return false; 
+            return false;
         }
 
-        // 1. Force return to root if path is different
-        if (app.canvas.graph !== app.graph) {
-            app.canvas.setGraph(app.graph);
-            changed = true;
+        console.log(`[Holaf Shortcuts] Navigating from [${currentPath}] to [${targetPath}]`);
+
+        // 1. Remonter à la racine proprement
+        // On utilise closeSubgraph() qui met à jour les breadcrumbs de ComfyUI
+        while (app.canvas.graph && app.canvas.graph.subgraph_node) {
+            app.canvas.closeSubgraph();
         }
 
-        // 2. Drill down
+        // 2. Redescendre dans les subgraphs
         for (const nodeId of targetPath) {
+            // Important: On cherche le nœud dans le graphe ACTUELLEMENT affiché
             const node = app.canvas.graph.getNodeById(nodeId);
             if (node) {
                 if (typeof app.canvas.openSubgraph === "function") {
                     app.canvas.openSubgraph(node);
-                    changed = true;
                 } else if (node.onDblClick) {
                     node.onDblClick();
-                    changed = true;
                 }
             } else {
-                console.warn(`[Holaf Shortcuts] Broken path: Node ${nodeId} not found.`);
+                console.error(`[Holaf Shortcuts] Navigation failed: Node ${nodeId} not found in current graph.`);
                 break;
             }
         }
-        return changed;
+
+        return true;
     },
 
     applyShortcut(id) {
         const item = this.shortcuts.find(s => s.id === id);
         if (!item || !app.canvas || !app.canvas.ds) return;
 
-        // 1. Navigate
-        const hasSwitched = this.navigateToPath(item.path);
-
-        // 2. Apply positioning with a small delay if we switched graphs
-        // This prevents ComfyUI from overwriting our coordinates during its own initialization
-        const applyView = () => {
-            app.canvas.ds.offset[0] = item.x;
-            app.canvas.ds.offset[1] = item.y;
-            app.canvas.ds.scale = item.zoom;
-            app.canvas.setDirty(true, true);
-        };
-
-        if (hasSwitched) {
-            // Wait for 2 frames or a small timeout to let LiteGraph settle
-            setTimeout(applyView, 30); 
-        } else {
-            applyView();
-        }
+        // Navigation structurelle
+        this.navigateToPath(item.path).then((hasSwitched) => {
+            // On applique le positionnement
+            // Si on a changé de graphe, on attend un peu plus longtemps (100ms) pour que ComfyUI stabilise sa vue
+            const delay = hasSwitched ? 100 : 0;
+            
+            setTimeout(() => {
+                app.canvas.ds.offset[0] = item.x;
+                app.canvas.ds.offset[1] = item.y;
+                app.canvas.ds.scale = item.zoom;
+                app.canvas.setDirty(true, true);
+                console.log(`[Holaf Shortcuts] View applied: x=${item.x}, y=${item.y}, zoom=${item.zoom}`);
+            }, delay);
+        });
     },
 
     // --- DATA LOGIC ---
@@ -138,6 +137,7 @@ const HolafShortcuts = {
         this.shortcuts.push({ id: newId, name, x, y, zoom, path });
         this.syncToGraph();
         this.renderList();
+        console.log(`[Holaf Shortcuts] Captured: ${name} at path [${path}]`);
     },
 
     updateShortcut(id) {
@@ -182,28 +182,17 @@ const HolafShortcuts = {
 
         this.rootElement = document.createElement("div");
         Object.assign(this.rootElement.style, {
-            display: "none",
-            position: "fixed",
-            zIndex: "1000",
-            backgroundColor: "rgba(20, 20, 20, 0.95)",
-            borderRadius: "8px",
-            border: "1px solid var(--border-color, #555)",
-            backdropFilter: "blur(4px)",
-            fontFamily: "sans-serif",
-            boxSizing: "border-box",
-            overflow: "hidden",
-            flexDirection: "column",
-            color: "#eee"
+            display: "none", position: "fixed", zIndex: "1000",
+            backgroundColor: "rgba(20, 20, 20, 0.95)", borderRadius: "8px",
+            border: "1px solid var(--border-color, #555)", backdropFilter: "blur(4px)",
+            fontFamily: "sans-serif", boxSizing: "border-box", overflow: "hidden",
+            flexDirection: "column", color: "#eee"
         });
 
         const header = document.createElement("div");
         Object.assign(header.style, {
-            flex: "0 0 auto",
-            display: "flex",
-            alignItems: "center",
-            padding: "8px",
-            backgroundColor: "rgba(255,255,255,0.05)",
-            borderBottom: "1px solid #444",
+            flex: "0 0 auto", display: "flex", alignItems: "center", padding: "8px",
+            backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid #444",
             cursor: "move" 
         });
         
@@ -225,17 +214,13 @@ const HolafShortcuts = {
 
         this.listElement = document.createElement("div");
         Object.assign(this.listElement.style, {
-            flex: "1",
-            overflowY: "auto",
-            padding: "5px"
+            flex: "1", overflowY: "auto", padding: "5px"
         });
 
         this.createResizeHandle();
-
         this.rootElement.appendChild(header);
         this.rootElement.appendChild(this.listElement);
         this.rootElement.appendChild(this.resizeHandle); 
-        
         document.body.appendChild(this.rootElement);
 
         this.enableWindowDragging(header);
@@ -264,7 +249,7 @@ const HolafShortcuts = {
             
             const isDeep = s.path && s.path.length > 0;
             if (isDeep) {
-                nameLabel.title = `Deep View (${s.path.length} levels)`;
+                nameLabel.title = `Subgraph View (${s.path.length} levels)`;
                 nameLabel.innerHTML = `<small style="color:var(--holaf-accent-color, #ff8c00); margin-right:4px;">📂</small>${s.name}`;
             }
 
@@ -277,15 +262,12 @@ const HolafShortcuts = {
                 nameLabel.contentEditable = true;
                 nameLabel.focus();
                 document.execCommand('selectAll', false, null);
-                
                 const finishEdit = () => {
                     nameLabel.contentEditable = false;
                     this.renameShortcut(s.id, nameLabel.innerText);
                 };
                 nameLabel.onblur = finishEdit;
-                nameLabel.onkeydown = (e) => {
-                    if (e.key === "Enter") { e.preventDefault(); nameLabel.blur(); }
-                };
+                nameLabel.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); nameLabel.blur(); } };
             };
 
             const btnStyle = {
@@ -295,14 +277,12 @@ const HolafShortcuts = {
 
             const updateBtn = document.createElement("button");
             updateBtn.innerHTML = "💾"; 
-            updateBtn.title = "Update with current view";
             updateBtn.className = "update-btn";
             Object.assign(updateBtn.style, btnStyle);
             updateBtn.onclick = (e) => { e.stopPropagation(); this.updateShortcut(s.id); };
 
             const delBtn = document.createElement("button");
             delBtn.innerHTML = "✕";
-            delBtn.title = "Delete";
             Object.assign(delBtn.style, btnStyle);
             delBtn.onmouseenter = () => delBtn.style.color = "#ff5555";
             delBtn.onmouseleave = () => delBtn.style.color = "#888";
@@ -317,52 +297,33 @@ const HolafShortcuts = {
 
     updateVisualPosition() {
         if (!this.rootElement) return;
-
         this.rootElement.style.width = this.storedPos.width + "px";
         this.rootElement.style.height = this.storedPos.height + "px";
-
         const maxRight = window.innerWidth - this.storedPos.width;
         const maxBottom = window.innerHeight - this.storedPos.height;
-
         const visualRight = Math.max(0, Math.min(this.storedPos.right, maxRight));
         const visualBottom = Math.max(0, Math.min(this.storedPos.bottom, maxBottom));
-
-        Object.assign(this.rootElement.style, {
-            left: "auto", top: "auto",
-            right: visualRight + "px",
-            bottom: visualBottom + "px"
-        });
+        Object.assign(this.rootElement.style, { left: "auto", top: "auto", right: visualRight + "px", bottom: visualBottom + "px" });
     },
 
     enableWindowDragging(dragTarget) {
         let isDragging = false;
         let startX, startY, dragStartRight, dragStartBottom;
-
         dragTarget.addEventListener('mousedown', (e) => {
             if (e.target.tagName === "BUTTON") return;
-            
             isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            
+            startX = e.clientX; startY = e.clientY;
             const rect = this.rootElement.getBoundingClientRect();
             dragStartRight = window.innerWidth - rect.right;
             dragStartBottom = window.innerHeight - rect.bottom;
-            
             this.rootElement.style.cursor = "move";
             e.preventDefault();
-            
             const onMouseMove = (ev) => {
                 if (!isDragging) return;
-                const dx = ev.clientX - startX;
-                const dy = ev.clientY - startY;
-
-                this.storedPos.right = dragStartRight - dx;
-                this.storedPos.bottom = dragStartBottom - dy;
-
+                this.storedPos.right = dragStartRight - (ev.clientX - startX);
+                this.storedPos.bottom = dragStartBottom - (ev.clientY - startY);
                 this.updateVisualPosition();
             };
-
             const onMouseUp = () => {
                 if (isDragging) {
                     isDragging = false;
@@ -372,7 +333,6 @@ const HolafShortcuts = {
                     this.saveState(); 
                 }
             };
-
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -380,47 +340,27 @@ const HolafShortcuts = {
 
     createResizeHandle() {
         this.resizeHandle = document.createElement("div");
-        Object.assign(this.resizeHandle.style, {
-            position: "absolute", bottom: "0", right: "0",
-            width: "15px", height: "15px", cursor: "nwse-resize",
-            zIndex: "20"
-        });
+        Object.assign(this.resizeHandle.style, { position: "absolute", bottom: "0", right: "0", width: "15px", height: "15px", cursor: "nwse-resize", zIndex: "20" });
         this.resizeHandle.innerHTML = `<svg viewBox="0 0 24 24" style="width:100%; height:100%; fill:rgba(255,255,255,0.3);"><path d="M22 22H12v-2h10v-10h2v12z"/></svg>`;
-
         let isResizing = false;
         let startX, startY, startW, startH, startRight, startBottom;
-
         this.resizeHandle.addEventListener('mousedown', (e) => {
-            e.stopPropagation(); 
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            
+            e.stopPropagation(); isResizing = true;
+            startX = e.clientX; startY = e.clientY;
             const rect = this.rootElement.getBoundingClientRect();
-            startW = rect.width;
-            startH = rect.height;
+            startW = rect.width; startH = rect.height;
             startRight = window.innerWidth - rect.right;
             startBottom = window.innerHeight - rect.bottom;
-
             e.preventDefault();
-
             const onMouseMove = (ev) => {
                 if (!isResizing) return;
-                const dx = ev.clientX - startX; 
-                const dy = ev.clientY - startY;
-                
-                const newW = Math.max(150, startW + dx);
-                const newH = Math.max(100, startH + dy);
-
-                this.storedPos.width = newW;
-                this.storedPos.height = newH;
-                
+                const newW = Math.max(150, startW + (ev.clientX - startX));
+                const newH = Math.max(100, startH + (ev.clientY - startY));
+                this.storedPos.width = newW; this.storedPos.height = newH;
                 this.storedPos.right = startRight - (newW - startW);
                 this.storedPos.bottom = startBottom - (newH - startH);
-                
                 this.updateVisualPosition();
             };
-
             const onMouseUp = () => {
                 if (isResizing) {
                     isResizing = false;
@@ -429,7 +369,6 @@ const HolafShortcuts = {
                     this.saveState(); 
                 }
             };
-
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -437,23 +376,15 @@ const HolafShortcuts = {
 
     saveState() {
         if (!this.rootElement) return;
-        const state = { 
-            ...this.storedPos,
-            isVisible: this.isVisible
-        };
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify({ ...this.storedPos, isVisible: this.isVisible }));
     },
 
     restoreState() {
         try {
-            const saved = localStorage.getItem(this.STORAGE_KEY);
+            const saved = JSON.parse(localStorage.getItem(this.STORAGE_KEY));
             if (saved) {
-                const state = JSON.parse(saved);
-                this.storedPos.right = state.right ?? 20;
-                this.storedPos.bottom = state.bottom ?? 300;
-                this.storedPos.width = state.width ?? 200;
-                this.storedPos.height = state.height ?? 250;
-                this.isVisible = !!state.isVisible;
+                Object.assign(this.storedPos, saved);
+                this.isVisible = !!saved.isVisible;
             }
         } catch (e) {}
     },
@@ -484,7 +415,6 @@ app.registerExtension({
     async setup() {
         HolafShortcuts.init();
         app.holafShortcuts = HolafShortcuts;
-        
         api.addEventListener("graph-cleared", () => {
             HolafShortcuts.shortcuts = [];
             HolafShortcuts.renderList();
