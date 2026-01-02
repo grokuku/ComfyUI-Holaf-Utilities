@@ -35,29 +35,32 @@ const HolafShortcuts = {
     // --- SUBGRAPH NAVIGATION LOGIC ---
 
     /**
-     * Identifie le nœud propriétaire du graphe actuel.
-     * Utilise la propriété .subgraph identifiée lors de vos tests.
+     * Recherche récursive pour trouver le chemin d'un graphe.
      */
+    findPathToGraph(targetGraph, currentGraph, currentPath = []) {
+        if (targetGraph === currentGraph) return currentPath;
+        if (!currentGraph || !currentGraph._nodes) return null;
+
+        for (const node of currentGraph._nodes) {
+            if (node.subgraph) {
+                const foundPath = this.findPathToGraph(targetGraph, node.subgraph, [...currentPath, node.id]);
+                if (foundPath) return foundPath;
+            }
+        }
+        return null;
+    },
+
     getCurrentGraphPath() {
-        const path = [];
         const currentGraph = app.canvas.graph;
-
         if (!currentGraph || currentGraph === app.graph) {
-            return path;
+            return [];
         }
-
-        // Recherche du nœud dans le graphe racine qui possède ce graphe comme .subgraph
-        const ownerNode = app.graph._nodes.find(n => n.subgraph === currentGraph);
-        if (ownerNode) {
-            path.push(ownerNode.id);
-        }
-        
-        return path;
+        // On cherche récursivement le chemin depuis la racine
+        return this.findPathToGraph(currentGraph, app.graph) || [];
     },
 
     /**
-     * Navigue vers le chemin cible.
-     * Utilise setGraph qui est la méthode la plus stable chez vous.
+     * Navigue vers le chemin cible (supporte n niveaux).
      */
     navigateToPath(targetPath) {
         const isTargetRoot = !targetPath || targetPath.length === 0;
@@ -71,16 +74,21 @@ const HolafShortcuts = {
             return false;
         }
 
-        // Navigation vers un subgraph (prend le premier niveau)
-        const nodeId = targetPath[0];
-        const node = app.graph.getNodeById(nodeId);
-        
-        if (node && node.subgraph) {
-            if (currentGraph !== node.subgraph) {
-                // On utilise setGraph directement sur l'instance de graphe du nœud
-                app.canvas.setGraph(node.subgraph);
-                return true;
+        // On descend dans la hiérarchie pour trouver le graphe final
+        let targetLevelGraph = app.graph;
+        for (const nodeId of targetPath) {
+            const node = targetLevelGraph.getNodeById(nodeId);
+            if (node && node.subgraph) {
+                targetLevelGraph = node.subgraph;
+            } else {
+                // Chemin cassé
+                return false;
             }
+        }
+
+        if (currentGraph !== targetLevelGraph) {
+            app.canvas.setGraph(targetLevelGraph);
+            return true;
         }
         
         return false;
@@ -90,13 +98,11 @@ const HolafShortcuts = {
         const item = this.shortcuts.find(s => s.id === id);
         if (!item || !app.canvas || !app.canvas.ds) return;
 
-        // On enveloppe la navigation dans un micro-délai pour sortir 
-        // de la pile d'événements du clic et éviter l'erreur 'inputNode'
+        // Délai pour éviter les conflits d'événements souris
         setTimeout(() => {
             const switched = this.navigateToPath(item.path);
 
-            // On applique la vue. Si on a changé de graphe, on attend 
-            // que le canvas se stabilise (100ms)
+            // Positionnement
             setTimeout(() => {
                 app.canvas.ds.offset[0] = item.x;
                 app.canvas.ds.offset[1] = item.y;
@@ -265,7 +271,7 @@ const HolafShortcuts = {
             
             const isDeep = s.path && s.path.length > 0;
             if (isDeep) {
-                nameLabel.title = `Subgraph View`;
+                nameLabel.title = `Subgraph View (${s.path.length} level(s))`;
                 nameLabel.innerHTML = `<small style="color:var(--holaf-accent-color, #ff8c00); margin-right:4px;">📂</small>${s.name}`;
             }
 
