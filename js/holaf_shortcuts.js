@@ -11,7 +11,7 @@ const HolafShortcuts = {
     // --- Data State ---
     shortcuts: [], 
 
-    // --- Window State (Ghost Position Logic) ---
+    // --- Window State ---
     storedPos: {
         right: 20,
         bottom: 300, 
@@ -32,13 +32,21 @@ const HolafShortcuts = {
         }
     },
 
-    // --- SUBGRAPH NAVIGATION LOGIC ---
+    // --- SUBGRAPH NAVIGATION ENGINE ---
 
+    /**
+     * Small helper for async delays
+     */
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    },
+
+    /**
+     * Gets the path of node IDs from root to current view.
+     */
     getCurrentGraphPath() {
         const path = [];
         let currentGraph = app.canvas.graph;
-        
-        // Remonte la pile des subgraphs
         while (currentGraph && currentGraph.subgraph_node) {
             path.unshift(currentGraph.subgraph_node.id);
             currentGraph = currentGraph.subgraph_node.graph;
@@ -47,63 +55,66 @@ const HolafShortcuts = {
     },
 
     /**
-     * Navigue vers le graphe cible.
-     * Utilise les méthodes natives de ComfyUI pour mettre à jour l'UI correctement.
+     * Robust navigation: Closes all, then drills down level by level with delays.
      */
     async navigateToPath(targetPath) {
         targetPath = targetPath || [];
         const currentPath = this.getCurrentGraphPath();
 
-        // Si on est déjà dans le bon graphe, on ne fait rien
+        // If paths are identical, no need to navigate
         if (JSON.stringify(targetPath) === JSON.stringify(currentPath)) {
             return false;
         }
 
-        console.log(`[Holaf Shortcuts] Navigating from [${currentPath}] to [${targetPath}]`);
+        console.log(`[Holaf Shortcuts] Start Navigation: [${currentPath}] -> [${targetPath}]`);
 
-        // 1. Remonter à la racine proprement
-        // On utilise closeSubgraph() qui met à jour les breadcrumbs de ComfyUI
+        // 1. Return to root
+        // We use closeSubgraph because it updates ComfyUI's breadcrumbs and internal stack.
         while (app.canvas.graph && app.canvas.graph.subgraph_node) {
             app.canvas.closeSubgraph();
+            await this.sleep(20); // Small breath for UI
         }
 
-        // 2. Redescendre dans les subgraphs
-        for (const nodeId of targetPath) {
-            // Important: On cherche le nœud dans le graphe ACTUELLEMENT affiché
-            const node = app.canvas.graph.getNodeById(nodeId);
-            if (node) {
-                if (typeof app.canvas.openSubgraph === "function") {
-                    app.canvas.openSubgraph(node);
-                } else if (node.onDblClick) {
-                    node.onDblClick();
+        // 2. Drill down
+        if (targetPath.length > 0) {
+            for (const nodeId of targetPath) {
+                // Find node in the CURRENTLY visible graph
+                const node = app.canvas.graph.getNodeById(nodeId);
+                if (node) {
+                    if (typeof app.canvas.openSubgraph === "function") {
+                        app.canvas.openSubgraph(node);
+                    } else if (node.onDblClick) {
+                        node.onDblClick();
+                    }
+                    // Wait for the graph instance to switch and stabilize
+                    await this.sleep(50);
+                } else {
+                    console.error(`[Holaf Shortcuts] Navigation break: Node ${nodeId} not found in current graph.`);
+                    break;
                 }
-            } else {
-                console.error(`[Holaf Shortcuts] Navigation failed: Node ${nodeId} not found in current graph.`);
-                break;
             }
         }
 
         return true;
     },
 
-    applyShortcut(id) {
+    async applyShortcut(id) {
         const item = this.shortcuts.find(s => s.id === id);
         if (!item || !app.canvas || !app.canvas.ds) return;
 
-        // Navigation structurelle
-        this.navigateToPath(item.path).then((hasSwitched) => {
-            // On applique le positionnement
-            // Si on a changé de graphe, on attend un peu plus longtemps (100ms) pour que ComfyUI stabilise sa vue
-            const delay = hasSwitched ? 100 : 0;
-            
-            setTimeout(() => {
-                app.canvas.ds.offset[0] = item.x;
-                app.canvas.ds.offset[1] = item.y;
-                app.canvas.ds.scale = item.zoom;
-                app.canvas.setDirty(true, true);
-                console.log(`[Holaf Shortcuts] View applied: x=${item.x}, y=${item.y}, zoom=${item.zoom}`);
-            }, delay);
-        });
+        // Execute navigation and wait for it to finish
+        const hasSwitched = await this.navigateToPath(item.path);
+
+        // Final view application
+        // Even if we didn't switch, a small delay ensures no other event is overwriting us
+        await this.sleep(hasSwitched ? 100 : 20);
+
+        app.canvas.ds.offset[0] = item.x;
+        app.canvas.ds.offset[1] = item.y;
+        app.canvas.ds.scale = item.zoom;
+        app.canvas.setDirty(true, true);
+        
+        console.log(`[Holaf Shortcuts] Applied View in ${item.path.length > 0 ? 'subgraph' : 'root'}`);
     },
 
     // --- DATA LOGIC ---
@@ -137,7 +148,6 @@ const HolafShortcuts = {
         this.shortcuts.push({ id: newId, name, x, y, zoom, path });
         this.syncToGraph();
         this.renderList();
-        console.log(`[Holaf Shortcuts] Captured: ${name} at path [${path}]`);
     },
 
     updateShortcut(id) {
@@ -249,7 +259,7 @@ const HolafShortcuts = {
             
             const isDeep = s.path && s.path.length > 0;
             if (isDeep) {
-                nameLabel.title = `Subgraph View (${s.path.length} levels)`;
+                nameLabel.title = `In Subgraph (${s.path.length} levels)`;
                 nameLabel.innerHTML = `<small style="color:var(--holaf-accent-color, #ff8c00); margin-right:4px;">📂</small>${s.name}`;
             }
 
