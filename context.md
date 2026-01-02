@@ -60,7 +60,7 @@ When the user requests a "context update" or when a major feature is implemented
   📁 profiler/
     📄 holaf_profiler.js : UI Logic. State-driven table rendering, Smart Filters (Non-Executed), Sorting, Metrics display.
     📄 holaf_profiler_listener.js : Main tab logic. Calculates Group geometry using Live Graph, syncs context via API, Bridge, and LocalStorage.
-  📄 holaf_main.js : Core extension entry and menu registration.
+  📄 holaf_main.js : Core extension entry. Handles Menu registration (Static Dropdown) and **Compact Menu Mode logic**.
   📄 holaf_layout_tools.js : Floating toolbar, Mouse coordinates, Graph recentering.
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
   📄 holaf_shortcuts.js : Viewport Bookmarks (Pan/Zoom) with Nested Subgraph Navigation.
@@ -112,6 +112,11 @@ When the user requests a "context update" or when a major feature is implemented
 *   **Interactive Menu**: The dropdown menu features visual checkmarks (✓) for toggleable tools (`Monitor`, `Layout`, `Shortcuts`).
 *   **State Sync**: The menu UI updates dynamically when a tool is toggled or when the menu is opened.
 
+#### 7. Compact Menu Strategy
+*   **Goal**: Merges the Tab Bar (Top) and the Action Bar (Menu) into a single row to save vertical space.
+*   **Implementation**: Uses a flexbox wrapper strategy. The Tab container is set to `min-width: 0` to allow shrinking, while the Menu is set to `flex-shrink: 0`.
+*   **Restoration**: A DOM Comment Placeholder (`holaf-menu-placeholder`) is inserted when compact mode is active. This ensures the menu returns to its exact original DOM position (relative to other elements like Breadcrumbs) when deactivated.
+
 ---
 
 ### SECTION 4: DATABASE SCHEMAS
@@ -134,7 +139,7 @@ When the user requests a "context update" or when a major feature is implemented
 *   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence.
 *   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
 *   **[Stable] Shortcuts**: Nested Subgraph support, Viewport Bookmarks, Graph-embedded data, Ghost Position.
-*   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization.
+*   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization, **Compact Mode**.
 *   **[Stable] Profiler**: Backend Engine (Robust), UI (Advanced), Subgraph Support (Active).
 
 **Next Priority**: Enhance Profiler visual analytics or History Navigation.
