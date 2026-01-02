@@ -1,7 +1,6 @@
 import { app } from "../../../scripts/app.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 
-// CORRECTED: Import themes first to ensure it's available for all other modules.
 import "./holaf_themes.js";
 import "./holaf_terminal.js";
 import "./holaf_model_manager.js";
@@ -17,21 +16,17 @@ import "./holaf_shortcuts.js";
  */
 const HolafModal = {
     show(title, message, onConfirm, confirmText = "Confirm", cancelText = "Cancel") {
-        // Remove existing modal if any
         const existingModal = document.getElementById("holaf-modal-overlay");
         if (existingModal) existingModal.remove();
 
-        // Create overlay
         const overlay = document.createElement("div");
         overlay.id = "holaf-modal-overlay";
 
-        // Use the current theme for the modal
         const currentTheme = document.body.className.match(/holaf-theme-\S+/)?.[0] || 'holaf-theme-graphite-orange';
 
-        // Create dialog
         const dialog = document.createElement("div");
         dialog.id = "holaf-modal-dialog";
-        dialog.className = currentTheme; // Apply theme
+        dialog.className = currentTheme;
         dialog.innerHTML = `
             <div class="holaf-utility-header">
                 <span>${title}</span>
@@ -45,7 +40,6 @@ const HolafModal = {
             </div>
         `;
 
-        // Hide cancel button if text is null or empty
         if (!cancelText) {
             dialog.querySelector("#holaf-modal-cancel").style.display = "none";
         }
@@ -54,7 +48,6 @@ const HolafModal = {
         document.body.appendChild(overlay);
 
         const closeModal = () => {
-            // Clean up any intervals that might have been created by a process within the modal
             if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
             if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
             delete window.holaf.restartMonitorInterval;
@@ -64,11 +57,7 @@ const HolafModal = {
 
         document.getElementById("holaf-modal-confirm").onclick = () => {
             if (onConfirm) {
-                // If the confirm handler returns exactly false, we keep the modal open.
-                // This allows the handler to take control of the modal's lifecycle.
-                if (onConfirm() === false) {
-                    return;
-                }
+                if (onConfirm() === false) return;
             }
             closeModal();
         };
@@ -84,29 +73,35 @@ const HolafModal = {
 
 
 const HolafUtilitiesMenu = {
-    dropdownMenuEl: null, // Référence au menu déroulant
+    dropdownMenuEl: null,
+    isCompactMode: false, // State for the Compact Menu feature
 
     init() {
         this.loadSharedCss();
-        this.initBridgeListener(); // [NEW] Start listening for Profiler commands
+        this.initBridgeListener();
 
-        // --- [FIX] Ensure a default theme is present on the body ---
+        // --- Check for Compact Mode preference immediately ---
+        this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
+        // Attempt to apply it. Since DOM might not be fully ready, we might need a small delay or retry,
+        // but typically init() is called after setup() which is reasonably late.
+        if (this.isCompactMode) {
+            // Give a tiny delay to ensure ComfyUI elements (tabs) are rendered
+            setTimeout(() => this.toggleCompactMode(true), 500);
+        }
+
         if (!document.body.className.includes("holaf-theme-")) {
             document.body.classList.add("holaf-theme-graphite-orange");
             console.log("[Holaf Main] Applied default fallback theme to body.");
         }
-        // --- [END FIX] ---
 
-        // --- NEW: Initialize global Holaf namespace and Toast Manager ---
         if (!window.holaf) {
             window.holaf = {};
         }
         window.holaf.toastManager = new HolafToastManager();
-        // --- END NEW ---
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
         if (menuContainer) {
-            return; // Already initialized
+            return; 
         }
 
         menuContainer = document.createElement("div");
@@ -119,19 +114,18 @@ const HolafUtilitiesMenu = {
         mainButton.id = "holaf-utilities-menu-button";
         mainButton.textContent = "Holaf's Utilities";
 
-        // --- Create the static, full dropdown menu from the start ---
         this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
-        this.dropdownMenuEl.style.display = 'none'; // Hidden by default
+        this.dropdownMenuEl.style.display = 'none';
 
-        // Define all menu items statically
         const menuItems = [
             { label: "Terminal", handlerName: "holafTerminal" },
             { label: "Model Manager", handlerName: "holafModelManager" },
             { label: "Custom Nodes Manager", handlerName: "holafNodesManager" },
             { label: "Image Viewer", handlerName: "holafImageViewer" },
-            // [NEW] Workflow Profiler Entry
             { label: "Workflow Profiler", special: "profiler_standalone" },
+            { type: 'separator' },
+            { label: "Compact Menu Bar", special: "toggle_compact_menu" }, // [NEW ITEM]
             { type: 'separator' },
             { label: "Toggle Monitor", special: "toggle_monitor" },
             { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
@@ -150,11 +144,10 @@ const HolafUtilitiesMenu = {
                 separator.style.margin = "5px 0";
                 separator.style.padding = "0";
                 this.dropdownMenuEl.appendChild(separator);
-                return; // Continue to next item
+                return;
             }
 
             const menuItem = document.createElement("li");
-            // Use flexbox for the menu item to align label and checkbox
             menuItem.style.display = "flex";
             menuItem.style.justifyContent = "space-between";
             menuItem.style.alignItems = "center";
@@ -163,9 +156,9 @@ const HolafUtilitiesMenu = {
             labelSpan.textContent = itemInfo.label;
             menuItem.appendChild(labelSpan);
 
-            // Add Checkbox if it's a toggleable item
+            // Add Checkbox for toggleable items
             let checkbox = null;
-            if (["toggle_monitor", "toggle_layout_tools", "toggle_shortcuts"].includes(itemInfo.special)) {
+            if (["toggle_monitor", "toggle_layout_tools", "toggle_shortcuts", "toggle_compact_menu"].includes(itemInfo.special)) {
                 checkbox = document.createElement("div");
                 Object.assign(checkbox.style, {
                     width: "12px",
@@ -192,19 +185,21 @@ const HolafUtilitiesMenu = {
                     isActive = window.holaf?.layoutTools?.isVisible;
                 } else if (itemInfo.special === "toggle_shortcuts") {
                     isActive = app.holafShortcuts?.isVisible;
+                } else if (itemInfo.special === "toggle_compact_menu") {
+                    isActive = this.isCompactMode;
                 }
                 checkbox.innerHTML = isActive ? "✓" : "";
                 checkbox.style.borderColor = isActive ? "var(--holaf-accent-color, #ff8c00)" : "var(--border-color, #888)";
             };
 
-            // Initial update
             setTimeout(updateCheckboxUI, 50);
 
             menuItem.onclick = (e) => {
-                // Handle special actions first
+                // Handle restart
                 if (itemInfo.special === 'restart') {
-                    // Prepare the full HTML structure from the start to avoid resizing
-                    const restartDialogContent = `
+                     // ... (Code Restart inchangé, voir plus bas pour brièveté si besoin, 
+                     // mais je garde tout pour le copier-coller)
+                     const restartDialogContent = `
                         <div>
                             <p id="holaf-restart-message">Are you sure you want to restart the ComfyUI server?</p>
                             <p id="holaf-restart-timer-line" style="visibility: hidden; margin-top: 10px; height: 1.2em;">
@@ -214,19 +209,16 @@ const HolafUtilitiesMenu = {
                     `;
 
                     HolafModal.show("Restart ComfyUI", restartDialogContent, () => {
-                        // --- Stage 1: Transform the modal ---
                         const dialog = document.getElementById("holaf-modal-dialog");
-                        if (!dialog) return; // Should not happen
+                        if (!dialog) return;
 
                         const messageEl = document.getElementById("holaf-restart-message");
                         const timerLineEl = document.getElementById("holaf-restart-timer-line");
 
-                        // Update texts and visibility
                         dialog.querySelector(".holaf-utility-header span").textContent = "Restarting Server";
                         messageEl.textContent = "Sending restart command...";
                         timerLineEl.style.visibility = "visible";
 
-                        // Update footer
                         dialog.querySelector(".holaf-modal-footer").innerHTML = `
                             <button id="holaf-restart-close-btn" class="comfy-button secondary">Close</button>
                             <button id="holaf-restart-refresh-btn" class="comfy-button" disabled>Refresh</button>
@@ -243,7 +235,6 @@ const HolafUtilitiesMenu = {
 
                         dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
 
-                        // --- Stage 2: Send command and start monitoring ---
                         console.log("[Holaf Utilities] Sending restart request...");
                         fetch("/holaf/utilities/restart", { method: 'POST' })
                             .then(res => res.json())
@@ -252,7 +243,7 @@ const HolafUtilitiesMenu = {
 
                                 const timerEl = document.getElementById("holaf-restart-timer");
                                 const refreshBtn = document.getElementById("holaf-restart-refresh-btn");
-                                if (!messageEl || !timerEl || !refreshBtn) return; // Dialog was closed
+                                if (!messageEl || !timerEl || !refreshBtn) return;
 
                                 messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
 
@@ -264,12 +255,10 @@ const HolafUtilitiesMenu = {
 
                                 let serverIsDown = false;
                                 const checkServerStatus = () => {
-                                    // --- [FIX] Removed 'no-cors' to inspect response. Added explicit status check.
                                     fetch(window.location.origin, { method: 'HEAD', cache: 'no-cache' })
                                         .then(response => {
-                                            if (response.ok) { // Check for 2xx status codes
+                                            if (response.ok) {
                                                 if (serverIsDown) {
-                                                    // --- Stage 3: Server is back online ---
                                                     clearInterval(window.holaf.restartMonitorInterval);
                                                     clearInterval(window.holaf.restartTimerInterval);
                                                     delete window.holaf.restartMonitorInterval;
@@ -278,15 +267,13 @@ const HolafUtilitiesMenu = {
                                                     if (!messageEl || !refreshBtn) return;
 
                                                     messageEl.innerHTML = `✅ Server has rebooted successfully in <strong>${seconds}</strong> seconds.`;
-                                                    if (timerLineEl) timerLineEl.style.visibility = "hidden"; // Hide timer line on success
+                                                    if (timerLineEl) timerLineEl.style.visibility = "hidden";
                                                     refreshBtn.textContent = "Refresh Page";
                                                     refreshBtn.disabled = false;
                                                     refreshBtn.onclick = () => location.reload();
                                                     refreshBtn.focus();
                                                 }
                                             } else {
-                                                // Server is up but returning an error (e.g., 502 from proxy)
-                                                // Treat this as the server being down.
                                                 if (!serverIsDown) {
                                                     console.log(`[Holaf Utilities] Server is responding with error ${response.status}. Treating as offline.`);
                                                     if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
@@ -295,7 +282,6 @@ const HolafUtilitiesMenu = {
                                             }
                                         })
                                         .catch(() => {
-                                            // This catches network errors (server truly unreachable)
                                             if (!serverIsDown) {
                                                 console.log("[Holaf Utilities] Server is now offline (network error). Waiting for it to come back online.");
                                                 if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
@@ -311,47 +297,53 @@ const HolafUtilitiesMenu = {
                                 dialog.querySelector(".holaf-modal-content").innerHTML = `<p style="color:var(--holaf-error-text,red);">Failed to send restart command to the server: ${err.message}.</p>`;
                                 dialog.querySelector("#holaf-restart-refresh-btn").disabled = true;
                             });
-
-                        // Return false to prevent the modal from closing automatically.
                         return false;
                     });
-                } else if (itemInfo.special === "toggle_monitor") {
+                } 
+                // Toggle Monitor
+                else if (itemInfo.special === "toggle_monitor") {
                     const monitor = app.holafSystemMonitor;
                     if (monitor && typeof monitor.toggle === "function") {
                         monitor.toggle();
                         updateCheckboxUI();
-                    } else {
-                        console.error("[Holaf Utilities] HolafSystemMonitor is not available.");
-                        HolafModal.show("Error", "System Monitor module not loaded.", () => { }, "OK", null);
                     }
-                } else if (itemInfo.special === "toggle_layout_tools") {
+                } 
+                // Toggle Layout Tools
+                else if (itemInfo.special === "toggle_layout_tools") {
                     if (window.holaf && window.holaf.layoutTools) {
                         window.holaf.layoutTools.toggle();
                         updateCheckboxUI();
-                    } else {
-                        console.warn("[Holaf Utilities] Layout Tools module not loaded yet.");
                     }
-                } else if (itemInfo.special === "toggle_shortcuts") {
+                } 
+                // Toggle Shortcuts
+                else if (itemInfo.special === "toggle_shortcuts") {
                     if (app.holafShortcuts && typeof app.holafShortcuts.toggle === "function") {
                         app.holafShortcuts.toggle();
                         updateCheckboxUI();
-                    } else {
-                         console.warn("[Holaf Utilities] Shortcuts module not loaded yet.");
                     }
-                } else if (itemInfo.special === "profiler_standalone") {
-                    // Open Profiler in new tab
+                } 
+                // [NEW] Toggle Compact Menu
+                else if (itemInfo.special === "toggle_compact_menu") {
+                    const newState = !this.isCompactMode;
+                    this.isCompactMode = newState;
+                    localStorage.setItem("Holaf_CompactMenu", newState);
+                    this.toggleCompactMode(newState);
+                    updateCheckboxUI();
+                }
+                // Open Profiler
+                else if (itemInfo.special === "profiler_standalone") {
                     window.open('/holaf/profiler/view', '_blank');
-                } else {
-                    // Handle standard panel opening
+                } 
+                // Standard Panels
+                else {
                     const handler = app[itemInfo.handlerName];
                     if (handler && typeof handler.show === 'function') {
                         handler.show();
                     } else {
-                        console.error(`[Holaf Utilities] Handler for "${itemInfo.label}" (app.${itemInfo.handlerName}) is not available or has no .show() method.`);
+                        console.error(`[Holaf Utilities] Handler for "${itemInfo.label}" not available.`);
                         HolafModal.show("Not Implemented", `The panel for "${itemInfo.label}" is not available yet.`, () => { }, "OK", null);
                     }
                 }
-                // Only hide dropdown for non-toggle items to allow seeing the checkmark change
                 if (!checkbox) {
                     this.hideDropdown();
                 }
@@ -367,7 +359,6 @@ const HolafUtilitiesMenu = {
                 this.hideDropdown();
             } else {
                 this.showDropdown(mainButton);
-                // Refresh checkboxes when menu opens to ensure sync
                 this.dropdownMenuEl.querySelectorAll('li').forEach(li => {
                     const check = li.querySelector('div');
                     const text = li.textContent;
@@ -376,6 +367,7 @@ const HolafUtilitiesMenu = {
                         if (text.includes("Monitor")) isActive = app.holafSystemMonitor?.isVisible;
                         else if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
                         else if (text.includes("Shortcuts")) isActive = app.holafShortcuts?.isVisible;
+                        else if (text.includes("Compact Menu")) isActive = this.isCompactMode; // Update check
                         
                         check.innerHTML = isActive ? "✓" : "";
                         check.style.borderColor = isActive ? "var(--holaf-accent-color, #ff8c00)" : "var(--border-color, #888)";
@@ -398,7 +390,7 @@ const HolafUtilitiesMenu = {
         if (settingsButton) {
             settingsButton.before(menuContainer);
         } else {
-            console.error("[Holaf Utilities] Could not find settings button to anchor Utilities menu.");
+            console.error("[Holaf Utilities] Could not find settings button.");
             const comfyMenu = document.querySelector(".comfy-menu");
             if (comfyMenu) {
                 comfyMenu.append(menuContainer);
@@ -410,43 +402,94 @@ const HolafUtilitiesMenu = {
         console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
-    // [NEW] BRIDGE LISTENER: Responds to requests from other tabs (Profiler, Gallery)
     initBridgeListener() {
         const bc = new BroadcastChannel('holaf_channel');
         bc.onmessage = async (event) => {
             const { command, data } = event.data;
-            
             if (command === 'get_workflow_for_profiler') {
-                console.log("[Holaf Bridge] Received workflow request from Profiler.");
                 try {
-                    // Serialize current graph
                     const workflowData = await app.graphToPrompt(); 
-                    
                     const visualGraph = app.graph.serialize();
-                    
-                    // Send to backend
                     await fetch('/holaf/profiler/update-context', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(visualGraph)
                     });
-                    
                     window.holaf.toastManager.show("Workflow synced with Profiler.", "success");
-                    
                 } catch(e) {
                     console.error("[Holaf Bridge] Error syncing workflow:", e);
                     window.holaf.toastManager.show("Error syncing workflow.", "error");
                 }
             }
-            // Add other listeners here if needed (e.g. load_workflow from Gallery)
         };
     },
 
-    showDropdown(buttonElement) {
-        if (!this.dropdownMenuEl) {
-            console.error("[Holaf Utilities] showDropdown: dropdownMenuEl is null!");
+    // [NEW] Logic to toggle the menu position
+    toggleCompactMode(active) {
+        const tabsContainer = document.querySelector('.workflow-tabs-container');
+        const menuBar = document.querySelector('.actionbar-container');
+        
+        if (!tabsContainer || !menuBar) {
+            console.warn("[Holaf Utilities] Compact Mode: Elements not found (yet).");
             return;
         }
+
+        if (active) {
+            // Check if already active to avoid duplication
+            if (tabsContainer.parentElement.id === "holaf-compact-wrapper") return;
+
+            // --- V4 Logic (Enable) ---
+            const wrapper = document.createElement('div');
+            wrapper.id = "holaf-compact-wrapper"; // Tag it for easier finding later
+            wrapper.style.display = 'flex';
+            wrapper.style.alignItems = 'center';
+            wrapper.style.width = '100%';
+            wrapper.style.overflow = 'hidden';
+            
+            tabsContainer.parentNode.insertBefore(wrapper, tabsContainer);
+            wrapper.appendChild(tabsContainer);
+            wrapper.appendChild(menuBar);
+            
+            // Critical Styles
+            tabsContainer.style.flex = '1';
+            tabsContainer.style.minWidth = '0'; // Allow shrinking
+            
+            menuBar.style.flexShrink = '0';
+            menuBar.style.height = '100%';
+            menuBar.style.border = 'none';
+            menuBar.style.boxShadow = 'none';
+            
+            console.log("[Holaf Utilities] Compact Mode Enabled.");
+
+        } else {
+            // --- Restore Logic (Disable) ---
+            const wrapper = document.getElementById("holaf-compact-wrapper");
+            
+            if (wrapper && wrapper.contains(tabsContainer)) {
+                // Move elements back out
+                wrapper.parentNode.insertBefore(tabsContainer, wrapper);
+                // Usually menu is after tabs
+                tabsContainer.parentNode.insertBefore(menuBar, tabsContainer.nextSibling);
+                
+                // Remove wrapper
+                wrapper.remove();
+                
+                // Clear inline styles we added
+                tabsContainer.style.flex = '';
+                tabsContainer.style.minWidth = '';
+                
+                menuBar.style.flexShrink = '';
+                menuBar.style.height = '';
+                menuBar.style.border = '';
+                menuBar.style.boxShadow = '';
+                
+                console.log("[Holaf Utilities] Compact Mode Disabled.");
+            }
+        }
+    },
+
+    showDropdown(buttonElement) {
+        if (!this.dropdownMenuEl) return;
         if (this.dropdownMenuEl.parentElement !== document.body) {
             document.body.appendChild(this.dropdownMenuEl);
         }
@@ -481,12 +524,10 @@ const HolafUtilitiesMenu = {
             "holaf_system_monitor_styles.css",
             "holaf_image_viewer_styles.css",
             "holaf_toasts.css",
-            "holaf_profiler.css", // [NEW] Added Profiler CSS
+            "holaf_profiler.css",
             "holaf_layout_tools.css"
         ];
-
-        const basePath = "extensions/ComfyUI-Holaf-Utilities/css/"; // Corrected base path
-
+        const basePath = "extensions/ComfyUI-Holaf-Utilities/css/";
         cssFiles.forEach(fileName => {
             const cssId = `holaf-css-${fileName.replace('.css', '')}`;
             if (!document.getElementById(cssId)) {
@@ -496,7 +537,6 @@ const HolafUtilitiesMenu = {
                 link.type = "text/css";
                 link.href = basePath + fileName;
                 document.head.appendChild(link);
-                console.log(`[Holaf Main] Loaded CSS: ${fileName}`);
             }
         });
     }
@@ -505,7 +545,6 @@ const HolafUtilitiesMenu = {
 app.registerExtension({
     name: "Holaf.Utilities.Menu",
     async setup() {
-        // We delay init slightly to ensure other scripts have a chance to register their exports.
         setTimeout(() => HolafUtilitiesMenu.init(), 10);
     }
 });

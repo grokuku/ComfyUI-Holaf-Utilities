@@ -63,7 +63,7 @@ When the user requests a "context update" or when a major feature is implemented
   📄 holaf_main.js : Core extension entry and menu registration.
   📄 holaf_layout_tools.js : Floating toolbar, Mouse coordinates, Graph recentering.
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
-  📄 holaf_shortcuts.js : Viewport Bookmarks (Pan/Zoom) with workflow persistence.
+  📄 holaf_shortcuts.js : Viewport Bookmarks (Pan/Zoom) with Nested Subgraph Navigation.
   📄 holaf_settings_manager.js : Global settings UI.
 
 📁 nodes/
@@ -97,11 +97,15 @@ When the user requests a "context update" or when a major feature is implemented
 *   **Smart Sync Strategy (Groups)**: Group association is calculated in the `Listener` (Main Tab) using Live Graph geometry. This mapping is transmitted to the Profiler UI via `localStorage` (primary buffer) and `BroadcastChannel`, ensuring data persists even if the backend strips custom JSON fields.
 *   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state. This allows dynamic sorting, smart filters, and real-time updates.
 
-#### 5. Shortcuts (Viewport Bookmarks)
+#### 5. Shortcuts (Viewport Bookmarks & Navigation)
 *   **Dual Persistence**:
     *   **Window State**: `localStorage` (Position, Size, Visibility).
     *   **Data (Bookmarks)**: `app.graph.extra.holaf_shortcuts` (Saved inside the `.json` workflow file).
-*   **Functionality**: Captures `x`, `y`, `zoom`. Injecting these into `app.canvas.ds` triggers the view transition.
+*   **Nested Subgraph Navigation**:
+    *   **Path Detection**: Recursive search using `findPathToGraph` to build a node ID array representing the nested hierarchy.
+    *   **Switching Logic**: Uses `app.canvas.setGraph` for atomic and stable transitions between graphs.
+    *   **Timing**: Implements sequenced delays (Async/Await + `setTimeout`) to allow LiteGraph stabilization before applying Viewport coordinates (X, Y, Zoom).
+*   **Stability**: Uses the official `afterConfigureGraph` hook instead of global function patching to prevent workflow closure loops.
 
 #### 6. Interface Persistence & Menu Sync
 *   **Visibility State**: Tool visibility (`isVisible`) is saved in `localStorage`. Tools auto-restore their state on page reload.
@@ -129,7 +133,7 @@ When the user requests a "context update" or when a major feature is implemented
 *   **[Stable] Image Viewer, Terminal, Node Manager, Model Manager**.
 *   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence.
 *   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
-*   **[Stable] Shortcuts**: Viewport Bookmarks, Graph-embedded data, Ghost Position.
+*   **[Stable] Shortcuts**: Nested Subgraph support, Viewport Bookmarks, Graph-embedded data, Ghost Position.
 *   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization.
 *   **[Stable] Profiler**: Backend Engine (Robust), UI (Advanced), Subgraph Support (Active).
 
