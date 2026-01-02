@@ -9,7 +9,6 @@ const HolafShortcuts = {
     resizeHandle: null,
     
     // --- Data State ---
-    // shortcuts: Array of { id, name, x, y, zoom, path: [nodeId1, nodeId2...] }
     shortcuts: [], 
 
     // --- Window State (Ghost Position Logic) ---
@@ -35,9 +34,6 @@ const HolafShortcuts = {
 
     // --- SUBGRAPH NAVIGATION LOGIC ---
 
-    /**
-     * Gets the current path of subgraph node IDs from root to current view.
-     */
     getCurrentGraphPath() {
         const path = [];
         let currentGraph = app.canvas.graph;
@@ -45,31 +41,39 @@ const HolafShortcuts = {
         // Traverse up using LiteGraph's subgraph_node link
         while (currentGraph && currentGraph.subgraph_node) {
             path.unshift(currentGraph.subgraph_node.id);
-            // Move up to the parent graph
             currentGraph = currentGraph.subgraph_node.graph;
         }
         return path;
     },
 
-    /**
-     * Navigates to a specific graph depth based on a path of node IDs.
-     */
     navigateToPath(path) {
-        if (!path) return;
-
-        // 1. Return to root first to ensure a clean starting point
-        while (app.canvas.graph.subgraph_node) {
-            app.canvas.closeSubgraph();
+        // 1. Si le chemin est vide, on s'assure juste d'être à la racine
+        if (!path || path.length === 0) {
+            if (app.canvas.graph !== app.graph) {
+                app.canvas.setGraph(app.graph);
+            }
+            return;
         }
 
-        // 2. Drill down through the path
+        // 2. Retour forcé à la racine pour garantir un point de départ propre
+        if (app.canvas.graph !== app.graph) {
+            app.canvas.setGraph(app.graph);
+        }
+
+        // 3. Descente dans les subgraphs
         for (const nodeId of path) {
             const node = app.canvas.graph.getNodeById(nodeId);
-            if (node && node.getInnerGraph) {
-                app.canvas.openSubgraph(node);
+            if (node) {
+                // ComfyUI / LiteGraph standard way to enter a subgraph
+                if (typeof app.canvas.openSubgraph === "function") {
+                    app.canvas.openSubgraph(node);
+                } else if (node.onDblClick) {
+                    // Fallback : simuler le double-clic si la méthode directe n'est pas exposée
+                    node.onDblClick();
+                }
             } else {
-                console.warn(`[Holaf Shortcuts] Could not find subgraph node ${nodeId} in current view.`);
-                break; // Stop navigation if a link is broken
+                console.warn(`[Holaf Shortcuts] Broken path: Node ${nodeId} not found.`);
+                break;
             }
         }
     },
@@ -97,7 +101,6 @@ const HolafShortcuts = {
         const newId = Date.now().toString(36);
         const name = `View ${this.shortcuts.length + 1}`;
         
-        // Capture Path, Offset and Scale
         const path = this.getCurrentGraphPath();
         const x = app.canvas.ds.offset[0];
         const y = app.canvas.ds.offset[1];
@@ -147,10 +150,11 @@ const HolafShortcuts = {
         const item = this.shortcuts.find(s => s.id === id);
         if (!item || !app.canvas || !app.canvas.ds) return;
 
-        // 1. Navigate to the correct subgraph level
+        // 1. Navigation structurelle
         this.navigateToPath(item.path);
 
-        // 2. Apply View (X, Y, Zoom)
+        // 2. Positionnement visuel (X, Y, Zoom)
+        // Note: On applique ça sur app.canvas.ds qui est maintenant lié au bon graphe
         app.canvas.ds.offset[0] = item.x;
         app.canvas.ds.offset[1] = item.y;
         app.canvas.ds.scale = item.zoom;
@@ -245,7 +249,6 @@ const HolafShortcuts = {
             const nameLabel = document.createElement("div");
             nameLabel.innerText = s.name;
             
-            // UI Hint for subgraphs
             const isDeep = s.path && s.path.length > 0;
             if (isDeep) {
                 nameLabel.title = `Deep View (${s.path.length} levels)`;
