@@ -74,18 +74,16 @@ const HolafModal = {
 
 const HolafUtilitiesMenu = {
     dropdownMenuEl: null,
-    isCompactMode: false, // State for the Compact Menu feature
+    isCompactMode: false,
+    placeholderEl: null, // [NEW] Keep track of where the menu was
 
     init() {
         this.loadSharedCss();
         this.initBridgeListener();
 
-        // --- Check for Compact Mode preference immediately ---
+        // Check preference
         this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
-        // Attempt to apply it. Since DOM might not be fully ready, we might need a small delay or retry,
-        // but typically init() is called after setup() which is reasonably late.
         if (this.isCompactMode) {
-            // Give a tiny delay to ensure ComfyUI elements (tabs) are rendered
             setTimeout(() => this.toggleCompactMode(true), 500);
         }
 
@@ -125,7 +123,7 @@ const HolafUtilitiesMenu = {
             { label: "Image Viewer", handlerName: "holafImageViewer" },
             { label: "Workflow Profiler", special: "profiler_standalone" },
             { type: 'separator' },
-            { label: "Compact Menu Bar", special: "toggle_compact_menu" }, // [NEW ITEM]
+            { label: "Compact Menu Bar", special: "toggle_compact_menu" },
             { type: 'separator' },
             { label: "Toggle Monitor", special: "toggle_monitor" },
             { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
@@ -156,7 +154,7 @@ const HolafUtilitiesMenu = {
             labelSpan.textContent = itemInfo.label;
             menuItem.appendChild(labelSpan);
 
-            // Add Checkbox for toggleable items
+            // Add Checkbox
             let checkbox = null;
             if (["toggle_monitor", "toggle_layout_tools", "toggle_shortcuts", "toggle_compact_menu"].includes(itemInfo.special)) {
                 checkbox = document.createElement("div");
@@ -195,10 +193,8 @@ const HolafUtilitiesMenu = {
             setTimeout(updateCheckboxUI, 50);
 
             menuItem.onclick = (e) => {
-                // Handle restart
+                // Restart logic
                 if (itemInfo.special === 'restart') {
-                     // ... (Code Restart inchangé, voir plus bas pour brièveté si besoin, 
-                     // mais je garde tout pour le copier-coller)
                      const restartDialogContent = `
                         <div>
                             <p id="holaf-restart-message">Are you sure you want to restart the ComfyUI server?</p>
@@ -300,7 +296,6 @@ const HolafUtilitiesMenu = {
                         return false;
                     });
                 } 
-                // Toggle Monitor
                 else if (itemInfo.special === "toggle_monitor") {
                     const monitor = app.holafSystemMonitor;
                     if (monitor && typeof monitor.toggle === "function") {
@@ -308,33 +303,33 @@ const HolafUtilitiesMenu = {
                         updateCheckboxUI();
                     }
                 } 
-                // Toggle Layout Tools
                 else if (itemInfo.special === "toggle_layout_tools") {
                     if (window.holaf && window.holaf.layoutTools) {
                         window.holaf.layoutTools.toggle();
                         updateCheckboxUI();
                     }
                 } 
-                // Toggle Shortcuts
                 else if (itemInfo.special === "toggle_shortcuts") {
                     if (app.holafShortcuts && typeof app.holafShortcuts.toggle === "function") {
                         app.holafShortcuts.toggle();
                         updateCheckboxUI();
                     }
                 } 
-                // [NEW] Toggle Compact Menu
                 else if (itemInfo.special === "toggle_compact_menu") {
                     const newState = !this.isCompactMode;
                     this.isCompactMode = newState;
                     localStorage.setItem("Holaf_CompactMenu", newState);
+                    
+                    // [FIX 1] Hide dropdown immediately to avoid visual glitch
+                    this.hideDropdown();
+                    
                     this.toggleCompactMode(newState);
                     updateCheckboxUI();
+                    return; // Return early since we hid the dropdown manually
                 }
-                // Open Profiler
                 else if (itemInfo.special === "profiler_standalone") {
                     window.open('/holaf/profiler/view', '_blank');
                 } 
-                // Standard Panels
                 else {
                     const handler = app[itemInfo.handlerName];
                     if (handler && typeof handler.show === 'function') {
@@ -344,6 +339,8 @@ const HolafUtilitiesMenu = {
                         HolafModal.show("Not Implemented", `The panel for "${itemInfo.label}" is not available yet.`, () => { }, "OK", null);
                     }
                 }
+                
+                // For other items, close menu
                 if (!checkbox) {
                     this.hideDropdown();
                 }
@@ -367,7 +364,7 @@ const HolafUtilitiesMenu = {
                         if (text.includes("Monitor")) isActive = app.holafSystemMonitor?.isVisible;
                         else if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
                         else if (text.includes("Shortcuts")) isActive = app.holafShortcuts?.isVisible;
-                        else if (text.includes("Compact Menu")) isActive = this.isCompactMode; // Update check
+                        else if (text.includes("Compact Menu")) isActive = this.isCompactMode;
                         
                         check.innerHTML = isActive ? "✓" : "";
                         check.style.borderColor = isActive ? "var(--holaf-accent-color, #ff8c00)" : "var(--border-color, #888)";
@@ -424,7 +421,6 @@ const HolafUtilitiesMenu = {
         };
     },
 
-    // [NEW] Logic to toggle the menu position
     toggleCompactMode(active) {
         const tabsContainer = document.querySelector('.workflow-tabs-container');
         const menuBar = document.querySelector('.actionbar-container');
@@ -435,12 +431,17 @@ const HolafUtilitiesMenu = {
         }
 
         if (active) {
-            // Check if already active to avoid duplication
             if (tabsContainer.parentElement.id === "holaf-compact-wrapper") return;
 
-            // --- V4 Logic (Enable) ---
+            // [FIX 2] Create a Placeholder to know exactly where to put the menu back
+            this.placeholderEl = document.createComment("holaf-menu-placeholder");
+            if (menuBar.parentNode) {
+                menuBar.parentNode.insertBefore(this.placeholderEl, menuBar);
+            }
+
+            // Create Wrapper V4
             const wrapper = document.createElement('div');
-            wrapper.id = "holaf-compact-wrapper"; // Tag it for easier finding later
+            wrapper.id = "holaf-compact-wrapper";
             wrapper.style.display = 'flex';
             wrapper.style.alignItems = 'center';
             wrapper.style.width = '100%';
@@ -452,7 +453,7 @@ const HolafUtilitiesMenu = {
             
             // Critical Styles
             tabsContainer.style.flex = '1';
-            tabsContainer.style.minWidth = '0'; // Allow shrinking
+            tabsContainer.style.minWidth = '0';
             
             menuBar.style.flexShrink = '0';
             menuBar.style.height = '100%';
@@ -462,19 +463,27 @@ const HolafUtilitiesMenu = {
             console.log("[Holaf Utilities] Compact Mode Enabled.");
 
         } else {
-            // --- Restore Logic (Disable) ---
             const wrapper = document.getElementById("holaf-compact-wrapper");
             
             if (wrapper && wrapper.contains(tabsContainer)) {
-                // Move elements back out
+                // Restore tabs
                 wrapper.parentNode.insertBefore(tabsContainer, wrapper);
-                // Usually menu is after tabs
-                tabsContainer.parentNode.insertBefore(menuBar, tabsContainer.nextSibling);
+                
+                // [FIX 2] Restore menu to its EXACT original position via placeholder
+                if (this.placeholderEl && this.placeholderEl.parentNode) {
+                    this.placeholderEl.parentNode.insertBefore(menuBar, this.placeholderEl);
+                    this.placeholderEl.remove();
+                    this.placeholderEl = null;
+                } else {
+                    // Fallback if placeholder lost (e.g. reload): put it after tabs
+                    console.warn("[Holaf Utilities] Placeholder lost, falling back to default position.");
+                    tabsContainer.parentNode.insertBefore(menuBar, tabsContainer.nextSibling);
+                }
                 
                 // Remove wrapper
                 wrapper.remove();
                 
-                // Clear inline styles we added
+                // Reset Styles
                 tabsContainer.style.flex = '';
                 tabsContainer.style.minWidth = '';
                 
@@ -482,6 +491,7 @@ const HolafUtilitiesMenu = {
                 menuBar.style.height = '';
                 menuBar.style.border = '';
                 menuBar.style.boxShadow = '';
+                menuBar.style.width = ''; // Ensure width is reset
                 
                 console.log("[Holaf Utilities] Compact Mode Disabled.");
             }
