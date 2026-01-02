@@ -9,12 +9,13 @@ const HolafShortcuts = {
     resizeHandle: null,
     
     // --- Data State ---
-    shortcuts: [], // Array of { id, name, x, y, zoom }
+    // shortcuts: Array of { id, name, x, y, zoom, path: [nodeId1, nodeId2...] }
+    shortcuts: [], 
 
     // --- Window State (Ghost Position Logic) ---
     storedPos: {
         right: 20,
-        bottom: 300, // Default position
+        bottom: 300, 
         width: 200,
         height: 250
     },
@@ -24,38 +25,60 @@ const HolafShortcuts = {
     init() {
         this.restoreState();
         this.createHostElement();
-        this.setupHooks();
         
-        // Handle window resizing
         window.addEventListener("resize", () => this.updateVisualPosition());
 
-        // Auto-start if it was visible
         if (this.isVisible) {
             setTimeout(() => this.show(), 300);
         }
     },
 
-    // --- COMFY UI HOOKS ---
-    setupHooks() {
-        // 1. Hook into Graph Load to restore shortcuts from .json
-        const originalLoadGraphData = app.loadGraphData;
-        app.loadGraphData = (graphData) => {
-            const res = originalLoadGraphData.apply(app, [graphData]);
-            this.loadFromGraph(); // Read from app.graph.extra
-            return res;
-        };
+    // --- SUBGRAPH NAVIGATION LOGIC ---
 
-        // 2. Clear shortcuts when graph is cleared
-        api.addEventListener("graph-cleared", () => {
-            this.shortcuts = [];
-            this.renderList();
-        });
+    /**
+     * Gets the current path of subgraph node IDs from root to current view.
+     */
+    getCurrentGraphPath() {
+        const path = [];
+        let currentGraph = app.canvas.graph;
+        
+        // Traverse up using LiteGraph's subgraph_node link
+        while (currentGraph && currentGraph.subgraph_node) {
+            path.unshift(currentGraph.subgraph_node.id);
+            // Move up to the parent graph
+            currentGraph = currentGraph.subgraph_node.graph;
+        }
+        return path;
+    },
+
+    /**
+     * Navigates to a specific graph depth based on a path of node IDs.
+     */
+    navigateToPath(path) {
+        if (!path) return;
+
+        // 1. Return to root first to ensure a clean starting point
+        while (app.canvas.graph.subgraph_node) {
+            app.canvas.closeSubgraph();
+        }
+
+        // 2. Drill down through the path
+        for (const nodeId of path) {
+            const node = app.canvas.graph.getNodeById(nodeId);
+            if (node && node.getInnerGraph) {
+                app.canvas.openSubgraph(node);
+            } else {
+                console.warn(`[Holaf Shortcuts] Could not find subgraph node ${nodeId} in current view.`);
+                break; // Stop navigation if a link is broken
+            }
+        }
     },
 
     // --- DATA LOGIC ---
+
     loadFromGraph() {
         if (app.graph && app.graph.extra && app.graph.extra[this.GRAPH_EXTRA_KEY]) {
-            this.shortcuts = app.graph.extra[this.GRAPH_EXTRA_KEY];
+            this.shortcuts = JSON.parse(JSON.stringify(app.graph.extra[this.GRAPH_EXTRA_KEY]));
         } else {
             this.shortcuts = [];
         }
@@ -65,37 +88,39 @@ const HolafShortcuts = {
     syncToGraph() {
         if (!app.graph) return;
         if (!app.graph.extra) app.graph.extra = {};
-        app.graph.extra[this.GRAPH_EXTRA_KEY] = this.shortcuts;
+        app.graph.extra[this.GRAPH_EXTRA_KEY] = JSON.parse(JSON.stringify(this.shortcuts));
     },
 
     addShortcut() {
-        if (!app.canvas) return;
+        if (!app.canvas || !app.canvas.ds) return;
         
         const newId = Date.now().toString(36);
         const name = `View ${this.shortcuts.length + 1}`;
         
-        // Capture current view
+        // Capture Path, Offset and Scale
+        const path = this.getCurrentGraphPath();
         const x = app.canvas.ds.offset[0];
         const y = app.canvas.ds.offset[1];
         const zoom = app.canvas.ds.scale;
 
-        this.shortcuts.push({ id: newId, name, x, y, zoom });
+        this.shortcuts.push({ id: newId, name, x, y, zoom, path });
         this.syncToGraph();
         this.renderList();
     },
 
     updateShortcut(id) {
+        if (!app.canvas || !app.canvas.ds) return;
+
         const index = this.shortcuts.findIndex(s => s.id === id);
         if (index === -1) return;
 
-        // Update with current view
+        this.shortcuts[index].path = this.getCurrentGraphPath();
         this.shortcuts[index].x = app.canvas.ds.offset[0];
         this.shortcuts[index].y = app.canvas.ds.offset[1];
         this.shortcuts[index].zoom = app.canvas.ds.scale;
         
         this.syncToGraph();
         
-        // Visual feedback
         const btn = this.listElement.querySelector(`[data-id="${id}"] .update-btn`);
         if (btn) {
             const originalText = btn.innerHTML;
@@ -120,21 +145,24 @@ const HolafShortcuts = {
 
     applyShortcut(id) {
         const item = this.shortcuts.find(s => s.id === id);
-        if (!item || !app.canvas) return;
+        if (!item || !app.canvas || !app.canvas.ds) return;
 
-        // Apply View
+        // 1. Navigate to the correct subgraph level
+        this.navigateToPath(item.path);
+
+        // 2. Apply View (X, Y, Zoom)
         app.canvas.ds.offset[0] = item.x;
         app.canvas.ds.offset[1] = item.y;
         app.canvas.ds.scale = item.zoom;
         
-        app.canvas.setDirty(true, true); // Force redraw
+        app.canvas.setDirty(true, true); 
     },
 
     // --- UI CONSTRUCTION ---
+
     createHostElement() {
         if (this.rootElement) return;
 
-        // Root
         this.rootElement = document.createElement("div");
         Object.assign(this.rootElement.style, {
             display: "none",
@@ -151,7 +179,6 @@ const HolafShortcuts = {
             color: "#eee"
         });
 
-        // Header
         const header = document.createElement("div");
         Object.assign(header.style, {
             flex: "0 0 auto",
@@ -160,28 +187,25 @@ const HolafShortcuts = {
             padding: "8px",
             backgroundColor: "rgba(255,255,255,0.05)",
             borderBottom: "1px solid #444",
-            cursor: "move" // Drag handle
+            cursor: "move" 
         });
         
-        // Title
         const title = document.createElement("span");
         title.innerText = "Shortcuts";
         Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none" });
         
-        // Add Button
         const addBtn = document.createElement("button");
         addBtn.innerText = "+";
         Object.assign(addBtn.style, {
             background: "none", border: "1px solid #666", borderRadius: "4px",
             color: "#fff", cursor: "pointer", fontSize: "14px", padding: "0 6px"
         });
-        addBtn.onmousedown = (e) => e.stopPropagation(); // Prevent drag start
+        addBtn.onmousedown = (e) => e.stopPropagation(); 
         addBtn.onclick = () => this.addShortcut();
 
         header.appendChild(title);
         header.appendChild(addBtn);
 
-        // List Container
         this.listElement = document.createElement("div");
         Object.assign(this.listElement.style, {
             flex: "1",
@@ -189,7 +213,6 @@ const HolafShortcuts = {
             padding: "5px"
         });
 
-        // Resize Handle
         this.createResizeHandle();
 
         this.rootElement.appendChild(header);
@@ -219,9 +242,16 @@ const HolafShortcuts = {
             });
             row.setAttribute("data-id", s.id);
 
-            // Name
             const nameLabel = document.createElement("div");
             nameLabel.innerText = s.name;
+            
+            // UI Hint for subgraphs
+            const isDeep = s.path && s.path.length > 0;
+            if (isDeep) {
+                nameLabel.title = `Deep View (${s.path.length} levels)`;
+                nameLabel.innerHTML = `<small style="color:var(--holaf-accent-color, #ff8c00); margin-right:4px;">📂</small>${s.name}`;
+            }
+
             Object.assign(nameLabel.style, {
                 flex: "1", fontSize: "12px", cursor: "pointer",
                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginRight: "5px"
@@ -242,7 +272,6 @@ const HolafShortcuts = {
                 };
             };
 
-            // Buttons
             const btnStyle = {
                 background: "none", border: "none", color: "#888", 
                 cursor: "pointer", fontSize: "12px", padding: "0 2px", marginLeft: "2px"
@@ -270,19 +299,15 @@ const HolafShortcuts = {
         });
     },
 
-    // --- WINDOW MANAGEMENT ---
     updateVisualPosition() {
         if (!this.rootElement) return;
 
-        // Apply stored size
         this.rootElement.style.width = this.storedPos.width + "px";
         this.rootElement.style.height = this.storedPos.height + "px";
 
-        // Calculate viewport limits
         const maxRight = window.innerWidth - this.storedPos.width;
         const maxBottom = window.innerHeight - this.storedPos.height;
 
-        // Visual clamping
         const visualRight = Math.max(0, Math.min(this.storedPos.right, maxRight));
         const visualBottom = Math.max(0, Math.min(this.storedPos.bottom, maxBottom));
 
@@ -394,7 +419,6 @@ const HolafShortcuts = {
         });
     },
 
-    // --- PERSISTENCE ---
     saveState() {
         if (!this.rootElement) return;
         const state = { 
@@ -442,7 +466,15 @@ const HolafShortcuts = {
 app.registerExtension({
     name: HolafShortcuts.name,
     async setup() {
-        setTimeout(() => HolafShortcuts.init(), 200);
+        HolafShortcuts.init();
         app.holafShortcuts = HolafShortcuts;
+        
+        api.addEventListener("graph-cleared", () => {
+            HolafShortcuts.shortcuts = [];
+            HolafShortcuts.renderList();
+        });
+    },
+    async afterConfigureGraph() {
+        HolafShortcuts.loadFromGraph();
     }
 });
