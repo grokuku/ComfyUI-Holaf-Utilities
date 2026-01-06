@@ -75,18 +75,19 @@ const HolafModal = {
 const HolafUtilitiesMenu = {
     dropdownMenuEl: null,
     isCompactMode: false,
-    placeholderEl: null, // [NEW] Keep track of where the menu was
+    placeholderEl: null, // Keep track of where the menu was
 
     init() {
         this.loadSharedCss();
         this.initBridgeListener();
 
-        // Check preference
+        // 1. Initialize Compact Mode Preference (Reliable Detection)
         this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
         if (this.isCompactMode) {
-            setTimeout(() => this.toggleCompactMode(true), 500);
+            this.waitForUIAndApplyCompact();
         }
 
+        // 2. Ensure Theme
         if (!document.body.className.includes("holaf-theme-")) {
             document.body.classList.add("holaf-theme-graphite-orange");
             console.log("[Holaf Main] Applied default fallback theme to body.");
@@ -320,12 +321,10 @@ const HolafUtilitiesMenu = {
                     this.isCompactMode = newState;
                     localStorage.setItem("Holaf_CompactMenu", newState);
                     
-                    // [FIX 1] Hide dropdown immediately to avoid visual glitch
                     this.hideDropdown();
-                    
                     this.toggleCompactMode(newState);
                     updateCheckboxUI();
-                    return; // Return early since we hid the dropdown manually
+                    return; 
                 }
                 else if (itemInfo.special === "profiler_standalone") {
                     window.open('/holaf/profiler/view', '_blank');
@@ -340,7 +339,6 @@ const HolafUtilitiesMenu = {
                     }
                 }
                 
-                // For other items, close menu
                 if (!checkbox) {
                     this.hideDropdown();
                 }
@@ -383,7 +381,7 @@ const HolafUtilitiesMenu = {
 
         menuContainer.appendChild(mainButton);
 
-        const settingsButton = app.menu.settingsGroup.element;
+        const settingsButton = app.menu?.settingsGroup?.element;
         if (settingsButton) {
             settingsButton.before(menuContainer);
         } else {
@@ -397,6 +395,38 @@ const HolafUtilitiesMenu = {
         }
 
         console.log("[Holaf Utilities] Static menu initialized successfully.");
+    },
+
+    waitForUIAndApplyCompact() {
+        const checkAndApply = () => {
+            const tabs = document.querySelector('.workflow-tabs-container');
+            const bar = document.querySelector('.actionbar-container');
+            if (tabs && bar) {
+                this.toggleCompactMode(true);
+                return true;
+            }
+            return false;
+        };
+
+        // Try immediately once
+        if (checkAndApply()) return;
+
+        // Use MutationObserver for robust detection
+        const observer = new MutationObserver((mutations, obs) => {
+            if (checkAndApply()) {
+                obs.disconnect(); // Stop watching as soon as we succeed
+                console.log("[Holaf Utilities] Compact Mode auto-applied via Observer.");
+            }
+        });
+
+        // Start observing the body for added nodes
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Safety timeout to kill observer if UI never loads (e.g. 10s)
+        setTimeout(() => observer.disconnect(), 10000);
     },
 
     initBridgeListener() {
@@ -426,11 +456,12 @@ const HolafUtilitiesMenu = {
         const menuBar = document.querySelector('.actionbar-container');
         
         if (!tabsContainer || !menuBar) {
-            console.warn("[Holaf Utilities] Compact Mode: Elements not found (yet).");
+            // Should not happen if called via waitForUIAndApplyCompact, but safe guard
             return;
         }
 
         if (active) {
+            // Guard against double application
             if (tabsContainer.parentElement.id === "holaf-compact-wrapper") return;
 
             // [FIX 2] Create a Placeholder to know exactly where to put the menu back
@@ -439,7 +470,7 @@ const HolafUtilitiesMenu = {
                 menuBar.parentNode.insertBefore(this.placeholderEl, menuBar);
             }
 
-            // Create Wrapper V4
+            // Create Wrapper
             const wrapper = document.createElement('div');
             wrapper.id = "holaf-compact-wrapper";
             wrapper.style.display = 'flex';
@@ -475,7 +506,7 @@ const HolafUtilitiesMenu = {
                     this.placeholderEl.remove();
                     this.placeholderEl = null;
                 } else {
-                    // Fallback if placeholder lost (e.g. reload): put it after tabs
+                    // Fallback
                     console.warn("[Holaf Utilities] Placeholder lost, falling back to default position.");
                     tabsContainer.parentNode.insertBefore(menuBar, tabsContainer.nextSibling);
                 }
