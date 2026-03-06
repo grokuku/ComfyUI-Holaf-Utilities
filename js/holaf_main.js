@@ -1,21 +1,22 @@
 /*
- * Copyright (C) 2025 Holaf
- * Holaf Utilities - Main Menu Initializer
- *
- * This script is responsible for creating the main "Utilities" button and dropdown menu.
- * It also ensures that shared CSS for utility panels is loaded.
- * MODIFIED: Replaced dynamic/event-based menu with a static, hardcoded menu for stability.
- * CORRECTION: Replaced unreliable handler lookup with a direct lookup on the app object.
- * MODIFICATION: Added "Settings" and "Restart ComfyUI" menu items with separators.
- * MODIFICATION: Replaced native confirm() with a custom, themed modal dialog.
- * CORRECTION: Removed automatic page reload after sending restart command.
- * MODIFICATION: Imported and activated the new Settings Manager.
- * MODIFICATION: Added "Toggle Monitor" menu item.
- * REFACTOR CSS: Modified loadSharedCss to load multiple split CSS files.
- * REFACTOR RESTART: Implemented a new multi-stage restart sequence with fixed dialog size.
- * MODIFICATION: Integrated the new HolafToastManager for non-blocking notifications.
- * MODIFICATION: Added "Workflow Profiler" and Bridge Listener logic.
- */
+    * Copyright (C) 2026 Holaf
+    * Holaf Utilities - Main Menu Initializer
+    *
+    * This script is responsible for creating the main "Utilities" button and dropdown menu.
+    * It also ensures that shared CSS for utility panels is loaded.
+    * MODIFIED: Replaced dynamic/event-based menu with a static, hardcoded menu for stability.
+    * CORRECTION: Replaced unreliable handler lookup with a direct lookup on the app object.
+    * MODIFICATION: Added "Settings" and "Restart ComfyUI" menu items with separators.
+    * MODIFICATION: Replaced native confirm() with a custom, themed modal dialog.
+    * CORRECTION: Removed automatic page reload after sending restart command.
+    * MODIFICATION: Imported and activated the new Settings Manager.
+    * MODIFICATION: Added "Toggle Monitor" menu item.
+    * REFACTOR CSS: Modified loadSharedCss to load multiple split CSS files.
+    * REFACTOR RESTART: Implemented a new multi-stage restart sequence with fixed dialog size.
+    * MODIFICATION: Integrated the new HolafToastManager for non-blocking notifications.
+    * MODIFICATION: Added "Workflow Profiler" and Bridge Listener logic.
+    * MODIFICATION: Added "Remote Comparer" import and menu entry.
+    */
 
 import { app } from "../../../scripts/app.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
@@ -31,6 +32,7 @@ import "./holaf_nodes_manager.js";
 import "./holaf_image_viewer.js";
 import "./holaf_settings_manager.js";
 import "./holaf_monitor.js";
+import "./holaf_remote_comparer.js"; // [NEW] Added Remote Comparer
 
 /**
  * A simple, themed modal dialog helper.
@@ -108,7 +110,7 @@ const HolafUtilitiesMenu = {
 
     init() {
         this.loadSharedCss();
-        this.initBridgeListener(); // [NEW] Start listening for Profiler commands
+        this.initBridgeListener(); //[NEW] Start listening for Profiler commands
 
         // --- [FIX] Ensure a default theme is present on the body ---
         if (!document.body.className.includes("holaf-theme-")) {
@@ -154,6 +156,7 @@ const HolafUtilitiesMenu = {
             { label: "Workflow Profiler", special: "profiler_standalone" },
             { type: 'separator' },
             { label: "Toggle Monitor", special: "toggle_monitor" },
+            { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" }, // [NEW] Remote Comparer Entry
             { type: 'separator' },
             { label: "Settings", handlerName: "holafSettingsManager" },
             { type: 'separator' },
@@ -297,6 +300,14 @@ const HolafUtilitiesMenu = {
                         console.error("[Holaf Utilities] HolafSystemMonitor is not available.");
                         HolafModal.show("Error", "System Monitor module not loaded.", () => { }, "OK", null);
                     }
+                } else if (itemInfo.special === "toggle_remote_comparer") {
+                    const comparer = app.holafRemoteComparer;
+                    if (comparer && typeof comparer.toggle === "function") {
+                        comparer.toggle();
+                    } else {
+                        console.error("[Holaf Utilities] HolafRemoteComparer is not available.");
+                        HolafModal.show("Error", "Remote Comparer module not loaded.", () => { }, "OK", null);
+                    }
                 } else if (itemInfo.special === "profiler_standalone") {
                     // Open Profiler in new tab
                     window.open('/holaf/profiler/view', '_blank');
@@ -352,35 +363,35 @@ const HolafUtilitiesMenu = {
         console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
-    // [NEW] BRIDGE LISTENER: Responds to requests from other tabs (Profiler, Gallery)
+    //[NEW] BRIDGE LISTENER: Responds to requests from other tabs (Profiler, Gallery)
     initBridgeListener() {
         const bc = new BroadcastChannel('holaf_channel');
         bc.onmessage = async (event) => {
             const { command, data } = event.data;
-            
+
             if (command === 'get_workflow_for_profiler') {
                 console.log("[Holaf Bridge] Received workflow request from Profiler.");
                 try {
                     // Serialize current graph
-                    const workflowData = await app.graphToPrompt(); 
+                    const workflowData = await app.graphToPrompt();
                     // NOTE: graphToPrompt returns { workflow: ..., output: ... }
                     // We also want the visual part (nodes positions etc, usually in app.graph.serialize())
                     // but for profiling, 'graphToPrompt' logic is closest to what is executed.
                     // However, to get "Titles" and "Positions", we need the visual graph.
-                    
+
                     const visualGraph = app.graph.serialize();
-                    
+
                     // Send to backend
                     await fetch('/holaf/profiler/update-context', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(visualGraph)
                     });
-                    
+
                     // Notify Profiler via Toast? (Optional, Profiler UI updates itself via checking API? No, one-way is fine for now)
                     window.holaf.toastManager.show("Workflow synced with Profiler.", "success");
-                    
-                } catch(e) {
+
+                } catch (e) {
                     console.error("[Holaf Bridge] Error syncing workflow:", e);
                     window.holaf.toastManager.show("Error syncing workflow.", "error");
                 }
@@ -428,7 +439,8 @@ const HolafUtilitiesMenu = {
             "holaf_system_monitor_styles.css",
             "holaf_image_viewer_styles.css",
             "holaf_toasts.css",
-            "holaf_profiler.css" // [NEW] Added Profiler CSS
+            "holaf_profiler.css", // Added Profiler CSS
+            "holaf_remote_comparer_styles.css" // [NEW] Added Remote Comparer CSS
         ];
 
         const basePath = "extensions/ComfyUI-Holaf-Utilities/css/"; // Corrected base path
