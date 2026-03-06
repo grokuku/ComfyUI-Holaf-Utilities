@@ -4,6 +4,7 @@
  *
  * Provides a floating UI overlay to compare two images.
  * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Internal Canvas Scaling).
+ * Node Preview: Hidden in graph, visible only in Remote Comparer.
  */
 
 import { app } from "../../scripts/app.js";
@@ -172,8 +173,8 @@ const HolafRemoteComparer = {
             display: "block",
             cursor: "crosshair",
             width: "100%",
-            height: "100%"
-            // CSS transform is entirely removed here to preserve native resolution
+            height: "100%",
+            transformOrigin: "0 0"
         });
         this.ctx = this.canvasEl.getContext("2d");
 
@@ -577,7 +578,9 @@ const HolafRemoteComparer = {
         const node = app.graph.getNodeById(detail.node);
         if (!node || node.type !== "HolafRemoteComparer") return;
 
-        const imagesMeta = detail.output.ui?.images || detail.output.images;
+        // MODIFIED: Look for "holaf_images" to find the hidden preview data
+        const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
+
         if (!imagesMeta || imagesMeta.length === 0) {
             this.statusTextEl.style.display = "block";
             this.statusTextEl.innerText = "No images received.";
