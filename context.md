@@ -60,15 +60,17 @@ When the user requests a "context update" or when a major feature is implemented
   📁 profiler/
     📄 holaf_profiler.js : UI Logic. State-driven table rendering, Smart Filters (Non-Executed), Sorting, Metrics display.
     📄 holaf_profiler_listener.js : Main tab logic. Calculates Group geometry using Live Graph, syncs context via API, Bridge, and LocalStorage.
-  📄 holaf_main.js : Core extension entry. Handles Menu registration (Static Dropdown) and **Compact Menu Mode logic**.
+  📄 holaf_main.js : Core extension entry. Handles Menu registration (Static Dropdown) and Compact Menu Mode logic.
   📄 holaf_layout_tools.js : Floating toolbar, Mouse coordinates, Graph recentering.
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
   📄 holaf_shortcuts.js : Viewport Bookmarks (Pan/Zoom) with Nested Subgraph Navigation.
   📄 holaf_settings_manager.js : Global settings UI.
+  📄 holaf_remote_comparer.js : Floating UI for side-by-side image comparison (Split slider, Fullscreen, Pop-out).
 
 📁 nodes/
   📄 holaf_model_manager.py : Backend logic for Model scanning/hashing.
   📄 holaf_nodes_manager.py : Backend logic for nodes (Git/Pip operations).
+  📄 holaf_remote_comparer.py : Passthrough node. Saves temp previews and triggers UI updates.
 
 📄 holaf_profiler_engine.py : Measurement logic. Handles Execution Hooks and Robust GPU detection (Logical vs Physical mapping).
 📄 holaf_profiler_database.py : SQLite manager specific to Profiler data.
@@ -80,7 +82,7 @@ When the user requests a "context update" or when a major feature is implemented
 ### SECTION 3: KEY CONCEPTS & LOGIC
 
 #### 1. Universal UI Position Strategy ("Ghost Position")
-*   **Logic**: Applied to `System Monitor`, `Layout Tools` and `Shortcuts`.
+*   **Logic**: Applied to `System Monitor`, `Layout Tools`, `Shortcuts` and `Remote Comparer`.
 *   **Persistence**: Stores an "ideal" reference position (`right`, `bottom`, `width`, `height`) in `localStorage`.
 *   **Visual Clamping**: On window resize, tools are visually pushed to stay within the viewport bounds.
 
@@ -93,29 +95,26 @@ When the user requests a "context update" or when a major feature is implemented
 *   **Multi-GPU**: Dynamic detection and legend generation with VRAM/Load stats.
 
 #### 4. Workflow Profiler (Architecture)
-*   **Robust GPU Detection**: The engine identifies the active PyTorch device and maps its Logical Index to the NVML Physical Index, handling `CUDA_VISIBLE_DEVICES` environment variables correctly.
-*   **Smart Sync Strategy (Groups)**: Group association is calculated in the `Listener` (Main Tab) using Live Graph geometry. This mapping is transmitted to the Profiler UI via `localStorage` (primary buffer) and `BroadcastChannel`, ensuring data persists even if the backend strips custom JSON fields.
-*   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state. This allows dynamic sorting, smart filters, and real-time updates.
+*   **Robust GPU Detection**: The engine identifies the active PyTorch device and maps its Logical Index to the NVML Physical Index.
+*   **Smart Sync Strategy (Groups)**: Group association is calculated in the `Listener` (Main Tab) using Live Graph geometry.
+*   **State-Driven UI**: The Profiler table is rendered from a local `nodesMap` state.
 
 #### 5. Shortcuts (Viewport Bookmarks & Navigation)
-*   **Dual Persistence**:
-    *   **Window State**: `localStorage` (Position, Size, Visibility).
-    *   **Data (Bookmarks)**: `app.graph.extra.holaf_shortcuts` (Saved inside the `.json` workflow file).
-*   **Nested Subgraph Navigation**:
-    *   **Path Detection**: Recursive search using `findPathToGraph` to build a node ID array representing the nested hierarchy.
-    *   **Switching Logic**: Uses `app.canvas.setGraph` for atomic and stable transitions between graphs.
-    *   **Timing**: Implements sequenced delays (Async/Await + `setTimeout`) to allow LiteGraph stabilization before applying Viewport coordinates (X, Y, Zoom).
-*   **Stability**: Uses the official `afterConfigureGraph` hook instead of global function patching to prevent workflow closure loops.
+*   **Dual Persistence**: `localStorage` (Window State) and `app.graph.extra.holaf_shortcuts` (Workflow Data).
+*   **Nested Subgraph Navigation**: Recursive path detection (`findPathToGraph`) and stable switching via `app.canvas.setGraph`.
 
 #### 6. Interface Persistence & Menu Sync
-*   **Visibility State**: Tool visibility (`isVisible`) is saved in `localStorage`. Tools auto-restore their state on page reload.
-*   **Interactive Menu**: The dropdown menu features visual checkmarks (✓) for toggleable tools (`Monitor`, `Layout`, `Shortcuts`).
-*   **State Sync**: The menu UI updates dynamically when a tool is toggled or when the menu is opened.
+*   **Visibility State**: Tool visibility (`isVisible`/`isOpen`) is saved in `localStorage` and auto-restored.
+*   **Interactive Menu**: Dropdown menu features visual checkmarks (✓) updated dynamically for all toggleable floating tools.
 
 #### 7. Compact Menu Strategy
 *   **Goal**: Merges the Tab Bar (Top) and the Action Bar (Menu) into a single row to save vertical space.
-*   **Implementation**: Uses a flexbox wrapper strategy. The Tab container is set to `min-width: 0` to allow shrinking, while the Menu is set to `flex-shrink: 0`.
-*   **Restoration**: A DOM Comment Placeholder (`holaf-menu-placeholder`) is inserted when compact mode is active. This ensures the menu returns to its exact original DOM position (relative to other elements like Breadcrumbs) when deactivated.
+*   **Restoration**: A DOM Comment Placeholder (`holaf-menu-placeholder`) ensures the menu returns to its exact original DOM position.
+
+#### 8. Remote Comparer (Image Split & Pop-out)
+*   **Backend Passthrough**: A custom node (`OUTPUT_NODE = True`) receives up to two images, saves temporary previews, and forces a frontend update without interrupting the workflow.
+*   **Canvas Split Logic**: Uses HTML5 Canvas `clip()` and global composite operations (`difference`) to render a dynamic, mouse-tracking split-screen comparison.
+*   **Pop-out Architecture**: Moves the live canvas DOM element into a newly spawned browser window (`window.open`) to support multi-monitor setups, maintaining state without reloading images. Returns to the main UI upon closure.
 
 ---
 
@@ -127,7 +126,7 @@ When the user requests a "context update" or when a major feature is implemented
 
 #### Profiler DB (`holaf_profiler.db`)
 *   **`profiler_runs`**: Execution summaries (ID, Timestamp, Name, Workflow Hash).
-*   **`profiler_steps`**: Detailed per-node stats (Node ID, Type, VRAM Start/Max/End, Exec Time, GPU Load).
+*   **`profiler_steps`**: Detailed per-node stats.
 *   **`profiler_groups`**: (Prepared) Structure for grouping nodes.
 *   **`profiler_group_members`**: (Prepared) Link table for groups.
 
@@ -139,7 +138,8 @@ When the user requests a "context update" or when a major feature is implemented
 *   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence.
 *   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
 *   **[Stable] Shortcuts**: Nested Subgraph support, Viewport Bookmarks, Graph-embedded data, Ghost Position.
-*   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization, **Compact Mode**.
+*   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization, Compact Mode.
 *   **[Stable] Profiler**: Backend Engine (Robust), UI (Advanced), Subgraph Support (Active).
+*   **[Stable] Remote Comparer**: Canvas-based split slider, Fullscreen toggle, and Multi-monitor Pop-out support.
 
 **Next Priority**: Enhance Profiler visual analytics or History Navigation.

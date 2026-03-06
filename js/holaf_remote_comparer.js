@@ -3,7 +3,7 @@
  * Holaf Utilities - Remote Comparer
  *
  * Provides a floating UI overlay to compare two images.
- * Features: Drag, Resize, Fullscreen (double-click header), Pop-out window.
+ * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Scroll wheel).
  */
 
 import { app } from "../../scripts/app.js";
@@ -28,6 +28,10 @@ const HolafRemoteComparer = {
     images: [],
     mouseX: null,
     isMouseOver: false,
+
+    // --- Pan & Zoom State ---
+    zoomState: { scale: 1, tx: 0, ty: 0 },
+    isPanning: false,
 
     // --- Window State ---
     storedPos: {
@@ -75,7 +79,7 @@ const HolafRemoteComparer = {
             flexDirection: "column",
             color: "#eee",
             boxShadow: "0 10px 40px rgba(0, 0, 0, 0.7)",
-            transition: "border-radius 0.2s ease" // Smooth transition for fullscreen
+            transition: "border-radius 0.2s ease"
         });
 
         // Header
@@ -131,7 +135,6 @@ const HolafRemoteComparer = {
         header.appendChild(title);
         header.appendChild(btnContainer);
 
-        // Double-click to toggle fullscreen
         header.addEventListener('dblclick', (e) => {
             if (e.target.tagName === "BUTTON") return;
             this.toggleFullscreen();
@@ -158,7 +161,8 @@ const HolafRemoteComparer = {
             color: "#777",
             fontSize: "12px",
             pointerEvents: "none",
-            userSelect: "none"
+            userSelect: "none",
+            zIndex: "10"
         });
         this.statusTextEl.innerText = "Waiting for execution...";
 
@@ -168,7 +172,8 @@ const HolafRemoteComparer = {
             display: "block",
             cursor: "crosshair",
             width: "100%",
-            height: "100%"
+            height: "100%",
+            transformOrigin: "0 0" // Required for accurate zooming
         });
         this.ctx = this.canvasEl.getContext("2d");
 
@@ -187,7 +192,6 @@ const HolafRemoteComparer = {
         this.attachCanvasListeners();
         this.updateVisualPosition();
 
-        // Handle Canvas resizing
         const resizeObserver = new ResizeObserver(() => this.resizeCanvas());
         resizeObserver.observe(this.contentElement);
     },
@@ -219,11 +223,9 @@ const HolafRemoteComparer = {
         if (this.isPoppedOut) return;
         this.isPoppedOut = true;
 
-        // Hide ComfyUI container
         this.rootElement.style.display = "none";
-        if (this.isFullscreen) this.toggleFullscreen(); // Reset fullscreen state
+        if (this.isFullscreen) this.toggleFullscreen();
 
-        // Open new window
         const w = this.storedPos.width;
         const h = this.storedPos.height;
         this.popupWindow = window.open("", "HolafRemoteComparerPopup", `width=${w},height=${h},menubar=no,toolbar=no,location=no,status=no`);
@@ -238,7 +240,6 @@ const HolafRemoteComparer = {
         const doc = this.popupWindow.document;
         doc.title = "Holaf Remote Comparer";
 
-        // Setup popup body
         Object.assign(doc.body.style, {
             margin: "0",
             backgroundColor: "#111",
@@ -248,7 +249,6 @@ const HolafRemoteComparer = {
             height: "100vh"
         });
 
-        // Setup Return button
         const popupHeader = doc.createElement("div");
         const returnBtn = doc.createElement("button");
         returnBtn.innerText = "↘ Return to ComfyUI Canvas";
@@ -263,11 +263,8 @@ const HolafRemoteComparer = {
 
         popupHeader.appendChild(returnBtn);
         doc.body.appendChild(popupHeader);
-
-        // Move the content element to the new window
         doc.body.appendChild(this.contentElement);
 
-        // Events to handle closure and resize
         this.popupWindow.onbeforeunload = () => this.popIn();
         this.popupWindow.addEventListener("resize", () => this.resizeCanvas());
 
@@ -278,11 +275,10 @@ const HolafRemoteComparer = {
         if (!this.isPoppedOut) return;
         this.isPoppedOut = false;
 
-        // Move content back to main UI
         this.rootElement.insertBefore(this.contentElement, this.resizeHandle);
 
         if (this.popupWindow && !this.popupWindow.closed) {
-            this.popupWindow.onbeforeunload = null; // Prevent infinite loop
+            this.popupWindow.onbeforeunload = null;
             this.popupWindow.close();
         }
         this.popupWindow = null;
@@ -392,8 +388,8 @@ const HolafRemoteComparer = {
                 const dx = ev.clientX - startX;
                 const dy = ev.clientY - startY;
 
-                const newW = Math.max(300, startW + dx); // Minimum width
-                const newH = Math.max(200, startH + dy); // Minimum height
+                const newW = Math.max(300, startW + dx);
+                const newH = Math.max(200, startH + dy);
 
                 this.storedPos.width = newW;
                 this.storedPos.height = newH;
@@ -465,30 +461,113 @@ const HolafRemoteComparer = {
     hide() {
         this.isOpen = false;
         if (this.isPoppedOut) {
-            this.popIn(); // PopIn handles re-attaching elements
+            this.popIn();
         }
         if (this.rootElement) this.rootElement.style.display = "none";
         this.saveState();
     },
 
-    // --- CANVAS INTERACTIONS & DRAWING ---
+    // --- PAN, ZOOM & CANVAS LOGIC ---
+
+    resetZoom() {
+        this.zoomState = { scale: 1, tx: 0, ty: 0 };
+        if (this.canvasEl) {
+            this.canvasEl.style.transform = `translate(0px, 0px) scale(1)`;
+        }
+        this.draw();
+    },
 
     attachCanvasListeners() {
-        this.canvasEl.addEventListener("mousemove", (e) => {
-            const rect = this.canvasEl.getBoundingClientRect();
-            this.mouseX = e.clientX - rect.left;
-            if (this.isOpen || this.isPoppedOut) this.draw();
+        // Slider movement
+        this.contentElement.addEventListener("mousemove", (e) => {
+            const rect = this.contentElement.getBoundingClientRect();
+            const screenX = e.clientX - rect.left;
+
+            // Map screen mouse position to scaled canvas coordinates
+            this.mouseX = (screenX - this.zoomState.tx) / this.zoomState.scale;
+
+            if (this.isOpen || this.isPoppedOut) {
+                this.draw();
+            }
         });
 
-        this.canvasEl.addEventListener("mouseenter", () => {
+        this.contentElement.addEventListener("mouseenter", () => {
             this.isMouseOver = true;
         });
 
-        this.canvasEl.addEventListener("mouseleave", () => {
+        this.contentElement.addEventListener("mouseleave", () => {
             this.isMouseOver = false;
             this.mouseX = null;
             if (this.isOpen || this.isPoppedOut) this.draw();
         });
+
+        // Zoom (Scroll wheel)
+        this.contentElement.addEventListener("wheel", (e) => {
+            if (this.images.length === 0) return;
+            e.preventDefault();
+
+            const state = this.zoomState;
+            const oldScale = state.scale;
+            const newScale = e.deltaY < 0 ? oldScale * 1.1 : oldScale / 1.1;
+            state.scale = Math.max(1, Math.min(newScale, 30));
+
+            if (state.scale === oldScale) return;
+
+            const rect = this.contentElement.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Zoom relative to mouse cursor
+            state.tx = mouseX - (mouseX - state.tx) * (state.scale / oldScale);
+            state.ty = mouseY - (mouseY - state.ty) * (state.scale / oldScale);
+
+            if (state.scale <= 1) {
+                this.resetZoom();
+            } else {
+                this.canvasEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+                this.draw(); // Redraw to adjust split line width
+            }
+        });
+
+        // Pan (Drag)
+        this.contentElement.addEventListener("mousedown", (e) => {
+            if (e.button !== 0 || this.zoomState.scale <= 1) return; // Only left-click when zoomed
+            e.preventDefault();
+
+            this.isPanning = true;
+            const state = this.zoomState;
+            let startX = e.clientX - state.tx;
+            let startY = e.clientY - state.ty;
+
+            this.canvasEl.style.cursor = 'grabbing';
+            this.canvasEl.style.transition = 'none';
+
+            const onMouseMove = (moveEvent) => {
+                state.tx = moveEvent.clientX - startX;
+                state.ty = moveEvent.clientY - startY;
+                this.canvasEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+
+                // Update slider position while panning
+                const rect = this.contentElement.getBoundingClientRect();
+                const screenX = moveEvent.clientX - rect.left;
+                this.mouseX = (screenX - state.tx) / state.scale;
+
+                this.draw();
+            };
+
+            const onMouseUp = () => {
+                this.isPanning = false;
+                this.canvasEl.style.cursor = 'crosshair';
+                this.canvasEl.style.transition = 'transform .2s ease-out';
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        this.canvasEl.ondragstart = (e) => e.preventDefault();
     },
 
     resizeCanvas() {
@@ -510,17 +589,18 @@ const HolafRemoteComparer = {
             this.statusTextEl.style.display = "block";
             this.statusTextEl.innerText = "No images received.";
             this.images = [];
-            this.draw();
+            this.resetZoom();
             return;
         }
 
         this.statusTextEl.style.display = "none";
 
-        if (!this.isOpen) {
+        if (!this.isOpen && !this.isPoppedOut) {
             this.show();
             this.saveState();
         }
 
+        this.resetZoom();
         await this.loadImages(imagesMeta);
         this.draw();
     },
@@ -576,6 +656,7 @@ const HolafRemoteComparer = {
         const canvasAspect = width / height;
         let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
 
+        // Letterboxing calculation
         if (imgAspect > canvasAspect) {
             drawWidth = width;
             drawHeight = width / imgAspect;
@@ -586,11 +667,13 @@ const HolafRemoteComparer = {
             offsetX = (width - drawWidth) / 2;
         }
 
+        // Draw background image
         this.ctx.drawImage(imgA, offsetX, offsetY, drawWidth, drawHeight);
 
         if (!imgB || !imgB.complete) return;
 
-        if (this.isMouseOver && this.mouseX !== null) {
+        // Draw foreground split image
+        if ((this.isMouseOver || this.isPanning) && this.mouseX !== null) {
             this.ctx.save();
             this.ctx.beginPath();
 
@@ -601,11 +684,15 @@ const HolafRemoteComparer = {
             this.ctx.drawImage(imgB, offsetX, offsetY, drawWidth, drawHeight);
             this.ctx.restore();
 
+            // Draw split separator line
             if (this.mouseX >= offsetX && this.mouseX <= offsetX + drawWidth) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(this.mouseX, offsetY);
                 this.ctx.lineTo(this.mouseX, offsetY + drawHeight);
-                this.ctx.lineWidth = 1;
+
+                // Keep the line visually 1px wide regardless of canvas CSS scale
+                this.ctx.lineWidth = 1 / (this.zoomState.scale || 1);
+
                 this.ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
                 this.ctx.globalCompositeOperation = "difference";
                 this.ctx.stroke();
