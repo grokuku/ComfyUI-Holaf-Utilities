@@ -1,10 +1,10 @@
 /*
-    * Copyright (C) 2026 Holaf
-    * Holaf Utilities - Remote Comparer
-    *
-    * Provides a floating UI overlay to compare two images.
-    * Uses the exact skin, drag, resize and state persistence of HolafShortcuts.
-    */
+ * Copyright (C) 2026 Holaf
+ * Holaf Utilities - Remote Comparer
+ *
+ * Provides a floating UI overlay to compare two images.
+ * Features: Drag, Resize, Fullscreen (double-click header), Pop-out window.
+ */
 
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
@@ -12,6 +12,8 @@ import { api } from "../../scripts/api.js";
 const HolafRemoteComparer = {
     name: "Holaf.RemoteComparer",
     isOpen: false,
+    isFullscreen: false,
+    isPoppedOut: false,
 
     // --- DOM Elements ---
     rootElement: null,
@@ -20,6 +22,7 @@ const HolafRemoteComparer = {
     ctx: null,
     statusTextEl: null,
     resizeHandle: null,
+    popupWindow: null,
 
     // --- Comparison State ---
     images: [],
@@ -39,17 +42,20 @@ const HolafRemoteComparer = {
         this.restoreState();
         this.buildUI();
 
-        window.addEventListener("resize", () => this.updateVisualPosition());
+        window.addEventListener("resize", () => {
+            if (!this.isFullscreen && !this.isPoppedOut) {
+                this.updateVisualPosition();
+            }
+        });
         api.addEventListener("executed", (e) => this.handleNodeExecution(e));
 
         if (this.isOpen) {
-            // Small delay to ensure ComfyUI is fully loaded before showing
             setTimeout(() => this.show(), 300);
         }
         console.log("[Holaf Remote Comparer] Initialized.");
     },
 
-    // --- UI CONSTRUCTION (Matched with Shortcuts skin) ---
+    // --- UI CONSTRUCTION ---
 
     buildUI() {
         if (this.rootElement) return;
@@ -68,7 +74,8 @@ const HolafRemoteComparer = {
             overflow: "hidden",
             flexDirection: "column",
             color: "#eee",
-            boxShadow: "0 10px 40px rgba(0, 0, 0, 0.7)"
+            boxShadow: "0 10px 40px rgba(0, 0, 0, 0.7)",
+            transition: "border-radius 0.2s ease" // Smooth transition for fullscreen
         });
 
         // Header
@@ -85,23 +92,50 @@ const HolafRemoteComparer = {
 
         const title = document.createElement("span");
         title.innerText = "Remote Image Comparer";
-        Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none" });
+        Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none", pointerEvents: "none" });
 
+        const btnContainer = document.createElement("div");
+        Object.assign(btnContainer.style, { display: "flex", gap: "8px" });
+
+        // Pop-out Button
+        const popoutBtn = document.createElement("button");
+        popoutBtn.innerText = "↗";
+        popoutBtn.title = "Pop out to new window";
+        Object.assign(popoutBtn.style, {
+            background: "none", border: "none", color: "#888",
+            cursor: "pointer", fontSize: "14px", padding: "0",
+            transition: "color 0.2s ease"
+        });
+        popoutBtn.onmouseenter = () => popoutBtn.style.color = "var(--holaf-accent-color, #ff8c00)";
+        popoutBtn.onmouseleave = () => popoutBtn.style.color = "#888";
+        popoutBtn.onmousedown = (e) => e.stopPropagation();
+        popoutBtn.onclick = () => this.popOut();
+
+        // Close Button
         const closeBtn = document.createElement("button");
         closeBtn.innerText = "✕";
         closeBtn.title = "Close";
         Object.assign(closeBtn.style, {
             background: "none", border: "none", color: "#888",
-            cursor: "pointer", fontSize: "14px", padding: "0 6px",
+            cursor: "pointer", fontSize: "14px", padding: "0",
             transition: "color 0.2s ease"
         });
         closeBtn.onmouseenter = () => closeBtn.style.color = "#ff5555";
         closeBtn.onmouseleave = () => closeBtn.style.color = "#888";
-        closeBtn.onmousedown = (e) => e.stopPropagation(); // Prevent dragging
+        closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
 
+        btnContainer.appendChild(popoutBtn);
+        btnContainer.appendChild(closeBtn);
+
         header.appendChild(title);
-        header.appendChild(closeBtn);
+        header.appendChild(btnContainer);
+
+        // Double-click to toggle fullscreen
+        header.addEventListener('dblclick', (e) => {
+            if (e.target.tagName === "BUTTON") return;
+            this.toggleFullscreen();
+        });
 
         // Content Area
         this.contentElement = document.createElement("div");
@@ -112,7 +146,9 @@ const HolafRemoteComparer = {
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            overflow: "hidden"
+            overflow: "hidden",
+            width: "100%",
+            height: "100%"
         });
 
         // Status Text
@@ -151,15 +187,118 @@ const HolafRemoteComparer = {
         this.attachCanvasListeners();
         this.updateVisualPosition();
 
-        // Handle Canvas resizing properly
+        // Handle Canvas resizing
         const resizeObserver = new ResizeObserver(() => this.resizeCanvas());
         resizeObserver.observe(this.contentElement);
     },
 
-    // --- DRAG & RESIZE LOGIC (Copied from Shortcuts) ---
+    // --- FULLSCREEN LOGIC ---
+
+    toggleFullscreen() {
+        this.isFullscreen = !this.isFullscreen;
+        if (this.isFullscreen) {
+            Object.assign(this.rootElement.style, {
+                width: "100vw",
+                height: "100vh",
+                right: "0px",
+                bottom: "0px",
+                borderRadius: "0px"
+            });
+            this.resizeHandle.style.display = "none";
+        } else {
+            this.rootElement.style.borderRadius = "8px";
+            this.resizeHandle.style.display = "block";
+            this.updateVisualPosition();
+        }
+        setTimeout(() => this.resizeCanvas(), 50);
+    },
+
+    // --- POPOUT LOGIC ---
+
+    popOut() {
+        if (this.isPoppedOut) return;
+        this.isPoppedOut = true;
+
+        // Hide ComfyUI container
+        this.rootElement.style.display = "none";
+        if (this.isFullscreen) this.toggleFullscreen(); // Reset fullscreen state
+
+        // Open new window
+        const w = this.storedPos.width;
+        const h = this.storedPos.height;
+        this.popupWindow = window.open("", "HolafRemoteComparerPopup", `width=${w},height=${h},menubar=no,toolbar=no,location=no,status=no`);
+
+        if (!this.popupWindow) {
+            alert("Popup blocked! Please allow popups for ComfyUI to use the Pop-out feature.");
+            this.isPoppedOut = false;
+            this.rootElement.style.display = "flex";
+            return;
+        }
+
+        const doc = this.popupWindow.document;
+        doc.title = "Holaf Remote Comparer";
+
+        // Setup popup body
+        Object.assign(doc.body.style, {
+            margin: "0",
+            backgroundColor: "#111",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            height: "100vh"
+        });
+
+        // Setup Return button
+        const popupHeader = doc.createElement("div");
+        const returnBtn = doc.createElement("button");
+        returnBtn.innerText = "↘ Return to ComfyUI Canvas";
+        Object.assign(returnBtn.style, {
+            width: "100%", padding: "8px", background: "#353535", color: "#eee",
+            border: "none", borderBottom: "1px solid #555", cursor: "pointer",
+            fontFamily: "sans-serif", fontWeight: "bold", transition: "background 0.2s"
+        });
+        returnBtn.onmouseenter = () => returnBtn.style.background = "#444";
+        returnBtn.onmouseleave = () => returnBtn.style.background = "#353535";
+        returnBtn.onclick = () => this.popIn();
+
+        popupHeader.appendChild(returnBtn);
+        doc.body.appendChild(popupHeader);
+
+        // Move the content element to the new window
+        doc.body.appendChild(this.contentElement);
+
+        // Events to handle closure and resize
+        this.popupWindow.onbeforeunload = () => this.popIn();
+        this.popupWindow.addEventListener("resize", () => this.resizeCanvas());
+
+        setTimeout(() => this.resizeCanvas(), 50);
+    },
+
+    popIn() {
+        if (!this.isPoppedOut) return;
+        this.isPoppedOut = false;
+
+        // Move content back to main UI
+        this.rootElement.insertBefore(this.contentElement, this.resizeHandle);
+
+        if (this.popupWindow && !this.popupWindow.closed) {
+            this.popupWindow.onbeforeunload = null; // Prevent infinite loop
+            this.popupWindow.close();
+        }
+        this.popupWindow = null;
+
+        if (this.isOpen) {
+            this.rootElement.style.display = "flex";
+            this.updateVisualPosition();
+        }
+
+        setTimeout(() => this.resizeCanvas(), 50);
+    },
+
+    // --- DRAG & RESIZE LOGIC ---
 
     updateVisualPosition() {
-        if (!this.rootElement) return;
+        if (!this.rootElement || this.isFullscreen || this.isPoppedOut) return;
 
         this.rootElement.style.width = this.storedPos.width + "px";
         this.rootElement.style.height = this.storedPos.height + "px";
@@ -182,7 +321,7 @@ const HolafRemoteComparer = {
         let startX, startY, dragStartRight, dragStartBottom;
 
         dragTarget.addEventListener('mousedown', (e) => {
-            if (e.target.tagName === "BUTTON") return;
+            if (e.target.tagName === "BUTTON" || this.isFullscreen) return;
 
             isDragging = true;
             startX = e.clientX;
@@ -234,6 +373,7 @@ const HolafRemoteComparer = {
         let startX, startY, startW, startH, startRight, startBottom;
 
         this.resizeHandle.addEventListener('mousedown', (e) => {
+            if (this.isFullscreen) return;
             e.stopPropagation();
             isResizing = true;
             startX = e.clientX;
@@ -312,16 +452,23 @@ const HolafRemoteComparer = {
 
     show() {
         if (!this.rootElement) this.buildUI();
-        this.rootElement.style.display = "flex";
         this.isOpen = true;
-        this.updateVisualPosition();
+
+        if (!this.isPoppedOut) {
+            this.rootElement.style.display = "flex";
+            if (!this.isFullscreen) this.updateVisualPosition();
+        }
+
         this.resizeCanvas();
     },
 
     hide() {
-        if (this.rootElement) this.rootElement.style.display = "none";
         this.isOpen = false;
-        this.saveState(); // Update state when hidden via the close button
+        if (this.isPoppedOut) {
+            this.popIn(); // PopIn handles re-attaching elements
+        }
+        if (this.rootElement) this.rootElement.style.display = "none";
+        this.saveState();
     },
 
     // --- CANVAS INTERACTIONS & DRAWING ---
@@ -330,7 +477,7 @@ const HolafRemoteComparer = {
         this.canvasEl.addEventListener("mousemove", (e) => {
             const rect = this.canvasEl.getBoundingClientRect();
             this.mouseX = e.clientX - rect.left;
-            if (this.isOpen) this.draw();
+            if (this.isOpen || this.isPoppedOut) this.draw();
         });
 
         this.canvasEl.addEventListener("mouseenter", () => {
@@ -340,7 +487,7 @@ const HolafRemoteComparer = {
         this.canvasEl.addEventListener("mouseleave", () => {
             this.isMouseOver = false;
             this.mouseX = null;
-            if (this.isOpen) this.draw();
+            if (this.isOpen || this.isPoppedOut) this.draw();
         });
     },
 
