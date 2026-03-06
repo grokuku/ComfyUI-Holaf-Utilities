@@ -29,11 +29,13 @@ const HolafRemoteComparer = {
     resizeHandle: null,
     popupWindow: null,
     floatingSidebarBtn: null,
+    floatingPopoutBtn: null,
     floatingPopinBtn: null,
 
     // --- Comparison & History State ---
-    history:[], // Array of { name, imagesMeta }
+    history: [], // Array of { name, imagesMeta }
     latestImagesMeta:[],
+    currentImagesMeta:[], // Currently displayed metadata (for saving)
     currentViewName: "latest", // "latest" or a specific comparison name
     images:[], // Currently loaded JS Image objects
     mouseX: null,
@@ -111,21 +113,7 @@ const HolafRemoteComparer = {
         const btnContainer = document.createElement("div");
         Object.assign(btnContainer.style, { display: "flex", gap: "12px" });
 
-        // Pop-out Button
-        const popoutBtn = document.createElement("button");
-        popoutBtn.innerText = "↗";
-        popoutBtn.title = "Pop out to new window";
-        Object.assign(popoutBtn.style, {
-            background: "none", border: "none", color: "#888",
-            cursor: "pointer", fontSize: "14px", padding: "0",
-            transition: "color 0.2s ease"
-        });
-        popoutBtn.onmouseenter = () => popoutBtn.style.color = "var(--holaf-accent-color, #ff8c00)";
-        popoutBtn.onmouseleave = () => popoutBtn.style.color = "#888";
-        popoutBtn.onmousedown = (e) => e.stopPropagation();
-        popoutBtn.onclick = () => this.popOut();
-
-        // Close Button
+        // Close Button (Only button left in header)
         const closeBtn = document.createElement("button");
         closeBtn.innerText = "✕";
         closeBtn.title = "Close";
@@ -139,9 +127,7 @@ const HolafRemoteComparer = {
         closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
 
-        btnContainer.appendChild(popoutBtn);
         btnContainer.appendChild(closeBtn);
-
         header.appendChild(title);
         header.appendChild(btnContainer);
 
@@ -201,8 +187,21 @@ const HolafRemoteComparer = {
         this.floatingSidebarBtn.onmouseleave = () => { this.floatingSidebarBtn.style.color = "#ddd"; this.floatingSidebarBtn.style.background = "rgba(20,20,20,0.7)"; };
         this.floatingSidebarBtn.onclick = () => this.toggleSidebar();
 
+        this.floatingPopoutBtn = document.createElement("button");
+        this.floatingPopoutBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>`;
+        this.floatingPopoutBtn.title = "Pop out to new window";
+        Object.assign(this.floatingPopoutBtn.style, {
+            position: "absolute", top: "10px", right: "10px", zIndex: "100",
+            background: "rgba(20,20,20,0.7)", border: "1px solid #444", color: "#ddd",
+            cursor: "pointer", padding: "6px", display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: "6px", backdropFilter: "blur(4px)", transition: "all 0.2s ease"
+        });
+        this.floatingPopoutBtn.onmouseenter = () => { this.floatingPopoutBtn.style.color = "var(--holaf-accent-color, #ff8c00)"; this.floatingPopoutBtn.style.background = "rgba(40,40,40,0.9)"; };
+        this.floatingPopoutBtn.onmouseleave = () => { this.floatingPopoutBtn.style.color = "#ddd"; this.floatingPopoutBtn.style.background = "rgba(20,20,20,0.7)"; };
+        this.floatingPopoutBtn.onclick = () => this.popOut();
+
         this.floatingPopinBtn = document.createElement("button");
-        this.floatingPopinBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>`;
+        this.floatingPopinBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`;
         this.floatingPopinBtn.title = "Return to main window";
         Object.assign(this.floatingPopinBtn.style, {
             position: "absolute", top: "10px", right: "10px", zIndex: "100",
@@ -238,6 +237,7 @@ const HolafRemoteComparer = {
         this.ctx = this.canvasEl.getContext("2d");
 
         this.contentElement.appendChild(this.floatingSidebarBtn);
+        this.contentElement.appendChild(this.floatingPopoutBtn);
         this.contentElement.appendChild(this.floatingPopinBtn);
         this.contentElement.appendChild(this.statusTextEl);
         this.contentElement.appendChild(this.canvasEl);
@@ -328,29 +328,53 @@ const HolafRemoteComparer = {
         spacer.style.flex = "1";
         this.sidebarElement.appendChild(spacer);
 
-        // 3. Clear Button
+        // 3. Actions Row (Clear / Save 2 / Save 1)
         if (this.history.length > 0 || this.latestImagesMeta.length > 0) {
             const sep2 = document.createElement("div");
             Object.assign(sep2.style, { height: "4px", backgroundColor: "#111" });
             this.sidebarElement.appendChild(sep2);
 
-            const clearBtn = document.createElement("div");
-            clearBtn.innerText = "Clear History";
-            Object.assign(clearBtn.style, {
-                padding: "10px", cursor: "pointer", textAlign: "center", color: "#ff5555",
-                fontSize: "12px", fontWeight: "bold", backgroundColor: "#1a1a1a",
-                transition: "background-color 0.1s ease"
+            const actionsContainer = document.createElement("div");
+            Object.assign(actionsContainer.style, {
+                display: "flex", gap: "2px", padding: "4px"
             });
+
+            const baseBtnStyle = {
+                padding: "8px", cursor: "pointer", textAlign: "center",
+                fontSize: "12px", fontWeight: "bold", backgroundColor: "#1a1a1a",
+                transition: "background-color 0.1s ease", display: "flex",
+                alignItems: "center", justifyContent: "center", borderRadius: "2px"
+            };
+
+            const clearBtn = document.createElement("div");
+            clearBtn.innerText = "Clear";
+            Object.assign(clearBtn.style, { ...baseBtnStyle, flex: "1", color: "#ff5555" });
             clearBtn.onmouseenter = () => clearBtn.style.backgroundColor = "#2a2a2a";
             clearBtn.onmouseleave = () => clearBtn.style.backgroundColor = "#1a1a1a";
             clearBtn.onclick = () => this.clearHistory();
-            this.sidebarElement.appendChild(clearBtn);
+
+            const createSaveBtn = (label, index) => {
+                const btn = document.createElement("div");
+                btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="margin-right:4px"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>${label}`;
+                btn.title = `Save Image ${label}`;
+                Object.assign(btn.style, { ...baseBtnStyle, width: "35px", color: "#ccc" });
+                btn.onmouseenter = () => btn.style.backgroundColor = "#2a2a2a";
+                btn.onmouseleave = () => btn.style.backgroundColor = "#1a1a1a";
+                btn.onclick = () => this.saveImage(index);
+                return btn;
+            };
+
+            actionsContainer.appendChild(clearBtn);
+            actionsContainer.appendChild(createSaveBtn("2", 1));
+            actionsContainer.appendChild(createSaveBtn("1", 0));
+
+            this.sidebarElement.appendChild(actionsContainer);
         }
     },
 
     async selectView(nameId) {
         this.currentViewName = nameId;
-        this.renderSidebar(); // Update UI highlights
+        this.renderSidebar();
 
         let targetMeta =[];
         if (nameId === "latest") {
@@ -367,6 +391,7 @@ const HolafRemoteComparer = {
             this.draw();
         } else {
             this.images =[];
+            this.currentImagesMeta =[];
             this.statusTextEl.style.display = "block";
             this.statusTextEl.innerText = "No images available.";
             this.resetZoom();
@@ -376,12 +401,41 @@ const HolafRemoteComparer = {
     clearHistory() {
         this.history = [];
         this.latestImagesMeta =[];
+        this.currentImagesMeta = [];
         this.currentViewName = "latest";
         this.images =[];
         this.statusTextEl.style.display = "block";
         this.statusTextEl.innerText = "Waiting for execution...";
         this.renderSidebar();
         this.resetZoom();
+    },
+
+    saveImage(index) {
+        if (!this.images || this.images.length <= index) return;
+        const img = this.images[index];
+        const meta = this.currentImagesMeta[index];
+        
+        // Clean up filename for saving
+        let filename = `comparer_image_${index + 1}.png`;
+        if (meta && meta.filename) {
+            filename = meta.filename.replace('holaf_remote_cmp_', 'saved_cmp_');
+        }
+
+        // Fetch as blob to force download instead of opening in a new tab
+        fetch(img.src)
+            .then(res => res.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            })
+            .catch(err => console.error("[Holaf Remote Comparer] Save failed:", err));
     },
 
     // --- FULLSCREEN & POPOUT LOGIC ---
@@ -436,6 +490,9 @@ const HolafRemoteComparer = {
 
         // Move mainContainer (Sidebar + Canvas) to popup
         doc.body.appendChild(this.mainContainer);
+        
+        // Toggle floating buttons
+        this.floatingPopoutBtn.style.display = "none";
         this.floatingPopinBtn.style.display = "flex";
 
         this.popupWindow.onbeforeunload = () => this.popIn();
@@ -447,6 +504,9 @@ const HolafRemoteComparer = {
 
         // Return mainContainer to rootElement
         this.rootElement.insertBefore(this.mainContainer, this.resizeHandle);
+        
+        // Toggle floating buttons
+        this.floatingPopoutBtn.style.display = "flex";
         this.floatingPopinBtn.style.display = "none";
 
         if (this.popupWindow && !this.popupWindow.closed) {
@@ -647,6 +707,12 @@ const HolafRemoteComparer = {
     },
 
     attachCanvasListeners() {
+        // Reset Zoom on Double Click
+        this.contentElement.addEventListener("dblclick", (e) => {
+            if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+            this.resetZoom();
+        });
+
         // Slider movement
         this.contentElement.addEventListener("mousemove", (e) => {
             const rect = this.contentElement.getBoundingClientRect();
@@ -699,9 +765,7 @@ const HolafRemoteComparer = {
 
         // Pan (Drag)
         this.contentElement.addEventListener("mousedown", (e) => {
-            // Ignore mousedown if it's on a button
             if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
-            
             if (e.button !== 0 || this.zoomState.scale <= 1) return; // Only left-click when zoomed
             e.preventDefault();
 
@@ -757,7 +821,7 @@ const HolafRemoteComparer = {
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
         if (!imagesMeta || imagesMeta.length === 0) return;
 
-        // LECTURE DIRECTE DU WIDGET (Plus fiable que le retour serveur)
+        // LECTURE DIRECTE DU WIDGET
         let compName = "Unnamed Comparison";
         const nameWidget = node.widgets?.find(w => w.name === "comparison_name");
         if (nameWidget && nameWidget.value) {
@@ -790,6 +854,7 @@ const HolafRemoteComparer = {
 
     loadImages(imagesMeta) {
         return new Promise((resolve) => {
+            this.currentImagesMeta = imagesMeta; // Keep track for saving
             this.images =[];
             let loadedCount = 0;
             const targetCount = Math.min(imagesMeta.length, 2);
