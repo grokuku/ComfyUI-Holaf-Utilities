@@ -250,20 +250,6 @@ const HolafRemoteComparer = {
             height: "100vh"
         });
 
-        const popupHeader = doc.createElement("div");
-        const returnBtn = doc.createElement("button");
-        returnBtn.innerText = "↘ Return to ComfyUI Canvas";
-        Object.assign(returnBtn.style, {
-            width: "100%", padding: "8px", background: "#353535", color: "#eee",
-            border: "none", borderBottom: "1px solid #555", cursor: "pointer",
-            fontFamily: "sans-serif", fontWeight: "bold", transition: "background 0.2s"
-        });
-        returnBtn.onmouseenter = () => returnBtn.style.background = "#444";
-        returnBtn.onmouseleave = () => returnBtn.style.background = "#353535";
-        returnBtn.onclick = () => this.popIn();
-
-        popupHeader.appendChild(returnBtn);
-        doc.body.appendChild(popupHeader);
         doc.body.appendChild(this.contentElement);
 
         this.popupWindow.onbeforeunload = () => this.popIn();
