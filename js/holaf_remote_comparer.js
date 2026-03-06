@@ -1,126 +1,332 @@
 /*
- * Copyright (C) 2026 Holaf
- * Holaf Utilities - Remote Comparer
- *
- * Provides a floating, draggable UI overlay to compare two images.
- * Listens to executions from the 'HolafRemoteComparer' node.
- */
+    * Copyright (C) 2026 Holaf
+    * Holaf Utilities - Remote Comparer
+    *
+    * Provides a floating UI overlay to compare two images.
+    * Uses the exact skin, drag, resize and state persistence of HolafShortcuts.
+    */
 
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-class HolafRemoteComparer {
-    constructor() {
-        this.isOpen = false;
-        this.images = [];
-        this.mouseX = null;
-        this.isMouseOver = false;
+const HolafRemoteComparer = {
+    name: "Holaf.RemoteComparer",
+    isOpen: false,
 
-        // DOM Elements
-        this.containerEl = null;
-        this.canvasEl = null;
-        this.ctx = null;
-        this.statusTextEl = null;
-        this.headerEl = null;
+    // --- DOM Elements ---
+    rootElement: null,
+    contentElement: null,
+    canvasEl: null,
+    ctx: null,
+    statusTextEl: null,
+    resizeHandle: null,
 
-        // Dragging state
-        this.isDragging = false;
-        this.dragStartX = 0;
-        this.dragStartY = 0;
-        this.initialLeft = 0;
-        this.initialTop = 0;
-    }
+    // --- Comparison State ---
+    images: [],
+    mouseX: null,
+    isMouseOver: false,
+
+    // --- Window State ---
+    storedPos: {
+        right: 50,
+        bottom: 50,
+        width: 700,
+        height: 500
+    },
+    STORAGE_KEY: "holaf_remote_comparer_state_v1",
 
     init() {
+        this.restoreState();
         this.buildUI();
-        this.attachEventListeners();
-        console.log("[Holaf Remote Comparer] Initialized (Floating Window).");
-    }
+
+        window.addEventListener("resize", () => this.updateVisualPosition());
+        api.addEventListener("executed", (e) => this.handleNodeExecution(e));
+
+        if (this.isOpen) {
+            // Small delay to ensure ComfyUI is fully loaded before showing
+            setTimeout(() => this.show(), 300);
+        }
+        console.log("[Holaf Remote Comparer] Initialized.");
+    },
+
+    // --- UI CONSTRUCTION (Matched with Shortcuts skin) ---
 
     buildUI() {
-        // Container (The Floating Window)
-        this.containerEl = document.createElement("div");
-        this.containerEl.id = "holaf-remote-comparer-container";
+        if (this.rootElement) return;
 
-        // Header (Draggable Area)
-        this.headerEl = document.createElement("div");
-        this.headerEl.id = "holaf-remote-comparer-header";
+        this.rootElement = document.createElement("div");
+        Object.assign(this.rootElement.style, {
+            display: "none",
+            position: "fixed",
+            zIndex: "1000",
+            backgroundColor: "rgba(20, 20, 20, 0.95)",
+            borderRadius: "8px",
+            border: "1px solid var(--border-color, #555)",
+            backdropFilter: "blur(4px)",
+            fontFamily: "sans-serif",
+            boxSizing: "border-box",
+            overflow: "hidden",
+            flexDirection: "column",
+            color: "#eee",
+            boxShadow: "0 10px 40px rgba(0, 0, 0, 0.7)"
+        });
+
+        // Header
+        const header = document.createElement("div");
+        Object.assign(header.style, {
+            flex: "0 0 auto",
+            display: "flex",
+            alignItems: "center",
+            padding: "8px",
+            backgroundColor: "rgba(255,255,255,0.05)",
+            borderBottom: "1px solid #444",
+            cursor: "move"
+        });
 
         const title = document.createElement("span");
-        title.textContent = "Remote Image Comparer";
+        title.innerText = "Remote Image Comparer";
+        Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none" });
 
         const closeBtn = document.createElement("button");
-        closeBtn.id = "holaf-rc-close-btn";
-        closeBtn.innerHTML = "&times;";
-        closeBtn.title = "Close Comparer";
-        closeBtn.onclick = (e) => {
-            e.stopPropagation(); // Prevent triggering drag
-            this.hide();
-        };
+        closeBtn.innerText = "✕";
+        closeBtn.title = "Close";
+        Object.assign(closeBtn.style, {
+            background: "none", border: "none", color: "#888",
+            cursor: "pointer", fontSize: "14px", padding: "0 6px",
+            transition: "color 0.2s ease"
+        });
+        closeBtn.onmouseenter = () => closeBtn.style.color = "#ff5555";
+        closeBtn.onmouseleave = () => closeBtn.style.color = "#888";
+        closeBtn.onmousedown = (e) => e.stopPropagation(); // Prevent dragging
+        closeBtn.onclick = () => this.hide();
 
-        this.headerEl.appendChild(title);
-        this.headerEl.appendChild(closeBtn);
+        header.appendChild(title);
+        header.appendChild(closeBtn);
 
         // Content Area
-        const content = document.createElement("div");
-        content.id = "holaf-remote-comparer-content";
+        this.contentElement = document.createElement("div");
+        Object.assign(this.contentElement.style, {
+            flex: "1",
+            position: "relative",
+            backgroundColor: "#111",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            overflow: "hidden"
+        });
 
         // Status Text
         this.statusTextEl = document.createElement("div");
-        this.statusTextEl.id = "holaf-rc-status-text";
-        this.statusTextEl.textContent = "Waiting for execution...";
+        Object.assign(this.statusTextEl.style, {
+            position: "absolute",
+            color: "#777",
+            fontSize: "12px",
+            pointerEvents: "none",
+            userSelect: "none"
+        });
+        this.statusTextEl.innerText = "Waiting for execution...";
 
         // Canvas
         this.canvasEl = document.createElement("canvas");
-        this.canvasEl.id = "holaf-remote-comparer-canvas";
+        Object.assign(this.canvasEl.style, {
+            display: "block",
+            cursor: "crosshair",
+            width: "100%",
+            height: "100%"
+        });
         this.ctx = this.canvasEl.getContext("2d");
 
-        content.appendChild(this.statusTextEl);
-        content.appendChild(this.canvasEl);
+        this.contentElement.appendChild(this.statusTextEl);
+        this.contentElement.appendChild(this.canvasEl);
 
-        this.containerEl.appendChild(this.headerEl);
-        this.containerEl.appendChild(content);
+        this.createResizeHandle();
 
-        document.body.appendChild(this.containerEl);
+        this.rootElement.appendChild(header);
+        this.rootElement.appendChild(this.contentElement);
+        this.rootElement.appendChild(this.resizeHandle);
 
-        // Handle Window resizing (using CSS resize: both)
+        document.body.appendChild(this.rootElement);
+
+        this.enableWindowDragging(header);
+        this.attachCanvasListeners();
+        this.updateVisualPosition();
+
+        // Handle Canvas resizing properly
         const resizeObserver = new ResizeObserver(() => this.resizeCanvas());
-        resizeObserver.observe(content);
-    }
+        resizeObserver.observe(this.contentElement);
+    },
 
-    attachEventListeners() {
-        // --- Dragging Logic ---
-        this.headerEl.addEventListener("mousedown", (e) => {
-            if (e.target.id === "holaf-rc-close-btn") return;
-            this.isDragging = true;
-            this.dragStartX = e.clientX;
-            this.dragStartY = e.clientY;
+    // --- DRAG & RESIZE LOGIC (Copied from Shortcuts) ---
 
-            const rect = this.containerEl.getBoundingClientRect();
-            this.initialLeft = rect.left;
-            this.initialTop = rect.top;
+    updateVisualPosition() {
+        if (!this.rootElement) return;
 
-            // Prevent text selection during drag
-            document.body.style.userSelect = "none";
+        this.rootElement.style.width = this.storedPos.width + "px";
+        this.rootElement.style.height = this.storedPos.height + "px";
+
+        const maxRight = window.innerWidth - this.storedPos.width;
+        const maxBottom = window.innerHeight - this.storedPos.height;
+
+        const visualRight = Math.max(0, Math.min(this.storedPos.right, maxRight));
+        const visualBottom = Math.max(0, Math.min(this.storedPos.bottom, maxBottom));
+
+        Object.assign(this.rootElement.style, {
+            left: "auto", top: "auto",
+            right: visualRight + "px",
+            bottom: visualBottom + "px"
         });
+    },
 
-        window.addEventListener("mousemove", (e) => {
-            if (!this.isDragging) return;
-            const dx = e.clientX - this.dragStartX;
-            const dy = e.clientY - this.dragStartY;
+    enableWindowDragging(dragTarget) {
+        let isDragging = false;
+        let startX, startY, dragStartRight, dragStartBottom;
 
-            this.containerEl.style.left = `${this.initialLeft + dx}px`;
-            this.containerEl.style.top = `${this.initialTop + dy}px`;
+        dragTarget.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === "BUTTON") return;
+
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+
+            const rect = this.rootElement.getBoundingClientRect();
+            dragStartRight = window.innerWidth - rect.right;
+            dragStartBottom = window.innerHeight - rect.bottom;
+
+            this.rootElement.style.cursor = "move";
+            e.preventDefault();
+
+            const onMouseMove = (ev) => {
+                if (!isDragging) return;
+                const dx = ev.clientX - startX;
+                const dy = ev.clientY - startY;
+
+                this.storedPos.right = dragStartRight - dx;
+                this.storedPos.bottom = dragStartBottom - dy;
+
+                this.updateVisualPosition();
+            };
+
+            const onMouseUp = () => {
+                if (isDragging) {
+                    isDragging = false;
+                    this.rootElement.style.cursor = "default";
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    this.saveState();
+                }
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
         });
+    },
 
-        window.addEventListener("mouseup", () => {
-            if (this.isDragging) {
-                this.isDragging = false;
-                document.body.style.userSelect = ""; // Restore selection
+    createResizeHandle() {
+        this.resizeHandle = document.createElement("div");
+        Object.assign(this.resizeHandle.style, {
+            position: "absolute", bottom: "0", right: "0",
+            width: "15px", height: "15px", cursor: "nwse-resize",
+            zIndex: "20"
+        });
+        this.resizeHandle.innerHTML = `<svg viewBox="0 0 24 24" style="width:100%; height:100%; fill:rgba(255,255,255,0.3);"><path d="M22 22H12v-2h10v-10h2v12z"/></svg>`;
+
+        let isResizing = false;
+        let startX, startY, startW, startH, startRight, startBottom;
+
+        this.resizeHandle.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+
+            const rect = this.rootElement.getBoundingClientRect();
+            startW = rect.width;
+            startH = rect.height;
+            startRight = window.innerWidth - rect.right;
+            startBottom = window.innerHeight - rect.bottom;
+
+            e.preventDefault();
+
+            const onMouseMove = (ev) => {
+                if (!isResizing) return;
+                const dx = ev.clientX - startX;
+                const dy = ev.clientY - startY;
+
+                const newW = Math.max(300, startW + dx); // Minimum width
+                const newH = Math.max(200, startH + dy); // Minimum height
+
+                this.storedPos.width = newW;
+                this.storedPos.height = newH;
+
+                this.storedPos.right = startRight - (newW - startW);
+                this.storedPos.bottom = startBottom - (newH - startH);
+
+                this.updateVisualPosition();
+            };
+
+            const onMouseUp = () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    this.saveState();
+                }
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    },
+
+    // --- STATE MANAGEMENT ---
+
+    saveState() {
+        if (!this.rootElement) return;
+        const state = {
+            ...this.storedPos,
+            isOpen: this.isOpen
+        };
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
+    },
+
+    restoreState() {
+        try {
+            const saved = localStorage.getItem(this.STORAGE_KEY);
+            if (saved) {
+                const state = JSON.parse(saved);
+                this.storedPos.right = state.right ?? 50;
+                this.storedPos.bottom = state.bottom ?? 50;
+                this.storedPos.width = state.width ?? 700;
+                this.storedPos.height = state.height ?? 500;
+                this.isOpen = !!state.isOpen;
             }
-        });
+        } catch (e) { }
+    },
 
-        // --- Canvas Slide interactions ---
+    toggle() {
+        this.isOpen = !this.isOpen;
+        this.isOpen ? this.show() : this.hide();
+        this.saveState();
+        return this.isOpen;
+    },
+
+    show() {
+        if (!this.rootElement) this.buildUI();
+        this.rootElement.style.display = "flex";
+        this.isOpen = true;
+        this.updateVisualPosition();
+        this.resizeCanvas();
+    },
+
+    hide() {
+        if (this.rootElement) this.rootElement.style.display = "none";
+        this.isOpen = false;
+        this.saveState(); // Update state when hidden via the close button
+    },
+
+    // --- CANVAS INTERACTIONS & DRAWING ---
+
+    attachCanvasListeners() {
         this.canvasEl.addEventListener("mousemove", (e) => {
             const rect = this.canvasEl.getBoundingClientRect();
             this.mouseX = e.clientX - rect.left;
@@ -136,38 +342,14 @@ class HolafRemoteComparer {
             this.mouseX = null;
             if (this.isOpen) this.draw();
         });
-
-        // --- Listen for ComfyUI Node Executions ---
-        api.addEventListener("executed", (e) => this.handleNodeExecution(e));
-    }
+    },
 
     resizeCanvas() {
-        if (!this.canvasEl || !this.canvasEl.parentElement) return;
-        const parent = this.canvasEl.parentElement;
-        this.canvasEl.width = parent.clientWidth;
-        this.canvasEl.height = parent.clientHeight;
+        if (!this.canvasEl || !this.contentElement) return;
+        this.canvasEl.width = this.contentElement.clientWidth;
+        this.canvasEl.height = this.contentElement.clientHeight;
         this.draw();
-    }
-
-    toggle() {
-        this.isOpen ? this.hide() : this.show();
-    }
-
-    show() {
-        this.isOpen = true;
-        this.containerEl.style.display = "flex";
-        this.resizeCanvas();
-
-        // Ensure it's inside the viewport when opening
-        const rect = this.containerEl.getBoundingClientRect();
-        if (rect.top < 0) this.containerEl.style.top = "10px";
-        if (rect.left < 0) this.containerEl.style.left = "10px";
-    }
-
-    hide() {
-        this.isOpen = false;
-        this.containerEl.style.display = "none";
-    }
+    },
 
     async handleNodeExecution(event) {
         const detail = event.detail;
@@ -179,7 +361,7 @@ class HolafRemoteComparer {
         const imagesMeta = detail.output.ui?.images || detail.output.images;
         if (!imagesMeta || imagesMeta.length === 0) {
             this.statusTextEl.style.display = "block";
-            this.statusTextEl.textContent = "No images received.";
+            this.statusTextEl.innerText = "No images received.";
             this.images = [];
             this.draw();
             return;
@@ -189,11 +371,12 @@ class HolafRemoteComparer {
 
         if (!this.isOpen) {
             this.show();
+            this.saveState();
         }
 
         await this.loadImages(imagesMeta);
         this.draw();
-    }
+    },
 
     loadImages(imagesMeta) {
         return new Promise((resolve) => {
@@ -226,7 +409,7 @@ class HolafRemoteComparer {
                 this.images.push(img);
             }
         });
-    }
+    },
 
     draw() {
         if (!this.ctx || !this.canvasEl) return;
@@ -283,12 +466,12 @@ class HolafRemoteComparer {
             }
         }
     }
-}
+};
 
 app.registerExtension({
-    name: "Holaf.Utilities.RemoteComparer",
+    name: HolafRemoteComparer.name,
     async setup() {
-        app.holafRemoteComparer = new HolafRemoteComparer();
-        app.holafRemoteComparer.init();
+        HolafRemoteComparer.init();
+        app.holafRemoteComparer = HolafRemoteComparer;
     }
 });
