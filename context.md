@@ -65,12 +65,12 @@ When the user requests a "context update" or when a major feature is implemented
   📄 holaf_monitor.js : System Monitor overlay with Chart.js.
   📄 holaf_shortcuts.js : Viewport Bookmarks (Pan/Zoom) with Nested Subgraph Navigation.
   📄 holaf_settings_manager.js : Global settings UI.
-  📄 holaf_remote_comparer.js : Floating UI for side-by-side image comparison (Split slider, Fullscreen, Pop-out).
+  📄 holaf_remote_comparer.js : Floating UI for side-by-side image comparison (Native Canvas Zoom, Pop-out, Split).
 
 📁 nodes/
   📄 holaf_model_manager.py : Backend logic for Model scanning/hashing.
   📄 holaf_nodes_manager.py : Backend logic for nodes (Git/Pip operations).
-  📄 holaf_remote_comparer.py : Passthrough node. Saves temp previews and triggers UI updates.
+  📄 holaf_remote_comparer.py : Passthrough node. Uses hidden output key (`holaf_images`) to avoid in-graph preview.
 
 📄 holaf_profiler_engine.py : Measurement logic. Handles Execution Hooks and Robust GPU detection (Logical vs Physical mapping).
 📄 holaf_profiler_database.py : SQLite manager specific to Profiler data.
@@ -112,9 +112,9 @@ When the user requests a "context update" or when a major feature is implemented
 *   **Restoration**: A DOM Comment Placeholder (`holaf-menu-placeholder`) ensures the menu returns to its exact original DOM position.
 
 #### 8. Remote Comparer (Image Split & Pop-out)
-*   **Backend Passthrough**: A custom node (`OUTPUT_NODE = True`) receives up to two images, saves temporary previews, and forces a frontend update without interrupting the workflow.
-*   **Canvas Split Logic**: Uses HTML5 Canvas `clip()` and global composite operations (`difference`) to render a dynamic, mouse-tracking split-screen comparison.
-*   **Pop-out Architecture**: Moves the live canvas DOM element into a newly spawned browser window (`window.open`) to support multi-monitor setups, maintaining state without reloading images. Returns to the main UI upon closure.
+*   **Backend Logic**: A passthrough node (`OUTPUT_NODE = True`) forces execution. It returns image data under a custom key `holaf_images` (instead of standard `images`) to intentionally **hide the preview** within the graph node itself.
+*   **Native Canvas Zoom**: Uses `ctx.scale()` and `ctx.translate()` (internal transformation) instead of CSS scaling. This ensures the displayed image retains its **native resolution** and crispness regardless of the zoom level.
+*   **Pop-out Architecture**: Moves the live canvas DOM element into a newly spawned browser window (`window.open`) to support multi-monitor setups. State (zoom/pan) is preserved during the transition.
 
 ---
 
@@ -140,6 +140,6 @@ When the user requests a "context update" or when a major feature is implemented
 *   **[Stable] Shortcuts**: Nested Subgraph support, Viewport Bookmarks, Graph-embedded data, Ghost Position.
 *   **[Stable] Main Menu**: Dynamic checkmarks, State synchronization, Compact Mode.
 *   **[Stable] Profiler**: Backend Engine (Robust), UI (Advanced), Subgraph Support (Active).
-*   **[Stable] Remote Comparer**: Canvas-based split slider, Fullscreen toggle, and Multi-monitor Pop-out support.
+*   **[Stable] Remote Comparer**: Native Canvas Split/Zoom, Fullscreen toggle, Hidden Node Preview, Multi-monitor Pop-out.
 
 **Next Priority**: Enhance Profiler visual analytics or History Navigation.
