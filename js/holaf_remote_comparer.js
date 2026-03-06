@@ -3,7 +3,7 @@
  * Holaf Utilities - Remote Comparer
  *
  * Provides a floating UI overlay to compare two images.
- * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Scroll wheel).
+ * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Internal Canvas Scaling).
  */
 
 import { app } from "../../scripts/app.js";
@@ -172,8 +172,8 @@ const HolafRemoteComparer = {
             display: "block",
             cursor: "crosshair",
             width: "100%",
-            height: "100%",
-            transformOrigin: "0 0" // Required for accurate zooming
+            height: "100%"
+            // CSS transform is entirely removed here to preserve native resolution
         });
         this.ctx = this.canvasEl.getContext("2d");
 
@@ -471,9 +471,6 @@ const HolafRemoteComparer = {
 
     resetZoom() {
         this.zoomState = { scale: 1, tx: 0, ty: 0 };
-        if (this.canvasEl) {
-            this.canvasEl.style.transform = `translate(0px, 0px) scale(1)`;
-        }
         this.draw();
     },
 
@@ -524,8 +521,7 @@ const HolafRemoteComparer = {
             if (state.scale <= 1) {
                 this.resetZoom();
             } else {
-                this.canvasEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
-                this.draw(); // Redraw to adjust split line width
+                this.draw();
             }
         });
 
@@ -540,12 +536,10 @@ const HolafRemoteComparer = {
             let startY = e.clientY - state.ty;
 
             this.canvasEl.style.cursor = 'grabbing';
-            this.canvasEl.style.transition = 'none';
 
             const onMouseMove = (moveEvent) => {
                 state.tx = moveEvent.clientX - startX;
                 state.ty = moveEvent.clientY - startY;
-                this.canvasEl.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
 
                 // Update slider position while panning
                 const rect = this.contentElement.getBoundingClientRect();
@@ -558,7 +552,6 @@ const HolafRemoteComparer = {
             const onMouseUp = () => {
                 this.isPanning = false;
                 this.canvasEl.style.cursor = 'crosshair';
-                this.canvasEl.style.transition = 'transform .2s ease-out';
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
             };
@@ -643,6 +636,9 @@ const HolafRemoteComparer = {
 
         const width = this.canvasEl.width;
         const height = this.canvasEl.height;
+
+        // Always reset transform before clearing to ensure the entire physical canvas is wiped
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.clearRect(0, 0, width, height);
 
         if (this.images.length === 0) return;
@@ -652,11 +648,15 @@ const HolafRemoteComparer = {
 
         if (!imgA || !imgA.complete || imgA.naturalWidth === 0) return;
 
+        // Apply internal canvas zoom and pan
+        this.ctx.translate(this.zoomState.tx, this.zoomState.ty);
+        this.ctx.scale(this.zoomState.scale, this.zoomState.scale);
+
         const imgAspect = imgA.naturalWidth / imgA.naturalHeight;
         const canvasAspect = width / height;
         let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
 
-        // Letterboxing calculation
+        // Letterboxing calculation based on unscaled bounds
         if (imgAspect > canvasAspect) {
             drawWidth = width;
             drawHeight = width / imgAspect;
@@ -668,6 +668,7 @@ const HolafRemoteComparer = {
         }
 
         // Draw background image
+        // Because of ctx.scale, this will pull high-res data from the source image
         this.ctx.drawImage(imgA, offsetX, offsetY, drawWidth, drawHeight);
 
         if (!imgB || !imgB.complete) return;
