@@ -10,7 +10,9 @@ class HolafRemoteComparerNode:
     @classmethod
     def INPUT_TYPES(s):
         return {
-            "required": {},
+            "required": {
+                "comparison_name": ("STRING", {"default": "Comparison 1", "multiline": False}),
+            },
             "optional": {
                 "image_1": ("IMAGE",),
                 "image_2": ("IMAGE",),
@@ -23,12 +25,12 @@ class HolafRemoteComparerNode:
     CATEGORY = "Holaf"
     OUTPUT_NODE = True # Garante l'exécution même sans fil en sortie
 
-    def compare(self, image_1=None, image_2=None):
-        ui_images = []
+    def compare(self, comparison_name="Comparison 1", image_1=None, image_2=None):
+        ui_images =[]
         
         def save_preview(image_tensor, prefix):
             temp_dir = folder_paths.get_temp_directory()
-            saved_images = []
+            saved_images =[]
             # Handle batches of images if necessary
             for batch_number, image in enumerate(image_tensor):
                 i = 255. * image.cpu().numpy()
@@ -56,9 +58,8 @@ class HolafRemoteComparerNode:
         if image_2 is not None:
             ui_images.extend(save_preview(image_2, "B"))
 
-        # MODIFICATION: Utilisation de "holaf_images" au lieu de "images"
-        # Cela empêche ComfyUI d'afficher la preview standard dans le graph
-        return {"ui": {"holaf_images": ui_images}, "result": (image_1, image_2)}
+        # Transmission du nom au frontend via l'objet "ui"
+        return {"ui": {"holaf_images": ui_images, "comparison_name": [comparison_name]}, "result": (image_1, image_2)}
 
 # Expose the node to ComfyUI
 NODE_CLASS_MAPPINGS = {

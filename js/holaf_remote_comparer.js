@@ -5,6 +5,7 @@
  * Provides a floating UI overlay to compare two images.
  * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Internal Canvas Scaling).
  * Node Preview: Hidden in graph, visible only in Remote Comparer.
+ * History: Volatile sidebar history for fast comparison switching.
  */
 
 import { app } from "../../scripts/app.js";
@@ -15,9 +16,12 @@ const HolafRemoteComparer = {
     isOpen: false,
     isFullscreen: false,
     isPoppedOut: false,
+    isSidebarOpen: true,
 
     // --- DOM Elements ---
     rootElement: null,
+    mainContainer: null,
+    sidebarElement: null,
     contentElement: null,
     canvasEl: null,
     ctx: null,
@@ -25,8 +29,11 @@ const HolafRemoteComparer = {
     resizeHandle: null,
     popupWindow: null,
 
-    // --- Comparison State ---
-    images: [],
+    // --- Comparison & History State ---
+    history:[], // Array of { name, imagesMeta }
+    latestImagesMeta: [],
+    currentViewName: "latest", // "latest" or a specific comparison name
+    images:[], // Currently loaded JS Image objects
     mouseX: null,
     isMouseOver: false,
 
@@ -38,7 +45,7 @@ const HolafRemoteComparer = {
     storedPos: {
         right: 50,
         bottom: 50,
-        width: 700,
+        width: 850,
         height: 500
     },
     STORAGE_KEY: "holaf_remote_comparer_state_v1",
@@ -102,6 +109,20 @@ const HolafRemoteComparer = {
         const btnContainer = document.createElement("div");
         Object.assign(btnContainer.style, { display: "flex", gap: "8px" });
 
+        // Sidebar Toggle Button
+        const sidebarBtn = document.createElement("button");
+        sidebarBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h18v18H3V3zm16 16V5H9v14h10z"/></svg>`;
+        sidebarBtn.title = "Toggle Sidebar";
+        Object.assign(sidebarBtn.style, {
+            background: "none", border: "none", color: "#888",
+            cursor: "pointer", padding: "0", display: "flex", alignItems: "center",
+            transition: "color 0.2s ease"
+        });
+        sidebarBtn.onmouseenter = () => sidebarBtn.style.color = "var(--holaf-accent-color, #ff8c00)";
+        sidebarBtn.onmouseleave = () => sidebarBtn.style.color = "#888";
+        sidebarBtn.onmousedown = (e) => e.stopPropagation();
+        sidebarBtn.onclick = () => this.toggleSidebar();
+
         // Pop-out Button
         const popoutBtn = document.createElement("button");
         popoutBtn.innerText = "↗";
@@ -130,6 +151,7 @@ const HolafRemoteComparer = {
         closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
 
+        btnContainer.appendChild(sidebarBtn);
         btnContainer.appendChild(popoutBtn);
         btnContainer.appendChild(closeBtn);
 
@@ -137,11 +159,35 @@ const HolafRemoteComparer = {
         header.appendChild(btnContainer);
 
         header.addEventListener('dblclick', (e) => {
-            if (e.target.tagName === "BUTTON") return;
+            if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
             this.toggleFullscreen();
         });
 
-        // Content Area
+        // Main Container (holds Sidebar and Canvas)
+        this.mainContainer = document.createElement("div");
+        Object.assign(this.mainContainer.style, {
+            flex: "1",
+            display: "flex",
+            flexDirection: "row",
+            overflow: "hidden",
+            width: "100%",
+            height: "100%"
+        });
+
+        // Sidebar
+        this.sidebarElement = document.createElement("div");
+        Object.assign(this.sidebarElement.style, {
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: "#1a1a1a",
+            overflowY: "auto",
+            overflowX: "hidden",
+            flexShrink: "0",
+            transition: "width 0.2s ease",
+            userSelect: "none"
+        });
+
+        // Content Area (Canvas)
         this.contentElement = document.createElement("div");
         Object.assign(this.contentElement.style, {
             flex: "1",
@@ -151,7 +197,6 @@ const HolafRemoteComparer = {
             justifyContent: "center",
             alignItems: "center",
             overflow: "hidden",
-            width: "100%",
             height: "100%"
         });
 
@@ -181,23 +226,149 @@ const HolafRemoteComparer = {
         this.contentElement.appendChild(this.statusTextEl);
         this.contentElement.appendChild(this.canvasEl);
 
+        this.mainContainer.appendChild(this.sidebarElement);
+        this.mainContainer.appendChild(this.contentElement);
+
         this.createResizeHandle();
 
         this.rootElement.appendChild(header);
-        this.rootElement.appendChild(this.contentElement);
+        this.rootElement.appendChild(this.mainContainer);
         this.rootElement.appendChild(this.resizeHandle);
 
         document.body.appendChild(this.rootElement);
 
         this.enableWindowDragging(header);
         this.attachCanvasListeners();
+        this.renderSidebar();
         this.updateVisualPosition();
 
         const resizeObserver = new ResizeObserver(() => this.resizeCanvas());
         resizeObserver.observe(this.contentElement);
     },
 
-    // --- FULLSCREEN LOGIC ---
+    // --- SIDEBAR & HISTORY LOGIC ---
+
+    toggleSidebar() {
+        this.isSidebarOpen = !this.isSidebarOpen;
+        this.renderSidebar();
+        this.saveState();
+    },
+
+    renderSidebar() {
+        if (!this.sidebarElement) return;
+        this.sidebarElement.innerHTML = "";
+
+        if (!this.isSidebarOpen) {
+            this.sidebarElement.style.width = "0px";
+            this.sidebarElement.style.borderRight = "none";
+            return;
+        }
+        
+        this.sidebarElement.style.width = "180px";
+        this.sidebarElement.style.borderRight = "1px solid #444";
+
+        const createItem = (label, nameId, isSpecial = false) => {
+            const el = document.createElement("div");
+            el.innerText = label;
+            el.title = label;
+            const isSelected = (this.currentViewName === nameId);
+            Object.assign(el.style, {
+                padding: "10px 12px",
+                cursor: "pointer",
+                fontSize: "12px",
+                borderBottom: "1px solid #2a2a2a",
+                backgroundColor: isSelected ? "#333" : "transparent",
+                fontWeight: isSpecial ? "bold" : "normal",
+                color: isSelected ? "var(--holaf-accent-color, #ff8c00)" : "#ccc",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                transition: "background-color 0.1s ease"
+            });
+            
+            el.onmouseenter = () => { if (!isSelected) el.style.backgroundColor = "#222"; };
+            el.onmouseleave = () => { if (!isSelected) el.style.backgroundColor = "transparent"; };
+            el.onclick = () => this.selectView(nameId);
+            return el;
+        };
+
+        // 1. Latest
+        this.sidebarElement.appendChild(createItem("Latest", "latest", true));
+
+        // Separator
+        if (this.history.length > 0) {
+            const sep1 = document.createElement("div");
+            Object.assign(sep1.style, { height: "4px", backgroundColor: "#111", borderBottom: "1px solid #2a2a2a" });
+            this.sidebarElement.appendChild(sep1);
+
+            // 2. History List
+            this.history.forEach(item => {
+                this.sidebarElement.appendChild(createItem(item.name, item.name));
+            });
+        }
+
+        // Spacer
+        const spacer = document.createElement("div");
+        spacer.style.flex = "1";
+        this.sidebarElement.appendChild(spacer);
+
+        // 3. Clear Button
+        if (this.history.length > 0 || this.latestImagesMeta.length > 0) {
+            const sep2 = document.createElement("div");
+            Object.assign(sep2.style, { height: "4px", backgroundColor: "#111" });
+            this.sidebarElement.appendChild(sep2);
+
+            const clearBtn = document.createElement("div");
+            clearBtn.innerText = "Clear History";
+            Object.assign(clearBtn.style, {
+                padding: "10px", cursor: "pointer", textAlign: "center", color: "#ff5555",
+                fontSize: "12px", fontWeight: "bold", backgroundColor: "#1a1a1a",
+                transition: "background-color 0.1s ease"
+            });
+            clearBtn.onmouseenter = () => clearBtn.style.backgroundColor = "#2a2a2a";
+            clearBtn.onmouseleave = () => clearBtn.style.backgroundColor = "#1a1a1a";
+            clearBtn.onclick = () => this.clearHistory();
+            this.sidebarElement.appendChild(clearBtn);
+        }
+    },
+
+    async selectView(nameId) {
+        this.currentViewName = nameId;
+        this.renderSidebar(); // Update UI highlights
+
+        let targetMeta =[];
+        if (nameId === "latest") {
+            targetMeta = this.latestImagesMeta;
+        } else {
+            const found = this.history.find(h => h.name === nameId);
+            if (found) targetMeta = found.imagesMeta;
+        }
+
+        if (targetMeta && targetMeta.length > 0) {
+            this.statusTextEl.style.display = "none";
+            this.resetZoom();
+            await this.loadImages(targetMeta);
+            this.draw();
+        } else {
+            this.images =[];
+            this.statusTextEl.style.display = "block";
+            this.statusTextEl.innerText = "No images available.";
+            this.resetZoom();
+        }
+    },
+
+    clearHistory() {
+        this.history =[];
+        this.latestImagesMeta =[];
+        this.currentViewName = "latest";
+        this.images =[];
+        this.statusTextEl.style.display = "block";
+        this.statusTextEl.innerText = "Waiting for execution...";
+        this.renderSidebar();
+        this.resetZoom();
+    },
+
+    // --- FULLSCREEN & POPOUT LOGIC ---
 
     toggleFullscreen() {
         this.isFullscreen = !this.isFullscreen;
@@ -215,10 +386,7 @@ const HolafRemoteComparer = {
             this.resizeHandle.style.display = "block";
             this.updateVisualPosition();
         }
-        setTimeout(() => this.resizeCanvas(), 50);
     },
-
-    // --- POPOUT LOGIC ---
 
     popOut() {
         if (this.isPoppedOut) return;
@@ -250,19 +418,18 @@ const HolafRemoteComparer = {
             height: "100vh"
         });
 
-        doc.body.appendChild(this.contentElement);
+        // Move mainContainer (Sidebar + Canvas) to popup
+        doc.body.appendChild(this.mainContainer);
 
         this.popupWindow.onbeforeunload = () => this.popIn();
-        this.popupWindow.addEventListener("resize", () => this.resizeCanvas());
-
-        setTimeout(() => this.resizeCanvas(), 50);
     },
 
     popIn() {
         if (!this.isPoppedOut) return;
         this.isPoppedOut = false;
 
-        this.rootElement.insertBefore(this.contentElement, this.resizeHandle);
+        // Return mainContainer to rootElement
+        this.rootElement.insertBefore(this.mainContainer, this.resizeHandle);
 
         if (this.popupWindow && !this.popupWindow.closed) {
             this.popupWindow.onbeforeunload = null;
@@ -274,8 +441,6 @@ const HolafRemoteComparer = {
             this.rootElement.style.display = "flex";
             this.updateVisualPosition();
         }
-
-        setTimeout(() => this.resizeCanvas(), 50);
     },
 
     // --- DRAG & RESIZE LOGIC ---
@@ -304,7 +469,7 @@ const HolafRemoteComparer = {
         let startX, startY, dragStartRight, dragStartBottom;
 
         dragTarget.addEventListener('mousedown', (e) => {
-            if (e.target.tagName === "BUTTON" || this.isFullscreen) return;
+            if (e.target.tagName === "BUTTON" || e.target.closest("button") || this.isFullscreen) return;
 
             isDragging = true;
             startX = e.clientX;
@@ -407,7 +572,8 @@ const HolafRemoteComparer = {
         if (!this.rootElement) return;
         const state = {
             ...this.storedPos,
-            isOpen: this.isOpen
+            isOpen: this.isOpen,
+            isSidebarOpen: this.isSidebarOpen
         };
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
     },
@@ -419,9 +585,10 @@ const HolafRemoteComparer = {
                 const state = JSON.parse(saved);
                 this.storedPos.right = state.right ?? 50;
                 this.storedPos.bottom = state.bottom ?? 50;
-                this.storedPos.width = state.width ?? 700;
+                this.storedPos.width = state.width ?? 850;
                 this.storedPos.height = state.height ?? 500;
                 this.isOpen = !!state.isOpen;
+                this.isSidebarOpen = state.isSidebarOpen ?? true;
             }
         } catch (e) { }
     },
@@ -566,34 +733,48 @@ const HolafRemoteComparer = {
         const node = app.graph.getNodeById(detail.node);
         if (!node || node.type !== "HolafRemoteComparer") return;
 
-        // Look for "holaf_images" to find the hidden preview data
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
+        
+        // Extract comparison name
+        let compName = "Unnamed Comparison";
+        if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
+            compName = detail.output.ui.comparison_name[0];
+        }
 
-        if (!imagesMeta || imagesMeta.length === 0) {
-            this.statusTextEl.style.display = "block";
-            this.statusTextEl.innerText = "No images received.";
-            this.images = [];
+        if (!imagesMeta || imagesMeta.length === 0) return;
+
+        // Update History State
+        this.latestImagesMeta = imagesMeta;
+        this.history = this.history.filter(h => h.name !== compName);
+        this.history.unshift({ name: compName, imagesMeta: imagesMeta });
+
+        // Determine if canvas should reload automatically
+        const shouldReload = (this.currentViewName === "latest" || this.currentViewName === compName);
+
+        this.renderSidebar();
+
+        if (shouldReload) {
+            this.statusTextEl.style.display = "none";
+            if (!this.isOpen && !this.isPoppedOut) {
+                this.show();
+                this.saveState();
+            }
             this.resetZoom();
-            return;
+            await this.loadImages(imagesMeta);
+            this.draw();
         }
-
-        this.statusTextEl.style.display = "none";
-
-        if (!this.isOpen && !this.isPoppedOut) {
-            this.show();
-            this.saveState();
-        }
-
-        this.resetZoom();
-        await this.loadImages(imagesMeta);
-        this.draw();
     },
 
     loadImages(imagesMeta) {
         return new Promise((resolve) => {
-            this.images = [];
+            this.images =[];
             let loadedCount = 0;
             const targetCount = Math.min(imagesMeta.length, 2);
+
+            if (targetCount === 0) {
+                resolve();
+                return;
+            }
 
             for (let i = 0; i < targetCount; i++) {
                 const meta = imagesMeta[i];
@@ -659,7 +840,6 @@ const HolafRemoteComparer = {
         }
 
         // Draw background image
-        // Because of ctx.scale, this will pull high-res data from the source image
         this.ctx.drawImage(imgA, offsetX, offsetY, drawWidth, drawHeight);
 
         if (!imgB || !imgB.complete) return;
