@@ -550,15 +550,17 @@ const HolafRemoteComparer = {
                 this.draw();
             };
 
+            const targetDoc = this.contentElement.ownerDocument;
+
             const onMouseUp = () => {
                 this.isPanning = false;
                 this.canvasEl.style.cursor = 'crosshair';
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
+                targetDoc.removeEventListener('mousemove', onMouseMove);
+                targetDoc.removeEventListener('mouseup', onMouseUp);
             };
 
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+            targetDoc.addEventListener('mousemove', onMouseMove);
+            targetDoc.addEventListener('mouseup', onMouseUp);
         });
 
         this.canvasEl.ondragstart = (e) => e.preventDefault();
@@ -578,7 +580,7 @@ const HolafRemoteComparer = {
         const node = app.graph.getNodeById(detail.node);
         if (!node || node.type !== "HolafRemoteComparer") return;
 
-        // MODIFIED: Look for "holaf_images" to find the hidden preview data
+        // Look for "holaf_images" to find the hidden preview data
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
 
         if (!imagesMeta || imagesMeta.length === 0) {
