@@ -43,7 +43,11 @@ from .routes.edit_routes import (
 from .routes.utility_routes import (
     set_viewer_activity_route,
     sync_database_route,
-    clean_thumbnails_route
+    clean_thumbnails_route,
+    # --- MODIFICATION START: Import Node Manager Routes ---
+    install_custom_node_route,
+    search_custom_nodes_route
+    # --- MODIFICATION END ---
 )
 
 
@@ -91,6 +95,10 @@ __all__ = [
     'set_viewer_activity_route',
     'sync_database_route',
     'clean_thumbnails_route',
+    
+    # Node Manager
+    'install_custom_node_route',
+    'search_custom_nodes_route',
 
     # Worker
     'run_thumbnail_generation_worker'
