@@ -33,7 +33,7 @@ const HolafRemoteComparer = {
     floatingPopinBtn: null,
 
     // --- Comparison & History State ---
-    history: [], // Array of { name, imagesMeta }
+    history:[], // Array of { name, imagesMeta }
     latestImagesMeta:[],
     currentImagesMeta:[], // Currently displayed metadata (for saving)
     currentViewName: "latest", // "latest" or a specific comparison name
@@ -707,10 +707,47 @@ const HolafRemoteComparer = {
     },
 
     attachCanvasListeners() {
-        // Reset Zoom on Double Click
+        // Smart Zoom on Double Click
         this.contentElement.addEventListener("dblclick", (e) => {
             if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
-            this.resetZoom();
+            
+            if (this.zoomState.scale > 1) {
+                // Already zoomed -> Reset
+                this.resetZoom();
+            } else {
+                // Zoomed out (scale == 1) -> Zoom 100% on cursor
+                if (this.images.length === 0) return;
+                const imgA = this.images[0];
+                if (!imgA || !imgA.complete || imgA.naturalWidth === 0) return;
+
+                const rect = this.contentElement.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const width = this.canvasEl.width;
+                const height = this.canvasEl.height;
+                const imgAspect = imgA.naturalWidth / imgA.naturalHeight;
+                const canvasAspect = width / height;
+                let drawWidth;
+                
+                if (imgAspect > canvasAspect) {
+                    drawWidth = width;
+                } else {
+                    drawWidth = height * imgAspect;
+                }
+
+                // Target scale for 1:1 pixel mapping. Fallback to 2x if image is already small.
+                const targetScale = Math.min(Math.max(imgA.naturalWidth / drawWidth, 2), 30);
+
+                this.zoomState.scale = targetScale;
+                this.zoomState.tx = mouseX - mouseX * targetScale;
+                this.zoomState.ty = mouseY - mouseY * targetScale;
+                
+                // Update slider position so it doesn't jump
+                this.mouseX = (mouseX - this.zoomState.tx) / this.zoomState.scale;
+                
+                this.draw();
+            }
         });
 
         // Slider movement
