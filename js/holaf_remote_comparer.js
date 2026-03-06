@@ -28,10 +28,12 @@ const HolafRemoteComparer = {
     statusTextEl: null,
     resizeHandle: null,
     popupWindow: null,
+    floatingSidebarBtn: null,
+    floatingPopinBtn: null,
 
     // --- Comparison & History State ---
     history:[], // Array of { name, imagesMeta }
-    latestImagesMeta: [],
+    latestImagesMeta:[],
     currentViewName: "latest", // "latest" or a specific comparison name
     images:[], // Currently loaded JS Image objects
     mouseX: null,
@@ -107,21 +109,7 @@ const HolafRemoteComparer = {
         Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none", pointerEvents: "none" });
 
         const btnContainer = document.createElement("div");
-        Object.assign(btnContainer.style, { display: "flex", gap: "8px" });
-
-        // Sidebar Toggle Button
-        const sidebarBtn = document.createElement("button");
-        sidebarBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M3 3h18v18H3V3zm16 16V5H9v14h10z"/></svg>`;
-        sidebarBtn.title = "Toggle Sidebar";
-        Object.assign(sidebarBtn.style, {
-            background: "none", border: "none", color: "#888",
-            cursor: "pointer", padding: "0", display: "flex", alignItems: "center",
-            transition: "color 0.2s ease"
-        });
-        sidebarBtn.onmouseenter = () => sidebarBtn.style.color = "var(--holaf-accent-color, #ff8c00)";
-        sidebarBtn.onmouseleave = () => sidebarBtn.style.color = "#888";
-        sidebarBtn.onmousedown = (e) => e.stopPropagation();
-        sidebarBtn.onclick = () => this.toggleSidebar();
+        Object.assign(btnContainer.style, { display: "flex", gap: "12px" });
 
         // Pop-out Button
         const popoutBtn = document.createElement("button");
@@ -151,7 +139,6 @@ const HolafRemoteComparer = {
         closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
 
-        btnContainer.appendChild(sidebarBtn);
         btnContainer.appendChild(popoutBtn);
         btnContainer.appendChild(closeBtn);
 
@@ -200,6 +187,33 @@ const HolafRemoteComparer = {
             height: "100%"
         });
 
+        // Floating Overlay Buttons
+        this.floatingSidebarBtn = document.createElement("button");
+        this.floatingSidebarBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 3h18v18H3V3zm16 16V5H9v14h10z"/></svg>`;
+        this.floatingSidebarBtn.title = "Toggle Sidebar";
+        Object.assign(this.floatingSidebarBtn.style, {
+            position: "absolute", top: "10px", left: "10px", zIndex: "100",
+            background: "rgba(20,20,20,0.7)", border: "1px solid #444", color: "#ddd",
+            cursor: "pointer", padding: "6px", display: "flex", alignItems: "center", justifyContent: "center",
+            borderRadius: "6px", backdropFilter: "blur(4px)", transition: "all 0.2s ease"
+        });
+        this.floatingSidebarBtn.onmouseenter = () => { this.floatingSidebarBtn.style.color = "var(--holaf-accent-color, #ff8c00)"; this.floatingSidebarBtn.style.background = "rgba(40,40,40,0.9)"; };
+        this.floatingSidebarBtn.onmouseleave = () => { this.floatingSidebarBtn.style.color = "#ddd"; this.floatingSidebarBtn.style.background = "rgba(20,20,20,0.7)"; };
+        this.floatingSidebarBtn.onclick = () => this.toggleSidebar();
+
+        this.floatingPopinBtn = document.createElement("button");
+        this.floatingPopinBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>`;
+        this.floatingPopinBtn.title = "Return to main window";
+        Object.assign(this.floatingPopinBtn.style, {
+            position: "absolute", top: "10px", right: "10px", zIndex: "100",
+            background: "rgba(20,20,20,0.7)", border: "1px solid #444", color: "#ddd",
+            cursor: "pointer", padding: "6px", display: "none", alignItems: "center", justifyContent: "center",
+            borderRadius: "6px", backdropFilter: "blur(4px)", transition: "all 0.2s ease"
+        });
+        this.floatingPopinBtn.onmouseenter = () => { this.floatingPopinBtn.style.color = "var(--holaf-accent-color, #ff8c00)"; this.floatingPopinBtn.style.background = "rgba(40,40,40,0.9)"; };
+        this.floatingPopinBtn.onmouseleave = () => { this.floatingPopinBtn.style.color = "#ddd"; this.floatingPopinBtn.style.background = "rgba(20,20,20,0.7)"; };
+        this.floatingPopinBtn.onclick = () => this.popIn();
+
         // Status Text
         this.statusTextEl = document.createElement("div");
         Object.assign(this.statusTextEl.style, {
@@ -223,6 +237,8 @@ const HolafRemoteComparer = {
         });
         this.ctx = this.canvasEl.getContext("2d");
 
+        this.contentElement.appendChild(this.floatingSidebarBtn);
+        this.contentElement.appendChild(this.floatingPopinBtn);
         this.contentElement.appendChild(this.statusTextEl);
         this.contentElement.appendChild(this.canvasEl);
 
@@ -358,7 +374,7 @@ const HolafRemoteComparer = {
     },
 
     clearHistory() {
-        this.history =[];
+        this.history = [];
         this.latestImagesMeta =[];
         this.currentViewName = "latest";
         this.images =[];
@@ -420,6 +436,7 @@ const HolafRemoteComparer = {
 
         // Move mainContainer (Sidebar + Canvas) to popup
         doc.body.appendChild(this.mainContainer);
+        this.floatingPopinBtn.style.display = "flex";
 
         this.popupWindow.onbeforeunload = () => this.popIn();
     },
@@ -430,6 +447,7 @@ const HolafRemoteComparer = {
 
         // Return mainContainer to rootElement
         this.rootElement.insertBefore(this.mainContainer, this.resizeHandle);
+        this.floatingPopinBtn.style.display = "none";
 
         if (this.popupWindow && !this.popupWindow.closed) {
             this.popupWindow.onbeforeunload = null;
@@ -681,6 +699,9 @@ const HolafRemoteComparer = {
 
         // Pan (Drag)
         this.contentElement.addEventListener("mousedown", (e) => {
+            // Ignore mousedown if it's on a button
+            if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+            
             if (e.button !== 0 || this.zoomState.scale <= 1) return; // Only left-click when zoomed
             e.preventDefault();
 
@@ -734,14 +755,16 @@ const HolafRemoteComparer = {
         if (!node || node.type !== "HolafRemoteComparer") return;
 
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
-        
-        // Extract comparison name
+        if (!imagesMeta || imagesMeta.length === 0) return;
+
+        // LECTURE DIRECTE DU WIDGET (Plus fiable que le retour serveur)
         let compName = "Unnamed Comparison";
-        if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
+        const nameWidget = node.widgets?.find(w => w.name === "comparison_name");
+        if (nameWidget && nameWidget.value) {
+            compName = nameWidget.value;
+        } else if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
             compName = detail.output.ui.comparison_name[0];
         }
-
-        if (!imagesMeta || imagesMeta.length === 0) return;
 
         // Update History State
         this.latestImagesMeta = imagesMeta;
