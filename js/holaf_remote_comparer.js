@@ -1,12 +1,12 @@
 /*
- * Copyright (C) 2026 Holaf
- * Holaf Utilities - Remote Comparer
- *
- * Provides a floating UI overlay to compare two images.
- * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Internal Canvas Scaling).
- * Node Preview: Hidden in graph, visible only in Remote Comparer.
- * History: Volatile sidebar history for fast comparison switching.
- */
+    * Copyright (C) 2026 Holaf
+    * Holaf Utilities - Remote Comparer
+    *
+    * Provides a floating UI overlay to compare two images or videos.
+    * Features: Drag, Resize, Fullscreen, Pop-out, Pan & Zoom (Internal Canvas Scaling).
+    * Node Preview: Hidden in graph, visible only in Remote Comparer.
+    * History: Volatile sidebar history for fast comparison switching.
+    */
 
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
@@ -34,12 +34,13 @@ const HolafRemoteComparer = {
 
     // --- Comparison & History State ---
     history:[], // Array of { name, imagesMeta }
-    latestImagesMeta:[],
+    latestImagesMeta: [],
     currentImagesMeta:[], // Currently displayed metadata (for saving)
     currentViewName: "latest", // "latest" or a specific comparison name
-    images:[], // Currently loaded JS Image objects
+    images:[], // Currently loaded JS Image or Video objects
     mouseX: null,
     isMouseOver: false,
+    rafId: null, // Request Animation Frame ID for video rendering
 
     // --- Pan & Zoom State ---
     zoomState: { scale: 1, tx: 0, ty: 0 },
@@ -72,7 +73,6 @@ const HolafRemoteComparer = {
     },
 
     // --- UI CONSTRUCTION ---
-
     buildUI() {
         if (this.rootElement) return;
 
@@ -107,13 +107,12 @@ const HolafRemoteComparer = {
         });
 
         const title = document.createElement("span");
-        title.innerText = "Remote Image Comparer";
+        title.innerText = "Remote Image/Video Comparer";
         Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none", pointerEvents: "none" });
 
         const btnContainer = document.createElement("div");
         Object.assign(btnContainer.style, { display: "flex", gap: "12px" });
 
-        // Close Button (Only button left in header)
         const closeBtn = document.createElement("button");
         closeBtn.innerText = "✕";
         closeBtn.title = "Close";
@@ -136,7 +135,6 @@ const HolafRemoteComparer = {
             this.toggleFullscreen();
         });
 
-        // Main Container (holds Sidebar and Canvas)
         this.mainContainer = document.createElement("div");
         Object.assign(this.mainContainer.style, {
             flex: "1",
@@ -147,7 +145,6 @@ const HolafRemoteComparer = {
             height: "100%"
         });
 
-        // Sidebar
         this.sidebarElement = document.createElement("div");
         Object.assign(this.sidebarElement.style, {
             display: "flex",
@@ -160,7 +157,6 @@ const HolafRemoteComparer = {
             userSelect: "none"
         });
 
-        // Content Area (Canvas)
         this.contentElement = document.createElement("div");
         Object.assign(this.contentElement.style, {
             flex: "1",
@@ -173,7 +169,6 @@ const HolafRemoteComparer = {
             height: "100%"
         });
 
-        // Floating Overlay Buttons
         this.floatingSidebarBtn = document.createElement("button");
         this.floatingSidebarBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 3h18v18H3V3zm16 16V5H9v14h10z"/></svg>`;
         this.floatingSidebarBtn.title = "Toggle Sidebar";
@@ -213,7 +208,6 @@ const HolafRemoteComparer = {
         this.floatingPopinBtn.onmouseleave = () => { this.floatingPopinBtn.style.color = "#ddd"; this.floatingPopinBtn.style.background = "rgba(20,20,20,0.7)"; };
         this.floatingPopinBtn.onclick = () => this.popIn();
 
-        // Status Text
         this.statusTextEl = document.createElement("div");
         Object.assign(this.statusTextEl.style, {
             position: "absolute",
@@ -225,7 +219,6 @@ const HolafRemoteComparer = {
         });
         this.statusTextEl.innerText = "Waiting for execution...";
 
-        // Canvas
         this.canvasEl = document.createElement("canvas");
         Object.assign(this.canvasEl.style, {
             display: "block",
@@ -263,7 +256,6 @@ const HolafRemoteComparer = {
     },
 
     // --- SIDEBAR & HISTORY LOGIC ---
-
     toggleSidebar() {
         this.isSidebarOpen = !this.isSidebarOpen;
         this.renderSidebar();
@@ -308,27 +300,22 @@ const HolafRemoteComparer = {
             return el;
         };
 
-        // 1. Latest
         this.sidebarElement.appendChild(createItem("Latest", "latest", true));
 
-        // Separator
         if (this.history.length > 0) {
             const sep1 = document.createElement("div");
             Object.assign(sep1.style, { height: "4px", backgroundColor: "#111", borderBottom: "1px solid #2a2a2a" });
             this.sidebarElement.appendChild(sep1);
 
-            // 2. History List
             this.history.forEach(item => {
                 this.sidebarElement.appendChild(createItem(item.name, item.name));
             });
         }
 
-        // Spacer
         const spacer = document.createElement("div");
         spacer.style.flex = "1";
         this.sidebarElement.appendChild(spacer);
 
-        // 3. Actions Row (Clear / Save 2 / Save 1)
         if (this.history.length > 0 || this.latestImagesMeta.length > 0) {
             const sep2 = document.createElement("div");
             Object.assign(sep2.style, { height: "4px", backgroundColor: "#111" });
@@ -356,7 +343,7 @@ const HolafRemoteComparer = {
             const createSaveBtn = (label, index) => {
                 const btn = document.createElement("div");
                 btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="margin-right:4px"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>${label}`;
-                btn.title = `Save Image ${label}`;
+                btn.title = `Save Media ${label}`;
                 Object.assign(btn.style, { ...baseBtnStyle, width: "35px", color: "#ccc" });
                 btn.onmouseenter = () => btn.style.backgroundColor = "#2a2a2a";
                 btn.onmouseleave = () => btn.style.backgroundColor = "#1a1a1a";
@@ -390,7 +377,8 @@ const HolafRemoteComparer = {
             await this.loadImages(targetMeta);
             this.draw();
         } else {
-            this.images =[];
+            this.stopAnimation();
+            this.images = [];
             this.currentImagesMeta =[];
             this.statusTextEl.style.display = "block";
             this.statusTextEl.innerText = "No images available.";
@@ -399,10 +387,12 @@ const HolafRemoteComparer = {
     },
 
     clearHistory() {
+        this.stopAnimation();
         this.history = [];
         this.latestImagesMeta =[];
-        this.currentImagesMeta = [];
+        this.currentImagesMeta =[];
         this.currentViewName = "latest";
+        this.images.forEach(media => { if (media instanceof HTMLVideoElement) media.pause(); });
         this.images =[];
         this.statusTextEl.style.display = "block";
         this.statusTextEl.innerText = "Waiting for execution...";
@@ -412,17 +402,18 @@ const HolafRemoteComparer = {
 
     saveImage(index) {
         if (!this.images || this.images.length <= index) return;
-        const img = this.images[index];
+        const media = this.images[index];
         const meta = this.currentImagesMeta[index];
         
-        // Clean up filename for saving
-        let filename = `comparer_image_${index + 1}.png`;
+        const isVideo = media instanceof HTMLVideoElement;
+        const extension = isVideo ? "mp4" : "png";
+        let filename = `comparer_media_${index + 1}.${extension}`;
+        
         if (meta && meta.filename) {
-            filename = meta.filename.replace('holaf_remote_cmp_', 'saved_cmp_');
+            filename = meta.filename.replace('holaf_remote_cmp_', 'saved_cmp_').replace(/\.[^/.]+$/, `.${extension}`);
         }
 
-        // Fetch as blob to force download instead of opening in a new tab
-        fetch(img.src)
+        fetch(media.src)
             .then(res => res.blob())
             .then(blob => {
                 const url = window.URL.createObjectURL(blob);
@@ -439,7 +430,6 @@ const HolafRemoteComparer = {
     },
 
     // --- FULLSCREEN & POPOUT LOGIC ---
-
     toggleFullscreen() {
         this.isFullscreen = !this.isFullscreen;
         if (this.isFullscreen) {
@@ -488,10 +478,8 @@ const HolafRemoteComparer = {
             height: "100vh"
         });
 
-        // Move mainContainer (Sidebar + Canvas) to popup
         doc.body.appendChild(this.mainContainer);
         
-        // Toggle floating buttons
         this.floatingPopoutBtn.style.display = "none";
         this.floatingPopinBtn.style.display = "flex";
 
@@ -502,10 +490,8 @@ const HolafRemoteComparer = {
         if (!this.isPoppedOut) return;
         this.isPoppedOut = false;
 
-        // Return mainContainer to rootElement
         this.rootElement.insertBefore(this.mainContainer, this.resizeHandle);
         
-        // Toggle floating buttons
         this.floatingPopoutBtn.style.display = "flex";
         this.floatingPopinBtn.style.display = "none";
 
@@ -522,7 +508,6 @@ const HolafRemoteComparer = {
     },
 
     // --- DRAG & RESIZE LOGIC ---
-
     updateVisualPosition() {
         if (!this.rootElement || this.isFullscreen || this.isPoppedOut) return;
 
@@ -645,7 +630,6 @@ const HolafRemoteComparer = {
     },
 
     // --- STATE MANAGEMENT ---
-
     saveState() {
         if (!this.rootElement) return;
         const state = {
@@ -688,6 +672,7 @@ const HolafRemoteComparer = {
         }
 
         this.resizeCanvas();
+        this.images.forEach(media => { if (media instanceof HTMLVideoElement) media.play(); });
     },
 
     hide() {
@@ -696,29 +681,40 @@ const HolafRemoteComparer = {
             this.popIn();
         }
         if (this.rootElement) this.rootElement.style.display = "none";
+        this.images.forEach(media => { if (media instanceof HTMLVideoElement) media.pause(); });
         this.saveState();
     },
 
     // --- PAN, ZOOM & CANVAS LOGIC ---
-
     resetZoom() {
         this.zoomState = { scale: 1, tx: 0, ty: 0 };
         this.draw();
     },
 
+    getMediaSize(media) {
+        if (media instanceof HTMLVideoElement) return { width: media.videoWidth || 0, height: media.videoHeight || 0 };
+        return { width: media.naturalWidth || 0, height: media.naturalHeight || 0 };
+    },
+
+    isMediaReady(media) {
+        if (!media) return false;
+        if (media instanceof HTMLVideoElement) return media.readyState >= 2;
+        return media.complete && media.naturalWidth > 0;
+    },
+
     attachCanvasListeners() {
-        // Smart Zoom on Double Click
         this.contentElement.addEventListener("dblclick", (e) => {
             if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
             
             if (this.zoomState.scale > 1) {
-                // Already zoomed -> Reset
                 this.resetZoom();
             } else {
-                // Zoomed out (scale == 1) -> Zoom 100% on cursor
                 if (this.images.length === 0) return;
                 const imgA = this.images[0];
-                if (!imgA || !imgA.complete || imgA.naturalWidth === 0) return;
+                if (!this.isMediaReady(imgA)) return;
+
+                const sizeA = this.getMediaSize(imgA);
+                if (sizeA.width === 0) return;
 
                 const rect = this.contentElement.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
@@ -726,7 +722,7 @@ const HolafRemoteComparer = {
 
                 const width = this.canvasEl.width;
                 const height = this.canvasEl.height;
-                const imgAspect = imgA.naturalWidth / imgA.naturalHeight;
+                const imgAspect = sizeA.width / sizeA.height;
                 const canvasAspect = width / height;
                 let drawWidth;
                 
@@ -736,31 +732,22 @@ const HolafRemoteComparer = {
                     drawWidth = height * imgAspect;
                 }
 
-                // Target scale for 1:1 pixel mapping. Fallback to 2x if image is already small.
-                const targetScale = Math.min(Math.max(imgA.naturalWidth / drawWidth, 2), 30);
+                const targetScale = Math.min(Math.max(sizeA.width / drawWidth, 2), 30);
 
                 this.zoomState.scale = targetScale;
                 this.zoomState.tx = mouseX - mouseX * targetScale;
                 this.zoomState.ty = mouseY - mouseY * targetScale;
                 
-                // Update slider position so it doesn't jump
                 this.mouseX = (mouseX - this.zoomState.tx) / this.zoomState.scale;
-                
                 this.draw();
             }
         });
 
-        // Slider movement
         this.contentElement.addEventListener("mousemove", (e) => {
             const rect = this.contentElement.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
-
-            // Map screen mouse position to scaled canvas coordinates
             this.mouseX = (screenX - this.zoomState.tx) / this.zoomState.scale;
-
-            if (this.isOpen || this.isPoppedOut) {
-                this.draw();
-            }
+            if (this.isOpen || this.isPoppedOut) this.draw();
         });
 
         this.contentElement.addEventListener("mouseenter", () => {
@@ -773,7 +760,6 @@ const HolafRemoteComparer = {
             if (this.isOpen || this.isPoppedOut) this.draw();
         });
 
-        // Zoom (Scroll wheel)
         this.contentElement.addEventListener("wheel", (e) => {
             if (this.images.length === 0) return;
             e.preventDefault();
@@ -789,7 +775,6 @@ const HolafRemoteComparer = {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            // Zoom relative to mouse cursor
             state.tx = mouseX - (mouseX - state.tx) * (state.scale / oldScale);
             state.ty = mouseY - (mouseY - state.ty) * (state.scale / oldScale);
 
@@ -800,10 +785,9 @@ const HolafRemoteComparer = {
             }
         });
 
-        // Pan (Drag)
         this.contentElement.addEventListener("mousedown", (e) => {
             if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
-            if (e.button !== 0 || this.zoomState.scale <= 1) return; // Only left-click when zoomed
+            if (e.button !== 0 || this.zoomState.scale <= 1) return;
             e.preventDefault();
 
             this.isPanning = true;
@@ -817,7 +801,6 @@ const HolafRemoteComparer = {
                 state.tx = moveEvent.clientX - startX;
                 state.ty = moveEvent.clientY - startY;
 
-                // Update slider position while panning
                 const rect = this.contentElement.getBoundingClientRect();
                 const screenX = moveEvent.clientX - rect.left;
                 this.mouseX = (screenX - state.tx) / state.scale;
@@ -858,7 +841,6 @@ const HolafRemoteComparer = {
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
         if (!imagesMeta || imagesMeta.length === 0) return;
 
-        // LECTURE DIRECTE DU WIDGET
         let compName = "Unnamed Comparison";
         const nameWidget = node.widgets?.find(w => w.name === "comparison_name");
         if (nameWidget && nameWidget.value) {
@@ -867,12 +849,10 @@ const HolafRemoteComparer = {
             compName = detail.output.ui.comparison_name[0];
         }
 
-        // Update History State
         this.latestImagesMeta = imagesMeta;
         this.history = this.history.filter(h => h.name !== compName);
         this.history.unshift({ name: compName, imagesMeta: imagesMeta });
 
-        // Determine if canvas should reload automatically
         const shouldReload = (this.currentViewName === "latest" || this.currentViewName === compName);
 
         this.renderSidebar();
@@ -889,9 +869,49 @@ const HolafRemoteComparer = {
         }
     },
 
+    stopAnimation() {
+        if (this.rafId) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+    },
+
+    checkAndStartAnimation() {
+        this.stopAnimation();
+        const hasVideo = this.images.some(el => el instanceof HTMLVideoElement);
+        if (hasVideo) {
+            const loop = () => {
+                if (this.isOpen || this.isPoppedOut) {
+                    this.draw();
+                }
+                this.rafId = requestAnimationFrame(loop);
+            };
+            this.rafId = requestAnimationFrame(loop);
+        }
+    },
+
+    syncVideos() {
+        const videos = this.images.filter(el => el instanceof HTMLVideoElement);
+        if (videos.length > 1) {
+            videos.forEach(v => v.currentTime = 0);
+        }
+    },
+
     loadImages(imagesMeta) {
         return new Promise((resolve) => {
-            this.currentImagesMeta = imagesMeta; // Keep track for saving
+            this.currentImagesMeta = imagesMeta;
+            
+            this.stopAnimation();
+
+            // Clean up previous elements to free memory
+            this.images.forEach(media => {
+                if (media instanceof HTMLVideoElement) {
+                    media.pause();
+                    media.removeAttribute('src');
+                    media.load();
+                }
+            });
+
             this.images =[];
             let loadedCount = 0;
             const targetCount = Math.min(imagesMeta.length, 2);
@@ -903,27 +923,51 @@ const HolafRemoteComparer = {
 
             for (let i = 0; i < targetCount; i++) {
                 const meta = imagesMeta[i];
-                const img = new Image();
+                let mediaEl;
 
-                img.onload = () => {
+                const onMediaReady = () => {
                     loadedCount++;
-                    if (loadedCount === targetCount) resolve();
+                    if (loadedCount === targetCount) {
+                        this.syncVideos();
+                        this.checkAndStartAnimation();
+                        resolve();
+                    }
                 };
 
-                img.onerror = () => {
-                    console.error("[Holaf Remote Comparer] Failed to load image:", meta.filename);
+                const onMediaError = () => {
+                    console.error("[Holaf Remote Comparer] Failed to load media:", meta.filename);
                     loadedCount++;
-                    if (loadedCount === targetCount) resolve();
+                    if (loadedCount === targetCount) {
+                        this.syncVideos();
+                        this.checkAndStartAnimation();
+                        resolve();
+                    }
                 };
+
+                const isVideo = meta.format === 'video' || (meta.filename && (meta.filename.endsWith('.mp4') || meta.filename.endsWith('.webm')));
+
+                if (isVideo) {
+                    mediaEl = document.createElement("video");
+                    mediaEl.autoplay = true;
+                    mediaEl.loop = true;
+                    mediaEl.muted = true;
+                    mediaEl.playsInline = true;
+                    mediaEl.onloadeddata = onMediaReady;
+                    mediaEl.onerror = onMediaError;
+                } else {
+                    mediaEl = new Image();
+                    mediaEl.onload = onMediaReady;
+                    mediaEl.onerror = onMediaError;
+                }
 
                 const params = new URLSearchParams({
                     filename: meta.filename,
                     type: meta.type,
                     subfolder: meta.subfolder || ""
                 });
-                img.src = api.apiURL(`/view?${params.toString()}`);
+                mediaEl.src = api.apiURL(`/view?${params.toString()}`);
 
-                this.images.push(img);
+                this.images.push(mediaEl);
             }
         });
     },
@@ -934,7 +978,6 @@ const HolafRemoteComparer = {
         const width = this.canvasEl.width;
         const height = this.canvasEl.height;
 
-        // Always reset transform before clearing to ensure the entire physical canvas is wiped
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.clearRect(0, 0, width, height);
 
@@ -943,17 +986,17 @@ const HolafRemoteComparer = {
         const imgA = this.images[0];
         const imgB = this.images.length > 1 ? this.images[1] : null;
 
-        if (!imgA || !imgA.complete || imgA.naturalWidth === 0) return;
+        if (!this.isMediaReady(imgA)) return;
+        const sizeA = this.getMediaSize(imgA);
+        if (sizeA.width === 0) return;
 
-        // Apply internal canvas zoom and pan
         this.ctx.translate(this.zoomState.tx, this.zoomState.ty);
         this.ctx.scale(this.zoomState.scale, this.zoomState.scale);
 
-        const imgAspect = imgA.naturalWidth / imgA.naturalHeight;
+        const imgAspect = sizeA.width / sizeA.height;
         const canvasAspect = width / height;
         let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
 
-        // Letterboxing calculation based on unscaled bounds
         if (imgAspect > canvasAspect) {
             drawWidth = width;
             drawHeight = width / imgAspect;
@@ -964,12 +1007,10 @@ const HolafRemoteComparer = {
             offsetX = (width - drawWidth) / 2;
         }
 
-        // Draw background image
         this.ctx.drawImage(imgA, offsetX, offsetY, drawWidth, drawHeight);
 
-        if (!imgB || !imgB.complete) return;
+        if (!imgB || !this.isMediaReady(imgB)) return;
 
-        // Draw foreground split image
         if ((this.isMouseOver || this.isPanning) && this.mouseX !== null) {
             this.ctx.save();
             this.ctx.beginPath();
@@ -981,15 +1022,11 @@ const HolafRemoteComparer = {
             this.ctx.drawImage(imgB, offsetX, offsetY, drawWidth, drawHeight);
             this.ctx.restore();
 
-            // Draw split separator line
             if (this.mouseX >= offsetX && this.mouseX <= offsetX + drawWidth) {
                 this.ctx.beginPath();
                 this.ctx.moveTo(this.mouseX, offsetY);
                 this.ctx.lineTo(this.mouseX, offsetY + drawHeight);
-
-                // Keep the line visually 1px wide regardless of canvas CSS scale
                 this.ctx.lineWidth = 1 / (this.zoomState.scale || 1);
-
                 this.ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
                 this.ctx.globalCompositeOperation = "difference";
                 this.ctx.stroke();
