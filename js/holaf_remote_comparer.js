@@ -45,8 +45,8 @@ const HolafRemoteComparer = {
     },
 
     // --- Comparison & History State ---
-    history:[], // Array of { name, imagesMeta }
-    latestImagesMeta:[],
+    history: [], // Array of { name, imagesMeta }
+    latestImagesMeta: [],
     currentImagesMeta:[], // Currently displayed metadata (for saving)
     currentViewName: "latest", // "latest" or a specific comparison name
     images:[], // Currently loaded JS Image or HTMLVideoElement objects
@@ -534,7 +534,7 @@ const HolafRemoteComparer = {
             this.draw();
         } else {
             this.stopAnimation();
-            this.images =[];
+            this.images = [];
             this.currentImagesMeta =[];
             this.uiControls.container.style.display = "none";
             this.statusTextEl.style.display = "block";
@@ -545,8 +545,8 @@ const HolafRemoteComparer = {
 
     clearHistory() {
         this.stopAnimation();
-        this.history = [];
-        this.latestImagesMeta =[];
+        this.history =[];
+        this.latestImagesMeta = [];
         this.currentImagesMeta =[];
         this.currentViewName = "latest";
         this.images.forEach(media => { if (media instanceof HTMLVideoElement) media.pause(); });
@@ -1013,11 +1013,28 @@ const HolafRemoteComparer = {
         this.draw();
     },
 
+    findNodeByIdRecursive(graph, id) {
+        if (!graph) return null;
+        let node = graph.getNodeById(id);
+        if (node) return node;
+
+        // Traverse les sous-graphes si le nœud n'est pas dans le graphe courant
+        const nodes = graph._nodes || graph.nodes ||[];
+        for (const n of nodes) {
+            if (n.subgraph) {
+                node = this.findNodeByIdRecursive(n.subgraph, id);
+                if (node) return node;
+            }
+        }
+        return null;
+    },
+
     async handleNodeExecution(event) {
         const detail = event.detail;
         if (!detail || !detail.node || !detail.output) return;
 
-        const node = app.graph.getNodeById(detail.node);
+        // Utilisation de la recherche récursive
+        const node = this.findNodeByIdRecursive(app.graph, detail.node);
         if (!node || node.type !== "HolafRemoteComparer") return;
 
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
