@@ -45,7 +45,7 @@ const HolafRemoteComparer = {
     },
 
     // --- Comparison & History State ---
-    history: [], // Array of { name, imagesMeta }
+    history:[], // Array of { name, imagesMeta }
     latestImagesMeta: [],
     currentImagesMeta:[], // Currently displayed metadata (for saving)
     currentViewName: "latest", // "latest" or a specific comparison name
@@ -534,7 +534,7 @@ const HolafRemoteComparer = {
             this.draw();
         } else {
             this.stopAnimation();
-            this.images = [];
+            this.images =[];
             this.currentImagesMeta =[];
             this.uiControls.container.style.display = "none";
             this.statusTextEl.style.display = "block";
@@ -545,8 +545,8 @@ const HolafRemoteComparer = {
 
     clearHistory() {
         this.stopAnimation();
-        this.history =[];
-        this.latestImagesMeta = [];
+        this.history = [];
+        this.latestImagesMeta =[];
         this.currentImagesMeta =[];
         this.currentViewName = "latest";
         this.images.forEach(media => { if (media instanceof HTMLVideoElement) media.pause(); });
@@ -1013,40 +1013,44 @@ const HolafRemoteComparer = {
         this.draw();
     },
 
-    findNodeByIdRecursive(graph, id) {
-        if (!graph) return null;
-        let node = graph.getNodeById(id);
-        if (node) return node;
-
-        // Traverse les sous-graphes si le nœud n'est pas dans le graphe courant
-        const nodes = graph._nodes || graph.nodes ||[];
-        for (const n of nodes) {
-            if (n.subgraph) {
-                node = this.findNodeByIdRecursive(n.subgraph, id);
-                if (node) return node;
-            }
-        }
-        return null;
-    },
-
     async handleNodeExecution(event) {
         const detail = event.detail;
         if (!detail || !detail.node || !detail.output) return;
 
-        // Utilisation de la recherche récursive
-        const node = this.findNodeByIdRecursive(app.graph, detail.node);
-        if (!node || node.type !== "HolafRemoteComparer") return;
+        // 1. Détection robuste par la signature de l'output.
+        // C'est le moyen le plus sûr de détecter notre noeud quand il est enfoui dans un Subgraph / Group Node.
+        const hasHolafImages = !!(detail.output.ui?.holaf_images || detail.output.holaf_images);
+
+        // 2. Recherche du noeud Frontend.
+        let node = app.graph.getNodeById(detail.node);
+
+        // Si non trouvé, tentative de résolution pour les Group Nodes natifs de ComfyUI (IDs formatés comme "12:5")
+        if (!node && typeof detail.node === "string" && detail.node.includes(":")) {
+            const parentId = detail.node.split(":")[0];
+            node = app.graph.getNodeById(parentId);
+        }
+
+        const isHolafNode = node && (node.type === "HolafRemoteComparer" || node.type.includes("GroupNode"));
+
+        // Si on ne trouve ni notre signature unique, ni un noeud compatible, on ignore.
+        if (!hasHolafImages && !isHolafNode) return;
 
         const imagesMeta = detail.output.ui?.holaf_images || detail.output.holaf_images || detail.output.ui?.images || detail.output.images;
         if (!imagesMeta || imagesMeta.length === 0) return;
 
-        // LECTURE DIRECTE DU WIDGET
+        // 3. Récupération du nom de la comparaison
         let compName = "Unnamed Comparison";
-        const nameWidget = node.widgets?.find(w => w.name === "comparison_name");
-        if (nameWidget && nameWidget.value) {
-            compName = nameWidget.value;
-        } else if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
+        
+        // Priorité absolue à la valeur retournée par le backend si elle existe
+        if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
             compName = detail.output.ui.comparison_name[0];
+        } 
+        // Sinon on tente de lire le widget (supporte le renommage interne des Group Nodes)
+        else if (node && node.widgets) {
+            const nameWidget = node.widgets.find(w => w.name && w.name.includes("comparison_name"));
+            if (nameWidget && nameWidget.value) {
+                compName = nameWidget.value;
+            }
         }
 
         // Update History State
