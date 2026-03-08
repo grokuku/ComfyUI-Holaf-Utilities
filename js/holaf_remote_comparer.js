@@ -1061,7 +1061,11 @@ const HolafRemoteComparer = {
         // 3. Récupération robuste du nom
         let compName = "Unnamed Comparison";
         
-        if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
+        // C'EST ICI QU'ETAIT L'ERREUR ! 
+        // On cherche directement dans "detail.output.comparison_name" car le backend a aplati le dict "ui"
+        if (detail.output.comparison_name && detail.output.comparison_name.length > 0) {
+            compName = detail.output.comparison_name[0];
+        } else if (detail.output.ui?.comparison_name && detail.output.ui.comparison_name.length > 0) {
             compName = detail.output.ui.comparison_name[0];
         } else if (node && node.widgets) {
             // Recherche stricte (Subgraphs purs) ou inclusive (Group Nodes qui renomment les widgets)
