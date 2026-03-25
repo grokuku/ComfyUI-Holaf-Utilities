@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2026 Holaf
- * Holaf Utilities - Main Menu Initializer
- */
+    * Copyright (C) 2026 Holaf
+    * Holaf Utilities - Main Menu Initializer
+    */
 
 import { app } from "../../../scripts/app.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
@@ -81,13 +81,14 @@ const HolafModal = {
 const HolafUtilitiesMenu = {
     dropdownMenuEl: null,
     isCompactMode: false,
-    placeholderEl: null, // Keep track of where the menu was
+    styleEl: null,
 
     init() {
         this.loadSharedCss();
         this.initBridgeListener();
+        this.injectCompactCSS(); 
 
-        // 1. Initialize Compact Mode Preference (Reliable Detection)
+        // 1. Initialize Compact Mode Preference
         this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
         if (this.isCompactMode) {
             this.waitForUIAndApplyCompact();
@@ -122,6 +123,7 @@ const HolafUtilitiesMenu = {
         this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
         this.dropdownMenuEl.style.display = 'none';
+        this.dropdownMenuEl.style.zIndex = '10005';
 
         const menuItems = [
             { label: "Terminal", handlerName: "holafTerminal" },
@@ -135,7 +137,7 @@ const HolafUtilitiesMenu = {
             { label: "Toggle Monitor", special: "toggle_monitor" },
             { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
             { label: "Toggle Shortcuts", special: "toggle_shortcuts" },
-            { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" }, // [NEW]
+            { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" },
             { type: 'separator' },
             { label: "Settings", handlerName: "holafSettingsManager" },
             { type: 'separator' },
@@ -162,7 +164,6 @@ const HolafUtilitiesMenu = {
             labelSpan.textContent = itemInfo.label;
             menuItem.appendChild(labelSpan);
 
-            // Add Checkbox
             let checkbox = null;
             if (["toggle_monitor", "toggle_layout_tools", "toggle_shortcuts", "toggle_compact_menu", "toggle_remote_comparer"].includes(itemInfo.special)) {
                 checkbox = document.createElement("div");
@@ -191,7 +192,7 @@ const HolafUtilitiesMenu = {
                     isActive = window.holaf?.layoutTools?.isVisible;
                 } else if (itemInfo.special === "toggle_shortcuts") {
                     isActive = app.holafShortcuts?.isVisible;
-                } else if (itemInfo.special === "toggle_remote_comparer") { // [NEW]
+                } else if (itemInfo.special === "toggle_remote_comparer") {
                     isActive = app.holafRemoteComparer?.isOpen;
                 } else if (itemInfo.special === "toggle_compact_menu") {
                     isActive = this.isCompactMode;
@@ -203,7 +204,6 @@ const HolafUtilitiesMenu = {
             setTimeout(updateCheckboxUI, 50);
 
             menuItem.onclick = (e) => {
-                // Restart logic
                 if (itemInfo.special === 'restart') {
                     const restartDialogContent = `
                         <div>
@@ -325,7 +325,7 @@ const HolafUtilitiesMenu = {
                         updateCheckboxUI();
                     }
                 }
-                else if (itemInfo.special === "toggle_remote_comparer") { // [NEW]
+                else if (itemInfo.special === "toggle_remote_comparer") {
                     if (app.holafRemoteComparer && typeof app.holafRemoteComparer.toggle === "function") {
                         app.holafRemoteComparer.toggle();
                         updateCheckboxUI();
@@ -377,7 +377,7 @@ const HolafUtilitiesMenu = {
                         if (text.includes("Monitor")) isActive = app.holafSystemMonitor?.isVisible;
                         else if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
                         else if (text.includes("Shortcuts")) isActive = app.holafShortcuts?.isVisible;
-                        else if (text.includes("Remote Comparer")) isActive = app.holafRemoteComparer?.isOpen; // [NEW]
+                        else if (text.includes("Remote Comparer")) isActive = app.holafRemoteComparer?.isOpen; 
                         else if (text.includes("Compact Menu")) isActive = this.isCompactMode;
 
                         check.innerHTML = isActive ? "✓" : "";
@@ -413,6 +413,44 @@ const HolafUtilitiesMenu = {
         console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
+    // Inject dynamic CSS block to handle compact layout overrides safely without moving DOM nodes
+    injectCompactCSS() {
+        if (document.getElementById("holaf-compact-style-override")) return;
+        
+        this.styleEl = document.createElement("style");
+        this.styleEl.id = "holaf-compact-style-override";
+        this.styleEl.innerHTML = `
+            /* We tag the parent of the menus as relative so the buttons don't escape to the right panel */
+            .holaf-compact-parent {
+                position: relative !important;
+            }
+
+            /* Keep tabs in normal flow (no fixed/100vw) so they naturally shrink when the side panel opens */
+            body.holaf-compact-active .workflow-tabs-container {
+                padding-right: 500px !important; 
+                box-sizing: border-box !important;
+                width: 100% !important;
+                position: relative !important;
+            }
+
+            /* Action bar binds to the right side of the central container ONLY */
+            body.holaf-compact-active .actionbar-container {
+                position: absolute !important;
+                top: 0 !important;
+                right: 0 !important;
+                height: var(--comfy-tab-height, 40px) !important;
+                width: auto !important;
+                z-index: 100 !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                display: flex !important;
+                align-items: center !important;
+            }
+        `;
+        document.head.appendChild(this.styleEl);
+    },
+
     waitForUIAndApplyCompact() {
         const checkAndApply = () => {
             const tabs = document.querySelector('.workflow-tabs-container');
@@ -424,24 +462,16 @@ const HolafUtilitiesMenu = {
             return false;
         };
 
-        // Try immediately once
         if (checkAndApply()) return;
 
-        // Use MutationObserver for robust detection
         const observer = new MutationObserver((mutations, obs) => {
             if (checkAndApply()) {
-                obs.disconnect(); // Stop watching as soon as we succeed
+                obs.disconnect(); 
                 console.log("[Holaf Utilities] Compact Mode auto-applied via Observer.");
             }
         });
 
-        // Start observing the body for added nodes
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        // Safety timeout to kill observer if UI never loads (e.g. 10s)
+        observer.observe(document.body, { childList: true, subtree: true });
         setTimeout(() => observer.disconnect(), 10000);
     },
 
@@ -451,7 +481,6 @@ const HolafUtilitiesMenu = {
             const { command, data } = event.data;
             if (command === 'get_workflow_for_profiler') {
                 try {
-                    const workflowData = await app.graphToPrompt();
                     const visualGraph = app.graph.serialize();
                     await fetch('/holaf/profiler/update-context', {
                         method: 'POST',
@@ -467,81 +496,21 @@ const HolafUtilitiesMenu = {
         };
     },
 
+    // Toggles classes to trigger the CSS overrides without destroying the DOM
     toggleCompactMode(active) {
         const tabsContainer = document.querySelector('.workflow-tabs-container');
         const menuBar = document.querySelector('.actionbar-container');
-
-        if (!tabsContainer || !menuBar) {
-            // Should not happen if called via waitForUIAndApplyCompact, but safe guard
-            return;
-        }
-
+        
         if (active) {
-            // Guard against double application
-            if (tabsContainer.parentElement.id === "holaf-compact-wrapper") return;
-
-            // [FIX 2] Create a Placeholder to know exactly where to put the menu back
-            this.placeholderEl = document.createComment("holaf-menu-placeholder");
-            if (menuBar.parentNode) {
-                menuBar.parentNode.insertBefore(this.placeholderEl, menuBar);
-            }
-
-            // Create Wrapper
-            const wrapper = document.createElement('div');
-            wrapper.id = "holaf-compact-wrapper";
-            wrapper.style.display = 'flex';
-            wrapper.style.alignItems = 'center';
-            wrapper.style.width = '100%';
-            wrapper.style.overflow = 'hidden';
-
-            tabsContainer.parentNode.insertBefore(wrapper, tabsContainer);
-            wrapper.appendChild(tabsContainer);
-            wrapper.appendChild(menuBar);
-
-            // Critical Styles
-            tabsContainer.style.flex = '1';
-            tabsContainer.style.minWidth = '0';
-
-            menuBar.style.flexShrink = '0';
-            menuBar.style.height = '100%';
-            menuBar.style.border = 'none';
-            menuBar.style.boxShadow = 'none';
-
-            console.log("[Holaf Utilities] Compact Mode Enabled.");
-
+            document.body.classList.add("holaf-compact-active");
+            if (menuBar && menuBar.parentElement) menuBar.parentElement.classList.add('holaf-compact-parent');
+            if (tabsContainer && tabsContainer.parentElement) tabsContainer.parentElement.classList.add('holaf-compact-parent');
+            console.log("[Holaf Utilities] Compact Mode Enabled (Inline Layout).");
         } else {
-            const wrapper = document.getElementById("holaf-compact-wrapper");
-
-            if (wrapper && wrapper.contains(tabsContainer)) {
-                // Restore tabs
-                wrapper.parentNode.insertBefore(tabsContainer, wrapper);
-
-                // [FIX 2] Restore menu to its EXACT original position via placeholder
-                if (this.placeholderEl && this.placeholderEl.parentNode) {
-                    this.placeholderEl.parentNode.insertBefore(menuBar, this.placeholderEl);
-                    this.placeholderEl.remove();
-                    this.placeholderEl = null;
-                } else {
-                    // Fallback
-                    console.warn("[Holaf Utilities] Placeholder lost, falling back to default position.");
-                    tabsContainer.parentNode.insertBefore(menuBar, tabsContainer.nextSibling);
-                }
-
-                // Remove wrapper
-                wrapper.remove();
-
-                // Reset Styles
-                tabsContainer.style.flex = '';
-                tabsContainer.style.minWidth = '';
-
-                menuBar.style.flexShrink = '';
-                menuBar.style.height = '';
-                menuBar.style.border = '';
-                menuBar.style.boxShadow = '';
-                menuBar.style.width = ''; // Ensure width is reset
-
-                console.log("[Holaf Utilities] Compact Mode Disabled.");
-            }
+            document.body.classList.remove("holaf-compact-active");
+            if (menuBar && menuBar.parentElement) menuBar.parentElement.classList.remove('holaf-compact-parent');
+            if (tabsContainer && tabsContainer.parentElement) tabsContainer.parentElement.classList.remove('holaf-compact-parent');
+            console.log("[Holaf Utilities] Compact Mode Disabled (Inline Layout).");
         }
     },
 
@@ -583,7 +552,7 @@ const HolafUtilitiesMenu = {
             "holaf_toasts.css",
             "holaf_profiler.css",
             "holaf_layout_tools.css",
-            "holaf_remote_comparer_styles.css" // [NEW] Added Remote Comparer CSS
+            "holaf_remote_comparer_styles.css"
         ];
         const basePath = "extensions/ComfyUI-Holaf-Utilities/css/";
         cssFiles.forEach(fileName => {
