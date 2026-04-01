@@ -7,31 +7,37 @@
 #holaf-utilities-menu-button {
     background-color: #D8700D; /* Graphite Orange Accent - Default theme for this button */
     color: white;
-    font-size: 14px;
-    padding: 10px;
+    font-size: 13px; /* Réduit pour matcher ComfyUI */
+    padding: 4px 12px; /* Réduit pour éviter le dépassement vertical */
+    height: 28px; /* Hauteur fixe standard ComfyUI */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    border: 1px solid #A9560A; /* Darker Graphite Orange Accent */
-    border-radius: 8px;
-    margin: 0 4px; /* Default ComfyUI menu button margin */
+    border: 1px solid #A9560A;
+    border-radius: 4px; /* Plus carré, comme ComfyUI */
+    margin: 0 4px;
+    white-space: nowrap; /* EMPÊCHE le texte de se couper en "Utilities" */
+    flex-shrink: 0; /* EMPÊCHE le bouton d'être écrasé */
     transition: background-color 0.2s, border-color 0.2s;
 }
 
 #holaf-utilities-menu-button:hover {
-    background-color: #E77D1E; /* Lighter Graphite Orange Accent for hover */
+    background-color: #E77D1E;
     border-color: #BF6A0B;
 }
 
 /* Dropdown menu for Holaf's Utilities */
 #holaf-utilities-dropdown-menu {
-    display: none; /* Shown by JS */
-    position: fixed; /* Relative to viewport */
-    background-color: #2B2B2B; /* Graphite Orange Secondary BG - Default theme */
-    border: 1px solid #3F3F3F; /* Graphite Orange Border */
+    display: none;
+    position: fixed;
+    background-color: #2B2B2B;
+    border: 1px solid #3F3F3F;
     border-radius: 4px;
     list-style: none;
     padding: 5px 0;
     margin: 0;
-    z-index: 100000; /* Ensure it's on top */
+    z-index: 100000;
     min-width: 150px;
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
 }
@@ -39,11 +45,11 @@
 #holaf-utilities-dropdown-menu li {
     padding: 8px 12px;
     cursor: pointer;
-    color: #E0E0E0; /* Graphite Orange Primary Text */
+    color: #E0E0E0;
     transition: background-color 0.15s, color 0.15s;
 }
 
 #holaf-utilities-dropdown-menu li:hover {
-    background-color: #D8700D; /* Graphite Orange Accent */
+    background-color: #D8700D;
     color: white;
 }

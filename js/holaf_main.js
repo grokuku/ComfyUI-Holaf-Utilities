@@ -15,11 +15,8 @@ import "./holaf_settings_manager.js";
 import "./holaf_monitor.js";
 import "./holaf_layout_tools.js";
 import "./holaf_shortcuts.js";
-import "./holaf_remote_comparer.js"; // [NEW] Added Remote Comparer
+import "./holaf_remote_comparer.js";
 
-/**
- * A simple, themed modal dialog helper.
- */
 const HolafModal = {
     show(title, message, onConfirm, confirmText = "Confirm", cancelText = "Cancel") {
         const existingModal = document.getElementById("holaf-modal-overlay");
@@ -82,22 +79,20 @@ const HolafUtilitiesMenu = {
     dropdownMenuEl: null,
     isCompactMode: false,
     styleEl: null,
+    startupEnforcerInterval: null,
 
     init() {
         this.loadSharedCss();
         this.initBridgeListener();
         this.injectCompactCSS(); 
 
-        // 1. Initialize Compact Mode Preference
         this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
         if (this.isCompactMode) {
             this.waitForUIAndApplyCompact();
         }
 
-        // 2. Ensure Theme
         if (!document.body.className.includes("holaf-theme-")) {
             document.body.classList.add("holaf-theme-graphite-orange");
-            console.log("[Holaf Main] Applied default fallback theme to body.");
         }
 
         if (!window.holaf) {
@@ -105,7 +100,6 @@ const HolafUtilitiesMenu = {
         }
         window.holaf.toastManager = new HolafToastManager();
         
-        // Expose a method to rebuild the menu dynamically (used by settings)
         window.holaf.rebuildMenu = () => this.buildMenu();
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
@@ -128,7 +122,7 @@ const HolafUtilitiesMenu = {
         this.dropdownMenuEl.style.display = 'none';
         this.dropdownMenuEl.style.zIndex = '10005';
 
-        this.buildMenu(); // Construct the menu items
+        this.buildMenu(); 
 
         document.body.appendChild(this.dropdownMenuEl);
 
@@ -170,7 +164,6 @@ const HolafUtilitiesMenu = {
         if (settingsButton) {
             settingsButton.before(menuContainer);
         } else {
-            console.error("[Holaf Utilities] Could not find settings button.");
             const comfyMenu = document.querySelector(".comfy-menu");
             if (comfyMenu) {
                 comfyMenu.append(menuContainer);
@@ -178,17 +171,15 @@ const HolafUtilitiesMenu = {
                 document.body.prepend(menuContainer);
             }
         }
-
-        console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
     buildMenu() {
         if (!this.dropdownMenuEl) return;
-        this.dropdownMenuEl.innerHTML = ''; // Clear existing items
+        this.dropdownMenuEl.innerHTML = '';
 
         const showWip = localStorage.getItem("Holaf_ShowWIP") === "true";
 
-        const menuItems = [
+        const menuItems =[
             { label: "Terminal", handlerName: "holafTerminal" },
             { label: "Model Manager (WIP)", handlerName: "holafModelManager", isWip: true },
             { label: "Custom Nodes Manager (WIP)", handlerName: "holafNodesManager", isWip: true },
@@ -306,7 +297,6 @@ const HolafUtilitiesMenu = {
 
                         dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
 
-                        console.log("[Holaf Utilities] Sending restart request...");
                         fetch("/holaf/utilities/restart", { method: 'POST' })
                             .then(res => res.json())
                             .then(data => {
@@ -346,7 +336,6 @@ const HolafUtilitiesMenu = {
                                                 }
                                             } else {
                                                 if (!serverIsDown) {
-                                                    console.log(`[Holaf Utilities] Server is responding with error ${response.status}. Treating as offline.`);
                                                     if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
                                                     serverIsDown = true;
                                                 }
@@ -354,7 +343,6 @@ const HolafUtilitiesMenu = {
                                         })
                                         .catch(() => {
                                             if (!serverIsDown) {
-                                                console.log("[Holaf Utilities] Server is now offline (network error). Waiting for it to come back online.");
                                                 if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
                                                 serverIsDown = true;
                                             }
@@ -364,7 +352,6 @@ const HolafUtilitiesMenu = {
                                 window.holaf.restartMonitorInterval = setInterval(checkServerStatus, 2000);
                             })
                             .catch(err => {
-                                console.error("[Holaf Utilities] Failed to send restart command:", err);
                                 dialog.querySelector(".holaf-modal-content").innerHTML = `<p style="color:var(--holaf-error-text,red);">Failed to send restart command to the server: ${err.message}.</p>`;
                                 dialog.querySelector("#holaf-restart-refresh-btn").disabled = true;
                             });
@@ -414,7 +401,6 @@ const HolafUtilitiesMenu = {
                     if (handler && typeof handler.show === 'function') {
                         handler.show();
                     } else {
-                        console.error(`[Holaf Utilities] Handler for "${itemInfo.label}" not available.`);
                         HolafModal.show("Not Implemented", `The panel for "${itemInfo.label}" is not available yet.`, () => { }, "OK", null);
                     }
                 }
@@ -427,42 +413,86 @@ const HolafUtilitiesMenu = {
         });
     },
 
-    // Inject dynamic CSS block to handle compact layout overrides safely without moving DOM nodes
     injectCompactCSS() {
         if (document.getElementById("holaf-compact-style-override")) return;
         
         this.styleEl = document.createElement("style");
         this.styleEl.id = "holaf-compact-style-override";
         this.styleEl.innerHTML = `
-            /* We tag the parent of the menus as relative so the buttons don't escape to the right panel */
+            /* 1. Uniformisation du Conteneur : force la hauteur, la taille maximale et le contexte d'empilement */
             .holaf-compact-parent {
                 position: relative !important;
+                min-height: var(--comfy-tab-height, 40px) !important;
+                width: 100% !important;
+                max-width: 100vw !important; /* EMPÊCHE L'EXTENSION INFINIE due aux onglets */
+                box-sizing: border-box !important;
+                z-index: 1000 !important;
             }
 
-            /* Keep tabs in normal flow (no fixed/100vw) so they naturally shrink when the side panel opens */
             body.holaf-compact-active .workflow-tabs-container {
-                padding-right: 500px !important; 
+                padding-right: 480px !important; /* Marge sûre pour que les onglets ne glissent pas sous les boutons */
                 box-sizing: border-box !important;
                 width: 100% !important;
+                max-width: 100% !important;
                 position: relative !important;
+                z-index: 1 !important;
+                overflow-x: auto !important; /* GÈRE LE DEBORDEMENT DES ONGLETS */
+                overflow-y: hidden !important;
             }
 
-            /* Action bar binds to the right side of the central container ONLY */
+            /* 2. Correction du Clipping et positionnement absolu strict */
             body.holaf-compact-active .actionbar-container {
                 position: absolute !important;
                 top: 0 !important;
                 right: 0 !important;
                 height: var(--comfy-tab-height, 40px) !important;
                 width: auto !important;
-                z-index: 100 !important;
-                background: transparent !important;
+                z-index: 1005 !important;
+                background: var(--bg-color, #202020) !important; /* Masque les onglets glissant en dessous */
                 border: none !important;
-                box-shadow: none !important;
+                box-shadow: -4px 0 8px rgba(0,0,0,0.3) !important; /* Séparation visuelle nette */
                 display: flex !important;
                 align-items: center !important;
+                flex-wrap: nowrap !important;
+                margin: 0 !important;
+                padding: 0 8px !important;
+            }
+
+            body.holaf-compact-active .actionbar-container > * {
+                flex-shrink: 0 !important; /* Empêche l'écrasement des boutons de menu */
+                margin: 0 2px !important;
             }
         `;
         document.head.appendChild(this.styleEl);
+    },
+
+    maintainCompactParent() {
+        if (!this.isCompactMode) return;
+        const menuBar = document.querySelector('.actionbar-container');
+        const tabs = document.querySelector('.workflow-tabs-container');
+
+        if (menuBar) {
+            let targetParent = menuBar.parentElement;
+            
+            if (tabs) {
+                let current = menuBar.parentElement;
+                while (current && current !== document.body && !current.contains(tabs)) {
+                    current = current.parentElement;
+                }
+                if (current && current !== document.body) {
+                    targetParent = current;
+                }
+            }
+
+            if (targetParent) {
+                if (!targetParent.classList.contains('holaf-compact-parent')) {
+                    document.querySelectorAll('.holaf-compact-parent').forEach(el => {
+                        el.classList.remove('holaf-compact-parent');
+                    });
+                    targetParent.classList.add('holaf-compact-parent');
+                }
+            }
+        }
     },
 
     waitForUIAndApplyCompact() {
@@ -481,7 +511,6 @@ const HolafUtilitiesMenu = {
         const observer = new MutationObserver((mutations, obs) => {
             if (checkAndApply()) {
                 obs.disconnect(); 
-                console.log("[Holaf Utilities] Compact Mode auto-applied via Observer.");
             }
         });
 
@@ -503,28 +532,34 @@ const HolafUtilitiesMenu = {
                     });
                     window.holaf.toastManager.show("Workflow synced with Profiler.", "success");
                 } catch (e) {
-                    console.error("[Holaf Bridge] Error syncing workflow:", e);
                     window.holaf.toastManager.show("Error syncing workflow.", "error");
                 }
             }
         };
     },
 
-    // Toggles classes to trigger the CSS overrides without destroying the DOM
     toggleCompactMode(active) {
-        const tabsContainer = document.querySelector('.workflow-tabs-container');
-        const menuBar = document.querySelector('.actionbar-container');
-        
         if (active) {
             document.body.classList.add("holaf-compact-active");
-            if (menuBar && menuBar.parentElement) menuBar.parentElement.classList.add('holaf-compact-parent');
-            if (tabsContainer && tabsContainer.parentElement) tabsContainer.parentElement.classList.add('holaf-compact-parent');
-            console.log("[Holaf Utilities] Compact Mode Enabled (Inline Layout).");
+            this.maintainCompactParent();
+
+            let ticks = 0;
+            if (this.startupEnforcerInterval) clearInterval(this.startupEnforcerInterval);
+            this.startupEnforcerInterval = setInterval(() => {
+                this.maintainCompactParent();
+                ticks++;
+                if (ticks > 10) { 
+                    clearInterval(this.startupEnforcerInterval);
+                }
+            }, 500);
+
         } else {
             document.body.classList.remove("holaf-compact-active");
-            if (menuBar && menuBar.parentElement) menuBar.parentElement.classList.remove('holaf-compact-parent');
-            if (tabsContainer && tabsContainer.parentElement) tabsContainer.parentElement.classList.remove('holaf-compact-parent');
-            console.log("[Holaf Utilities] Compact Mode Disabled (Inline Layout).");
+            if (this.startupEnforcerInterval) clearInterval(this.startupEnforcerInterval);
+            
+            document.querySelectorAll('.holaf-compact-parent').forEach(el => {
+                el.classList.remove('holaf-compact-parent');
+            });
         }
     },
 
@@ -553,7 +588,7 @@ const HolafUtilitiesMenu = {
     },
 
     loadSharedCss() {
-        const cssFiles = [
+        const cssFiles =[
             "holaf_themes.css",
             "holaf_shared_panel.css",
             "holaf_main_button.css",
