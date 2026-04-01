@@ -1,7 +1,7 @@
 /*
-    * Copyright (C) 2026 Holaf
-    * Holaf Utilities - Main Menu Initializer
-    */
+ * Copyright (C) 2026 Holaf
+ * Holaf Utilities - Main Menu Initializer
+ */
 
 import { app } from "../../../scripts/app.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
@@ -104,6 +104,9 @@ const HolafUtilitiesMenu = {
             window.holaf = {};
         }
         window.holaf.toastManager = new HolafToastManager();
+        
+        // Expose a method to rebuild the menu dynamically (used by settings)
+        window.holaf.rebuildMenu = () => this.buildMenu();
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
         if (menuContainer) {
@@ -125,12 +128,72 @@ const HolafUtilitiesMenu = {
         this.dropdownMenuEl.style.display = 'none';
         this.dropdownMenuEl.style.zIndex = '10005';
 
+        this.buildMenu(); // Construct the menu items
+
+        document.body.appendChild(this.dropdownMenuEl);
+
+        mainButton.onclick = (e) => {
+            e.stopPropagation();
+            if (this.dropdownMenuEl.style.display === "block") {
+                this.hideDropdown();
+            } else {
+                this.showDropdown(mainButton);
+                this.dropdownMenuEl.querySelectorAll('li').forEach(li => {
+                    const check = li.querySelector('div');
+                    const text = li.textContent;
+                    if (check) {
+                        let isActive = false;
+                        if (text.includes("Monitor")) isActive = app.holafSystemMonitor?.isVisible;
+                        else if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
+                        else if (text.includes("Shortcuts")) isActive = app.holafShortcuts?.isVisible;
+                        else if (text.includes("Remote Comparer")) isActive = app.holafRemoteComparer?.isOpen; 
+                        else if (text.includes("Compact Menu")) isActive = this.isCompactMode;
+
+                        check.innerHTML = isActive ? "✓" : "";
+                        check.style.borderColor = isActive ? "var(--holaf-accent-color, #ff8c00)" : "var(--border-color, #888)";
+                    }
+                });
+            }
+        };
+
+        document.addEventListener('click', (e) => {
+            if (this.dropdownMenuEl && this.dropdownMenuEl.style.display === "block") {
+                if (e.target !== mainButton && !this.dropdownMenuEl.contains(e.target)) {
+                    this.hideDropdown();
+                }
+            }
+        });
+
+        menuContainer.appendChild(mainButton);
+
+        const settingsButton = app.menu?.settingsGroup?.element;
+        if (settingsButton) {
+            settingsButton.before(menuContainer);
+        } else {
+            console.error("[Holaf Utilities] Could not find settings button.");
+            const comfyMenu = document.querySelector(".comfy-menu");
+            if (comfyMenu) {
+                comfyMenu.append(menuContainer);
+            } else {
+                document.body.prepend(menuContainer);
+            }
+        }
+
+        console.log("[Holaf Utilities] Static menu initialized successfully.");
+    },
+
+    buildMenu() {
+        if (!this.dropdownMenuEl) return;
+        this.dropdownMenuEl.innerHTML = ''; // Clear existing items
+
+        const showWip = localStorage.getItem("Holaf_ShowWIP") === "true";
+
         const menuItems = [
             { label: "Terminal", handlerName: "holafTerminal" },
-            { label: "Model Manager", handlerName: "holafModelManager" },
-            { label: "Custom Nodes Manager", handlerName: "holafNodesManager" },
+            { label: "Model Manager (WIP)", handlerName: "holafModelManager", isWip: true },
+            { label: "Custom Nodes Manager (WIP)", handlerName: "holafNodesManager", isWip: true },
             { label: "Image Viewer", handlerName: "holafImageViewer" },
-            { label: "Workflow Profiler", special: "profiler_standalone" },
+            { label: "Workflow Profiler (WIP)", special: "profiler_standalone", isWip: true },
             { type: 'separator' },
             { label: "Compact Menu Bar", special: "toggle_compact_menu" },
             { type: 'separator' },
@@ -144,7 +207,9 @@ const HolafUtilitiesMenu = {
             { label: "Restart ComfyUI", special: 'restart' }
         ];
 
-        menuItems.forEach(itemInfo => {
+        const filteredItems = menuItems.filter(item => !item.isWip || showWip);
+
+        filteredItems.forEach(itemInfo => {
             if (itemInfo.type === 'separator') {
                 const separator = document.createElement("li");
                 separator.style.height = "1px";
@@ -360,57 +425,6 @@ const HolafUtilitiesMenu = {
             };
             this.dropdownMenuEl.appendChild(menuItem);
         });
-
-        document.body.appendChild(this.dropdownMenuEl);
-
-        mainButton.onclick = (e) => {
-            e.stopPropagation();
-            if (this.dropdownMenuEl.style.display === "block") {
-                this.hideDropdown();
-            } else {
-                this.showDropdown(mainButton);
-                this.dropdownMenuEl.querySelectorAll('li').forEach(li => {
-                    const check = li.querySelector('div');
-                    const text = li.textContent;
-                    if (check) {
-                        let isActive = false;
-                        if (text.includes("Monitor")) isActive = app.holafSystemMonitor?.isVisible;
-                        else if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
-                        else if (text.includes("Shortcuts")) isActive = app.holafShortcuts?.isVisible;
-                        else if (text.includes("Remote Comparer")) isActive = app.holafRemoteComparer?.isOpen; 
-                        else if (text.includes("Compact Menu")) isActive = this.isCompactMode;
-
-                        check.innerHTML = isActive ? "✓" : "";
-                        check.style.borderColor = isActive ? "var(--holaf-accent-color, #ff8c00)" : "var(--border-color, #888)";
-                    }
-                });
-            }
-        };
-
-        document.addEventListener('click', (e) => {
-            if (this.dropdownMenuEl && this.dropdownMenuEl.style.display === "block") {
-                if (e.target !== mainButton && !this.dropdownMenuEl.contains(e.target)) {
-                    this.hideDropdown();
-                }
-            }
-        });
-
-        menuContainer.appendChild(mainButton);
-
-        const settingsButton = app.menu?.settingsGroup?.element;
-        if (settingsButton) {
-            settingsButton.before(menuContainer);
-        } else {
-            console.error("[Holaf Utilities] Could not find settings button.");
-            const comfyMenu = document.querySelector(".comfy-menu");
-            if (comfyMenu) {
-                comfyMenu.append(menuContainer);
-            } else {
-                document.body.prepend(menuContainer);
-            }
-        }
-
-        console.log("[Holaf Utilities] Static menu initialized successfully.");
     },
 
     // Inject dynamic CSS block to handle compact layout overrides safely without moving DOM nodes
