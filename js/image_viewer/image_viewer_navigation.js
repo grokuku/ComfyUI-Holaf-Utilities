@@ -81,7 +81,7 @@ function preloadNextImage(viewer) {
 
     const nextImage = state.images[state.currentNavIndex + 1];
     // Only preload images, not videos or audio
-    if (nextImage && !['MP4', 'WEBM'].includes(nextImage.format) && !['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(nextImage.format)) {
+    if (nextImage && !['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(nextImage.format) && !['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(nextImage.format)) {
         const preloader = new Image();
         preloader.src = getFullImageUrl(nextImage);
     }
@@ -103,7 +103,7 @@ export function getFullImageUrl(image) {
  * Updates the container to show either the Image or Video element based on the file type.
  */
 function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformState) {
-    const isVideo = ['MP4', 'WEBM'].includes(image.format);
+    const isVideo = ['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format);
     const isAudio = ['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format);
     const url = getFullImageUrl(image);
 

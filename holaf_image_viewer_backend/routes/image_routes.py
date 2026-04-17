@@ -190,15 +190,27 @@ async def list_images_route(request: web.Request):
         # --- END MAJOR REFACTOR ---
 
         # Use orjson for faster JSON serialization if available
+        # FIX: Include total_db_count and generated_thumbnails_count in response
+        stats = logic.stats_manager.get_stats()
         body_content = ""
         serialization_method = "json"
         
         try:
             import orjson
-            body_content = orjson.dumps({ "images": images_data, "filtered_count": filtered_count })
+            body_content = orjson.dumps({
+                "images": images_data,
+                "filtered_count": filtered_count,
+                "total_db_count": stats["total_db_count"],
+                "generated_thumbnails_count": stats["generated_thumbnails_count"]
+            })
             serialization_method = "orjson"
         except ImportError:
-            body_content = json.dumps({ "images": images_data, "filtered_count": filtered_count }).encode('utf-8')
+            body_content = json.dumps({
+                "images": images_data,
+                "filtered_count": filtered_count,
+                "total_db_count": stats["total_db_count"],
+                "generated_thumbnails_count": stats["generated_thumbnails_count"]
+            }).encode('utf-8')
         
         response = web.Response(body=body_content, content_type='application/json')
         

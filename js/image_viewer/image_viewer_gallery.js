@@ -566,7 +566,7 @@ function createPlaceholder(viewer, image, index) {
     const actionIcon = document.createElement('div');
     actionIcon.className = 'holaf-viewer-edit-icon';
 
-    if (['MP4', 'WEBM'].includes(image.format)) {
+    if (['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format)) {
         actionIcon.innerHTML = '🎥';
         actionIcon.title = "Play Video";
 

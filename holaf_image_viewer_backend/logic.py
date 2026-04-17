@@ -208,18 +208,17 @@ def _update_folder_metadata_cache_blocking(cursor):
         
         cursor.execute("DELETE FROM folder_metadata")
         
+        # FIX: Group by top_level_subfolder to match the filter-options API query,
+        # instead of the full subfolder path which created an inconsistent cache.
         cursor.execute("""
             INSERT INTO folder_metadata (path_canon, image_count, last_calculated_at)
             SELECT 
-                CASE 
-                    WHEN subfolder = '' THEN 'root' 
-                    ELSE subfolder 
-                END as folder_path,
+                top_level_subfolder AS folder_path,
                 COUNT(*) as count,
                 ?
             FROM images
             WHERE is_trashed = 0
-            GROUP BY folder_path
+            GROUP BY top_level_subfolder
         """, (current_time,))
         
     except Exception as e:
@@ -294,7 +293,14 @@ def add_or_update_single_image(image_abs_path):
 
         meta = _extract_image_metadata_blocking(image_abs_path)
 
-        if not meta.get('width') or not meta.get('height'):
+        # FIX: Audio files have width=0, height=0 (valid). Video files without
+        # ffprobe have width=None, height=None. Only block genuine image failures.
+        is_audio = meta.get('is_audio', False) or meta.get('ratio') == 'audio'
+        width_val = meta.get('width')
+        height_val = meta.get('height')
+        has_valid_dims = (width_val is not None and width_val > 0 and
+                          height_val is not None and height_val > 0)
+        if not is_audio and not has_valid_dims:
             print(f"🔴 [Holaf-Logic] CRITICAL: Failed to extract valid metadata for {path_canon}. Aborting DB insertion.")
             return
 
