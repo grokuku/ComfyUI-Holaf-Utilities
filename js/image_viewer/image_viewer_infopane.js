@@ -98,6 +98,8 @@ async function displayInfoForImage(image) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: `HTTP Error ${response.status}` }));
+            // FIX: Re-check abort after inner await
+            if (signal.aborted) return;
             metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> ${errorData.error || 'Unknown error'}</p>`;
             return;
         }

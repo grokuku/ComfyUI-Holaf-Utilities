@@ -397,8 +397,9 @@ export async function handleKeyDown(viewer, e) {
         }
         case 'PageUp':
         case 'PageDown':
+            // FIX: Always prevent default to stop page scrolling, regardless of mode
+            e.preventDefault();
             if (currentMode === 'gallery' && galleryEl) {
-                e.preventDefault();
                 galleryEl.scrollBy({ top: (e.key === 'PageDown' ? 1 : -1) * galleryEl.clientHeight * 0.9, behavior: 'smooth' });
             }
             break;

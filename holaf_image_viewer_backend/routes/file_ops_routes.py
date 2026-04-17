@@ -13,6 +13,14 @@ from ... import holaf_database
 
 EDIT_DIR_NAME = "edit"
 
+
+def _get_proc_video_path(abs_image_path):
+    """
+    Returns the absolute path to the processed video file (_proc.mp4) for a given image.
+    Mirrors the logic of logic.get_proc_video_path but can be called from routes.
+    """
+    return logic.get_proc_video_path(abs_image_path)
+
 # --- API Route Handlers ---
 async def delete_images_route(request: web.Request):
     conn = None
@@ -100,6 +108,19 @@ async def delete_images_route(request: web.Request):
                 elif os.path.exists(original_edit_file_legacy):
                     shutil.move(original_edit_file_legacy, dest_edit_file_in_trash)
                 # -----------------------------
+
+                # --- FIX: Also move processed video (_proc.mp4) if it exists ---
+                proc_video_path = _get_proc_video_path(original_full_path)
+                if os.path.isfile(proc_video_path):
+                    dest_proc_video_in_trash = base_dest_path_in_trash + "_proc.mp4"
+                    try:
+                        shutil.move(proc_video_path, dest_proc_video_in_trash)
+                        # Clean up empty edit dir if proc video was the last file
+                        proc_edit_dir = os.path.dirname(proc_video_path)
+                        if os.path.basename(proc_edit_dir) == EDIT_DIR_NAME and not os.listdir(proc_edit_dir):
+                            os.rmdir(proc_edit_dir)
+                    except OSError:
+                        print(f"🟡 [Holaf-ImageViewer] Could not move proc video to trash: {proc_video_path}")
 
                 cursor.execute("""
                     UPDATE images 
@@ -204,6 +225,18 @@ async def restore_images_route(request: web.Request):
                     shutil.move(edit_file_in_trash, restored_edit_file)
                 # ------------------------------
 
+                # --- FIX: Also restore processed video (_proc.mp4) if it exists in trash ---
+                proc_video_in_trash = base_path_in_trash + "_proc.mp4"
+                if os.path.isfile(proc_video_in_trash):
+                    restored_dir = os.path.dirname(original_full_path_restored)
+                    restored_edit_dir = os.path.join(restored_dir, EDIT_DIR_NAME)
+                    os.makedirs(restored_edit_dir, exist_ok=True)
+                    restored_proc_video = os.path.join(restored_edit_dir, os.path.basename(base_restored_path) + "_proc.mp4")
+                    try:
+                        shutil.move(proc_video_in_trash, restored_proc_video)
+                    except OSError as e_proc:
+                        print(f"🟡 [Holaf-ImageViewer] Could not move proc video back from trash: {e_proc}")
+
                 # Update the database record
                 new_subfolder, new_filename = os.path.split(original_path_canon)
                 cursor.execute("""
@@ -297,6 +330,18 @@ async def delete_images_permanently_route(request: web.Request):
                 if os.path.exists(edit_file_legacy):
                     os.unlink(edit_file_legacy)
                 # -----------------------------
+                
+                # --- FIX: Also delete processed video (_proc.mp4) if it exists ---
+                proc_video_path = _get_proc_video_path(full_path)
+                if os.path.isfile(proc_video_path):
+                    try:
+                        os.unlink(proc_video_path)
+                        # Clean up empty edit dir if this was the last file
+                        proc_edit_dir = os.path.dirname(proc_video_path)
+                        if os.path.basename(proc_edit_dir) == EDIT_DIR_NAME and not os.listdir(proc_edit_dir):
+                            os.rmdir(proc_edit_dir)
+                    except OSError as e_proc:
+                        print(f"🟡 [Holaf-ImageViewer] Could not delete proc video: {proc_video_path}: {e_proc}")
                 
                 # Delete the record from the database
                 cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_canon,))

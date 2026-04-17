@@ -14,6 +14,11 @@ import tempfile
 from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance
 import folder_paths
 
+# --- Per-path lock to prevent concurrent video processing of the same file ---
+import asyncio
+_video_processing_locks = {}
+_video_processing_locks_mutex = asyncio.Lock()
+
 # --- NEW DEPENDENCY: Required for reading XMP sidecar files for tags ---
 try:
     from libxmp.files import XMPFiles
@@ -1015,23 +1020,27 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             # --- NOTIFY STATS ---
             stats_manager.increment_thumbnail()
             
+            return True  # FIX: Explicit success return
+
     except UnidentifiedImageError as e:
         update_exception = e
     except Exception as e:
         update_exception = e
         print(f"🔴 [Holaf-ImageViewer] Error in _create_thumbnail_blocking for {original_path_abs}: {e}")
         if image_path_canon_for_db_update:
-            conn_fail_db_inner = None 
+            conn_fail_db_inner = None
+            inner_exception = None  # FIX: Initialize before try block to avoid NameError in finally
             try:
                 conn_fail_db_inner = holaf_database.get_db_connection()
                 cursor_inner = conn_fail_db_inner.cursor()
                 cursor_inner.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (image_path_canon_for_db_update,))
                 conn_fail_db_inner.commit()
             except Exception as e_fail_inner:
+                inner_exception = e_fail_inner
                 print(f"🔴 [Holaf-ImageViewer] CRITICAL: ALSO FAILED to update thumbnail error status in DB (inner): {e_fail_inner}")
             finally:
                 if conn_fail_db_inner:
-                    holaf_database.close_db_connection(exception=e_fail_inner)
+                    holaf_database.close_db_connection(exception=inner_exception)
         if os.path.exists(thumb_path_abs):
             try: os.remove(thumb_path_abs)
             except Exception as e_clean: print(f"🔴 [Holaf-ImageViewer] Could not clean up failed thumbnail {thumb_path_abs}: {e_clean}")

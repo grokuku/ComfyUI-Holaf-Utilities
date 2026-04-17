@@ -109,7 +109,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
     const pathsToDelete = imagesForDeletion.map(img => img.path_canon);
     const dialogTitle = permanent ? "Confirm Permanent Deletion" : "Confirm Delete";
     const dialogMessage = permanent 
-        ? `Are you sure you want to PERMANENTLY delete ${imagesForDeletion.length} image(s)?\n\nThis action CANNOT be undone.`
+        ? `Are you sure you want to PERMANENTLY delete ${imagesForDeletion.length} image(s)?<br><br><strong>This action CANNOT be undone.</strong>`
         : `Are you sure you want to move ${imagesForDeletion.length} image(s) to the trashcan?`;
     const confirmButtonText = permanent ? "Permanently Delete" : "Delete";
 
@@ -694,12 +694,14 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     overlay.querySelector('#holaf-export-cancel-btn').addEventListener('click', cleanupAndClose);
 
     overlay.querySelector('#holaf-export-start-btn').addEventListener('click', async () => {
-        cleanupAndClose();
-
+        // FIX: Capture form values BEFORE removing overlay to avoid null references on error
         const formatEl = overlay.querySelector('input[name="export-format"]:checked');
         const format = formatEl ? formatEl.value : 'png'; // Fallback
         const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
         const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
+
+        // Important: cleanup removes overlay from DOM, so all DOM reads must be done above
+        cleanupAndClose();
 
         const toastId = `export-${Date.now()}`;
         
@@ -736,7 +738,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
             }
             
             if (result.errors && result.errors.length > 0) {
-                 const errorMessage = `Some files could not be prepared:\n${result.errors.map(e => `- ${e.path.split('/').pop()}: ${e.error}`).join('\n')}`;
+                 const errorMessage = `Some files could not be prepared:<br>${result.errors.map(e => `- ${e.path.split('/').pop()}: ${e.error}`).join('<br>')}`;
                  window.holaf.toastManager.show({ message: errorMessage, type: 'error', duration: 0 });
             }
 

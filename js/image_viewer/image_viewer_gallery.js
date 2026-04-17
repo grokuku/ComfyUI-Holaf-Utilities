@@ -84,8 +84,9 @@ let scrollbarDebounceTimeout = null;
 // Map<path_canon, AbortController>
 const activeFetches = new Map();
 
-// Track hover timeouts
+// Track hover timeouts and abort controllers for video preview race condition prevention
 const hoverTimeouts = new Map();
+const hoverAbortControllers = new Map();
 
 let isWheelScrolling = false;
 let wheelScrollTimeout = null;
@@ -271,6 +272,8 @@ function renderVisibleItems() {
 
             if (renderedPlaceholders.has(path)) {
                 placeholder = renderedPlaceholders.get(path);
+                // FIX: Update index in case the images array order changed (e.g. after filter)
+                placeholder.dataset.index = i;
                 renderedPlaceholders.delete(path);
             } else {
                 placeholder = createPlaceholder(viewerInstance, image, i);
@@ -560,10 +563,17 @@ function createPlaceholder(viewer, image, index) {
         };
 
         // --- HOVER PREVIEW LOGIC FOR VIDEO (WITH EDIT SUPPORT) ---
+        // FIX: Use a generation counter to prevent race conditions when
+        // the user leaves during an async fetch (video would play after mouse left).
         placeholder.addEventListener('mouseenter', async () => {
+            // Increment the hover generation to invalidate any stale inflight request
+            const generation = (placeholder._hoverGeneration || 0) + 1;
+            placeholder._hoverGeneration = generation;
+
             // Clear any existing timeout to avoid overlaps
             if (hoverTimeouts.has(image.path_canon)) {
                 clearTimeout(hoverTimeouts.get(image.path_canon));
+                hoverTimeouts.delete(image.path_canon);
             }
 
             // Fetch potential edits (Soft Edit)
@@ -572,16 +582,26 @@ function createPlaceholder(viewer, image, index) {
                 try {
                     // --- FIX: Correct URL for edits ---
                     const response = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(image.path_canon)}`);
+                    // FIX: Check if the hover was cancelled while we were fetching
+                    if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
                     if (response.ok) {
                         const result = await response.json();
                         if (result.status === 'ok') editData = result.edits;
                     }
-                } catch (e) { console.warn("Failed to load hover edits", e); }
+                } catch (e) {
+                    if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
+                    console.warn("Failed to load hover edits", e);
+                }
             }
+
+            // Double-check: reject if mouse left during fetch
+            if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
 
             // Set a delay to avoid playing if just passing through
             const timeoutId = setTimeout(() => {
-                if (!placeholder.isConnected) return;
+                // Remove the timeout from the map since it has now fired
+                hoverTimeouts.delete(image.path_canon);
+                if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
 
                 const existingVideo = placeholder.querySelector('video.holaf-hover-preview');
                 if (existingVideo) return; // Already playing
@@ -625,9 +645,6 @@ function createPlaceholder(viewer, image, index) {
                     filter: ${filterStr};
                 `;
 
-                // Hide image while video is playing (optional, z-index covers it)
-                // const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
-
                 // Handling load errors smoothly
                 vid.onerror = () => { vid.remove(); };
 
@@ -638,6 +655,9 @@ function createPlaceholder(viewer, image, index) {
         });
 
         placeholder.addEventListener('mouseleave', () => {
+            // FIX: Bump the generation so any inflight fetch or pending timeout is rejected
+            placeholder._hoverGeneration = (placeholder._hoverGeneration || 0) + 1;
+
             if (hoverTimeouts.has(image.path_canon)) {
                 clearTimeout(hoverTimeouts.get(image.path_canon));
                 hoverTimeouts.delete(image.path_canon);

@@ -537,7 +537,7 @@ export class ImageEditor {
                         </style>
                         <div class="holaf-editor-slider-container">
                             <label for="holaf-editor-fps-slider">FPS</label>
-                            <input type="range" id="holaf-editor-fps-slider" min="1" max="120" step="1" style="flex-grow: 1; margin: 0 8px;">
+                            <input type="range" id="holaf-editor-fps-slider" min="1" max="144" step="1" style="flex-grow: 1; margin: 0 8px;">
                             <input type="number" id="holaf-editor-fps-input" min="1" max="144" step="1" 
                                    style="width: 40px; background: var(--comfy-input-bg); color: var(--comfy-input-text); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px; text-align: center;">
                         </div>

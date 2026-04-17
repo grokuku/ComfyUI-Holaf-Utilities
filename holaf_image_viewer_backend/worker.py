@@ -222,14 +222,23 @@ def run_thumbnail_generation_worker(stop_event):
                 stop_event.wait(WORKER_POST_JOB_SLEEP_SECONDS)
                 continue
 
-            # --- FEATURE: Load .edt file if exists ---
+            # --- FEATURE: Load .edt file if exists (checks both NEW and LEGACY locations) ---
             edit_data = None
             try:
                 directory, filename = os.path.split(original_abs_path)
                 base_filename, _ = os.path.splitext(filename)
-                edit_file_path = os.path.join(directory, f"{base_filename}.edt")
                 
-                if os.path.isfile(edit_file_path):
+                # FIX: Check NEW location first (edit/ subfolder), then fall back to legacy sibling
+                edit_file_new = os.path.join(directory, EDIT_DIR_NAME, f"{base_filename}.edt")
+                edit_file_legacy = os.path.join(directory, f"{base_filename}.edt")
+                
+                edit_file_path = None
+                if os.path.isfile(edit_file_new):
+                    edit_file_path = edit_file_new
+                elif os.path.isfile(edit_file_legacy):
+                    edit_file_path = edit_file_legacy
+                
+                if edit_file_path:
                     with open(edit_file_path, 'r', encoding='utf-8') as f:
                         edit_data = json.load(f)
             except Exception as e_edit:

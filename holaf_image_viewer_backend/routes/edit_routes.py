@@ -245,6 +245,7 @@ async def delete_edits_route(request: web.Request):
 async def process_video_route(request: web.Request):
     """
     Generates a _proc.mp4 video based on current edits (RIFE, Filters).
+    Uses a per-path async lock to prevent concurrent processing of the same video.
     """
     try:
         data = await request.json()
@@ -253,20 +254,31 @@ async def process_video_route(request: web.Request):
         
         if not path_canon: return web.json_response({"status": "error", "message": "Missing path"}, status=400)
         
-        output_dir = folder_paths.get_output_directory()
-        safe_path = holaf_utils.sanitize_path_canon(path_canon)
-        abs_image_path = os.path.join(output_dir, safe_path)
+        # FIX: Use a per-path lock to prevent concurrent processing corruption
+        from ..logic import _video_processing_locks, _video_processing_locks_mutex
+        async with _video_processing_locks_mutex:
+            if path_canon not in _video_processing_locks:
+                _video_processing_locks[path_canon] = asyncio.Lock()
+            path_lock = _video_processing_locks[path_canon]
         
-        if not os.path.isfile(abs_image_path):
-            return web.json_response({"status": "error", "message": "Source file not found"}, status=404)
+        if path_lock.locked():
+            return web.json_response({"status": "error", "message": "Video is already being processed. Please wait."}, status=409)
+        
+        async with path_lock:
+            output_dir = folder_paths.get_output_directory()
+            safe_path = holaf_utils.sanitize_path_canon(path_canon)
+            abs_image_path = os.path.join(output_dir, safe_path)
             
-        loop = asyncio.get_event_loop()
-        
-        # [UPDATED] Use preview_mode=True to skip baking colors (letting CSS handle it)
-        # and receive stats back
-        stats = await loop.run_in_executor(None, logic.generate_proc_video, abs_image_path, edit_data, True)
-        
-        return web.json_response({"status": "ok", "message": "Preview generated successfully", "stats": stats})
+            if not os.path.isfile(abs_image_path):
+                return web.json_response({"status": "error", "message": "Source file not found"}, status=404)
+                
+            loop = asyncio.get_event_loop()
+            
+            # [UPDATED] Use preview_mode=True to skip baking colors (letting CSS handle it)
+            # and receive stats back
+            stats = await loop.run_in_executor(None, logic.generate_proc_video, abs_image_path, edit_data, True)
+            
+            return web.json_response({"status": "ok", "message": "Preview generated successfully", "stats": stats})
         
     except Exception as e:
         traceback.print_exc()
