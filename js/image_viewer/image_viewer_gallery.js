@@ -325,7 +325,6 @@ function renderVisibleItems() {
             }
             element.remove();
         }
-        }
 
         if (fragment.childElementCount > 0) {
             galleryGridEl.appendChild(fragment);
