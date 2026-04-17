@@ -168,6 +168,29 @@ async def save_edits_route(request: web.Request):
             WHERE path_canon = ?
         """, (time.time(), path_canon))
         conn.commit()
+        holaf_database.close_db_connection()
+        conn = None  # Connection is closed, prevent finally block re-closing it.
+
+        # --- FIX: Synchronously regenerate the thumbnail so the frontend gets the updated version ---
+        original_abs_path = os.path.normpath(os.path.join(output_dir, safe_path))
+        if os.path.isfile(original_abs_path):
+            import hashlib
+            from ... import holaf_utils
+            path_hash = hashlib.sha1(safe_path.encode('utf-8')).hexdigest()
+            thumb_filename = f"{path_hash}.jpg"
+            thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, 
+                    logic._create_thumbnail_blocking, 
+                    original_abs_path, 
+                    thumb_path_abs, 
+                    safe_path,
+                    edits
+                )
+            except Exception as e_thumb:
+                print(f"🟡 [Holaf-Edit] Thumbnail regeneration failed (non-fatal): {e_thumb}")
 
         return web.json_response({"status": "ok", "message": "Edits saved successfully"})
 
@@ -226,6 +249,29 @@ async def delete_edits_route(request: web.Request):
         """, (time.time(), path_canon))
         
         conn.commit()
+        holaf_database.close_db_connection()
+        conn = None  # Connection is closed, prevent finally block re-closing it.
+
+        # --- FIX: Synchronously regenerate the thumbnail (without edits) ---
+        original_abs_path = os.path.normpath(os.path.join(output_dir, safe_path))
+        if os.path.isfile(original_abs_path):
+            import hashlib
+            from ... import holaf_utils
+            path_hash = hashlib.sha1(safe_path.encode('utf-8')).hexdigest()
+            thumb_filename = f"{path_hash}.jpg"
+            thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, 
+                    logic._create_thumbnail_blocking, 
+                    original_abs_path, 
+                    thumb_path_abs, 
+                    safe_path,
+                    None  # No edits
+                )
+            except Exception as e_thumb:
+                print(f"🟡 [Holaf-Edit] Thumbnail regeneration failed (non-fatal): {e_thumb}")
 
         return web.json_response({"status": "ok", "message": "Edits reset successfully"})
 

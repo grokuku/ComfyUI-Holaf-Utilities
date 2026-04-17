@@ -36,7 +36,8 @@ from . import dependency_manager
 # --- Constants ---
 # MODIFIED: Expanded video format support to ensure FPS detection works for more files
 VIDEO_FORMATS = {'.mp4', '.webm', '.mkv', '.avi', '.mov', '.m4v'}
-SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff'}.union(VIDEO_FORMATS)
+AUDIO_FORMATS = {'.wav', '.mp3', '.ogg', '.flac', '.aac', '.m4a'}
+SUPPORTED_IMAGE_FORMATS = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff'}.union(VIDEO_FORMATS).union(AUDIO_FORMATS)
 
 TRASHCAN_DIR_NAME = "trashcan"
 EDIT_DIR_NAME = "edit"  # New reserved folder name
@@ -743,6 +744,56 @@ def _extract_image_metadata_blocking(image_path_abs):
             
         return result
 
+    # --- AUDIO FORMAT HANDLING ---
+    if file_ext.lower() in AUDIO_FORMATS:
+        ffprobe = get_ffprobe_path()
+        if ffprobe:
+            try:
+                # Extract duration for audio files
+                cmd = [
+                    ffprobe, "-v", "error", "-show_entries", "format=duration",
+                    "-show_entries", "stream=codec_name,sample_rate,channels",
+                    "-of", "json", image_path_abs
+                ]
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    raise RuntimeError("ffprobe timed out")
+                
+                if process.returncode == 0:
+                    info = json.loads(stdout)
+                    streams = info.get("streams", [])
+                    fmt_info = info.get("format", {})
+                    
+                    # Store audio-specific metadata
+                    duration_secs = float(fmt_info.get("duration", 0))
+                    result["duration"] = duration_secs
+                    result["width"] = 0    # Audio has no visual dimensions
+                    result["height"] = 0
+                    result["ratio"] = "audio"
+                    result["is_audio"] = True
+                    
+                    if streams:
+                        stream = streams[0]
+                        result["audio_codec"] = stream.get("codec_name", "unknown")
+                        result["audio_sample_rate"] = stream.get("sample_rate", "unknown")
+                        result["audio_channels"] = stream.get("channels", "unknown")
+                else:
+                    result["error"] = f"ffprobe failed: {stderr.decode('utf-8')}"
+            except Exception as e:
+                result["error"] = f"Audio analysis failed: {e}"
+        else:
+            result["error"] = "ffprobe not found"
+            result["width"] = 0
+            result["height"] = 0
+            result["ratio"] = "audio"
+            result["is_audio"] = True
+        
+        return result
+
     try:
         with Image.open(image_path_abs) as img:
             result["width"], result["height"] = img.size
@@ -849,12 +900,35 @@ def build_ffmpeg_filter_string(edit_data):
         
     return ",".join(filters)
 
-def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp4'):
+def _build_atempo_filter(rate):
+    """
+    Build FFmpeg atempo filter string for the given playback rate.
+    atempo supports values between 0.5 and 2.0. For values outside this range,
+    multiple filters must be chained.
+    Returns None if the rate is effectively 1.0 (no change needed).
+    """
+    if rate <= 0 or abs(rate - 1.0) < 0.01:
+        return None
+    filters = []
+    remaining = rate
+    while remaining < 0.5 or remaining > 2.0:
+        if remaining < 0.5:
+            filters.append("atempo=0.5")
+            remaining /= 0.5
+        else:
+            filters.append("atempo=2.0")
+            remaining /= 2.0
+    filters.append(f"atempo={remaining:.6f}")
+    return ",".join(filters)
+
+
+def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp4', export_options=None):
     """
     Transcodes a video file applying the edits "baked in" via FFmpeg.
     Supports .mp4 (x264) and .gif (palettegen).
     
-    UPDATED: Supports targetFps logic.
+    UPDATED: Supports targetFps logic. Audio speed adjustment via atempo.
+    UPDATED: Supports export_options dict for quality/CRF/preset control.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
@@ -895,6 +969,13 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
     
     action_log = "Copy (No edits)"
     
+    # --- EXPORT OPTIONS ---
+    options = export_options or {}
+    crf = options.get('crf', 23)
+    preset = options.get('preset', 'fast')
+    jpg_quality = options.get('jpg_quality', 95)
+    gif_fps = options.get('gif_fps', None)  # Optional GIF FPS override
+    
     if format_ext == 'gif':
         # GIF Generation Strategy:
         # 1. Apply visual filters (eq/hue)
@@ -914,10 +995,11 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
         cmd.extend(["-filter_complex", complex_filter])
         
         # Force frame rate if requested
-        if target_fps:
-             cmd.extend(["-r", str(target_fps)])
+        effective_gif_fps = gif_fps or target_fps
+        if effective_gif_fps:
+             cmd.extend(["-r", str(int(effective_gif_fps))])
              
-        action_log = "Transcode to GIF"
+        action_log = f"Transcode to GIF (FPS: {effective_gif_fps})"
     else:
         # MP4 / Standard Video
         if filter_str or speed_changed or target_fps:
@@ -926,18 +1008,25 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
             
             # If target FPS is set, force output framerate
             if target_fps:
-                cmd.extend(["-r", str(target_fps)])
+                cmd.extend(["-r", str(int(target_fps))])
 
-            cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
+            cmd.extend(["-c:v", "libx264", "-preset", preset, "-crf", str(crf)])
             
-            # --- AUDIO HANDLING ---
-            # If speed changes, -c:a copy breaks synchronization or fails.
-            # Safe bet for AI Video tools: remove audio if speed is altered.
+            # --- FIX: AUDIO HANDLING WITH ATEMPO ---
+            # Instead of removing audio on speed change, we adjust audio tempo to match.
             if speed_changed:
-                cmd.extend(["-an"]) # Remove audio
-                action_log = f"Transcode (Filters: {filter_str}, FPS: {target_fps}, Audio Removed due to speed change)"
+                calculated_rate = filter_edit_data.get('playbackRate', 1.0)
+                atempo_str = _build_atempo_filter(calculated_rate)
+                if atempo_str:
+                    cmd.extend(["-af", atempo_str])
+                    cmd.extend(["-c:a", "aac", "-b:a", "128k"])
+                    action_log = f"Transcode (Filters: {filter_str}, FPS: {target_fps}, Audio tempo: {calculated_rate:.2f}x)"
+                else:
+                    # Fallback: extreme tempo, remove audio
+                    cmd.extend(["-an"])
+                    action_log = f"Transcode (Filters: {filter_str}, FPS: {target_fps}, Audio removed - extreme tempo)"
             else:
-                cmd.extend(["-c:a", "copy"]) # Copy audio if speed is normal
+                cmd.extend(["-c:a", "copy"])
                 action_log = f"Transcode (Filters: {filter_str})"
         else:
             cmd.extend(["-c", "copy"])
@@ -989,6 +1078,44 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
                 
             from io import BytesIO
             img = Image.open(BytesIO(stdout))
+        elif file_ext in AUDIO_FORMATS:
+            # --- AUDIO THUMBNAIL: Generate a waveform-style placeholder image ---
+            try:
+                audio_thumb_width, audio_thumb_height = 320, 240
+                img = Image.new('RGB', (audio_thumb_width, audio_thumb_height), (30, 30, 40))
+                from PIL import ImageDraw, ImageFont
+                draw = ImageDraw.Draw(img)
+                
+                # Draw a music note icon
+                icon_text = "\u266B"  # \u266b
+                try:
+                    font = ImageFont.truetype("arial.ttf", 80)
+                except (OSError, IOError):
+                    try:
+                        font = ImageFont.truetype("DejaVuSans.ttf", 80)
+                    except (OSError, IOError):
+                        font = ImageFont.load_default()
+                
+                bbox = draw.textbbox((0, 0), icon_text, font=font)
+                icon_w = bbox[2] - bbox[0]
+                icon_h = bbox[3] - bbox[1]
+                draw.text(((audio_thumb_width - icon_w) / 2, (audio_thumb_height - icon_h) / 2 - 20),
+                          icon_text, fill=(80, 160, 255), font=font)
+                
+                # Draw file extension label
+                ext_label = file_ext[1:].upper()
+                try:
+                    small_font = ImageFont.truetype("arial.ttf", 20)
+                except (OSError, IOError):
+                    try:
+                        small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
+                    except (OSError, IOError):
+                        small_font = ImageFont.load_default()
+                draw.text((audio_thumb_width / 2, audio_thumb_height - 40), ext_label,
+                          fill=(150, 150, 150), font=small_font, anchor="mm")
+            except Exception as e:
+                # Fallback: plain colored square
+                img = Image.new('RGB', (320, 240), (30, 30, 40))
         else:
             img = Image.open(original_path_abs)
 

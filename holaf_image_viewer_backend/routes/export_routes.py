@@ -23,6 +23,7 @@ async def prepare_export_route(request: web.Request):
         export_format = data.get("export_format", "png").lower()
         include_meta = data.get("include_meta", False)
         meta_method = data.get("meta_method", "embed")
+        export_options = data.get("export_options", {})
 
         if not paths_canon:
             return web.json_response({"status": "error", "message": "No images selected for export."}, status=400)
@@ -123,7 +124,8 @@ async def prepare_export_route(request: web.Request):
                         source_abs_path, 
                         dest_abs_path, 
                         edit_data if edit_data else {},
-                        target_ext # Pass 'gif' or 'mp4'
+                        target_ext,
+                        export_options  # Pass quality settings (CRF, preset, gif_fps)
                     )
                 else:
                     # Image Export (Pillow)
@@ -140,7 +142,7 @@ async def prepare_export_route(request: web.Request):
                         
                         if export_format == 'jpg':
                             if img_to_save.mode in ['RGBA', 'P', 'LA']: img_to_save = img_to_save.convert('RGB')
-                            save_params['quality'] = 95
+                            save_params['quality'] = export_options.get('jpg_quality', 95)
                         elif export_format == 'tiff':
                             save_params['compression'] = 'tiff_lzw'
 

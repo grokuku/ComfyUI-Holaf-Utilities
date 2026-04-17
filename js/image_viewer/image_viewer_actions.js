@@ -528,6 +528,45 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                         ${formatOptionsHTML}
                     </div>
                 </div>
+
+                <!-- === QUALITY / COMPRESSION OPTIONS === -->
+                <div id="holaf-export-quality-group" class="holaf-viewer-export-option-group">
+                    <label>Quality / Compression:</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- JPG Quality -->
+                        <div id="holaf-export-jpg-quality-row" style="display: none; align-items: center; gap: 8px;">
+                            <label style="min-width: 90px;">JPG Quality:</label>
+                            <input type="range" id="holaf-export-jpg-quality" min="1" max="100" value="95" style="flex:1;">
+                            <span id="holaf-export-jpg-quality-val" style="min-width: 32px; text-align: right;">95</span>
+                        </div>
+                        <!-- MP4 CRF -->
+                        <div id="holaf-export-mp4-crf-row" style="display: none; align-items: center; gap: 8px;">
+                            <label style="min-width: 90px;">MP4 Quality:</label>
+                            <input type="range" id="holaf-export-mp4-crf" min="0" max="51" value="23" style="flex:1;">
+                            <span id="holaf-export-mp4-crf-val" style="min-width: 32px; text-align: right;">23</span>
+                            <select id="holaf-export-mp4-preset" style="width: 100px;" title="Encoding speed preset">
+                                <option value="ultrafast">Ultrafast</option>
+                                <option value="superfast">Superfast</option>
+                                <option value="veryfast">Veryfast</option>
+                                <option value="faster">Faster</option>
+                                <option value="fast" selected>Fast</option>
+                                <option value="medium">Medium</option>
+                                <option value="slow">Slow</option>
+                            </select>
+                        </div>
+                        <!-- GIF FPS -->
+                        <div id="holaf-export-gif-fps-row" style="display: none; align-items: center; gap: 8px;">
+                            <label style="min-width: 90px;">GIF FPS:</label>
+                            <input type="range" id="holaf-export-gif-fps" min="1" max="30" value="15" style="flex:1;">
+                            <span id="holaf-export-gif-fps-val" style="min-width: 32px; text-align: right;">15</span>
+                        </div>
+                        <!-- PNG/TIFF Info -->
+                        <div id="holaf-export-png-info-row" style="display: none;">
+                            <span style="opacity: 0.6; font-size: 0.85em;">Lossless format — no quality setting needed.</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="holaf-viewer-export-option-group">
                     <label>Metadata:</label>
                     <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -560,6 +599,34 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         setupKeyboardNavigation();
     };
     includeMetaCheckbox.addEventListener('change', toggleMetaMethod);
+
+    // --- QUALITY / COMPRESSION DYNAMIC VISIBILITY ---
+    const qualityGroup = overlay.querySelector('#holaf-export-quality-group');
+    const jpgRow = overlay.querySelector('#holaf-export-jpg-quality-row');
+    const mp4Row = overlay.querySelector('#holaf-export-mp4-crf-row');
+    const gifRow = overlay.querySelector('#holaf-export-gif-fps-row');
+    const pngInfoRow = overlay.querySelector('#holaf-export-png-info-row');
+    const jpgSlider = overlay.querySelector('#holaf-export-jpg-quality');
+    const jpgVal = overlay.querySelector('#holaf-export-jpg-quality-val');
+    const crfSlider = overlay.querySelector('#holaf-export-mp4-crf');
+    const crfVal = overlay.querySelector('#holaf-export-mp4-crf-val');
+    const gifFpsSlider = overlay.querySelector('#holaf-export-gif-fps');
+    const gifFpsVal = overlay.querySelector('#holaf-export-gif-fps-val');
+
+    jpgSlider.addEventListener('input', () => { jpgVal.textContent = jpgSlider.value; });
+    crfSlider.addEventListener('input', () => { crfVal.textContent = crfSlider.value; });
+    gifFpsSlider.addEventListener('input', () => { gifFpsVal.textContent = gifFpsSlider.value; });
+
+    const updateQualityVisibility = () => {
+        const fmt = overlay.querySelector('input[name="export-format"]:checked')?.value || defaultFormat;
+        jpgRow.style.display = (fmt === 'jpg') ? 'flex' : 'none';
+        mp4Row.style.display = (fmt === 'mp4') ? 'flex' : 'none';
+        gifRow.style.display = (fmt === 'gif') ? 'flex' : 'none';
+        pngInfoRow.style.display = (fmt === 'png' || fmt === 'tiff') ? 'block' : 'none';
+    };
+    overlay.querySelectorAll('input[name="export-format"]').forEach(r => r.addEventListener('change', updateQualityVisibility));
+    updateQualityVisibility();
+    // ------------------------------------------
 
     // --- START: Keyboard Navigation Logic (v2 - 2D Aware) ---
     let focusableElements = [];
@@ -700,6 +767,17 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         const includeMeta = overlay.querySelector('#holaf-export-include-meta').checked;
         const metaMethod = includeMeta ? overlay.querySelector('input[name="meta-method"]:checked').value : null;
 
+        // --- READ QUALITY / COMPRESSION SETTINGS ---
+        const exportOptions = {};
+        if (format === 'jpg') {
+            exportOptions.jpg_quality = parseInt(overlay.querySelector('#holaf-export-jpg-quality').value);
+        } else if (format === 'mp4') {
+            exportOptions.crf = parseInt(overlay.querySelector('#holaf-export-mp4-crf').value);
+            exportOptions.preset = overlay.querySelector('#holaf-export-mp4-preset').value;
+        } else if (format === 'gif') {
+            exportOptions.gif_fps = parseInt(overlay.querySelector('#holaf-export-gif-fps').value);
+        }
+
         // Important: cleanup removes overlay from DOM, so all DOM reads must be done above
         cleanupAndClose();
 
@@ -723,7 +801,8 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
             paths_canon: imagesToExport.map(img => img.path_canon),
             export_format: format,
             include_meta: includeMeta,
-            meta_method: metaMethod
+            meta_method: metaMethod,
+            export_options: exportOptions
         };
         
         try {

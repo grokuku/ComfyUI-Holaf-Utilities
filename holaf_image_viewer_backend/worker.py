@@ -13,7 +13,7 @@ import folder_paths # ComfyUI global
 
 # Imports from this package's modules
 from . import logic
-from .logic import SUPPORTED_IMAGE_FORMATS, TRASHCAN_DIR_NAME
+from .logic import SUPPORTED_IMAGE_FORMATS, TRASHCAN_DIR_NAME, EDIT_DIR_NAME
 
 # Imports from the parent package
 from .. import holaf_database

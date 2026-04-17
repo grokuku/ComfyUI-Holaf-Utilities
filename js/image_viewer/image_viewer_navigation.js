@@ -80,7 +80,8 @@ function preloadNextImage(viewer) {
     if (state.currentNavIndex < 0 || (state.currentNavIndex + 1) >= state.images.length) return;
 
     const nextImage = state.images[state.currentNavIndex + 1];
-    if (nextImage && !['MP4', 'WEBM'].includes(nextImage.format)) {
+    // Only preload images, not videos or audio
+    if (nextImage && !['MP4', 'WEBM'].includes(nextImage.format) && !['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(nextImage.format)) {
         const preloader = new Image();
         preloader.src = getFullImageUrl(nextImage);
     }
@@ -103,15 +104,53 @@ export function getFullImageUrl(image) {
  */
 function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformState) {
     const isVideo = ['MP4', 'WEBM'].includes(image.format);
+    const isAudio = ['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format);
     const url = getFullImageUrl(image);
 
     // Safety check: ensure videoEl exists (it might be missing if UI didn't initialize correctly)
     const hasVideoEl = !!videoEl;
 
-    if (isVideo && hasVideoEl) {
+    if (isAudio) {
+        // Audio: Hide image, show video element as an audio player
         if (imgEl) {
             imgEl.style.display = 'none';
             imgEl.src = '';
+        }
+
+        // Use the video element for audio playback
+        if (hasVideoEl) {
+            videoEl.style.display = 'block';
+            videoEl.src = url;
+            resetTransform(transformState, videoEl);
+            
+            // Audio-specific styling: smaller centered element
+            videoEl.style.width = '80%';
+            videoEl.style.maxWidth = '400px';
+            videoEl.style.height = 'auto';
+            videoEl.style.margin = 'auto';
+            videoEl.style.border = '1px solid var(--holaf-border-color)';
+            videoEl.style.borderRadius = 'var(--holaf-border-radius)';
+            
+            videoEl.play().catch(() => {});
+        }
+        
+        // Show a waveform/audio icon behind the player
+        _applyEditorPreview(viewer, null);
+        
+    } else if (isVideo && hasVideoEl) {
+        if (imgEl) {
+            imgEl.style.display = 'none';
+            imgEl.src = '';
+        }
+
+        // Reset any audio-specific styling
+        if (hasVideoEl) {
+            videoEl.style.width = '';
+            videoEl.style.maxWidth = '';
+            videoEl.style.height = '';
+            videoEl.style.margin = '';
+            videoEl.style.border = '';
+            videoEl.style.borderRadius = '';
         }
 
         videoEl.style.display = 'block';
@@ -128,7 +167,14 @@ function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformS
         });
 
     } else {
+        // Reset any audio-specific styling on video element
         if (hasVideoEl) {
+            videoEl.style.width = '';
+            videoEl.style.maxWidth = '';
+            videoEl.style.height = '';
+            videoEl.style.margin = '';
+            videoEl.style.border = '';
+            videoEl.style.borderRadius = '';
             videoEl.pause();
             videoEl.style.display = 'none';
             videoEl.src = '';

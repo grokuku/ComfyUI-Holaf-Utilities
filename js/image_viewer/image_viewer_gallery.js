@@ -672,6 +672,22 @@ function createPlaceholder(viewer, image, index) {
         });
         // --- END HOVER PREVIEW ---
 
+    } else if (['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format)) {
+        actionIcon.innerHTML = '\uD83C\uDFB5';
+        actionIcon.title = "Play Audio";
+        actionIcon.classList.toggle('active', image.has_edit_file);
+
+        actionIcon.onclick = (e) => {
+            e.stopPropagation();
+            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
+            viewer._showZoomedView(image);
+        };
+        placeholder.addEventListener('dblclick', (e) => {
+            if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon, .holaf-viewer-thumb-checkbox')) return;
+            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
+            viewer._showZoomedView(image);
+        });
+
     } else {
         actionIcon.innerHTML = '✎';
         actionIcon.title = "Edit image";
