@@ -800,6 +800,11 @@ def _extract_image_metadata_blocking(image_path_abs):
         
         return result
 
+    # FIX: Temporarily disable Pillow's decompression bomb limit.
+    # We only read metadata (dimensions, prompts) — no pixel decompression occurs.
+    # Legitimate AI images can exceed the 178M pixel threshold.
+    old_max_pixels = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = None
     try:
         with Image.open(image_path_abs) as img:
             result["width"], result["height"] = img.size
@@ -814,6 +819,8 @@ def _extract_image_metadata_blocking(image_path_abs):
     except FileNotFoundError: result["error"] = "Image file not found"
     except UnidentifiedImageError: result["error"] = "Unidentified image error"
     except Exception as e: result["error"] = str(e)
+    finally:
+        Image.MAX_IMAGE_PIXELS = old_max_pixels
     if "error" in result: print(f"🟡 [Holaf-Logic] Metadata error for {filename}: {result['error']}")
 
     return result
@@ -1190,6 +1197,25 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             
             return True  # FIX: Explicit success return
 
+    except Image.DecompressionBombError as e:
+        # FIX: Legitimate large images (e.g. 18K×18K AI art) exceed Pillow's pixel
+        # limit. Full decompression would require excessive RAM, so we gracefully
+        # mark the thumbnail as permanently skipped instead of retrying forever.
+        update_exception = e
+        print(f"🟡 [Holaf-ImageViewer] Image too large for thumbnail (decompression bomb): {original_path_abs}")
+        if image_path_canon_for_db_update:
+            conn_fail_db_inner = None
+            inner_exception = None
+            try:
+                conn_fail_db_inner = holaf_database.get_db_connection()
+                cursor_inner = conn_fail_db_inner.cursor()
+                cursor_inner.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (image_path_canon_for_db_update,))
+                conn_fail_db_inner.commit()
+            except Exception as e_fail_inner:
+                inner_exception = e_fail_inner
+            finally:
+                if conn_fail_db_inner:
+                    holaf_database.close_db_connection(exception=inner_exception)
     except UnidentifiedImageError as e:
         update_exception = e
     except Exception as e:
@@ -1218,9 +1244,15 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
 
 def _strip_png_metadata_and_get_mtime(image_abs_path):
     try:
-        with Image.open(image_abs_path) as img: img.load()
-        new_img = Image.new(img.mode, img.size); new_img.putdata(list(img.getdata()))
-        new_img.save(image_abs_path, "PNG")
+        # FIX: Temporarily disable decompression bomb limit for metadata stripping.
+        old_max_pixels = Image.MAX_IMAGE_PIXELS
+        Image.MAX_IMAGE_PIXELS = None
+        try:
+            with Image.open(image_abs_path) as img: img.load()
+            new_img = Image.new(img.mode, img.size); new_img.putdata(list(img.getdata()))
+            new_img.save(image_abs_path, "PNG")
+        finally:
+            Image.MAX_IMAGE_PIXELS = old_max_pixels
         return os.path.getmtime(image_abs_path)
     except Exception as e: raise RuntimeError(f"Failed to strip metadata: {e}") from e
 
