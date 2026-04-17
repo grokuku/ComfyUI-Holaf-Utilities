@@ -4,6 +4,8 @@ import os
 import json
 import traceback
 import uuid
+import shutil
+import subprocess
 
 import aiofiles
 from aiohttp import web
@@ -61,6 +63,7 @@ async def prepare_export_route(request: web.Request):
             
             # --- DETECTION DU TYPE ---
             is_video = file_ext_lower in logic.VIDEO_FORMATS
+            is_audio = file_ext_lower in logic.AUDIO_FORMATS
             
             # --- Format Override Logic ---
             target_ext = export_format
@@ -69,6 +72,10 @@ async def prepare_export_route(request: web.Request):
                 # Video source: Only allow mp4 or gif. Fallback to mp4 if user asked for image format.
                 if export_format not in ['mp4', 'gif']:
                     target_ext = 'mp4'
+            elif is_audio:
+                # Audio source: Only allow wav or mp3. Fallback to wav if user asked for image/video format.
+                if export_format not in ['wav', 'mp3']:
+                    target_ext = 'wav'
             else:
                 # Image source: Keep user format.
                 pass
@@ -127,6 +134,25 @@ async def prepare_export_route(request: web.Request):
                         target_ext,
                         export_options  # Pass quality settings (CRF, preset, gif_fps)
                     )
+                elif is_audio:
+                    # Audio Export (Copy or Transcode)
+                    if file_ext_lower == f'.{target_ext}':
+                        # Same format: simple copy
+                        shutil.copy2(source_abs_path, dest_abs_path)
+                    else:
+                        # Transcode via ffmpeg
+                        ffmpeg = logic.get_ffmpeg_path()
+                        if not ffmpeg:
+                            raise RuntimeError("ffmpeg not found, cannot transcode audio.")
+                        cmd = [ffmpeg, '-y', '-i', source_abs_path]
+                        if target_ext == 'mp3':
+                            cmd.extend(['-codec:a', 'libmp3lame', '-q:a', '2'])  # VBR ~190kbps
+                        # WAV: default PCM, no extra args needed
+                        cmd.append(dest_abs_path)
+                        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        stdout, stderr = proc.communicate(timeout=60)
+                        if proc.returncode != 0:
+                            raise RuntimeError(f"FFmpeg audio transcode failed: {stderr.decode('utf-8')}")
                 else:
                     # Image Export (Pillow)
                     with Image.open(source_abs_path) as img:

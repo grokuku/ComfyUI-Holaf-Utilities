@@ -1081,41 +1081,56 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
         elif file_ext in AUDIO_FORMATS:
             # --- AUDIO THUMBNAIL: Generate a waveform-style placeholder image ---
             try:
-                audio_thumb_width, audio_thumb_height = 320, 240
-                img = Image.new('RGB', (audio_thumb_width, audio_thumb_height), (30, 30, 40))
+                audio_thumb_size = 640  # Square, high-res for clear display
+                bg_color = (25, 25, 35)
+                accent_color = (70, 140, 255)
+                label_color = (160, 160, 170)
+                img = Image.new('RGB', (audio_thumb_size, audio_thumb_size), bg_color)
                 from PIL import ImageDraw, ImageFont
                 draw = ImageDraw.Draw(img)
                 
-                # Draw a music note icon
-                icon_text = "\u266B"  # \u266b
+                # Draw decorative circle behind the icon
+                cx, cy = audio_thumb_size // 2, audio_thumb_size // 2 - 20
+                circle_radius = 160
+                draw.ellipse(
+                    [cx - circle_radius, cy - circle_radius, cx + circle_radius, cy + circle_radius],
+                    fill=(35, 35, 50), outline=accent_color, width=3
+                )
+                
+                # Draw music notes
+                icon_text = "\u266B\u266A"  # Double note + single note
                 try:
-                    font = ImageFont.truetype("arial.ttf", 80)
+                    font = ImageFont.truetype("arial.ttf", 140)
                 except (OSError, IOError):
                     try:
-                        font = ImageFont.truetype("DejaVuSans.ttf", 80)
+                        font = ImageFont.truetype("DejaVuSans.ttf", 140)
                     except (OSError, IOError):
                         font = ImageFont.load_default()
                 
                 bbox = draw.textbbox((0, 0), icon_text, font=font)
                 icon_w = bbox[2] - bbox[0]
                 icon_h = bbox[3] - bbox[1]
-                draw.text(((audio_thumb_width - icon_w) / 2, (audio_thumb_height - icon_h) / 2 - 20),
-                          icon_text, fill=(80, 160, 255), font=font)
+                draw.text(
+                    ((audio_thumb_size - icon_w) / 2, (audio_thumb_size - icon_h) / 2 - 30),
+                    icon_text, fill=accent_color, font=font
+                )
                 
-                # Draw file extension label
+                # Draw file extension label at the bottom
                 ext_label = file_ext[1:].upper()
                 try:
-                    small_font = ImageFont.truetype("arial.ttf", 20)
+                    small_font = ImageFont.truetype("arial.ttf", 36)
                 except (OSError, IOError):
                     try:
-                        small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
+                        small_font = ImageFont.truetype("DejaVuSans.ttf", 36)
                     except (OSError, IOError):
                         small_font = ImageFont.load_default()
-                draw.text((audio_thumb_width / 2, audio_thumb_height - 40), ext_label,
-                          fill=(150, 150, 150), font=small_font, anchor="mm")
+                draw.text(
+                    (audio_thumb_size / 2, audio_thumb_size - 50),
+                    ext_label, fill=label_color, font=small_font, anchor="mm"
+                )
             except Exception as e:
                 # Fallback: plain colored square
-                img = Image.new('RGB', (320, 240), (30, 30, 40))
+                img = Image.new('RGB', (640, 640), (25, 25, 35))
         else:
             img = Image.open(original_path_abs)
 

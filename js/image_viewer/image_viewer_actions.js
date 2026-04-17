@@ -488,13 +488,16 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     
     // --- MODIFICATION: Format Filter Logic ---
     const hasVideo = imagesToExport.some(img => ['MP4', 'WEBM'].includes(img.format));
-    const hasImage = imagesToExport.some(img => !['MP4', 'WEBM'].includes(img.format));
+    const hasAudio = imagesToExport.some(img => ['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(img.format));
+    const hasImage = imagesToExport.some(img => !['MP4', 'WEBM', 'WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(img.format));
     
     // Determine default based on content type
     let defaultFormat = savedSettings.export_format;
     if (hasVideo && !['mp4', 'gif'].includes(defaultFormat)) {
         defaultFormat = 'mp4';
-    } else if (!hasVideo && hasImage && ['mp4', 'gif'].includes(defaultFormat)) {
+    } else if (hasAudio && !['wav', 'mp3'].includes(defaultFormat)) {
+        defaultFormat = 'wav';
+    } else if (!hasVideo && !hasAudio && hasImage && ['mp4', 'gif', 'wav', 'mp3'].includes(defaultFormat)) {
         defaultFormat = 'png';
     }
 
@@ -512,6 +515,13 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         formatOptionsHTML += `
             <label><input type="radio" name="export-format" value="mp4" ${defaultFormat === 'mp4' ? 'checked' : ''}> MP4</label>
             <label><input type="radio" name="export-format" value="gif" ${defaultFormat === 'gif' ? 'checked' : ''}> GIF</label>
+        `;
+    }
+
+    if (hasAudio) {
+        formatOptionsHTML += `
+            <label><input type="radio" name="export-format" value="wav" ${defaultFormat === 'wav' ? 'checked' : ''}> WAV</label>
+            <label><input type="radio" name="export-format" value="mp3" ${defaultFormat === 'mp3' ? 'checked' : ''}> MP3</label>
         `;
     }
     // ------------------------------------------
@@ -560,6 +570,10 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                             <input type="range" id="holaf-export-gif-fps" min="1" max="30" value="15" style="flex:1;">
                             <span id="holaf-export-gif-fps-val" style="min-width: 32px; text-align: right;">15</span>
                         </div>
+                        <!-- WAV/MP3 Info -->
+                        <div id="holaf-export-audio-info-row" style="display: none;">
+                            <span style="opacity: 0.6; font-size: 0.85em;">Audio format — file will be copied or transcoded.</span>
+                        </div>
                         <!-- PNG/TIFF Info -->
                         <div id="holaf-export-png-info-row" style="display: none;">
                             <span style="opacity: 0.6; font-size: 0.85em;">Lossless format — no quality setting needed.</span>
@@ -605,6 +619,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     const jpgRow = overlay.querySelector('#holaf-export-jpg-quality-row');
     const mp4Row = overlay.querySelector('#holaf-export-mp4-crf-row');
     const gifRow = overlay.querySelector('#holaf-export-gif-fps-row');
+    const audioInfoRow = overlay.querySelector('#holaf-export-audio-info-row');
     const pngInfoRow = overlay.querySelector('#holaf-export-png-info-row');
     const jpgSlider = overlay.querySelector('#holaf-export-jpg-quality');
     const jpgVal = overlay.querySelector('#holaf-export-jpg-quality-val');
@@ -622,6 +637,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         jpgRow.style.display = (fmt === 'jpg') ? 'flex' : 'none';
         mp4Row.style.display = (fmt === 'mp4') ? 'flex' : 'none';
         gifRow.style.display = (fmt === 'gif') ? 'flex' : 'none';
+        audioInfoRow.style.display = (fmt === 'wav' || fmt === 'mp3') ? 'block' : 'none';
         pngInfoRow.style.display = (fmt === 'png' || fmt === 'tiff') ? 'block' : 'none';
     };
     overlay.querySelectorAll('input[name="export-format"]').forEach(r => r.addEventListener('change', updateQualityVisibility));
