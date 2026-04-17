@@ -1010,7 +1010,8 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
             if target_fps:
                 cmd.extend(["-r", str(int(target_fps))])
 
-            cmd.extend(["-c:v", "libx264", "-preset", preset, "-crf", str(crf)])
+            video_codec = export_options.get('codec', 'libx264') if export_options else 'libx264'
+            cmd.extend(["-c:v", video_codec, "-preset", preset, "-crf", str(crf)])
             
             # --- FIX: AUDIO HANDLING WITH ATEMPO ---
             # Instead of removing audio on speed change, we adjust audio tempo to match.
@@ -1042,6 +1043,38 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
         raise RuntimeError(f"FFmpeg transcode failed: {stderr.decode('utf-8')}")
         
     return True
+
+# --- Font Helper ---
+# PIL's default font is tiny (8px). Try multiple system fonts before falling back.
+_FONT_CACHE = {}
+
+def _get_pil_font(size):
+    """Return a PIL ImageFont of the given size, trying common system fonts."""
+    if size in _FONT_CACHE:
+        return _FONT_CACHE[size]
+    
+    # Common font paths across platforms
+    font_paths = [
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',      # Linux (Debian/Ubuntu)
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',  # Linux (RHEL/Fedora)
+        'DejaVuSans.ttf',                                        # Relative (cwd)
+        'arial.ttf',                                             # Windows relative
+        '/usr/share/fonts/TTF/DejaVuSans.ttf',                   # Linux (Arch)
+    ]
+    
+    for path in font_paths:
+        try:
+            font = ImageFont.truetype(path, size)
+            _FONT_CACHE[size] = font
+            return font
+        except (OSError, IOError):
+            continue
+    
+    # Last resort: PIL default (tiny, but at least won't crash)
+    font = ImageFont.load_default()
+    _FONT_CACHE[size] = font
+    return font
+
 
 def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_canon_for_db_update=None, edit_data=None):
     conn_update_db = None
@@ -1079,9 +1112,9 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             from io import BytesIO
             img = Image.open(BytesIO(stdout))
         elif file_ext in AUDIO_FORMATS:
-            # --- AUDIO THUMBNAIL: Generate a waveform-style placeholder image ---
+            # --- AUDIO THUMBNAIL: Generate a placeholder image ---
             try:
-                audio_thumb_size = 640  # Square, high-res for clear display
+                audio_thumb_size = 640
                 bg_color = (25, 25, 35)
                 accent_color = (70, 140, 255)
                 label_color = (160, 160, 170)
@@ -1097,15 +1130,9 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
                     fill=(35, 35, 50), outline=accent_color, width=3
                 )
                 
-                # Draw music notes
-                icon_text = "\u266B\u266A"  # Double note + single note
-                try:
-                    font = ImageFont.truetype("arial.ttf", 140)
-                except (OSError, IOError):
-                    try:
-                        font = ImageFont.truetype("DejaVuSans.ttf", 140)
-                    except (OSError, IOError):
-                        font = ImageFont.load_default()
+                # Draw music notes icon (large, legible even after resize to 200x200)
+                icon_text = "\u266B\u266A"
+                font = _get_pil_font(140)
                 
                 bbox = draw.textbbox((0, 0), icon_text, font=font)
                 icon_w = bbox[2] - bbox[0]
@@ -1115,21 +1142,14 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
                     icon_text, fill=accent_color, font=font
                 )
                 
-                # Draw file extension label at the bottom
+                # Draw file extension label
                 ext_label = file_ext[1:].upper()
-                try:
-                    small_font = ImageFont.truetype("arial.ttf", 36)
-                except (OSError, IOError):
-                    try:
-                        small_font = ImageFont.truetype("DejaVuSans.ttf", 36)
-                    except (OSError, IOError):
-                        small_font = ImageFont.load_default()
+                small_font = _get_pil_font(36)
                 draw.text(
                     (audio_thumb_size / 2, audio_thumb_size - 50),
                     ext_label, fill=label_color, font=small_font, anchor="mm"
                 )
             except Exception as e:
-                # Fallback: plain colored square
                 img = Image.new('RGB', (640, 640), (25, 25, 35))
         else:
             img = Image.open(original_path_abs)

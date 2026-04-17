@@ -88,18 +88,17 @@ const activeFetches = new Map();
 
 // Track hover timeouts and abort controllers for video preview race condition prevention
 const hoverTimeouts = new Map();
-const hoverAbortControllers = new Map();
 
 let isWheelScrolling = false;
 let wheelScrollTimeout = null;
 let activeThumbnailLoads = 0;
 
 // --- LOAD QUEUE GENERATION ---
-// Every call to loadVisibleThumbnails increments this counter.
-// In-flight .finally() callbacks check if the generation still matches;
-// if not, they silently exit instead of calling process() on a stale queue.
-let loadQueueGeneration = 0;
-let loadQueueIdleTimer = null;
+// Simple kick-based scheduler - completed fetches always re-kick.
+// Queue fill is synchronous; no generation tracking needed.
+// 
+let kickQueued = false;
+let idleRestartTimer = null;
 
 let columnCount = 0;
 let itemWidth = 0;
@@ -317,25 +316,15 @@ function renderVisibleItems() {
             newPlaceholdersToRender.set(path, placeholder);
         }
 
-        // Cleanup: Handle elements leaving the viewport
+        // Cleanup: remove placeholders leaving the viewport
+        // Do NOT abort in-flight fetches — let them complete and cache (LRU).
         for (const [path, element] of renderedPlaceholders) {
-            // Cancel any pending hover video
             if (hoverTimeouts.has(path)) {
                 clearTimeout(hoverTimeouts.get(path));
                 hoverTimeouts.delete(path);
             }
-
             element.remove();
-
-            if (activeFetches.has(path)) {
-                // Abort user-cancelled fetches (scroll away)
-                activeFetches.get(path).abort('scroll-away');
-                activeFetches.delete(path);
-                // NOTE: Do NOT decrement activeThumbnailLoads here.
-                // The .finally() in fetchThumbnail will handle it (whether the abort
-                // is caught inside fetchThumbnail or after). Double-decrementing
-                // causes the counter to go negative and stalls the pipeline.
-            }
+        }
         }
 
         if (fragment.childElementCount > 0) {
@@ -345,8 +334,8 @@ function renderVisibleItems() {
         renderedPlaceholders = newPlaceholdersToRender;
 
         // Kick off loading immediately — don't debounce on render frame
-        // (the debounce in debouncedLoadVisibleThumbnails already handles this)
-        debouncedLoadVisibleThumbnails();
+        // (debounced for trackpad scrolling)
+        debouncedKickLoadQueue();
     });
 }
 
@@ -394,95 +383,66 @@ function addFullscreenIcon(placeholder, image) {
     }
 }
 
-function debouncedLoadVisibleThumbnails() {
-    clearTimeout(scrollbarDebounceTimeout);
-    scrollbarDebounceTimeout = setTimeout(loadVisibleThumbnails, isBenchmarking ? 5 : SCROLLBAR_DEBOUNCE_MS);
+function kickLoadQueue() {
+    if (kickQueued) return;
+    kickQueued = true;
+    queueMicrotask(_doKick);
 }
 
-function loadVisibleThumbnails() {
-    // Invalidate any previous queue by bumping the generation.
-    // In-flight fetches that complete later will see the generation
-    // mismatch and stop their recursive process() calls.
-    const myGeneration = ++loadQueueGeneration;
+function _doKick() {
+    kickQueued = false;
+    clearTimeout(idleRestartTimer);
 
-    // Cancel any pending idle-restart timer (it would restart a stale queue)
-    clearTimeout(loadQueueIdleTimer);
+    while (activeThumbnailLoads < currentConcurrencyLimit) {
+        const next = _findNextUnloaded();
+        if (!next) break;
 
-    const process = () => {
-        // Guard: this queue is stale, a newer one was started
-        if (myGeneration !== loadQueueGeneration) return;
-
-        if (activeThumbnailLoads >= currentConcurrencyLimit) return;
-
-        // Always read LIVE children, not a stale snapshot.
-        // This way we never reference orphaned DOM nodes.
-        const children = galleryGridEl.children;
-        let nextPlaceholder = null;
-
-        for (let i = 0; i < children.length; i++) {
-            const p = children[i];
-            if (!p.dataset.thumbnailLoadingOrLoaded && !activeFetches.has(p.dataset.pathCanon)) {
-                nextPlaceholder = p;
-                break;
-            }
+        if (applyCachedThumbnail(next, next.dataset.pathCanon)) {
+            continue;
         }
 
-        if (nextPlaceholder) {
-            // Double check cache just in case
-            if (applyCachedThumbnail(nextPlaceholder, nextPlaceholder.dataset.pathCanon)) {
-                // Was cached, move to next immediately
-                setTimeout(process, 0);
-                return;
-            }
+        activeThumbnailLoads++;
+        const imageIndex = parseInt(next.dataset.index, 10);
+        const image = imageViewerState.getState().images[imageIndex];
 
-            activeThumbnailLoads++;
-            const imageIndex = parseInt(nextPlaceholder.dataset.index, 10);
-            const image = imageViewerState.getState().images[imageIndex];
-
-            if (image) {
-                fetchThumbnail(nextPlaceholder, image, false).finally(() => {
-                    // Only the single owner that incremented the counter may decrement it.
-                    // This prevents double-decrement from renderVisibleItems' abort path.
-                    activeThumbnailLoads = Math.max(0, activeThumbnailLoads - 1);
-                    if (isBenchmarking) checkBenchmarkCompletion();
-                    // Continue this queue only if it's still the current generation
-                    if (myGeneration === loadQueueGeneration) {
-                        process();
-                    }
-                });
-            } else {
+        if (image) {
+            fetchThumbnail(next, image, false).finally(() => {
                 activeThumbnailLoads = Math.max(0, activeThumbnailLoads - 1);
-                setTimeout(process, 0);
-            }
+                if (isBenchmarking) checkBenchmarkCompletion();
+                kickLoadQueue();
+            });
         } else {
-            // Queue is empty for now
-            if (isBenchmarking) checkBenchmarkCompletion();
-
-            // --- IDLE RESTART SAFEGUARD ---
-            // Sometimes, between renderVisibleItems() and the load queue,
-            // a race condition leaves unloaded thumbnails in the DOM that
-            // this invocation didn't catch. Schedule a check after a short
-            // delay to restart the queue if there's still work to do.
-            if (activeThumbnailLoads === 0) {
-                loadQueueIdleTimer = setTimeout(() => {
-                    // Only restart if no newer queue was created
-                    if (myGeneration === loadQueueGeneration) {
-                        const children = galleryGridEl.children;
-                        for (let i = 0; i < children.length; i++) {
-                            if (!children[i].dataset.thumbnailLoadingOrLoaded) {
-                                // Found unloaded thumbnail — restart the queue
-                                loadVisibleThumbnails();
-                                return;
-                            }
-                        }
-                    }
-                }, 150);
-            }
+            activeThumbnailLoads = Math.max(0, activeThumbnailLoads - 1);
         }
-    };
+    }
 
-    // Fill the pipe
-    for (let i = 0; i < currentConcurrencyLimit; i++) process();
+    if (activeThumbnailLoads === 0) {
+        idleRestartTimer = setTimeout(() => {
+            const children = galleryGridEl.children;
+            for (let i = 0; i < children.length; i++) {
+                if (!children[i].dataset.thumbnailLoadingOrLoaded) {
+                    kickLoadQueue();
+                    return;
+                }
+            }
+        }, 200);
+    }
+}
+
+function _findNextUnloaded() {
+    const children = galleryGridEl.children;
+    for (let i = 0; i < children.length; i++) {
+        const p = children[i];
+        if (!p.dataset.thumbnailLoadingOrLoaded && !activeFetches.has(p.dataset.pathCanon)) {
+            return p;
+        }
+    }
+    return null;
+}
+
+function debouncedKickLoadQueue() {
+    clearTimeout(scrollbarDebounceTimeout);
+    scrollbarDebounceTimeout = setTimeout(kickLoadQueue, isBenchmarking ? 5 : 30);
 }
 
 async function fetchThumbnail(placeholder, image, forceReload = false) {
@@ -585,13 +545,13 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
                 placeholder.appendChild(errorDiv);
             }
         } else {
-            // Aborted (scroll-away): clear the loading flag so a future
-            // loadVisibleThumbnails() call will pick this item up again.
+            // Fetch was aborted (timeout or syncGallery). Blob not cached.
+            // kickLoadQueue() will pick this item up again.
             if (placeholder.isConnected) {
                 delete placeholder.dataset.thumbnailLoadingOrLoaded;
             }
         }
-        // If normal abort (scroll away), we silently ignore
+        // Will re-fetch next time it scrolls into view.
     } finally {
         activeFetches.delete(pathCanon);
     }
@@ -839,9 +799,9 @@ function initGallery(viewer) {
     galleryEl.addEventListener('scroll', () => {
         renderVisibleItems();
         if (isWheelScrolling) {
-            loadVisibleThumbnails();
+            kickLoadQueue();
         } else {
-            debouncedLoadVisibleThumbnails();
+            debouncedKickLoadQueue();
         }
     }, { passive: true });
 
@@ -859,23 +819,38 @@ function syncGallery(viewer, images) {
 
     viewerInstance = viewer;
 
-    // --- FIX: Robust Cleanup ---
-    // Cancel all fetches
-    activeThumbnailLoads = 0;
-    for (const controller of activeFetches.values()) {
-        controller.abort();
-    }
-    activeFetches.clear();
+    // --- FIX: Incremental update instead of destroy-and-rebuild ---
+    // Only do full teardown when the image list has actually changed.
+    const oldImages = imageViewerState.getState().images;
+    const oldPaths = new Set(oldImages.map(img => img.path_canon));
+    const newPaths = new Set(images.map(img => img.path_canon));
 
-    // Clear LRU Cache to free memory if list changes drastically
-    thumbnailCache.clear();
-
-    // DOM Cleanup
-    if (galleryGridEl) {
-        // Explicitly remove child elements to help GC detach listeners
-        while (galleryGridEl.firstChild) {
-            galleryGridEl.removeChild(galleryGridEl.firstChild);
+    // Check if the lists differ
+    let needsFullRebuild = false;
+    if (oldPaths.size !== newPaths.size) {
+        needsFullRebuild = true;
+    } else {
+        for (const p of newPaths) {
+            if (!oldPaths.has(p)) { needsFullRebuild = true; break; }
         }
+    }
+
+    if (!needsFullRebuild) {
+        // Same images, maybe just metadata changed — just re-render without destroying cache
+        updateLayout(true);
+        return;
+    }
+
+    // Full rebuild (image list actually changed)
+    for (const controller of activeFetches.values()) controller.abort();
+    activeFetches.clear();
+    activeThumbnailLoads = 0;
+
+    // Keep LRU Cache alive! Don't clear it — thumbnails are still valid.
+    // thumbnailCache.clear();
+
+    if (galleryGridEl) {
+        while (galleryGridEl.firstChild) galleryGridEl.removeChild(galleryGridEl.firstChild);
     }
     renderedPlaceholders.clear();
 

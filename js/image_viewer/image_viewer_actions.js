@@ -550,10 +550,15 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                             <span id="holaf-export-jpg-quality-val" style="min-width: 32px; text-align: right;">95</span>
                         </div>
                         <!-- MP4 CRF -->
-                        <div id="holaf-export-mp4-crf-row" style="display: none; align-items: center; gap: 8px;">
+                        <div id="holaf-export-mp4-crf-row" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <label style="min-width: 90px;">MP4 Quality:</label>
-                            <input type="range" id="holaf-export-mp4-crf" min="0" max="51" value="23" style="flex:1;">
+                            <input type="range" id="holaf-export-mp4-crf" min="0" max="51" value="23" style="flex:1; min-width: 80px;">
                             <span id="holaf-export-mp4-crf-val" style="min-width: 32px; text-align: right;">23</span>
+                            <select id="holaf-export-mp4-codec" style="width: 90px;" title="Video codec">
+                                <option value="libx264" selected>H.264</option>
+                                <option value="libx265">H.265</option>
+                                <option value="libsvtav1">AV1</option>
+                            </select>
                             <select id="holaf-export-mp4-preset" style="width: 100px;" title="Encoding speed preset">
                                 <option value="ultrafast">Ultrafast</option>
                                 <option value="superfast">Superfast</option>
@@ -571,8 +576,17 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                             <span id="holaf-export-gif-fps-val" style="min-width: 32px; text-align: right;">15</span>
                         </div>
                         <!-- WAV/MP3 Info -->
-                        <div id="holaf-export-audio-info-row" style="display: none;">
                             <span style="opacity: 0.6; font-size: 0.85em;">Audio format — file will be copied or transcoded.</span>
+                        </div>
+                        <!-- MP3 Bitrate -->
+                        <div id="holaf-export-mp3-bitrate-row" style="display: none; align-items: center; gap: 8px;">
+                            <label style="min-width: 90px;">MP3 Bitrate:</label>
+                            <input type="range" id="holaf-export-mp3-bitrate" min="64" max="320" value="192" step="32" style="flex:1;">
+                            <span id="holaf-export-mp3-bitrate-val" style="min-width: 48px; text-align: right;">192kbps</span>
+                        </div>
+                        <!-- WAV Audio Info -->
+                        <div id="holaf-export-wav-info-row" style="display: none;">
+                            <span style="opacity: 0.6; font-size: 0.85em;">Lossless audio — no quality setting needed.</span>
                         </div>
                         <!-- PNG/TIFF Info -->
                         <div id="holaf-export-png-info-row" style="display: none;">
@@ -619,7 +633,8 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     const jpgRow = overlay.querySelector('#holaf-export-jpg-quality-row');
     const mp4Row = overlay.querySelector('#holaf-export-mp4-crf-row');
     const gifRow = overlay.querySelector('#holaf-export-gif-fps-row');
-    const audioInfoRow = overlay.querySelector('#holaf-export-audio-info-row');
+    const wavInfoRow = overlay.querySelector('#holaf-export-wav-info-row');
+    const mp3BitrateRow = overlay.querySelector('#holaf-export-mp3-bitrate-row');
     const pngInfoRow = overlay.querySelector('#holaf-export-png-info-row');
     const jpgSlider = overlay.querySelector('#holaf-export-jpg-quality');
     const jpgVal = overlay.querySelector('#holaf-export-jpg-quality-val');
@@ -627,17 +642,21 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     const crfVal = overlay.querySelector('#holaf-export-mp4-crf-val');
     const gifFpsSlider = overlay.querySelector('#holaf-export-gif-fps');
     const gifFpsVal = overlay.querySelector('#holaf-export-gif-fps-val');
+    const mp3BitrateSlider = overlay.querySelector('#holaf-export-mp3-bitrate');
+    const mp3BitrateVal = overlay.querySelector('#holaf-export-mp3-bitrate-val');
 
     jpgSlider.addEventListener('input', () => { jpgVal.textContent = jpgSlider.value; });
     crfSlider.addEventListener('input', () => { crfVal.textContent = crfSlider.value; });
     gifFpsSlider.addEventListener('input', () => { gifFpsVal.textContent = gifFpsSlider.value; });
+    mp3BitrateSlider.addEventListener('input', () => { mp3BitrateVal.textContent = mp3BitrateSlider.value + 'kbps'; });
 
     const updateQualityVisibility = () => {
         const fmt = overlay.querySelector('input[name="export-format"]:checked')?.value || defaultFormat;
         jpgRow.style.display = (fmt === 'jpg') ? 'flex' : 'none';
         mp4Row.style.display = (fmt === 'mp4') ? 'flex' : 'none';
         gifRow.style.display = (fmt === 'gif') ? 'flex' : 'none';
-        audioInfoRow.style.display = (fmt === 'wav' || fmt === 'mp3') ? 'block' : 'none';
+        mp3BitrateRow.style.display = (fmt === 'mp3') ? 'flex' : 'none';
+        wavInfoRow.style.display = (fmt === 'wav') ? 'block' : 'none';
         pngInfoRow.style.display = (fmt === 'png' || fmt === 'tiff') ? 'block' : 'none';
     };
     overlay.querySelectorAll('input[name="export-format"]').forEach(r => r.addEventListener('change', updateQualityVisibility));
@@ -790,8 +809,11 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         } else if (format === 'mp4') {
             exportOptions.crf = parseInt(overlay.querySelector('#holaf-export-mp4-crf').value);
             exportOptions.preset = overlay.querySelector('#holaf-export-mp4-preset').value;
+            exportOptions.codec = overlay.querySelector('#holaf-export-mp4-codec').value;
         } else if (format === 'gif') {
             exportOptions.gif_fps = parseInt(overlay.querySelector('#holaf-export-gif-fps').value);
+        } else if (format === 'mp3') {
+            exportOptions.mp3_bitrate = parseInt(overlay.querySelector('#holaf-export-mp3-bitrate').value);
         }
 
         // Important: cleanup removes overlay from DOM, so all DOM reads must be done above

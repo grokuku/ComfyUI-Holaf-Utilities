@@ -146,7 +146,8 @@ async def prepare_export_route(request: web.Request):
                             raise RuntimeError("ffmpeg not found, cannot transcode audio.")
                         cmd = [ffmpeg, '-y', '-i', source_abs_path]
                         if target_ext == 'mp3':
-                            cmd.extend(['-codec:a', 'libmp3lame', '-q:a', '2'])  # VBR ~190kbps
+                            bitrate = export_options.get('mp3_bitrate', 192)
+                            cmd.extend(['-codec:a', 'libmp3lame', '-b:a', f'{bitrate}k'])
                         # WAV: default PCM, no extra args needed
                         cmd.append(dest_abs_path)
                         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
