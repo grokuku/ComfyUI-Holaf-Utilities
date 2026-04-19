@@ -27,7 +27,7 @@ export const HolafPanelManager = {
     createPanel(options) {
         const panel = document.createElement("div");
         panel.id = options.id;
-        panel.className = "holaf-utility-panel";
+        panel.className = "holaf-utility-panel holaf-floating-window";
 
         if (options.defaultSize) {
             panel.style.width = `${options.defaultSize.width}px`;
@@ -104,10 +104,6 @@ export const HolafPanelManager = {
         panel.append(header, content, resizeHandle);
         document.body.appendChild(panel);
 
-        panel.addEventListener("mousedown", () => {
-            this.bringToFront(panel);
-        }, true);
-
         this.makeDraggable(panel, header, options.onStateChange);
         this.makeResizable(panel, resizeHandle, options.onStateChange, options.onResize);
         this.setupFullscreenToggle(panel, header, options.onFullscreenToggle);
@@ -118,25 +114,27 @@ export const HolafPanelManager = {
     },
 
     bringToFront(panelEl) {
+        // Track any element, not just createPanel ones
         if (!openPanels.has(panelEl)) {
             openPanels.add(panelEl);
         }
 
+        // Find the current max z-index among all tracked panels
         let maxZ = BASE_Z_INDEX;
         openPanels.forEach(p => {
             const pZIndex = parseInt(p.style.zIndex);
             if (!isNaN(pZIndex) && pZIndex > maxZ) maxZ = pZIndex;
         });
-        currentMaxZIndex = maxZ;
 
-        const panelZIndex = parseInt(panelEl.style.zIndex);
-        if (isNaN(panelZIndex) || panelZIndex < currentMaxZIndex || openPanels.size === 1) {
-            currentMaxZIndex++;
-            panelEl.style.zIndex = currentMaxZIndex;
-        } else if (panelEl.style.zIndex !== String(currentMaxZIndex) && panelZIndex === currentMaxZIndex) {
-            currentMaxZIndex++;
+        // Only bump z-index if this panel isn't already on top
+        if (parseInt(panelEl.style.zIndex) < maxZ) {
+            currentMaxZIndex = maxZ + 1;
             panelEl.style.zIndex = currentMaxZIndex;
         }
+    },
+
+    unregister(panelEl) {
+        openPanels.delete(panelEl);
     },
 
     _bakePosition(panel) {
@@ -362,3 +360,13 @@ export const HolafPanelManager = {
         });
     }
 };
+
+// Global capture-phase listener: any click on a Holaf floating window brings it to front.
+// Placed after HolafPanelManager definition so the reference is valid.
+// Uses capture phase (true) to fire before any child element handlers.
+document.addEventListener('mousedown', (e) => {
+    const panel = e.target.closest('.holaf-floating-window');
+    if (panel) {
+        HolafPanelManager.bringToFront(panel);
+    }
+}, true);

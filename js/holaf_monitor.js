@@ -1,6 +1,6 @@
 /* holaf_monitor.js */
-    import { app } from "../../../scripts/app.js";
-    import { api } from "../../../scripts/api.js";
+    import { app, api } from "./holaf_api_compat.js";
+    import { HolafPanelManager } from "./holaf_panel_manager.js";
     import "./chart.min.js"; // Import Chart.js
     
     const HolafSystemMonitor = {
@@ -113,6 +113,7 @@
             // --- 1. MAIN WINDOW ---
             this.monitorElement = document.createElement("div");
             this.monitorElement.id = "holaf-monitor-root";
+            this.monitorElement.classList.add("holaf-floating-window");
             
             Object.assign(this.monitorElement.style, {
                 display: "none",
@@ -402,7 +403,10 @@
         },
     
         hide() {
-            if (this.monitorElement) this.monitorElement.style.display = "none";
+            if (this.monitorElement) {
+                HolafPanelManager.unregister(this.monitorElement);
+                this.monitorElement.style.display = "none";
+            }
             this.isVisible = false;
             this.disconnectWebSocket();
         },

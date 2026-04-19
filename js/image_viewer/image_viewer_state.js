@@ -23,6 +23,7 @@ class ImageViewerState {
                 prompt_search: '',
                 workflow_search: '',
                 tags_filter: [],
+                workflow_sources: [],
                 bool_filters: {
                     has_workflow: null, // null: indifférent, true: oui, false: non
                     has_prompt: null,

@@ -165,10 +165,12 @@ class HolafRemoteComparerNode:
                     
                     try:
                         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        process.communicate(input=frames.tobytes())
+                        process.communicate(input=frames.tobytes(), timeout=120)
                         return {"filename": filename, "subfolder": "", "type": "temp", "format": "video"}
-                    except Exception as e:
-                        print(f"[HolafRemoteComparer] FFmpeg encoding failed: {e}. Fallback to image.")
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.communicate()
+                        print(f"[HolafRemoteComparer] FFmpeg encoding timed out. Fallback to image.")
                         img = Image.fromarray(frames[0])
                         filename_fb = f"holaf_remote_cmp_{prefix}_{random_id}_fb.png"
                         filepath_fb = os.path.join(temp_dir, filename_fb)

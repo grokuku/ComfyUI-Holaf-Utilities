@@ -23,6 +23,7 @@ import time
 import traceback
 import re
 import hashlib
+import shutil
 
 # Attempt to import safetensors, crucial for deep scan
 try:
@@ -92,10 +93,12 @@ MODEL_FAMILY_KEYWORDS = [
 # --- Database Management ---
 # MODIFIED: Re-enabled foreign keys and WAL mode for consistency with holaf_database.py
 def _get_db_connection():
-    conn = sqlite3.connect(HOLAF_MODELS_DB_PATH, timeout=10)
+    conn = sqlite3.connect(HOLAF_MODELS_DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA busy_timeout = 30000;")
     return conn
 
 
@@ -167,60 +170,6 @@ def _detect_model_family(filename: str, model_type_key: str) -> str:
     if model_type_key == "checkpoints": return "Generic Checkpoint"
     if model_type_key == "loras": return "Generic LoRA"
     return "Autre"
-
-
-def _process_model_item(conn, cursor, item_name, abs_fs_path, model_type_key, display_type, storage_hint, allowed_formats, current_time, found_on_disk_paths_canon, db_models_dict_canon_key):
-    original_abs_path_norm = os.path.normpath(abs_fs_path) 
-
-    comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
-    path_for_db = original_abs_path_norm
-    if original_abs_path_norm.startswith(comfyui_base_path_norm + os.sep):
-        path_for_db = os.path.relpath(original_abs_path_norm, comfyui_base_path_norm)
-    path_for_db = path_for_db.replace(os.sep, '/') 
-
-    if path_for_db in found_on_disk_paths_canon: return 
-    
-    # This logic has been removed as it was part of a previous, more complex schema. 
-    # The current schema does not have 'is_directory'. `path_canon` uniqueness handles it.
-    is_dir_on_fs = os.path.isdir(original_abs_path_norm)
-    model_should_be_directory = (storage_hint == "directory")
-    actual_size = 0
-    is_valid_model_entry = False
-
-    if model_should_be_directory:
-        if is_dir_on_fs:
-            actual_size = get_folder_size(original_abs_path_norm)
-            is_valid_model_entry = True
-    else: 
-        if not is_dir_on_fs and os.path.exists(original_abs_path_norm):
-            file_ext = os.path.splitext(item_name)[1].lower()
-            if not allowed_formats or file_ext in allowed_formats:
-                try: actual_size = os.path.getsize(original_abs_path_norm); is_valid_model_entry = True
-                except OSError: pass 
-    
-    if is_valid_model_entry:
-        found_on_disk_paths_canon.add(path_for_db)
-        model_family = _detect_model_family(item_name, model_type_key)
-        existing_model_data = db_models_dict_canon_key.get(path_for_db)
-
-        if existing_model_data:
-            # Simplified update logic. The schema here was more complex before.
-            # This part of the code is not currently used with the new schema, but is kept for potential future re-integration.
-            # For now, we only update last_scanned_at.
-            cursor.execute("UPDATE models SET last_scanned_at = ? WHERE id = ?", (current_time, existing_model_data['id']))
-        else: 
-            try:
-                # MODIFIED: Changed INSERT query to use `path_canon` and other correct columns.
-                cursor.execute("""
-                    INSERT INTO models (name, path_canon, type, family, size_bytes, last_scanned_at, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (item_name, path_for_db, model_type_key, model_family, actual_size, current_time, current_time))
-            except sqlite3.IntegrityError:
-                # This can happen if the path is already in the database from a previous scan.
-                # It's safe to ignore, we'll update its `last_scanned_at` time later.
-                pass
-            except Exception as ie: 
-                print(f"🔴 ERROR during INSERT for {path_for_db}: {ie}.")
 
 
 def scan_and_update_db():
@@ -371,6 +320,56 @@ def is_path_safe(path_from_client_canon: str, is_directory_model: bool = False) 
     if not is_safe:
         print(f"🔴 [Holaf-ModelManager] SECURITY: Path '{abs_path_to_check_norm}' (from client path '{path_from_client_canon}') was blocked as it is outside all recognized model directories.")
     return is_safe
+
+def delete_models_from_db_and_disk(model_paths_canon: list):
+    """Deletes model files from disk and their records from the database."""
+    conn = None
+    comfyui_base_path_norm = os.path.normpath(folder_paths.base_path)
+    results = {"deleted_count": 0, "errors": []}
+    
+    if not model_paths_canon:
+        return results
+    
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        
+        for path_canon in model_paths_canon:
+            abs_model_path = os.path.normpath(os.path.join(comfyui_base_path_norm, path_canon))
+            
+            # Security check
+            if not is_path_safe(path_canon, is_directory_model=False):
+                results["errors"].append({"path": path_canon, "message": "Path is outside allowed model directories."})
+                continue
+            
+            try:
+                if os.path.isfile(abs_model_path):
+                    os.remove(abs_model_path)
+                elif os.path.isdir(abs_model_path):
+                    shutil.rmtree(abs_model_path)
+                else:
+                    results["errors"].append({"path": path_canon, "message": "File not found on disk."})
+                    # Still try to remove from DB
+                    
+                cursor.execute("DELETE FROM models WHERE path_canon = ?", (path_canon,))
+                if cursor.rowcount > 0:
+                    results["deleted_count"] += 1
+                    
+            except OSError as e:
+                results["errors"].append({"path": path_canon, "message": f"Failed to delete file: {str(e)}"})
+        
+        conn.commit()
+    except sqlite3.Error as e:
+        results["errors"].append({"path": "N/A", "message": f"Database error during deletion: {str(e)}"})
+        if conn: conn.rollback()
+    except Exception as e_main:
+        results["errors"].append({"path": "N/A", "message": f"General error during deletion: {str(e_main)}"})
+        traceback.print_exc()
+        if conn: conn.rollback()
+    finally:
+        if conn: conn.close()
+    
+    return results
 
 # --- Deep Scan Functionality ---
 def _perform_local_deep_scan_for_model(model_abs_fs_path: str) -> dict: 

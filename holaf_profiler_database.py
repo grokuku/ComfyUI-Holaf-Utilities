@@ -1,18 +1,30 @@
 import sqlite3
 import json
 import time
+import threading
 from .holaf_user_data_manager import UserDataManager
 
 class ProfilerDatabase:
     def __init__(self):
         self.db_path = UserDataManager.get_profiler_db_path()
+        self._local = threading.local()
         self._init_db()
 
     def _get_connection(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        return conn
+        """Gets or creates a thread-local database connection."""
+        if not hasattr(self._local, 'connection') or self._local.connection is None:
+            conn = sqlite3.connect(self.db_path, timeout=30)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout = 30000;")
+            self._local.connection = conn
+        return self._local.connection
+
+    def _close_connection(self):
+        """Closes the thread-local connection if it exists."""
+        if hasattr(self._local, 'connection') and self._local.connection is not None:
+            self._local.connection.close()
+            self._local.connection = None
 
     def _init_db(self):
         conn = self._get_connection()
@@ -72,7 +84,7 @@ class ProfilerDatabase:
         ''')
 
         conn.commit()
-        conn.close()
+        self._close_connection()
 
     def create_run(self, name, workflow_hash, comment=""):
         conn = self._get_connection()
@@ -83,7 +95,7 @@ class ProfilerDatabase:
         )
         run_id = cursor.lastrowid
         conn.commit()
-        conn.close()
+        self._close_connection()
         return run_id
 
     def add_step(self, run_id, node_id, node_title, node_type, vram_start, vram_max, vram_end, exec_time, cpu_max, gpu_load_max, gpu_load_avg, inputs_json, step_comment=""):
@@ -103,12 +115,12 @@ class ProfilerDatabase:
             inputs_json, step_comment
         ))
         conn.commit()
-        conn.close()
+        self._close_connection()
 
     def get_run_steps(self, run_id):
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM profiler_steps WHERE run_id = ? ORDER BY id ASC", (run_id,))
         rows = cursor.fetchall()
-        conn.close()
+        self._close_connection()
         return [dict(row) for row in rows]

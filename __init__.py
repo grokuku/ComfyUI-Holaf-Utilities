@@ -224,6 +224,14 @@ if profiler_engine:
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
+    @routes.post("/holaf/profiler/run-stop")
+    async def profiler_stop_run(request: web.Request):
+        try:
+            profiler_engine.stop_run()
+            return web.json_response({"status": "ok", "message": "Profiling run stopped."})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
     @routes.get("/holaf/profiler/run/{run_id}")
     async def profiler_get_run_data(request: web.Request):
         try:
@@ -434,7 +442,7 @@ async def finalize_upload_model_route(request: web.Request):
             if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
                 threading.Timer(1.0, model_manager_helper.scan_and_update_db).start()
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # MODIFIED: Pass only expected_size to the assembly function
         await loop.run_in_executor(None, holaf_utils.assemble_chunks_blocking,
                                    final_save_path, upload_id, total_chunks, on_assembly_done,
@@ -461,7 +469,7 @@ if model_manager_helper:
             paths = data.get("paths")
             if not paths or not isinstance(paths, list):
                 return web.json_response({"error": "'paths' list required."}, status=400)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             results = await loop.run_in_executor(None, model_manager_helper.process_deep_scan_request, paths)
             return web.json_response({"status": "ok", "details": results})
         except Exception as e:
@@ -473,13 +481,12 @@ if model_manager_helper:
         try:
             data = await request.json()
             paths = data.get("paths", [])
-            # Ensure this calls the correct helper if/when implemented for models
-            if model_manager_helper and hasattr(model_manager_helper, 'delete_models_from_db_and_disk'):
-                # results = await loop.run_in_executor(None, model_manager_helper.delete_models_from_db_and_disk, paths)
-                # return web.json_response(results)
-                pass # Placeholder for actual model deletion logic
-            print(f"🟡 [MM] Delete route called for model paths: {paths}. Full deletion logic should be in model_manager_helper.")
-            return web.json_response({"status": "warning", "message": "Model delete function stubbed. See model_manager_helper.", "details": {"deleted_count":0, "errors":[]}})
+            if not paths or not isinstance(paths, list):
+                return web.json_response({"error": "'paths' list required."}, status=400)
+            
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(None, model_manager_helper.delete_models_from_db_and_disk, paths)
+            return web.json_response(results)
         except Exception as e:
             print(f"🔴 [MM] Error deleting models: {e}"); traceback.print_exc()
             return web.json_response({"error": str(e)}, status=500)
@@ -691,7 +698,7 @@ if nodes_manager_helper:
     @routes.get("/holaf/nodes/list")
     async def nm_get_list_route(r):
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             node_list = await loop.run_in_executor(None, nodes_manager_helper.scan_custom_nodes)
             return web.json_response({"nodes": node_list})
         except Exception as e: print(f"🔴 [NM] Error list: {e}"); return web.json_response({"error":str(e)},500)
@@ -711,7 +718,7 @@ if nodes_manager_helper:
                     items_to_process.append({"name": p_item, "repo_url_override": None}) # Convert to new format
 
             results = []
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             action_func = getattr(nodes_manager_helper, action_func_name)
 
             for item_data in items_to_process:
@@ -742,7 +749,7 @@ if nodes_manager_helper:
     async def nm_get_local_readme(request: web.Request):
         try:
             node_name = request.match_info.get('node_name', "")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             content = await loop.run_in_executor(None, nodes_manager_helper.get_local_readme_content, node_name)
             return web.Response(text=content, content_type='text/plain', charset='utf-8')
         except Exception as e: return web.Response(text=str(e), status=500)

@@ -132,7 +132,7 @@ async def websocket_handler(request: web.Request, global_app_config):
     await ws.prepare(request)
     MONITOR_ACTIVE_WEBSOCKETS.add(ws)
     
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     
     # State shared between listener and sender
     state = {"interval": 1.5} 

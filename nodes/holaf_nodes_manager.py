@@ -214,7 +214,16 @@ def _get_node_path_if_safe(node_name_from_client: str) -> str | None:
     custom_nodes_base_dir = os.path.normpath(os.path.join(folder_paths.base_path, 'custom_nodes'))
     node_dir_path = os.path.normpath(os.path.join(custom_nodes_base_dir, sanitized_name))
 
-    if os.path.commonprefix([node_dir_path, custom_nodes_base_dir]) != custom_nodes_base_dir:
+    # SECURITY: Use os.path.commonpath for proper path-component-based comparison.
+    # os.path.commonprefix does character-by-character comparison which is unsafe.
+    try:
+        common = os.path.commonpath([node_dir_path, custom_nodes_base_dir])
+    except ValueError:
+        # ValueError is raised if paths are on different drives (Windows) or have different roots
+        print(f"🔴 [Holaf-NodesManager] SECURITY ALERT: Action rejected for '{sanitized_name}'. Path construction resulted in escape: {node_dir_path}")
+        return None
+    
+    if common != custom_nodes_base_dir:
         print(f"🔴 [Holaf-NodesManager] SECURITY ALERT: Action rejected for '{sanitized_name}'. Path construction resulted in escape: {node_dir_path}")
         return None
     

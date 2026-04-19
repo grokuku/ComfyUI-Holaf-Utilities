@@ -9,7 +9,7 @@
  * CORRECTION: Re-integrated critical CSS for terminal container layout.
  * === End Documentation ===
  */
-import { app } from "../../../scripts/app.js";
+import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 // CORRECTED IMPORT: No longer depends on panel_manager for themes.
 import { HOLAF_THEMES } from "./holaf_themes.js";

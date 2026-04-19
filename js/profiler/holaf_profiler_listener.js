@@ -1,4 +1,4 @@
-import { app } from "../../../scripts/app.js";
+import { app } from "../holaf_api_compat.js";
 import { holafBridge } from "/extensions/ComfyUI-Holaf-Utilities/holaf_comfy_bridge.js";
 
 /*

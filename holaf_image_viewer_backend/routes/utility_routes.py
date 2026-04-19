@@ -15,6 +15,7 @@ try:
 except ImportError:
     # Fallback/Safety in case of package structure variation, though '...' works for siblings like holaf_database
     print("🔴 [Holaf-Routes] Could not import holaf_nodes_manager. Node actions may fail.")
+    holaf_nodes_manager = None
 
 # --- API Route Handlers ---
 async def set_viewer_activity_route(request: web.Request):
@@ -35,7 +36,7 @@ async def set_viewer_activity_route(request: web.Request):
 async def sync_database_route(request: web.Request):
     """Route to trigger a full database sync."""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # Run the blocking sync function in a thread pool executor
         await loop.run_in_executor(None, logic.sync_image_database_blocking)
         return web.json_response({
@@ -49,7 +50,7 @@ async def sync_database_route(request: web.Request):
 async def clean_thumbnails_route(request: web.Request):
     """Route to trigger a full thumbnail cleanup."""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # Run the blocking clean function in a thread pool executor
         result = await loop.run_in_executor(None, logic.clean_thumbnails_blocking)
         
@@ -69,6 +70,8 @@ async def clean_thumbnails_route(request: web.Request):
 
 async def install_custom_node_route(request: web.Request):
     """Route to install a custom node from a Git URL."""
+    if holaf_nodes_manager is None:
+        return web.json_response({"status": "error", "message": "Node manager module not available."}, status=503)
     try:
         data = await request.json()
         url = data.get("url")
@@ -76,7 +79,7 @@ async def install_custom_node_route(request: web.Request):
         if not url:
             return web.json_response({"status": "error", "message": "URL is required."}, status=400)
             
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         # Execute the blocking git clone operation in a thread
         result = await loop.run_in_executor(None, holaf_nodes_manager.install_custom_node, url)
         
@@ -91,6 +94,8 @@ async def install_custom_node_route(request: web.Request):
 
 async def search_custom_nodes_route(request: web.Request):
     """Route to search for custom nodes on GitHub."""
+    if holaf_nodes_manager is None:
+        return web.json_response({"status": "error", "message": "Node manager module not available."}, status=503)
     try:
         data = await request.json()
         query = data.get("query")

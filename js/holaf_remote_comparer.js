@@ -8,8 +8,7 @@
     * Universal Media: Handles AnyType (*) input with isolated Holaf Payload.
     */
 
-import { app } from "../../scripts/app.js";
-import { api } from "../../scripts/api.js";
+import { app, api } from "./holaf_api_compat.js";
 
 const HolafRemoteComparer = {
     name: "Holaf.RemoteComparer",
@@ -123,6 +122,8 @@ const HolafRemoteComparer = {
         if (this.rootElement) return;
 
         this.rootElement = document.createElement("div");
+        this.rootElement.id = "holaf-remote-comparer-root";
+        this.rootElement.classList.add("holaf-floating-window");
         Object.assign(this.rootElement.style, {
             display: "none", position: "fixed", zIndex: "1000",
             backgroundColor: "rgba(20, 20, 20, 0.95)", borderRadius: "8px",

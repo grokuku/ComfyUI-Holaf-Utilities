@@ -149,7 +149,7 @@ async def get_thumbnail_route(request: web.Request):
                 logger.warning(f"Failed to load edit data for thumbnail generation {original_rel_path}: {e}")
             # --------------------------------------------------
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             # Pass explicit args to blocking logic, including edit_data
             gen_success = await loop.run_in_executor(
                 None, 
@@ -250,7 +250,7 @@ async def regenerate_thumbnail_route(request: web.Request):
         # -----------------------------------------------
 
         # Run blocking thumbnail creation in an executor thread
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         gen_success = await loop.run_in_executor(
             None, 
             logic._create_thumbnail_blocking, 
@@ -312,7 +312,7 @@ async def prioritize_thumbnails_route(request: web.Request):
         if not paths_canon or not isinstance(paths_canon, list):
             return web.json_response({"status": "error", "message": "'paths_canon' list required."}, status=400)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         loop.create_task(_background_prioritize_task(paths_canon))
 
         return web.json_response({"status": "accepted", "message": "Prioritization task scheduled."}, status=202)

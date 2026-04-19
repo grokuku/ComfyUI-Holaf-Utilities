@@ -42,7 +42,7 @@ async def prepare_export_route(request: web.Request):
         manifest = []
         errors = []
         
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         for path_canon in paths_canon:
             source_abs_path = os.path.normpath(os.path.join(output_dir, path_canon))

@@ -9,6 +9,7 @@ import sys
 import uuid
 import json
 import traceback
+import threading
 
 from aiohttp import web
 # Conditional imports for PTY
@@ -30,6 +31,7 @@ else:
 from . import holaf_config # For config access if needed, or pass config values
 
 SESSION_TOKENS = set() # Manages active terminal session tokens
+SESSION_TOKENS_LOCK = threading.Lock() # Thread-safe access to SESSION_TOKENS
 
 # --- Password Hashing and Verification ---
 def _hash_password(password: str) -> str:
@@ -92,10 +94,12 @@ async def auth_route(request: web.Request, global_app_config):
         password = data.get('password')
         if _verify_password(global_app_config['password_hash'], password):
             session_token = str(uuid.uuid4())
-            SESSION_TOKENS.add(session_token)
+            with SESSION_TOKENS_LOCK:
+                SESSION_TOKENS.add(session_token)
             def cleanup_token(): # Runs in the event loop's thread
-                if session_token in SESSION_TOKENS: SESSION_TOKENS.remove(session_token)
-            asyncio.get_event_loop().call_later(60, cleanup_token) # Token valid for 60s
+                with SESSION_TOKENS_LOCK:
+                    SESSION_TOKENS.discard(session_token)
+            asyncio.get_running_loop().call_later(60, cleanup_token) # Token valid for 60s
             return web.json_response({"status": "ok", "session_token": session_token})
         else:
             return web.json_response({"status": "error", "message": "Invalid password."}, status=403)
@@ -104,15 +108,16 @@ async def auth_route(request: web.Request, global_app_config):
 
 async def websocket_handler(request: web.Request, global_app_config):
     session_token = request.query.get('token')
-    if not session_token or session_token not in SESSION_TOKENS:
-        return web.Response(status=403, text="Invalid or expired session token")
-    SESSION_TOKENS.remove(session_token) # One-time use token
+    with SESSION_TOKENS_LOCK:
+        if not session_token or session_token not in SESSION_TOKENS:
+            return web.Response(status=403, text="Invalid or expired session token")
+        SESSION_TOKENS.discard(session_token) # One-time use token
     
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     print("🟢 [Holaf-Terminal] WebSocket connection opened and authenticated.")
     
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     pty_queue = asyncio.Queue() # For data from PTY to WebSocket
     
     proc_adapter = None # Will hold either WindowsPty or UnixPty instance

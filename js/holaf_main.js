@@ -3,7 +3,7 @@
  * Holaf Utilities - Main Menu Initializer
  */
 
-import { app } from "../../../scripts/app.js";
+import { app } from "./holaf_api_compat.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 
 import "./holaf_themes.js";
@@ -525,7 +525,7 @@ const HolafUtilitiesMenu = {
             if (command === 'get_workflow_for_profiler') {
                 try {
                     const visualGraph = app.graph.serialize();
-                    await fetch('/holaf/profiler/update-context', {
+                    await fetch('/holaf/profiler/context', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(visualGraph)

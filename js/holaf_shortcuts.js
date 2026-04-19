@@ -1,5 +1,5 @@
-import { app } from "../../scripts/app.js";
-import { api } from "../../scripts/api.js";
+import { app, api } from "./holaf_api_compat.js";
+import { HolafPanelManager } from "./holaf_panel_manager.js";
 
 const HolafShortcuts = {
     name: "Holaf.Shortcuts",
@@ -188,6 +188,8 @@ const HolafShortcuts = {
         if (this.rootElement) return;
 
         this.rootElement = document.createElement("div");
+        this.rootElement.id = "holaf-shortcuts-root";
+        this.rootElement.classList.add("holaf-floating-window");
         Object.assign(this.rootElement.style, {
             display: "none",
             position: "fixed",
@@ -483,7 +485,10 @@ const HolafShortcuts = {
     },
 
     hide() {
-        if (this.rootElement) this.rootElement.style.display = "none";
+        if (this.rootElement) {
+            HolafPanelManager.unregister(this.rootElement);
+            this.rootElement.style.display = "none";
+        }
         this.isVisible = false;
     }
 };

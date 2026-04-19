@@ -55,7 +55,9 @@
     📄 worker.py : Background threads (Watchdog, Thumbnails).
 
   📁 js/
+    📄 holaf_api_compat.js : ComfyUI API compatibility layer. Provides `app` and `api` exports via `window.comfyAPI.app.app` / `window.comfyAPI.api.api` (new frontend >= v1.42) with Proxy fallback + legacy dynamic import fallback.
     📄 holaf_comfy_bridge.js : `BroadcastChannel` wrapper for cross-tab communication.
+    📄 holaf_panel_manager.js : Generic floating panel manager (create, drag, resize, fullscreen toggle, z-index stacking via `bringToFront`/`unregister`).
     📁 css/ : Modular CSS files (themes, panels, layout tools, profiler).
     📁 image_viewer/ : Gallery, Editor, State, UI logic.
     📁 profiler/
@@ -86,6 +88,13 @@
   *   **Logic**: Applied to `System Monitor`, `Layout Tools`, `Shortcuts` and `Remote Comparer`.
   *   **Persistence**: Stores an "ideal" reference position (`right`, `bottom`, `width`, `height`) in `localStorage`.
   *   **Visual Clamping**: On window resize, tools are visually pushed to stay within the viewport bounds.
+
+  #### 1b. Z-Index Stacking (Bring to Front)
+  *   **Centralized in `HolafPanelManager`**: `bringToFront(panelEl)` and `unregister(panelEl)` are exposed for all Holaf windows.
+  *   **`createPanel` panels**: Auto-registered with `mousedown` capture listener that calls `bringToFront`.
+  *   **Custom windows** (Monitor, Shortcuts, Layout Tools): Call `bringToFront` on their own `mousedown` / drag start. Call `unregister` on hide.
+  *   **Logic**: Compares z-index of all tracked panels; only bumps if clicked panel is not already on top. Prevents unbounded z-index growth.
+  *   **Track all**: `openPanels` Set now tracks ANY element passed to `bringToFront`, not just `createPanel` panels.
 
   #### 2. Layout Tools (Workflow Management)
   *   **Coordinates**: Real-time display following `app.canvas.graph_mouse`.
@@ -146,3 +155,15 @@
   *   **[Stable] Universal Remote Comparer**: Images/Video/Audio, Crossfader, Global Settings API, Isolated Payload, HUD, Multi-monitor Pop-out.
 
   **Next Priority**: Enhance Profiler visual analytics or History Navigation.
+
+  ---
+
+  ### SECTION 5: FRONTEND COMPATIBILITY (ComfyUI v0.19.3+ / Frontend v1.42.11+)
+
+  *   **Breaking Change**: ComfyUI frontend migrated to Vue.js/Vite bundled app. Legacy imports from `/scripts/app.js` and `/scripts/api.js` are deprecated.
+  *   **New Public API**: `window.comfyAPI` exposed by Vite plugin `comfyAPIPlugin`. Structure: `window.comfyAPI.{module}.{export}` (e.g. `window.comfyAPI.app.app` = ComfyApp instance).
+  *   **`holaf_api_compat.js`**: Central compatibility shim. All Holaf JS files import `{ app, api }` from it instead of legacy paths.
+      *   Priority: `window.comfyAPI.app.app` → `window.app` → legacy dynamic import fallback.
+      *   Proxy objects ensure `registerExtension()` works even if app loads async.
+  *   **Import Path Convention**: Files in `js/` root use `./holaf_api_compat.js`. Files in subdirs (`profiler/`, `image_viewer/`) use `../holaf_api_compat.js`.
+  *   **WEB_DIRECTORY = "js"**: Maps `js/` contents to `/extensions/ComfyUI-Holaf-Utilities/` URL. Relative import `../X` from a file at this URL resolves to `/extensions/X` (WRONG), must use `./X`.

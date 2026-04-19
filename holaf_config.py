@@ -27,12 +27,14 @@ def _parse_panel_settings(config_parser_obj, section_name, defaults):
         'panel_height': config_parser_obj.getint(section_name, 'panel_height', fallback=defaults.get('panel_height', 400)),
         'panel_is_fullscreen': config_parser_obj.getboolean(section_name, 'panel_is_fullscreen', fallback=defaults.get('panel_is_fullscreen', False)),
     }
-    if settings['panel_x'] and settings['panel_x'].isdigit():
-        settings['panel_x'] = int(settings['panel_x'])
+    if settings['panel_x'] is not None:
+        try: settings['panel_x'] = int(settings['panel_x'])
+        except (ValueError, TypeError): settings['panel_x'] = None
     else:
         settings['panel_x'] = None
-    if settings['panel_y'] and settings['panel_y'].isdigit():
-        settings['panel_y'] = int(settings['panel_y'])
+    if settings['panel_y'] is not None:
+        try: settings['panel_y'] = int(settings['panel_y'])
+        except (ValueError, TypeError): settings['panel_y'] = None
     else:
         settings['panel_y'] = None
     return settings

@@ -6,10 +6,12 @@
  */
 
 // Global variable for the ComfyUI App instance (only populated in main tab)
-let app = null;
+// Now uses the compatibility layer via holaf_api_compat.js
+let app = comfyApp;
 
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
+import { app as comfyApp } from "./holaf_api_compat.js";
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
 import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';
@@ -1024,8 +1026,8 @@ const holafImageViewer = {
     }
 
     try {
-        const module = await import("../../scripts/app.js");
-        app = module.app;
+        // app is already available via compat layer (window.comfyAPI or legacy import)
+        app = comfyApp;
 
         if (app) {
             app.holafImageViewer = holafImageViewer;
@@ -1085,7 +1087,7 @@ const holafImageViewer = {
             });
         }
     } catch (e) {
-        console.log("[Holaf] Error importing app.js (possibly standalone or unexpected error):", e);
+        console.log("[Holaf] Error setting up ImageViewer (possibly standalone or unexpected error):", e);
     }
 })();
 

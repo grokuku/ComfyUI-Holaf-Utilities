@@ -123,20 +123,29 @@ def update_last_db_update_time():
 
 
 # --- Filesystem Helpers ---
+_trashcan_ensured = False
+
 def ensure_trashcan_exists():
     """Ensures the trashcan directory exists within the main output directory."""
-    output_dir = folder_paths.get_output_directory()
-    trashcan_path = os.path.join(output_dir, TRASHCAN_DIR_NAME)
-    if not os.path.exists(trashcan_path):
-        try:
-            os.makedirs(trashcan_path, exist_ok=True)
-        except OSError as e:
-            print(f"🔴 [Holaf-ImageViewer] Failed to create trashcan directory {trashcan_path}: {e}")
-            return None
-    return trashcan_path
-
-# Call it once at module load to be sure
-ensure_trashcan_exists()
+    global _trashcan_ensured
+    if _trashcan_ensured:
+        trashcan_path = os.path.join(folder_paths.get_output_directory(), TRASHCAN_DIR_NAME)
+        return trashcan_path if os.path.exists(trashcan_path) else None
+    
+    try:
+        output_dir = folder_paths.get_output_directory()
+        trashcan_path = os.path.join(output_dir, TRASHCAN_DIR_NAME)
+        if not os.path.exists(trashcan_path):
+            try:
+                os.makedirs(trashcan_path, exist_ok=True)
+            except OSError as e:
+                print(f"🔴 [Holaf-ImageViewer] Failed to create trashcan directory {trashcan_path}: {e}")
+                return None
+        _trashcan_ensured = True
+        return trashcan_path
+    except Exception:
+        # folder_paths may not be initialized yet — will try again on next call
+        return None
 
 def get_ffmpeg_path():
     """Returns the path to the ffmpeg executable, or None if not found."""
@@ -558,7 +567,7 @@ def clean_thumbnails_blocking():
     Scans the thumbnail directory and the database to clean up and regenerate thumbnails.
     """
     print("🔵 [Holaf-ImageViewer] Starting thumbnail cleaning process...")
-    thumb_dir = holaf_utils.get_thumbnail_dir()
+    thumb_dir = holaf_utils.THUMBNAIL_CACHE_DIR
     
     deleted_orphans_count = 0
     regenerated_missing_count = 0
@@ -647,7 +656,7 @@ def clean_thumbnails_blocking():
 def _sanitize_json_nan(obj):
     if isinstance(obj, dict): return {k: _sanitize_json_nan(v) for k, v in obj.items()}
     elif isinstance(obj, list): return [_sanitize_json_nan(i) for i in obj]
-    elif isinstance(obj, float) and math.isnan(obj): return None
+    elif (isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj))): return None
     return obj
 
 def _get_best_ratio_string(width, height):
@@ -1310,7 +1319,7 @@ def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
             "-vsync", "0", 
             os.path.join(frames_in_dir, "%08d.png")
         ]
-        subprocess.check_call(cmd_extract, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.check_call(cmd_extract, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
 
         # 5. RIFE Interpolation (Optional)
         assemble_source_dir = frames_in_dir
@@ -1328,7 +1337,7 @@ def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
             cmd_rife = [rife_exe, "-i", frames_in_dir, "-o", frames_out_dir]
             
             try:
-                subprocess.check_call(cmd_rife)
+                subprocess.check_call(cmd_rife, timeout=300)
                 assemble_source_dir = frames_out_dir
                 # RIFE strictly doubles the frames
                 assemble_fps = native_fps * 2
@@ -1373,7 +1382,7 @@ def generate_proc_video(abs_image_path, edit_data, preview_mode=True):
             "-y", proc_path
         ])
         
-        subprocess.check_call(cmd_assemble, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.check_call(cmd_assemble, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
         
     duration = time.time() - start_time
     print(f"✅ [Holaf-Logic] Generated: {proc_path} in {duration:.2f}s")

@@ -1,5 +1,6 @@
 /* holaf_layout_tools.js */
-    import { app } from "../../scripts/app.js";
+    import { app } from "./holaf_api_compat.js";
+    import { HolafPanelManager } from "./holaf_panel_manager.js";
     
     const HolafLayoutTools = {
         coordDisplay: null,
@@ -32,6 +33,11 @@
             this.isVisible = !this.isVisible;
             if (this.container) {
                 this.container.style.display = this.isVisible ? "flex" : "none";
+                if (this.isVisible) {
+                    HolafPanelManager.bringToFront(this.container);
+                } else {
+                    HolafPanelManager.unregister(this.container);
+                }
             }
             // Persist visibility state
             localStorage.setItem(this.VISIBILITY_KEY, this.isVisible);
@@ -43,6 +49,7 @@
     
             this.container = document.createElement("div");
             this.container.id = "holaf-layout-toolbar";
+            this.container.classList.add("holaf-floating-window");
             
             Object.assign(this.container.style, {
                 position: "fixed",

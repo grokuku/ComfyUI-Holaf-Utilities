@@ -60,7 +60,7 @@ async def get_metadata_route(request: web.Request):
             })
 
         # Fallback to live extraction if not in DB (e.g., during a race condition with sync)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         metadata = await loop.run_in_executor(None, logic._extract_image_metadata_blocking, image_abs_path)
 
         if "error" in metadata and metadata["error"]: return web.json_response(metadata, status=422)
@@ -87,7 +87,7 @@ async def extract_metadata_route(request: web.Request):
         db_updates = []
         
         output_dir = folder_paths.get_output_directory()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         for path in paths_canon:
             image_abs_path = os.path.normpath(os.path.join(output_dir, path))
@@ -204,7 +204,7 @@ async def inject_metadata_route(request: web.Request):
         db_updates = []
         
         output_dir = folder_paths.get_output_directory()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         for path in paths_canon:
             image_abs_path = os.path.normpath(os.path.join(output_dir, path))

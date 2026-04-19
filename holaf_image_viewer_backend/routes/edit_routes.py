@@ -87,7 +87,7 @@ async def load_edits_route(request: web.Request):
         # Check if video format to inject FPS
         _, ext = os.path.splitext(safe_path)
         if ext.lower() in logic.VIDEO_FORMATS:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             
             # 1. Native FPS
             native_fps = await loop.run_in_executor(None, logic.get_video_fps, abs_image_path)
@@ -180,7 +180,7 @@ async def save_edits_route(request: web.Request):
             thumb_filename = f"{path_hash}.jpg"
             thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(
                     None, 
                     logic._create_thumbnail_blocking, 
@@ -261,7 +261,7 @@ async def delete_edits_route(request: web.Request):
             thumb_filename = f"{path_hash}.jpg"
             thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(
                     None, 
                     logic._create_thumbnail_blocking, 
@@ -318,13 +318,18 @@ async def process_video_route(request: web.Request):
             if not os.path.isfile(abs_image_path):
                 return web.json_response({"status": "error", "message": "Source file not found"}, status=404)
                 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             
             # [UPDATED] Use preview_mode=True to skip baking colors (letting CSS handle it)
             # and receive stats back
             stats = await loop.run_in_executor(None, logic.generate_proc_video, abs_image_path, edit_data, True)
             
             return web.json_response({"status": "ok", "message": "Preview generated successfully", "stats": stats})
+        
+        # Clean up the lock entry after processing to prevent memory leak
+        async with _video_processing_locks_mutex:
+            if path_canon in _video_processing_locks and not _video_processing_locks[path_canon].locked():
+                del _video_processing_locks[path_canon]
         
     except Exception as e:
         traceback.print_exc()

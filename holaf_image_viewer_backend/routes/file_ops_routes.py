@@ -290,11 +290,10 @@ async def delete_images_permanently_route(request: web.Request):
         errors = []
 
         for path_canon in paths_canon_to_delete:
-            # Safety check: do not allow this action on items already in trashcan.
-            cursor.execute("SELECT 1 FROM images WHERE path_canon = ? AND is_trashed = 1", (path_canon,))
-            if cursor.fetchone():
-                errors.append({"path": path_canon, "error": "Cannot permanently delete an item that is in the trashcan."})
-                continue
+            # Check if the item is in the trashcan — these are allowed to be permanently deleted too.
+            cursor.execute("SELECT is_trashed FROM images WHERE path_canon = ?", (path_canon,))
+            is_trashed_row = cursor.fetchone()
+            is_trashed = is_trashed_row and is_trashed_row['is_trashed']
 
             full_path = os.path.normpath(os.path.join(output_dir, path_canon))
             

@@ -5,7 +5,7 @@
  * This script creates and manages the main settings panel for Holaf utilities.
  */
 
-import { app } from "../../../scripts/app.js";
+import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
 

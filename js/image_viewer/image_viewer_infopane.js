@@ -8,22 +8,12 @@
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
 import { holafBridge } from "../holaf_comfy_bridge.js";
+import { app as comfyApp } from "../holaf_api_compat.js";
 
 // Safe access to app (only available in main tab)
-let comfyApp = null;
-
-// --- CRITICAL FIX: Prevent import attempt in Standalone Mode ---
-// Accessing app.js triggers immediate execution which crashes if window.comfyAPI is missing.
-if (!window.location.pathname.startsWith('/holaf/view')) {
-    try {
-        const module = await import("../../../scripts/app.js");
-        comfyApp = module.app;
-    } catch (e) {
-        console.log("[Holaf InfoPane] ComfyUI app not available or failed to load (expected in standalone).");
-    }
-} else {
-    console.log("[Holaf InfoPane] Standalone mode detected: Skipping ComfyUI app integration.");
-}
+// comfyApp is now provided via holaf_api_compat.js, which uses window.comfyAPI
+// with fallback to legacy import. In standalone mode, the proxy will return
+// undefined for property access, which is handled gracefully.
 
 // Module-level variables to manage state
 let abortController = null;

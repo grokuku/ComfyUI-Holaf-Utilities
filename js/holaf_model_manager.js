@@ -7,7 +7,7 @@
  * to specialized modules.
  */
 
-import { app } from "../../../scripts/app.js";
+import { app } from "./holaf_api_compat.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
 import { initializeSettings, saveSettings } from "./model_manager/model_manager_settings.js";
 import { createPanel, createUploadDialog, applyZoom, setTheme } from "./model_manager/model_manager_ui.js";
