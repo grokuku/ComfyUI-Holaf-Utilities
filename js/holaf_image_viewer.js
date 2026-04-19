@@ -6,12 +6,12 @@
  */
 
 // Global variable for the ComfyUI App instance (only populated in main tab)
-// Now uses the compatibility layer via holaf_api_compat.js
+// Uses the compatibility layer via holaf_api_compat.js
+import { app as comfyApp } from "./holaf_api_compat.js";
 let app = comfyApp;
 
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
-import { app as comfyApp } from "./holaf_api_compat.js";
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
 import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';

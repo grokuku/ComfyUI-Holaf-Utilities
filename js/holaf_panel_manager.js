@@ -126,8 +126,9 @@ export const HolafPanelManager = {
             if (!isNaN(pZIndex) && pZIndex > maxZ) maxZ = pZIndex;
         });
 
-        // Only bump z-index if this panel isn't already on top
-        if (parseInt(panelEl.style.zIndex) < maxZ) {
+        // Bump z-index if this panel isn't already on top, or if it has no z-index yet (NaN)
+        const currentZ = parseInt(panelEl.style.zIndex);
+        if (isNaN(currentZ) || currentZ < maxZ) {
             currentMaxZIndex = maxZ + 1;
             panelEl.style.zIndex = currentMaxZIndex;
         }
