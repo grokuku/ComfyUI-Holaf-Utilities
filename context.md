@@ -59,6 +59,7 @@
     📄 holaf_comfy_bridge.js : `BroadcastChannel` wrapper for cross-tab communication.
     📄 holaf_panel_manager.js : Generic floating panel manager (create, drag, resize, fullscreen toggle, z-index stacking via `bringToFront`/`unregister`).
     📁 css/ : Modular CSS files (themes, panels, layout tools, profiler).
+    *   **BUG FIX (Critical)**: `holaf_image_viewer.css` had an unscoped `.holaf-utility-panel` rule that overrode `position: fixed`, `z-index`, etc. from `holaf_shared_panel.css`. Scoped to `body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window)` to only target standalone dialogs.
     📁 image_viewer/ : Gallery, Editor, State, UI logic.
     📁 profiler/
       📄 holaf_profiler.js : UI Logic. State-driven table rendering, Smart Filters (Non-Executed), Sorting, Metrics display.
@@ -93,8 +94,9 @@
   *   **Centralized in `HolafPanelManager`**: `bringToFront(panelEl)` and `unregister(panelEl)` are exposed for all Holaf windows.
   *   **`createPanel` panels**: Auto-registered with `mousedown` capture listener that calls `bringToFront`.
   *   **Custom windows** (Monitor, Shortcuts, Layout Tools): Call `bringToFront` on their own `mousedown` / drag start. Call `unregister` on hide.
-  *   **Logic**: Compares z-index of all tracked panels; only bumps if clicked panel is not already on top. Prevents unbounded z-index growth.
+  *   **Logic**: Compares z-index of all tracked panels; only bumps if clicked panel is not already on top. Handles `NaN` (panels without inline z-index) correctly via `isNaN()` check. Prevents unbounded z-index growth.
   *   **Track all**: `openPanels` Set now tracks ANY element passed to `bringToFront`, not just `createPanel` panels.
+  *   **BUG FIX (Critical)**: The `bringToFront` refactored in "debug auto GLM" commit lost the `isNaN()` guard. `parseInt('')` → `NaN`, `NaN < maxZ` → `false`, so new panels never received a z-index. Fixed by adding `isNaN(currentZ) ||` to the condition.
 
   #### 2. Layout Tools (Workflow Management)
   *   **Coordinates**: Real-time display following `app.canvas.graph_mouse`.
@@ -147,6 +149,11 @@
   ### PROJECT STATE
 
   *   **[Stable] Image Viewer, Terminal, Node Manager, Model Manager**.
+    *   **Bug Audit (23 bugs)**: 4 critical, 6 important, 7 moderate, 6 minor — all fixed.
+    *   **Critical fixes**: `bringToFront` z-index NaN bug, CSS `.holaf-utility-panel` override breaking `position: fixed`, import ordering in `holaf_image_viewer.js`, `holaf_utils.get_thumbnail_dir()` → `holaf_utils.THUMBNAIL_CACHE_DIR`, profiler URL mismatch, NaN/Inf JSON sanitization, missing `holaf_nodes_manager` guard.
+    *   **Important fixes**: `os.path.commonprefix` → `commonpath`, negative panel position rejection, `delete_models_from_db_and_disk` implemented, `POST /holaf/profiler/run-stop` route added, `_video_processing_locks` cleanup, `asyncio.get_event_loop()` → `get_running_loop()`, subprocess timeouts, lazy `ensure_trashcan_exists()`, permanent delete of trashed items, `workflow_sources: []` in initial filter state.
+    *   **Moderate fixes**: Thread-local DB connections for ProfilerDatabase, remote comparer timeout, `SESSION_TOKENS_LOCK` threading lock, improved `_get_db_connection()` with PRAGMA, removed dead `_process_model_item`.
+    *   **Cleanup**: Deleted all `__pycache__/` dirs and `.pyc` files, added `PYTHONDONTWRITEBYTECODE=1` to `__init__.py`, created `.gitignore`.
   *   **[Stable] System Monitor**: Multi-GPU, Turbo Mode, Persistence.
   *   **[Stable] Layout Tools**: Coordinates, Recentering, Persistence.
   *   **[Stable] Shortcuts**: Nested Subgraph support, Viewport Bookmarks, Graph-embedded data, Ghost Position.

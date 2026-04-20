@@ -11,9 +11,13 @@
 # - FIX: Corrected JS path in 'profiler_js_force_mime' to 'js/profiler/holaf_profiler.js'.
 # === End Documentation ===
 
-import server
 import os
 import sys
+
+# Prevent Python from writing __pycache__ / .pyc files in the source tree
+os.environ.setdefault('PYTHONDONTWRITEBYTECODE', '1')
+
+import server
 import asyncio
 import json
 import traceback

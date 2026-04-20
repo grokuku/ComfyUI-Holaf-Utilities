@@ -64,7 +64,8 @@ body.holaf-standalone-mode .holaf-utility-header {
 
 /* --- PANEL & DIALOG STYLES (Standalone Support) --- */
 /* Ensures dialogs have a background even without ComfyUI global CSS */
-.holaf-utility-panel {
+/* SCOPED: Only match when in standalone mode AND not a floating window panel */
+body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
     background-color: var(--holaf-background-secondary);
     color: var(--holaf-text-primary);
     border: 1px solid var(--holaf-border-color);
@@ -74,7 +75,7 @@ body.holaf-standalone-mode .holaf-utility-header {
     flex-direction: column;
 }
 
-.holaf-utility-header {
+body.holaf-standalone-mode .holaf-utility-header {
     background-color: var(--holaf-input-background);
     border-bottom: 1px solid var(--holaf-border-color);
     padding: 8px 10px;
