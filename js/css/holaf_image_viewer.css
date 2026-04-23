@@ -11,19 +11,28 @@
 /* --- THEME DEFAULTS (Fallback for Standalone Mode) --- */
 :root {
     /* Default to Midnight Purple look if no theme class is applied */
-    --holaf-accent-color: #9c27b0;
-    /* Purple accent */
-    --holaf-background-primary: #202020;
-    --holaf-background-secondary: #2b2b2b;
-    --holaf-text-primary: #eeeeee;
-    --holaf-text-secondary: #aaaaaa;
-    --holaf-border-color: #444444;
-    --holaf-input-background: #1a1a1a;
-    --holaf-button-background: #353535;
-    --holaf-button-text: #eeeeee;
-    --holaf-scrollbar-thumb: #555;
-    --holaf-scrollbar-track: #2b2b2b;
-    --holaf-tag-background: #4a148c;
+    --holaf-accent-color: #8A2BE2;
+    --holaf-background-primary: #1C1C2E;
+    --holaf-background-secondary: #2A2A40;
+    --holaf-text-primary: #E0D8F0;
+    --holaf-text-secondary: #9890B0;
+    --holaf-border-color: #383850;
+    --holaf-button-background: #8A2BE2;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #181828;
+    --holaf-tag-background: #4A3A5E;
+    --holaf-tag-text: #E0D8F0;
+    --holaf-family-tag-background: #4A2A60;
+    --holaf-family-tag-text: #E8D8F8;
+    --holaf-header-button-bg: rgba(224, 216, 240, 0.08);
+    --holaf-header-button-hover-bg: rgba(224, 216, 240, 0.15);
+    --holaf-header-button-text: #B0A8C0;
+    --holaf-header-button-hover-text: #E0D8F0;
+    --holaf-scrollbar-thumb: #4A3A5E;
+    --holaf-scrollbar-track: #2A2A40;
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
     --holaf-border-radius: 4px;
 }
 
@@ -62,42 +71,18 @@ body.holaf-standalone-mode .holaf-utility-header {
     display: none !important;
 }
 
+/* Glass panel style for standalone dialogs */
+body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 95%, transparent) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7)) !important;
+}
+
 /* --- PANEL & DIALOG STYLES (Standalone Support) --- */
 /* Ensures dialogs have a background even without ComfyUI global CSS */
 /* SCOPED: Only match when in standalone mode AND not a floating window panel */
-body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
-    background-color: var(--holaf-background-secondary);
-    color: var(--holaf-text-primary);
-    border: 1px solid var(--holaf-border-color);
-    border-radius: var(--holaf-border-radius);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    display: flex;
-    flex-direction: column;
-}
 
-body.holaf-standalone-mode .holaf-utility-header {
-    background-color: var(--holaf-input-background);
-    border-bottom: 1px solid var(--holaf-border-color);
-    padding: 8px 10px;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    user-select: none;
-    border-top-left-radius: var(--holaf-border-radius);
-    border-top-right-radius: var(--holaf-border-radius);
-}
-
-.holaf-utility-close-button {
-    background: transparent;
-    border: none;
-    color: var(--holaf-text-secondary);
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.holaf-utility-close-button:hover {
-    color: var(--holaf-text-primary);
-}
 
 /* --- END GLOBAL LAYOUT FIX --- */
 
@@ -125,7 +110,7 @@ body.holaf-standalone-mode .holaf-utility-header {
     flex: 0 0 240px;
     padding: 10px;
     border-right: 1px solid var(--holaf-border-color);
-    background-color: var(--holaf-background-secondary);
+    background-color: color-mix(in srgb, var(--holaf-background-secondary) 50%, transparent);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -342,6 +327,7 @@ body.holaf-standalone-mode .holaf-utility-header {
     border-bottom: 1px solid var(--holaf-border-color);
     margin-bottom: 10px;
     flex-shrink: 0;
+    background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
 }
 
 #holaf-viewer-gallery {
@@ -354,6 +340,7 @@ body.holaf-standalone-mode .holaf-utility-header {
     padding: 10px;
     box-sizing: border-box;
     position: relative;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 50%, black);
 }
 
 #holaf-viewer-gallery.loading-overlay {
@@ -601,7 +588,7 @@ body.holaf-standalone-mode .holaf-utility-header {
 #holaf-viewer-right-column {
     flex: 0 0 300px;
     border-left: 1px solid var(--holaf-border-color);
-    background-color: var(--holaf-background-secondary);
+    background-color: color-mix(in srgb, var(--holaf-background-secondary) 50%, transparent);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -619,7 +606,7 @@ body.holaf-standalone-mode .holaf-utility-header {
     flex-shrink: 0;
     padding: 10px;
     border-top: 1px solid var(--holaf-border-color);
-    background-color: var(--holaf-background-primary);
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 70%, black);
 }
 
 #holaf-viewer-right-pane h4,
@@ -880,7 +867,7 @@ video::-webkit-media-controls {
     flex-shrink: 0;
     padding: 5px 10px;
     border-top: 1px solid var(--holaf-border-color);
-    background-color: var(--holaf-background-primary);
+    background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
     font-size: 12px;
     color: var(--holaf-text-secondary);
     text-align: right;
@@ -926,20 +913,23 @@ video::-webkit-media-controls {
 }
 
 #holaf-viewer-export-dialog {
-    background-color: var(--holaf-background-secondary);
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 95%, transparent);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     color: var(--holaf-text-primary);
     border: 1px solid var(--holaf-border-color);
     border-radius: 8px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7));
     min-width: 400px;
     max-width: 90%;
 }
 
 .holaf-viewer-export-header {
-    padding: 10px 15px;
+    padding: 8px 15px;
     border-bottom: 1px solid var(--holaf-border-color);
-    font-size: 16px;
+    font-size: 12px;
     font-weight: bold;
+    background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
 }
 
 .holaf-viewer-export-content {

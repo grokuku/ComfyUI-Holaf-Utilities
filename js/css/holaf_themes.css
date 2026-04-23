@@ -1,6 +1,10 @@
 /*
+ * Copyright (C) 2025 Holaf
  * Holaf Utilities - Theme Definitions
- * Contains all CSS variable definitions for different themes.
+ *
+ * Single source of truth for all CSS theme variables.
+ * Each theme defines a complete set of variables used by all panels.
+ * Glass/semi-transparent values are derived via color-mix() in the shared panel CSS.
  */
 
 /* Graphite Orange Theme (Dark) - BASE THEME */
@@ -13,7 +17,7 @@
     --holaf-border-color: #3F3F3F;
     --holaf-button-background: var(--holaf-accent-color);
     --holaf-button-text: #FFFFFF;
-    --holaf-input-background: #252525;
+    --holaf-input-background: #1A1A1A;
     --holaf-tag-background: #4F4F4F;
     --holaf-tag-text: #DADADA;
     --holaf-family-tag-background: #5A3E1E;
@@ -24,85 +28,97 @@
     --holaf-header-button-hover-text: #E0E0E0;
     --holaf-scrollbar-thumb: #555555;
     --holaf-scrollbar-track: var(--holaf-background-secondary);
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
 }
 
 /* Midnight Purple Theme (Dark) */
 .holaf-theme-midnight-purple {
     --holaf-accent-color: #8A2BE2;
-    --holaf-background-primary: #1E1E1E;
-    --holaf-background-secondary: #2B2B2B;
-    --holaf-text-primary: #E0E0E0;
-    --holaf-text-secondary: #A0A0A0;
-    --holaf-border-color: #3F3F3F;
+    --holaf-background-primary: #1C1C2E;
+    --holaf-background-secondary: #2A2A40;
+    --holaf-text-primary: #E0D8F0;
+    --holaf-text-secondary: #9890B0;
+    --holaf-border-color: #383850;
     --holaf-button-background: var(--holaf-accent-color);
     --holaf-button-text: #FFFFFF;
-    --holaf-input-background: #252525;
-    --holaf-tag-background: #4F4F4F;
-    --holaf-tag-text: #DADADA;
+    --holaf-input-background: #181828;
+    --holaf-tag-background: #4A3A5E;
+    --holaf-tag-text: #E0D8F0;
     --holaf-family-tag-background: #4A2A60;
     --holaf-family-tag-text: #E8D8F8;
-    --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
-    --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
-    --holaf-header-button-text: #B0B0B0;
-    --holaf-header-button-hover-text: #E0E0E0;
-    --holaf-scrollbar-thumb: #555555;
+    --holaf-header-button-bg: rgba(224, 216, 240, 0.08);
+    --holaf-header-button-hover-bg: rgba(224, 216, 240, 0.15);
+    --holaf-header-button-text: #B0A8C0;
+    --holaf-header-button-hover-text: #E0D8F0;
+    --holaf-scrollbar-thumb: #4A3A5E;
     --holaf-scrollbar-track: var(--holaf-background-secondary);
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
 }
 
 /* Forest Green Theme (Dark) */
 .holaf-theme-forest-green {
     --holaf-accent-color: #228B22;
-    --holaf-background-primary: #1E1E1E;
-    --holaf-background-secondary: #2B2B2B;
-    --holaf-text-primary: #E0E0E0;
-    --holaf-text-secondary: #A0A0A0;
-    --holaf-border-color: #3F3F3F;
+    --holaf-background-primary: #1A241A;
+    --holaf-background-secondary: #283A28;
+    --holaf-text-primary: #D0E0D0;
+    --holaf-text-secondary: #809080;
+    --holaf-border-color: #304830;
     --holaf-button-background: var(--holaf-accent-color);
     --holaf-button-text: #FFFFFF;
-    --holaf-input-background: #252525;
-    --holaf-tag-background: #4F4F4F;
-    --holaf-tag-text: #DADADA;
+    --holaf-input-background: #162016;
+    --holaf-tag-background: #3A5E3A;
+    --holaf-tag-text: #D0E0D0;
     --holaf-family-tag-background: #2A4A2A;
     --holaf-family-tag-text: #D8E8D8;
-    --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
-    --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
-    --holaf-header-button-text: #B0B0B0;
-    --holaf-header-button-hover-text: #E0E0E0;
-    --holaf-scrollbar-thumb: #555555;
+    --holaf-header-button-bg: rgba(208, 224, 208, 0.08);
+    --holaf-header-button-hover-bg: rgba(208, 224, 208, 0.15);
+    --holaf-header-button-text: #A0B0A0;
+    --holaf-header-button-hover-text: #D0E0D0;
+    --holaf-scrollbar-thumb: #3A5E3A;
     --holaf-scrollbar-track: var(--holaf-background-secondary);
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
 }
 
 /* Steel Blue Theme (Dark) */
 .holaf-theme-steel-blue {
     --holaf-accent-color: #4682B4;
-    --holaf-background-primary: #1E1E1E;
-    --holaf-background-secondary: #2B2B2B;
-    --holaf-text-primary: #E0E0E0;
-    --holaf-text-secondary: #A0A0A0;
-    --holaf-border-color: #3F3F3F;
+    --holaf-background-primary: #1C2024;
+    --holaf-background-secondary: #2A3038;
+    --holaf-text-primary: #D0D8E0;
+    --holaf-text-secondary: #808890;
+    --holaf-border-color: #36404A;
     --holaf-button-background: var(--holaf-accent-color);
     --holaf-button-text: #FFFFFF;
-    --holaf-input-background: #252525;
-    --holaf-tag-background: #4F4F4F;
-    --holaf-tag-text: #DADADA;
+    --holaf-input-background: #181C20;
+    --holaf-tag-background: #3A4E5E;
+    --holaf-tag-text: #D0D8E0;
     --holaf-family-tag-background: #304050;
     --holaf-family-tag-text: #D8E0E8;
-    --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
-    --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
-    --holaf-header-button-text: #B0B0B0;
-    --holaf-header-button-hover-text: #E0E0E0;
-    --holaf-scrollbar-thumb: #555555;
+    --holaf-header-button-bg: rgba(208, 216, 224, 0.08);
+    --holaf-header-button-hover-bg: rgba(208, 216, 224, 0.15);
+    --holaf-header-button-text: #A0A8B0;
+    --holaf-header-button-hover-text: #D0D8E0;
+    --holaf-scrollbar-thumb: #3A4E5E;
     --holaf-scrollbar-track: var(--holaf-background-secondary);
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
 }
 
 /* Ashy Light Theme (Light) */
 .holaf-theme-ashy-light {
     --holaf-accent-color: #607D8B;
-    --holaf-background-primary: #FAFAFA;
+    --holaf-background-primary: #EAEAEA;
     --holaf-background-secondary: #F0F0F0;
     --holaf-text-primary: #263238;
     --holaf-text-secondary: #546E7A;
-    --holaf-border-color: #DCDCDC;
+    --holaf-border-color: #CDCDCD;
     --holaf-button-background: var(--holaf-accent-color);
     --holaf-button-text: #FFFFFF;
     --holaf-input-background: #FFFFFF;
@@ -116,4 +132,7 @@
     --holaf-header-button-hover-text: #263238;
     --holaf-scrollbar-thumb: #B0BEC5;
     --holaf-scrollbar-track: var(--holaf-background-secondary);
+    --holaf-success-color: #2E7D32;
+    --holaf-error-color: #C62828;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
 }

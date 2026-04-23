@@ -57,15 +57,15 @@ export function initProfiler() {
                 </label>
             </div>
             <div class="filter-group">
-                <label>Min Time: <span id="lbl-min-time" style="font-weight:bold; color:#4CAF50;">0.0s</span></label>
+                <label>Min Time: <span id="lbl-min-time" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
                 <input type="range" id="rng-min-time" min="0" max="5" step="0.1" value="0">
             </div>
             <div class="filter-group">
                 <label>Exclude Type:</label>
-                <input type="text" id="inp-filter-type" placeholder="Type..." style="width: 100px; padding: 2px 5px; background:#222; border:1px solid #444; color:#fff;">
+                <input type="text" id="inp-filter-type" placeholder="Type..." style="width: 100px;">
             </div>
             <div class="filter-group" style="flex-grow:1; text-align:right;">
-                <span style="font-size:0.8rem; color:#888;">Click headers to sort</span>
+                <span style="font-size:0.8rem; color:var(--holaf-text-secondary);">Click headers to sort</span>
             </div>
         </div>
 
@@ -180,9 +180,9 @@ export function initProfiler() {
             iconSpan.textContent = "";
 
             if (th.dataset.sort === config.sortBy) {
-                th.style.color = "#fff";
+                th.style.color = "var(--holaf-text-primary)";
                 iconSpan.textContent = config.sortDir === 'asc' ? ' ▲' : ' ▼';
-                iconSpan.style.color = "#4CAF50";
+                iconSpan.style.color = "var(--holaf-success-color, #4CAF50)";
             }
         });
     }
@@ -251,16 +251,16 @@ export function initProfiler() {
         // --- HTML GEN ---
         tbody.innerHTML = filteredRows.map(row => {
             const isSubNode = String(row.id).includes(':');
-            const rowStyle = isSubNode ? 'background-color: rgba(255,255,255,0.02);' : '';
-            const finishedStyle = row.exec_time ? 'background-color: rgba(76, 175, 80, 0.1);' : '';
+            const rowStyle = isSubNode ? 'background-color: color-mix(in srgb, var(--holaf-text-primary) 2%, transparent);' : '';
+            const finishedStyle = row.exec_time ? 'background-color: color-mix(in srgb, var(--holaf-success-color) 10%, transparent);' : '';
             
             const groupBadge = row.holaf_group 
                 ? `<span class="badge-group">${row.holaf_group}</span>` 
-                : '<span style="color:#444">-</span>';
+                : '<span style="color:var(--holaf-border-color)">-</span>';
 
             const orderBadge = row.exec_order
-                ? `<span style="font-family:monospace; color:#4CAF50;">${formatOrder(row.exec_order)}</span>`
-                : `<span style="color:#444">-</span>`;
+                ? `<span style="font-family:monospace; color:var(--holaf-success-color);">${formatOrder(row.exec_order)}</span>`
+                : `<span style="color:var(--holaf-border-color)">-</span>`;
 
             let gpuDisplay = "-";
             if (row.gpu_load_max !== undefined && row.gpu_load_max !== null) {
@@ -273,7 +273,7 @@ export function initProfiler() {
                     <td>${row.id}</td>
                     <td>${resolveNodeName(row.id, row)}</td>
                     <td>${groupBadge}</td>
-                    <td style="color:#888; font-size:0.85em;">${row.type}</td>
+                    <td style="font-size:0.85em; color:var(--holaf-text-secondary)">${row.type}</td>
                     <td class="metric-cell vram">${formatBytes(row.vram_max)}</td>
                     <td class="metric-cell time">${formatTime(row.exec_time)}</td>
                     <td class="metric-cell gpu">${gpuDisplay}</td>

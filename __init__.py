@@ -105,14 +105,34 @@ GALLERY_HTML = """
             --drag-text: #ccc;
             --error-text: #ff4444;
             --border-color: #4e4e4e;
-            --holaf-accent-color: #236696;
-            --holaf-bg-color: #2b2b2b;
-            --holaf-text-color: #eeeeee;
+            /* Holaf theme variables - Steel Blue dark theme */
+            --holaf-accent-color: #4682B4;
+            --holaf-background-primary: #1C2024;
+            --holaf-background-secondary: #2A3038;
+            --holaf-text-primary: #D0D8E0;
+            --holaf-text-secondary: #808890;
+            --holaf-border-color: #36404A;
+            --holaf-button-background: #4682B4;
+            --holaf-button-text: #FFFFFF;
+            --holaf-input-background: #24282D;
+            --holaf-tag-background: #3A4E5E;
+            --holaf-tag-text: #D0D8E0;
+            --holaf-family-tag-background: #304050;
+            --holaf-family-tag-text: #D8E0E8;
+            --holaf-header-button-bg: rgba(208, 216, 224, 0.08);
+            --holaf-header-button-hover-bg: rgba(208, 216, 224, 0.15);
+            --holaf-header-button-text: #A0A8B0;
+            --holaf-header-button-hover-text: #D0D8E0;
+            --holaf-scrollbar-thumb: #3A4E5E;
+            --holaf-scrollbar-track: #2A3038;
+            --holaf-success-color: #4CAF50;
+            --holaf-error-color: #F44336;
+            --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
             --holaf-border-radius: 4px;
         }
         body {
             background-color: var(--bg-color);
-            color: var(--holaf-text-color);
+            color: var(--holaf-text-primary);
             margin: 0;
             padding: 0;
             font-family: sans-serif;
@@ -159,8 +179,8 @@ PROFILER_HTML = """
     <title>Holaf Profiler</title>
     <style>
         body {
-            background-color: #202020;
-            color: #eeeeee;
+            background-color: #1C2024;
+            color: #D0D8E0;
             font-family: sans-serif;
             margin: 0; padding: 0;
             height: 100vh;
@@ -174,13 +194,6 @@ PROFILER_HTML = """
             overflow: hidden;
             padding: 20px;
         }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #444; }
-        th { background-color: #333; }
-        .profiler-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .btn { padding: 8px 16px; background: #236696; color: white; border: none; cursor: pointer; border-radius: 4px; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { background: #444; margin-right: 10px; }
     </style>
     <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_profiler.css">
 </head>

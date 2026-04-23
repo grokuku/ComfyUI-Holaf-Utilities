@@ -1,21 +1,17 @@
-/* Holaf Profiler Styles */
-:root {
-    --bg-color: #202020;
-    --panel-bg: #2b2b2b;
-    --text-color: #eeeeee;
-    --accent-color: #236696;
-    --border-color: #444;
-    --hover-bg: #383838;
-    --success-color: #4caf50;
-    --warning-color: #ff9800;
-    --error-color: #f44336;
-}
+/*
+ * Copyright (C) 2025 Holaf
+ * Holaf Profiler Styles
+ *
+ * Refactored to use --holaf-* theme variables for glass-compatible styling.
+ * Also used in standalone profiler page (see __init__.py PROFILER_HTML).
+ */
 
 #holaf-profiler-root {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    height: 100%;
     box-sizing: border-box;
+    color: var(--holaf-text-primary, #E0E0E0);
 }
 
 /* Header */
@@ -23,15 +19,15 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 20px;
-    background-color: var(--panel-bg);
-    border-bottom: 1px solid var(--border-color);
+    padding: 8px 20px;
+    background-color: color-mix(in srgb, var(--holaf-text-primary, #E0E0E0) 5%, transparent);
+    border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
 }
 
 .header-title h1 {
     margin: 0;
     font-size: 1.2rem;
-    color: var(--accent-color);
+    color: var(--holaf-accent-color, #D8700D);
 }
 
 .header-actions {
@@ -39,30 +35,38 @@
     gap: 10px;
 }
 
+/* Buttons */
 .btn {
     padding: 8px 16px;
-    background-color: var(--accent-color);
-    color: white;
+    background-color: var(--holaf-accent-color, #D8700D);
+    color: var(--holaf-button-text, #fff);
     border: none;
-    border-radius: 4px;
+    border-radius: 3px;
     cursor: pointer;
     font-size: 0.9rem;
-    transition: background 0.2s;
+    transition: filter 0.2s;
 }
 
 .btn:hover {
-    filter: brightness(1.1);
+    filter: brightness(1.15);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .btn-secondary {
-    background-color: #444;
+    background-color: color-mix(in srgb, var(--holaf-text-primary, #E0E0E0) 8%, transparent);
+    color: var(--holaf-text-secondary, #A0A0A0);
+    border: 1px solid var(--holaf-border-color, #3F3F3F);
 }
 
 /* Toolbar (Filters) */
 .profiler-toolbar {
     padding: 10px 20px;
-    background-color: var(--bg-color);
-    border-bottom: 1px solid var(--border-color);
+    background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 50%, black);
+    border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
@@ -70,17 +74,40 @@
 
 .toggle-chip {
     padding: 4px 10px;
-    background-color: #333;
-    border: 1px solid #555;
+    background-color: color-mix(in srgb, var(--holaf-background-secondary, #2B2B2B) 50%, transparent);
+    border: 1px solid color-mix(in srgb, var(--holaf-border-color, #3F3F3F) 70%, transparent);
     border-radius: 12px;
     font-size: 0.8rem;
     cursor: pointer;
     user-select: none;
+    color: var(--holaf-text-secondary, #A0A0A0);
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .toggle-chip.active {
-    background-color: var(--accent-color);
-    border-color: var(--accent-color);
+    background-color: var(--holaf-accent-color, #D8700D);
+    border-color: var(--holaf-accent-color, #D8700D);
+    color: var(--holaf-button-text, #fff);
+}
+
+/* Filter inputs in toolbar */
+.profiler-toolbar label {
+    color: var(--holaf-text-secondary, #A0A0A0);
+    font-size: 0.85rem;
+}
+
+.profiler-toolbar input[type="text"],
+.profiler-toolbar input[type="range"] {
+    background-color: var(--holaf-input-background, #1A1A1A);
+    border: 1px solid var(--holaf-border-color, #3F3F3F);
+    color: var(--holaf-text-primary, #E0E0E0);
+    padding: 2px 5px;
+    border-radius: 3px;
+    outline: none;
+}
+
+.profiler-toolbar input[type="text"]:focus {
+    border-color: var(--holaf-accent-color, #D8700D);
 }
 
 /* Main Table */
@@ -99,28 +126,49 @@
 .data-table th, .data-table td {
     padding: 10px;
     text-align: left;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
 }
 
 .data-table th {
-    background-color: var(--panel-bg);
+    background-color: color-mix(in srgb, var(--holaf-text-primary, #E0E0E0) 5%, transparent);
     position: sticky;
     top: 0;
     z-index: 10;
+    font-weight: bold;
+    color: var(--holaf-text-secondary, #A0A0A0);
+    cursor: pointer;
+    user-select: none;
+}
+
+.data-table th:hover {
+    color: var(--holaf-text-primary, #E0E0E0);
 }
 
 .data-table tr:hover {
-    background-color: var(--hover-bg);
+    background-color: color-mix(in srgb, var(--holaf-background-secondary, #2B2B2B) 50%, transparent);
 }
 
 .metric-cell {
     font-family: monospace;
-    color: #bbb;
+    color: var(--holaf-text-secondary, #A0A0A0);
 }
 
 .status-badge {
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 0.75rem;
-    background-color: #444;
+    background-color: color-mix(in srgb, var(--holaf-background-secondary, #2B2B2B) 50%, transparent);
 }
+
+.badge-group {
+    background-color: var(--holaf-family-tag-background, #5A3E1E);
+    color: var(--holaf-family-tag-text, #E8D8C8);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+}
+
+/* Success/error colors */
+.status-success { color: var(--holaf-success-color, #4CAF50); }
+.status-error { color: var(--holaf-error-color, #F44336); }
+.status-warning { color: var(--holaf-accent-color, #D8700D); }

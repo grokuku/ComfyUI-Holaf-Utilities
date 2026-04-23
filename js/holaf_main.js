@@ -601,7 +601,8 @@ const HolafUtilitiesMenu = {
             "holaf_toasts.css",
             "holaf_profiler.css",
             "holaf_layout_tools.css",
-            "holaf_remote_comparer_styles.css"
+            "holaf_remote_comparer_styles.css",
+            "holaf_shortcuts_styles.css"
         ];
         const basePath = "extensions/ComfyUI-Holaf-Utilities/css/";
         cssFiles.forEach(fileName => {

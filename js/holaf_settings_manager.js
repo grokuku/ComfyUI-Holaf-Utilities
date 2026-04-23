@@ -59,26 +59,26 @@ const HolafSettingsManager = {
         }).join('');
 
         this.contentEl.innerHTML = `
-            <div class="holaf-settings-container" style="padding: 15px; display: flex; flex-direction: column; gap: 20px;">
+            <div class="holaf-settings-container" style="padding: 15px; gap: 20px;">
                 
                 <!-- Theme Selection -->
                 <div class="holaf-settings-group">
-                    <h3 style="margin-top: 0; margin-bottom: 10px; color: var(--holaf-text-color, #E0E0E0); font-size: 14px; border-bottom: 1px solid var(--holaf-border-color, #444); padding-bottom: 5px;">Appearance</h3>
+                    <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Appearance</h3>
                     <div class="holaf-settings-field" style="display: flex; flex-direction: column; gap: 5px;">
-                        <label for="holaf-theme-select" style="font-weight: bold; color: var(--holaf-text-secondary, #A0A0A0); font-size: 12px;">UI Theme</label>
-                        <select id="holaf-theme-select" style="padding: 6px; background: var(--comfy-input-bg, #222); color: var(--input-text, #FFF); border: 1px solid var(--holaf-border-color, #555); border-radius: 4px; outline: none; cursor: pointer;">
+                        <label for="holaf-theme-select" style="font-size: 12px;">UI Theme</label>
+                        <select id="holaf-theme-select" style="outline: none; cursor: pointer;">
                             ${themeOptionsHtml}
                         </select>
-                        <span style="font-size: 11px; color: var(--holaf-text-secondary, #888);">Changes the color scheme of Holaf's floating panels. Applies instantly.</span>
+                        <span class="holaf-settings-field-description" style="font-size: 11px;">Changes the color scheme of Holaf's floating panels. Applies instantly.</span>
                     </div>
                 </div>
 
                 <!-- Features Toggle -->
                 <div class="holaf-settings-group">
-                    <h3 style="margin-top: 0; margin-bottom: 10px; color: var(--holaf-text-color, #E0E0E0); font-size: 14px; border-bottom: 1px solid var(--holaf-border-color, #444); padding-bottom: 5px;">Features</h3>
+                    <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Features</h3>
                     <div class="holaf-settings-field" style="display: flex; align-items: center; gap: 10px;">
                         <input type="checkbox" id="holaf-wip-checkbox" ${showWip ? "checked" : ""} style="cursor: pointer; width: 16px; height: 16px;">
-                        <label for="holaf-wip-checkbox" style="font-weight: bold; color: var(--holaf-text-secondary, #A0A0A0); font-size: 12px; cursor: pointer;">Show Work-In-Progress (WIP) Modules</label>
+                        <label for="holaf-wip-checkbox" style="font-size: 12px; cursor: pointer;">Show Work-In-Progress (WIP) Modules</label>
                     </div>
                     <span style="font-size: 11px; color: var(--holaf-text-secondary, #888); display: block; margin-top: 5px;">Displays in-development tools (Model Manager, Nodes Manager, Profiler) in the main menu.</span>
                 </div>

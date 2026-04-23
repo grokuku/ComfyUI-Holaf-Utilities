@@ -4,13 +4,14 @@
  *
  * Provides styling for the non-blocking toast notification system.
  * Supports different types (success, error, info) and progress bars.
+ * Now uses --holaf-success-color and --holaf-error-color with fallbacks.
  */
 
 #holaf-toast-container {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 12000; /* High z-index to be on top of most UI, but below critical modals */
+    z-index: 12000;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -19,12 +20,14 @@
 }
 
 .holaf-toast {
-    background-color: var(--holaf-background-secondary);
-    color: var(--holaf-text-primary);
+    background-color: color-mix(in srgb, var(--holaf-background-secondary, #2B2B2B) 95%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--holaf-text-primary, #E0E0E0);
     border-radius: 6px;
-    box-shadow: var(--holaf-box-shadow);
-    border: 1px solid var(--holaf-border-color);
-    border-left: 5px solid var(--holaf-accent-color); /* Default accent */
+    box-shadow: var(--holaf-box-shadow, 0 4px 15px rgba(0, 0, 0, 0.4));
+    border: 1px solid var(--holaf-border-color, #3F3F3F);
+    border-left: 5px solid var(--holaf-accent-color, #D8700D);
     padding: 15px;
     display: flex;
     align-items: center;
@@ -61,7 +64,7 @@
     to {
         opacity: 0;
         transform: translateX(100%);
-        margin-top: -10px; /* Animate height collapse */
+        margin-top: -10px;
         padding-top: 0;
         padding-bottom: 0;
         height: 0;
@@ -110,7 +113,7 @@
     left: 0;
     height: 4px;
     background-color: var(--holaf-accent-color);
-    width: 0%; /* Initial width */
+    width: 0%;
     transition: width 0.2s linear;
 }
 
@@ -131,7 +134,7 @@
     height: 20px;
     border: none;
     background-color: transparent;
-    color: var(--holaf-text-secondary);
+    color: var(--holaf-text-secondary, #A0A0A0);
     font-size: 16px;
     line-height: 20px;
     text-align: center;
@@ -143,5 +146,5 @@
 
 .holaf-toast-close-btn:hover {
     opacity: 1;
-    background-color: var(--holaf-border-color);
+    background-color: var(--holaf-border-color, #3F3F3F);
 }

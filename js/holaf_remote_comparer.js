@@ -126,20 +126,16 @@ const HolafRemoteComparer = {
         this.rootElement.classList.add("holaf-floating-window");
         Object.assign(this.rootElement.style, {
             display: "none", position: "fixed", zIndex: "1000",
-            backgroundColor: "rgba(20, 20, 20, 0.95)", borderRadius: "8px",
-            border: "1px solid var(--border-color, #555)", backdropFilter: "blur(4px)",
             fontFamily: "sans-serif", boxSizing: "border-box", overflow: "hidden",
-            flexDirection: "column", color: "#eee", boxShadow: "0 10px 40px rgba(0, 0, 0, 0.7)",
+            flexDirection: "column",
             transition: "border-radius 0.2s ease"
         });
 
         // Header
         const header = document.createElement("div");
-        Object.assign(header.style, {
-            flex: "0 0 auto", display: "flex", alignItems: "center", padding: "8px",
-            backgroundColor: "rgba(255,255,255,0.05)", borderBottom: "1px solid #444",
-            cursor: "move", boxSizing: "border-box"
-        });
+        header.className = "holaf-utility-header";
+        header.style.cursor = "move";
+        header.style.boxSizing = "border-box";
 
         const title = document.createElement("span");
         title.innerText = "Remote Media Comparer";
@@ -151,12 +147,8 @@ const HolafRemoteComparer = {
         const closeBtn = document.createElement("button");
         closeBtn.innerText = "✕";
         closeBtn.title = "Close";
-        Object.assign(closeBtn.style, {
-            background: "none", border: "none", color: "#888", cursor: "pointer", 
-            fontSize: "14px", padding: "0", transition: "color 0.2s ease"
-        });
-        closeBtn.onmouseenter = () => closeBtn.style.color = "#ff5555";
-        closeBtn.onmouseleave = () => closeBtn.style.color = "#888";
+        closeBtn.className = "holaf-utility-close-button";
+        // Hover handled by CSS
         closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
 
@@ -177,17 +169,20 @@ const HolafRemoteComparer = {
 
         // Sidebar
         this.sidebarElement = document.createElement("div");
+        this.sidebarElement.className = "holaf-rc-sidebar";
         Object.assign(this.sidebarElement.style, {
-            display: "flex", flexDirection: "column", backgroundColor: "#1a1a1a",
+            display: "flex", flexDirection: "column",
             overflow: "hidden", flexShrink: "0", transition: "width 0.2s ease", userSelect: "none"
         });
 
         this.sidebarHistoryContainer = document.createElement("div");
+        this.sidebarHistoryContainer.className = "holaf-rc-sidebar-history";
         Object.assign(this.sidebarHistoryContainer.style, { flex: "1", overflowY: "auto", overflowX: "hidden" });
 
         this.sidebarBottomContainer = document.createElement("div");
+        this.sidebarBottomContainer.className = "holaf-rc-sidebar-bottom";
         Object.assign(this.sidebarBottomContainer.style, {
-            flexShrink: "0", display: "flex", flexDirection: "column", backgroundColor: "#111", boxSizing: "border-box"
+            flexShrink: "0", display: "flex", flexDirection: "column", boxSizing: "border-box"
         });
 
         this.sidebarElement.appendChild(this.sidebarHistoryContainer);
@@ -195,42 +190,44 @@ const HolafRemoteComparer = {
 
         // Content Area
         this.contentElement = document.createElement("div");
+        this.contentElement.className = "holaf-rc-content";
         Object.assign(this.contentElement.style, {
-            flex: "1", position: "relative", backgroundColor: "#111", display: "flex",
+            flex: "1", position: "relative", display: "flex",
             justifyContent: "center", alignItems: "center", overflow: "hidden", height: "100%"
         });
 
         // Floating Buttons
         this.floatingSidebarBtn = document.createElement("button");
         this.floatingSidebarBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 3h18v18H3V3zm16 16V5H9v14h10z"/></svg>`;
+        this.floatingSidebarBtn.className = "holaf-rc-float-btn";
         Object.assign(this.floatingSidebarBtn.style, {
             position: "absolute", top: "10px", left: "10px", zIndex: "100",
-            background: "rgba(20,20,20,0.7)", border: "1px solid #444", color: "#ddd", cursor: "pointer", 
-            padding: "6px", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "6px"
+            display: "flex", alignItems: "center", justifyContent: "center"
         });
         this.floatingSidebarBtn.onclick = () => this.toggleSidebar();
 
         this.floatingPopoutBtn = document.createElement("button");
         this.floatingPopoutBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>`;
+        this.floatingPopoutBtn.className = "holaf-rc-float-btn";
         Object.assign(this.floatingPopoutBtn.style, {
             position: "absolute", top: "10px", right: "10px", zIndex: "100",
-            background: "rgba(20,20,20,0.7)", border: "1px solid #444", color: "#ddd", cursor: "pointer", 
-            padding: "6px", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "6px"
+            display: "flex", alignItems: "center", justifyContent: "center"
         });
         this.floatingPopoutBtn.onclick = () => this.popOut();
 
         this.floatingPopinBtn = document.createElement("button");
         this.floatingPopinBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`;
+        this.floatingPopinBtn.className = "holaf-rc-float-btn";
         Object.assign(this.floatingPopinBtn.style, {
             position: "absolute", top: "10px", right: "10px", zIndex: "100",
-            background: "rgba(20,20,20,0.7)", border: "1px solid #444", color: "#ddd", cursor: "pointer", 
-            padding: "6px", display: "none", alignItems: "center", justifyContent: "center", borderRadius: "6px"
+            display: "none", alignItems: "center", justifyContent: "center"
         });
         this.floatingPopinBtn.onclick = () => this.popIn();
 
         this.statusTextEl = document.createElement("div");
+        this.statusTextEl.className = "holaf-rc-status-text";
         Object.assign(this.statusTextEl.style, {
-            position: "absolute", color: "#777", fontSize: "12px", pointerEvents: "none", userSelect: "none", zIndex: "10"
+            position: "absolute", pointerEvents: "none", userSelect: "none", zIndex: "10"
         });
         this.statusTextEl.innerText = "Waiting for execution...";
 
@@ -270,9 +267,10 @@ const HolafRemoteComparer = {
     buildBottomSidebar() {
         // 0. Settings Bridge Encart
         const settingsContainer = document.createElement("div");
+        settingsContainer.className = "holaf-rc-settings-container";
         Object.assign(settingsContainer.style, {
             display: "flex", flexDirection: "column", gap: "6px", padding: "8px 10px",
-            backgroundColor: "#161616", borderTop: "1px solid #2a2a2a", fontSize: "10px", color: "#888"
+            fontSize: "10px"
         });
 
         const createSelect = (label, key, options) => {
@@ -283,9 +281,9 @@ const HolafRemoteComparer = {
             lbl.innerText = label;
             
             const sel = document.createElement("select");
+            sel.className = "holaf-rc-settings-select";
             Object.assign(sel.style, { 
-                background: "#222", color: "#ccc", border: "1px solid #444", 
-                borderRadius: "3px", fontSize: "10px", padding: "2px", width: "70px", outline: "none", cursor: "pointer"
+                fontSize: "10px", padding: "2px", width: "70px"
             });
             
             options.forEach(opt => {
@@ -316,9 +314,9 @@ const HolafRemoteComparer = {
 
         // 1. Playback Controls Container
         const controls = document.createElement("div");
+        controls.className = "holaf-rc-controls";
         Object.assign(controls.style, {
-            display: "flex", flexDirection: "column", gap: "8px", padding: "10px",
-            borderTop: "1px solid #2a2a2a", borderBottom: "1px solid #2a2a2a", display: "none", boxSizing: "border-box"
+            display: "none", boxSizing: "border-box"
         });
         this.uiControls.container = controls;
 
@@ -327,10 +325,7 @@ const HolafRemoteComparer = {
 
         const playBtn = document.createElement("button");
         playBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
-        Object.assign(playBtn.style, {
-            background: "#2a2a2a", border: "1px solid #444", color: "#ddd", cursor: "pointer",
-            padding: "4px", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0"
-        });
+        playBtn.className = "holaf-rc-play-btn";
         playBtn.onclick = () => {
             const mediaEls = this.images.filter(m => m instanceof HTMLMediaElement);
             const isPlaying = mediaEls.some(m => !m.paused);
@@ -356,7 +351,8 @@ const HolafRemoteComparer = {
         this.uiControls.timeline = timeline;
 
         const frameCount = document.createElement("span");
-        Object.assign(frameCount.style, { fontSize: "9px", color: "#888", width: "35px", textAlign: "right", fontVariantNumeric: "tabular-nums", flexShrink: "0" });
+        frameCount.className = "holaf-rc-frame-count";
+        Object.assign(frameCount.style, { width: "35px", textAlign: "right", flexShrink: "0" });
         frameCount.innerText = "0:00";
         this.uiControls.frameCount = frameCount;
 
@@ -368,23 +364,25 @@ const HolafRemoteComparer = {
 
         // 2. Actions Container
         const actionsContainer = document.createElement("div");
-        Object.assign(actionsContainer.style, { display: "flex", gap: "2px", padding: "4px", backgroundColor: "#111" });
+        actionsContainer.className = "holaf-rc-actions";
 
         const baseBtnStyle = {
             padding: "8px", cursor: "pointer", textAlign: "center", fontSize: "12px", fontWeight: "bold", 
-            backgroundColor: "#1a1a1a", transition: "background-color 0.1s ease", display: "flex",
+            backgroundColor: "color-mix(in srgb, var(--holaf-background-secondary) 50%, transparent)", transition: "background-color 0.1s ease", display: "flex",
             alignItems: "center", justifyContent: "center", borderRadius: "2px"
         };
 
         const clearBtn = document.createElement("div");
         clearBtn.innerText = "Clear";
-        Object.assign(clearBtn.style, { ...baseBtnStyle, flex: "1", color: "#ff5555" });
+        clearBtn.className = "holaf-rc-action-btn holaf-rc-clear-btn";
+        Object.assign(clearBtn.style, { flex: "1" });
         clearBtn.onclick = () => this.clearHistory();
 
         const createSaveBtn = (label, index) => {
             const btn = document.createElement("div");
             btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="margin-right:4px"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>${label}`;
-            Object.assign(btn.style, { ...baseBtnStyle, width: "35px", color: "#ccc" });
+            btn.className = "holaf-rc-action-btn holaf-rc-save-btn";
+            Object.assign(btn.style, { width: "35px" });
             btn.onclick = () => this.saveImage(index);
             return btn;
         };
@@ -913,25 +911,22 @@ const HolafRemoteComparer = {
 
         if (!this.isSidebarOpen) {
             this.sidebarElement.style.width = "0px";
-            this.sidebarElement.style.borderRight = "none";
+            this.sidebarElement.style.borderRight = "none";  // already handled
             return;
         }
         
         this.sidebarElement.style.width = "180px";
-        this.sidebarElement.style.borderRight = "1px solid #444";
+        this.sidebarElement.style.borderRight = "1px solid var(--holaf-border-color, #444)";
 
         const createItem = (label, nameId, isSpecial = false) => {
             const el = document.createElement("div");
             el.innerText = label; el.title = label;
             const isSelected = (this.currentViewName === nameId);
+            el.className = isSelected ? "holaf-rc-history-item selected" : "holaf-rc-history-item";
+            if (isSpecial) el.style.fontWeight = "bold";
             Object.assign(el.style, {
-                padding: "10px 12px", cursor: "pointer", fontSize: "12px", borderBottom: "1px solid #2a2a2a",
-                backgroundColor: isSelected ? "#333" : "transparent", fontWeight: isSpecial ? "bold" : "normal",
-                color: isSelected ? "var(--holaf-accent-color, #ff8c00)" : "#ccc", whiteSpace: "nowrap",
-                overflow: "hidden", textOverflow: "ellipsis", transition: "background-color 0.1s ease"
+                overflow: "hidden", textOverflow: "ellipsis"
             });
-            el.onmouseenter = () => { if (!isSelected) el.style.backgroundColor = "#222"; };
-            el.onmouseleave = () => { if (!isSelected) el.style.backgroundColor = "transparent"; };
             el.onclick = () => this.selectView(nameId);
             return el;
         };
@@ -939,7 +934,8 @@ const HolafRemoteComparer = {
         this.sidebarHistoryContainer.appendChild(createItem("Latest", "latest", true));
         if (this.history.length > 0) {
             const sep1 = document.createElement("div");
-            Object.assign(sep1.style, { height: "4px", backgroundColor: "#111", borderBottom: "1px solid #2a2a2a" });
+            sep1.className = "holaf-rc-history-separator";
+            Object.assign(sep1.style, { height: "4px" });
             this.sidebarHistoryContainer.appendChild(sep1);
             this.history.forEach(item => this.sidebarHistoryContainer.appendChild(createItem(item.name, item.name)));
         }
@@ -1022,7 +1018,7 @@ const HolafRemoteComparer = {
 
         const doc = this.popupWindow.document;
         doc.title = "Holaf Remote Comparer";
-        Object.assign(doc.body.style, { margin: "0", backgroundColor: "#111", overflow: "hidden", display: "flex", flexDirection: "column", height: "100vh" });
+        Object.assign(doc.body.style, { margin: "0", backgroundColor: "color-mix(in srgb, var(--holaf-background-primary) 50%, black)", overflow: "hidden", display: "flex", flexDirection: "column", height: "100vh" });
         doc.body.appendChild(this.mainContainer);
         
         this.floatingPopoutBtn.style.display = "none"; this.floatingPopinBtn.style.display = "flex";
@@ -1076,8 +1072,9 @@ const HolafRemoteComparer = {
 
     createResizeHandle() {
         this.resizeHandle = document.createElement("div");
+        this.resizeHandle.className = "holaf-rc-resize-handle";
         Object.assign(this.resizeHandle.style, { position: "absolute", bottom: "0", right: "0", width: "15px", height: "15px", cursor: "nwse-resize", zIndex: "20" });
-        this.resizeHandle.innerHTML = `<svg viewBox="0 0 24 24" style="width:100%; height:100%; fill:rgba(255,255,255,0.3);"><path d="M22 22H12v-2h10v-10h2v12z"/></svg>`;
+        this.resizeHandle.innerHTML = `<svg viewBox="0 0 24 24" style="width:100%; height:100%;"><path d="M22 22H12v-2h10v-10h2v12z"/></svg>`;
         let isResizing = false, startX, startY, startW, startH, startRight, startBottom;
 
         this.resizeHandle.addEventListener('mousedown', (e) => {

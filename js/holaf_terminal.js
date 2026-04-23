@@ -343,37 +343,37 @@ const holafTerminal = {
         view.className = "holaf-terminal-non-terminal-view";
         const ptitle = document.createElement("h4"); ptitle.textContent = "Terminal Access"; ptitle.style.marginTop = "0";
         const label = document.createElement("label"); label.textContent = "Password:"; label.style.cssText = "display: block; margin-bottom: 5px;";
-        this.passwordInput = document.createElement("input"); this.passwordInput.type = "password"; this.passwordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 10px; background-color: var(--comfy-input-bg,#333); color: var(--fg-color,#eee); border: 1px solid var(--border-color,#555); padding: 8px; border-radius:3px;";
+        this.passwordInput = document.createElement("input"); this.passwordInput.type = "password"; this.passwordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 10px;";
         this.passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.authenticateAndConnect(); });
         const connectButton = document.createElement("button"); connectButton.textContent = "Connect"; connectButton.className = "comfy-button";
         connectButton.addEventListener("click", this.authenticateAndConnect.bind(this));
-        this.loginStatusMessage = document.createElement("p"); this.loginStatusMessage.style.cssText = "margin-top: 10px; color: #f9a825; font-size:0.9em;";
+        this.loginStatusMessage = document.createElement("p"); this.loginStatusMessage.className = "holaf-terminal-status-message";
         view.append(ptitle, label, this.passwordInput, connectButton, this.loginStatusMessage);
         return view;
     },
     createSetupView() {
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view";
-        const title = document.createElement("h3"); title.textContent = "Holaf Terminal Setup"; title.style.color = "#4CAF50";
+        const title = document.createElement("h3"); title.textContent = "Holaf Terminal Setup"; title.className = "holaf-terminal-title-success";
         const p1 = document.createElement("p"); p1.textContent = "No password is set. Please create one to enable the terminal."; p1.style.marginBottom = "15px";
         const passLabel = document.createElement("label"); passLabel.textContent = "New Password (min 4 chars):"; passLabel.style.display = "block"; passLabel.style.marginBottom = "2px";
-        this.newPasswordInput = document.createElement("input"); this.newPasswordInput.type = "password"; this.newPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 5px; background-color: var(--comfy-input-bg,#333); color: var(--fg-color,#eee); border: 1px solid var(--border-color,#555); padding: 8px; border-radius:3px;";
+        this.newPasswordInput = document.createElement("input"); this.newPasswordInput.type = "password"; this.newPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 5px;";
         const confirmLabel = document.createElement("label"); confirmLabel.textContent = "Confirm Password:"; confirmLabel.style.display = "block"; confirmLabel.style.marginBottom = "2px";
-        this.confirmPasswordInput = document.createElement("input"); this.confirmPasswordInput.type = "password"; this.confirmPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 10px; background-color: var(--comfy-input-bg,#333); color: var(--fg-color,#eee); border: 1px solid var(--border-color,#555); padding: 8px; border-radius:3px;";
+        this.confirmPasswordInput = document.createElement("input"); this.confirmPasswordInput.type = "password"; this.confirmPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 10px;";
         this.confirmPasswordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.setPassword(); });
         const setButton = document.createElement("button"); setButton.textContent = "Set Password"; setButton.className = "comfy-button";
         setButton.addEventListener("click", this.setPassword.bind(this));
-        this.setupStatusMessage = document.createElement("p"); this.setupStatusMessage.style.cssText = "margin-top: 10px; color: #f9a825; font-size:0.9em;";
+        this.setupStatusMessage = document.createElement("p"); this.setupStatusMessage.className = "holaf-terminal-status-message";
         view.append(title, p1, passLabel, this.newPasswordInput, confirmLabel, this.confirmPasswordInput, setButton, this.setupStatusMessage);
         return view;
     },
     createManualSetupView() {
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view"; view.style.fontSize = "12px";
-        const title = document.createElement("h3"); title.textContent = "Manual Setup Required"; title.style.color = "#f9a825";
+        const title = document.createElement("h3"); title.textContent = "Manual Setup Required"; title.className = "holaf-terminal-title-warning";
         const p1 = document.createElement("p"); p1.innerHTML = "The server couldn't save <code>config.ini</code> due to file permissions.";
         const p2 = document.createElement("p"); p2.innerHTML = "1. Manually create/edit <code>ComfyUI/custom_nodes/ComfyUI-Holaf-Utilities/config.ini</code><br>2. Add the following under a <code>[Security]</code> section:<br>"; p2.style.margin = "10px 0"; p2.style.textAlign = "left";
-        this.hashDisplay = document.createElement("input"); this.hashDisplay.type = "text"; this.hashDisplay.readOnly = true; this.hashDisplay.style.cssText = "width: 100%; font-family: monospace; background-color: #222; color: #eee; border: 1px solid #555; margin: 5px 0; padding: 5px;";
+        this.hashDisplay = document.createElement("input"); this.hashDisplay.type = "text"; this.hashDisplay.readOnly = true; this.hashDisplay.style.cssText = "width: 100%; font-family: monospace; margin: 5px 0; padding: 5px;";
         const copyButton = document.createElement("button"); copyButton.textContent = "Copy Hash String"; copyButton.className = "comfy-button"; copyButton.style.marginTop = "5px";
         copyButton.addEventListener("click", () => { if (this.hashDisplay) { this.hashDisplay.select(); document.execCommand("copy"); } });
         const p3 = document.createElement("p"); p3.innerHTML = "3. Restart ComfyUI."; p3.style.textAlign = "left";

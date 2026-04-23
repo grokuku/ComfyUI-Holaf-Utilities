@@ -1,0 +1,65 @@
+/*
+ * Copyright (C) 2026 Holaf
+ * Holaf Utilities - Shortcuts Styles
+ *
+ * Extracted from inline styles in holaf_shortcuts.js.
+ * Uses theme variables for glass-compatible styling.
+ */
+
+/* Apply glass style to the root element */
+#holaf-shortcuts-root.holaf-floating-window {
+    background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 95%, transparent) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    border: 1px solid var(--holaf-border-color, #555) !important;
+    box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7)) !important;
+    color: var(--holaf-text-primary, #eee) !important;
+}
+
+/* Shortcut list items */
+#holaf-shortcuts-root .holaf-shortcut-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    padding: 4px;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 50%, black);
+    transition: background-color 0.15s;
+}
+
+#holaf-shortcuts-root .holaf-shortcut-row:hover {
+    background-color: color-mix(in srgb, var(--holaf-background-secondary) 60%, transparent);
+}
+
+#holaf-shortcuts-root .holaf-shortcut-name {
+    flex: 1;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 5px;
+    color: var(--holaf-text-primary);
+}
+
+#holaf-shortcuts-root .holaf-shortcut-btn {
+    background: none;
+    border: none;
+    color: var(--holaf-text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 2px;
+    margin-left: 2px;
+    transition: color 0.15s;
+}
+
+#holaf-shortcuts-root .holaf-shortcut-btn:hover {
+    color: #ff5555;
+}
+
+#holaf-shortcuts-root .holaf-shortcut-empty {
+    text-align: center;
+    font-size: 11px;
+    margin-top: 10px;
+    color: var(--holaf-text-secondary);
+}

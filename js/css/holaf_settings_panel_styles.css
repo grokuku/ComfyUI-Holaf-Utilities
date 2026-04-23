@@ -1,21 +1,22 @@
 /*
  * Holaf Utilities - Settings Panel Specific Styles
+ * Glass-compatible: uses theme variables with subtle overlays.
  */
 
 #holaf-settings-panel .holaf-settings-container {
     display: flex;
     flex-direction: column;
-    height: 100%; /* Fill the panel */
+    height: 100%;
     color: var(--holaf-text-primary);
 }
 
 #holaf-settings-panel .holaf-settings-toolbar {
     padding: 8px;
     border-bottom: 1px solid var(--holaf-border-color);
-    background-color: var(--holaf-background-secondary);
+    background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
     display: flex;
     align-items: center;
-    gap: 12px; /* Space between Save button and status */
+    gap: 12px;
     flex-shrink: 0;
 }
 
@@ -23,25 +24,23 @@
     font-size: 12px;
     font-style: italic;
     color: var(--holaf-text-secondary);
-    transition: color 0.3s; /* For status change feedback */
-    margin-left: auto; /* Push status to the right if toolbar has space */
+    transition: color 0.3s;
+    margin-left: auto;
 }
 
-/* Status indicator colors for feedback */
 #holaf-settings-panel .holaf-settings-status-indicator.success {
-    color: #4CAF50; /* Green for success */
+    color: var(--holaf-success-color);
 }
 #holaf-settings-panel .holaf-settings-status-indicator.error {
-    color: #F44336; /* Red for error */
+    color: var(--holaf-error-color);
 }
 #holaf-settings-panel .holaf-settings-status-indicator.saving {
-    color: var(--holaf-accent-color); /* Accent color for saving */
+    color: var(--holaf-accent-color);
 }
-
 
 #holaf-settings-panel .holaf-settings-form {
     padding: 15px;
-    overflow-y: auto; /* Scroll for many settings */
+    overflow-y: auto;
     flex-grow: 1;
 }
 
@@ -55,7 +54,7 @@
     margin-bottom: 0;
 }
 
-.holaf-settings-group h3 { /* Group title */
+.holaf-settings-group h3 {
     margin: 0 0 5px 0;
     color: var(--holaf-text-primary);
     font-size: 1.1em;
@@ -70,9 +69,9 @@
 
 .holaf-settings-field {
     display: grid;
-    grid-template-columns: 180px 1fr; /* Label width, then input takes rest */
+    grid-template-columns: 180px 1fr;
     align-items: center;
-    gap: 10px 15px; /* Row gap, Column gap */
+    gap: 10px 15px;
     margin-bottom: 12px;
 }
 
@@ -85,7 +84,7 @@
 
 .holaf-settings-field input[type="text"],
 .holaf-settings-field input[type="number"],
-.holaf-settings-field input[type="password"], /* For future use if needed */
+.holaf-settings-field input[type="password"],
 .holaf-settings-field select {
     padding: 6px 8px;
     background-color: var(--holaf-input-background);
@@ -93,16 +92,15 @@
     color: var(--holaf-text-primary);
     border-radius: 4px;
     width: 100%;
-    box-sizing: border-box; /* Include padding and border in element's total width and height */
+    box-sizing: border-box;
     font-size: 0.9em;
 }
 
 .holaf-settings-field input[type="checkbox"] {
     accent-color: var(--holaf-accent-color);
     transform: scale(1.1);
-    justify-self: start; /* Align checkbox to the start of its grid cell */
+    justify-self: start;
 }
-
 
 .holaf-settings-field input:focus,
 .holaf-settings-field select:focus {
@@ -111,10 +109,10 @@
 }
 
 .holaf-settings-field-description {
-    grid-column: 2 / 3; /* Span across the input column */
+    grid-column: 2 / 3;
     font-size: 12px;
     color: var(--holaf-text-secondary);
-    margin: -5px 0 0 0; /* Adjust position to be right under the input */
+    margin: -5px 0 0 0;
     padding: 0;
     line-height: 1.3;
 }

@@ -67,8 +67,8 @@ export const HolafPanelManager = {
 
         const closeButton = document.createElement("button");
         closeButton.className = "holaf-utility-close-button";
-        closeButton.textContent = "✖";
-        closeButton.title = "Fermer";
+        closeButton.textContent = "✕";
+        closeButton.title = "Close";
         closeButton.style.marginLeft = "auto";
         if (options.headerContent) {
             closeButton.style.marginLeft = "10px";

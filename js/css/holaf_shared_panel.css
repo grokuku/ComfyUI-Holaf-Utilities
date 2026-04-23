@@ -1,9 +1,20 @@
 /*
+ * Copyright (C) 2025 Holaf
  * Holaf Utilities - Shared Panel Styles
- * Common styles for all floating utility panels and modals.
+ *
+ * Unified glass/frosted style for all floating utility panels and modals.
+ * Inspired by the Remote Comparer / Shortcuts visual language:
+ *   - Semi-transparent backgrounds with backdrop-filter blur
+ *   - Subtle header overlay
+ *   - Minimalist close button
+ *   - Deep shadows
+ *   - SVG-based resize handle
  */
 
-/* Base style for floating panels */
+/* ==========================================================================
+   Base floating panel — glass style
+   ========================================================================== */
+
 .holaf-utility-panel {
     position: fixed;
     top: 50%;
@@ -15,10 +26,12 @@
     height: 550px;
     max-width: 90vw !important;
     max-height: 90vh !important;
-    background-color: var(--holaf-background-primary) !important;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 95%, transparent) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
     border: 1px solid var(--holaf-border-color) !important;
     border-radius: 8px !important;
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6) !important;
+    box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7)) !important;
     z-index: 1001;
     display: flex;
     flex-direction: column !important;
@@ -28,11 +41,14 @@
     /* --holaf-mm-zoom-factor and --holaf-nm-zoom-factor are set on specific panels by JS */
 }
 
-/* Header for dragging, title, and buttons */
+/* ==========================================================================
+   Header — glass overlay, compact, draggable
+   ========================================================================== */
+
 .holaf-utility-header {
-    background-color: var(--holaf-background-secondary) !important;
+    background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent) !important;
     color: var(--holaf-text-primary) !important;
-    padding: 4px 12px !important;
+    padding: 8px !important;
     cursor: move !important;
     user-select: none !important;
     border-bottom: 1px solid var(--holaf-border-color) !important;
@@ -41,57 +57,73 @@
     display: flex !important;
     align-items: center !important;
     font-weight: bold !important;
+    font-size: 12px !important;
     flex-shrink: 0 !important;
     gap: 8px;
 }
 
-.holaf-utility-header>span:first-of-type { /* Title span */
+.holaf-utility-header > span:first-of-type { /* Title span */
     flex-grow: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
+/* ==========================================================================
+   Close button — minimalist ✕ style
+   ========================================================================== */
+
 .holaf-utility-close-button {
     background: none !important;
     color: var(--holaf-text-secondary) !important;
     border: none !important;
-    border-radius: 50% !important;
-    width: 24px !important;
-    height: 24px !important;
-    line-height: 24px !important;
+    border-radius: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    line-height: 1 !important;
     text-align: center !important;
     cursor: pointer !important;
-    font-size: 16px !important;
-    font-weight: bold !important;
-    transition: background-color 0.2s, color 0.2s !important;
+    font-size: 14px !important;
+    font-weight: normal !important;
+    padding: 2px 4px !important;
+    transition: color 0.2s !important;
     flex-shrink: 0;
     margin-left: auto !important;
-    /* MODIFICATION: margin-left: auto !important; a été SUPPRIMÉ */
-    display: flex; /* Pour centrer le SVG ajouté */
-    align-items: center;
-    justify-content: center;
 }
 
 .holaf-utility-close-button:hover {
-    background-color: #c44 !important;
-    color: white !important;
+    color: #ff5555 !important;
+    background: none !important;
 }
 
-
+/* ==========================================================================
+   Resize handle — SVG-style subtle grip
+   ========================================================================== */
 
 .holaf-utility-resize-handle {
     position: absolute !important;
     bottom: 0 !important;
     right: 0 !important;
-    width: 16px !important;
-    height: 16px !important;
+    width: 15px !important;
+    height: 15px !important;
     cursor: se-resize !important;
-    background-image: linear-gradient(135deg, transparent 0%, transparent 50%, var(--holaf-text-secondary, #888) 50%, var(--holaf-text-secondary, #888) 75%, transparent 75%, transparent 100%) !important;
     z-index: 2 !important;
+    opacity: 0.3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M22 22H12v-2h10v-10h2v12z'/%3E%3C/svg%3E") !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    transition: opacity 0.2s;
 }
 
-/* Shared styles for buttons in Panel Header (Theme, Fullscreen etc) */
+.holaf-utility-resize-handle:hover {
+    opacity: 0.6;
+}
+
+/* ==========================================================================
+   Header button group (Theme, Fullscreen, Zoom)
+   ========================================================================== */
+
 .holaf-header-button-group {
     display: flex !important;
     gap: 4px !important;
@@ -111,6 +143,7 @@
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    font-size: 12px !important;
     transition: background-color 0.15s, color 0.15s, border-color 0.15s !important;
 }
 
@@ -120,20 +153,26 @@
     border-color: var(--holaf-accent-color) !important;
 }
 
-/* Theme selection dropdown menu INSIDE panels */
+/* ==========================================================================
+   Theme dropdown menu inside panels
+   ========================================================================== */
+
 .holaf-theme-menu {
     position: absolute !important;
     top: 100% !important;
     right: 0 !important;
-    background-color: var(--holaf-background-secondary) !important;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 98%, transparent) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
     border: 1px solid var(--holaf-border-color) !important;
     border-radius: 4px !important;
-    z-index: 1002 !important; /* Above panel content, below main dropdown */
+    z-index: 1002 !important;
     display: none;
     list-style: none !important;
     padding: 5px !important;
     margin: 2px 0 0 !important;
     min-width: 150px !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4) !important;
 }
 
 .holaf-theme-menu li {
@@ -149,7 +188,10 @@
     color: var(--holaf-button-text) !important;
 }
 
-/* Common button style for inside panels (ComfyUI like) */
+/* ==========================================================================
+   Buttons inside panels (ComfyUI-like)
+   ========================================================================== */
+
 .holaf-utility-panel .comfy-button {
     background-color: var(--holaf-button-background) !important;
     color: var(--holaf-button-text) !important;
@@ -158,8 +200,8 @@
     text-align: center !important;
     text-decoration: none !important;
     display: inline-block !important;
-    font-size: 14px !important;
-    border-radius: 4px !important;
+    font-size: 13px !important;
+    border-radius: 3px !important;
     cursor: pointer !important;
     transition: opacity 0.2s !important;
 }
@@ -179,13 +221,11 @@
     opacity: 0.6 !important;
 }
 
-/* Custom scrollbar for panel content areas (e.g. Model Manager list, Terminal view) */
+/* ==========================================================================
+   Scrollbar — unified base style
+   ========================================================================== */
+
 .holaf-utility-panel ::-webkit-scrollbar {
-    /* Using a general selector for content areas within panels.
-       Specific panels might override this if needed.
-       Model Manager & Terminal have their own due to zoom factor considerations.
-       Nodes Manager & Settings Panel also have their specific scrollbar styles.
-    */
     width: 10px;
 }
 
@@ -203,27 +243,33 @@
     background-color: color-mix(in srgb, var(--holaf-scrollbar-thumb) 70%, var(--holaf-accent-color) 30%);
 }
 
+/* ==========================================================================
+   Modal dialogs — glass style
+   ========================================================================== */
 
-/* --- CUSTOM MODAL DIALOG STYLES --- */
 #holaf-modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: rgba(0, 0, 0, 0.7);
-    z-index: 100000; /* Highest z-index */
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 100000;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 #holaf-modal-dialog {
-    background-color: var(--holaf-background-primary, #1E1E1E);
+    background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 98%, transparent);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     color: var(--holaf-text-primary, #E0E0E0);
     border: 1px solid var(--holaf-border-color, #3F3F3F);
     border-radius: 8px;
-    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7));
     min-width: 300px;
     max-width: 500px;
     width: auto;
@@ -231,15 +277,15 @@
     flex-direction: column;
 }
 
-#holaf-modal-dialog .holaf-utility-header { /* Modal uses the same header structure */
-    cursor: default !important; /* No dragging for modals */
+#holaf-modal-dialog .holaf-utility-header {
+    cursor: default !important;
 }
 
 #holaf-modal-dialog .holaf-modal-content {
     padding: 20px 15px;
     font-size: 14px;
     line-height: 1.5;
-    color: var(--holaf-text-secondary, #A0A0A0); /* Default content color */
+    color: var(--holaf-text-secondary, #A0A0A0);
 }
 
 #holaf-modal-dialog .holaf-modal-footer {
@@ -250,9 +296,8 @@
     border-top: 1px solid var(--holaf-border-color, #3F3F3F);
 }
 
-/* Secondary button style for modals (e.g., "Cancel") */
 #holaf-modal-dialog .holaf-modal-footer .comfy-button.secondary {
-    background-color: var(--holaf-background-secondary) !important;
+    background-color: var(--holaf-header-button-bg) !important;
     color: var(--holaf-text-secondary) !important;
     border: 1px solid var(--holaf-border-color) !important;
 }
@@ -260,22 +305,23 @@
 #holaf-modal-dialog .holaf-modal-footer .comfy-button.secondary:hover {
     border-color: var(--holaf-accent-color) !important;
     color: var(--holaf-text-primary) !important;
-    opacity: 1; /* Override default comfy-button hover opacity */
+    opacity: 1;
 }
 
-
-/* --- MODIFICATION START: Style for focused dialog button --- */
-.holaf-utility-panel .comfy-button.dialog-button-focused, .holaf-dialog-item-focused.comfy-button, .holaf-dialog-item-focused label {
+/* Dialog keyboard focus */
+.holaf-utility-panel .comfy-button.dialog-button-focused,
+.holaf-dialog-item-focused.comfy-button,
+.holaf-dialog-item-focused label {
     outline: 2px solid var(--holaf-accent-color) !important;
     outline-offset: 2px !important;
 }
-/* --- MODIFICATION END --- */
 
+/* ==========================================================================
+   Fullscreen panel
+   ========================================================================== */
 
-/* --- Fullscreen Panel Style --- */
-/* Applied to any .holaf-utility-panel that also gets .holaf-panel-fullscreen */
 .holaf-panel-fullscreen {
-    top: 30px !important; /* Adjust for ComfyUI's top menu bar (30px is a more reliable value) */
+    top: 30px !important; /* ComfyUI top menu bar */
     left: 0 !important;
     width: 100vw !important;
     height: calc(100vh - 30px) !important;
@@ -287,10 +333,40 @@
 }
 
 .holaf-panel-fullscreen .holaf-utility-resize-handle {
-    display: none !important; /* No resize handle in fullscreen */
+    display: none !important;
 }
 
 .holaf-panel-fullscreen .holaf-utility-header {
     border-top-left-radius: 0 !important;
     border-top-right-radius: 0 !important;
+}
+
+/* ==========================================================================
+   Glass-compatible internal sections
+   Panels may use these classes for toolbars, sidebars, and status bars
+   to maintain visual consistency inside a glass panel.
+   ========================================================================== */
+
+.holaf-panel-section {
+    background-color: var(--holaf-background-secondary);
+}
+
+.holaf-panel-section-deep {
+    background-color: var(--holaf-input-background);
+}
+
+.holaf-panel-border-top {
+    border-top: 1px solid var(--holaf-border-color);
+}
+
+.holaf-panel-border-bottom {
+    border-bottom: 1px solid var(--holaf-border-color);
+}
+
+.holaf-panel-border-left {
+    border-left: 1px solid var(--holaf-border-color);
+}
+
+.holaf-panel-border-right {
+    border-right: 1px solid var(--holaf-border-color);
 }

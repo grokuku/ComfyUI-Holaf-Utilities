@@ -1,0 +1,256 @@
+/*
+ * Copyright (C) 2026 Holaf
+ * Holaf Utilities - Remote Comparer Styles
+ *
+ * Extracted from inline styles in holaf_remote_comparer.js.
+ * Uses theme variables for glass-compatible styling.
+ */
+
+/* Root panel — uses .holaf-floating-window from shared panel CSS */
+#holaf-remote-comparer-root {
+    font-size: 12px;
+}
+
+/* Apply glass style to the root element */
+#holaf-remote-comparer-root.holaf-floating-window {
+    background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 95%, transparent) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    border: 1px solid var(--holaf-border-color, #444) !important;
+    box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7)) !important;
+    color: var(--holaf-text-primary, #eee) !important;
+}
+
+/* Sidebar */
+#holaf-remote-comparer-root .holaf-rc-sidebar {
+    display: flex;
+    flex-direction: column;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 90%, black);
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: width 0.2s ease;
+    user-select: none;
+}
+
+#holaf-remote-comparer-root .holaf-rc-sidebar-history {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+#holaf-remote-comparer-root .holaf-rc-sidebar-bottom {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 70%, black);
+    box-sizing: border-box;
+}
+
+/* Content / Canvas area */
+#holaf-remote-comparer-root .holaf-rc-content {
+    flex: 1;
+    position: relative;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 60%, black);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    height: 100%;
+}
+
+/* Floating overlay buttons */
+#holaf-remote-comparer-root .holaf-rc-float-btn {
+    position: absolute;
+    z-index: 100;
+    background: color-mix(in srgb, var(--holaf-background-primary) 90%, transparent);
+    border: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+#holaf-remote-comparer-root .holaf-rc-float-btn:hover {
+    background: color-mix(in srgb, var(--holaf-background-secondary) 90%, transparent);
+    border-color: var(--holaf-accent-color);
+}
+
+/* Status text */
+#holaf-remote-comparer-root .holaf-rc-status-text {
+    position: absolute;
+    color: var(--holaf-text-secondary);
+    font-size: 12px;
+    pointer-events: none;
+    user-select: none;
+    z-index: 10;
+}
+
+/* Sidebar history list items */
+#holaf-remote-comparer-root .holaf-rc-history-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--holaf-border-color) 50%, transparent);
+    font-weight: normal;
+    color: var(--holaf-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background-color 0.1s ease;
+}
+
+#holaf-remote-comparer-root .holaf-rc-history-item:hover {
+    background-color: color-mix(in srgb, var(--holaf-background-secondary) 60%, transparent);
+}
+
+#holaf-remote-comparer-root .holaf-rc-history-item.selected {
+    background-color: color-mix(in srgb, var(--holaf-background-secondary) 80%, transparent);
+    color: var(--holaf-accent-color);
+    font-weight: bold;
+}
+
+#holaf-remote-comparer-root .holaf-rc-history-separator {
+    height: 4px;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 60%, black);
+    border-bottom: 1px solid color-mix(in srgb, var(--holaf-border-color) 50%, transparent);
+}
+
+/* Sidebar settings section */
+#holaf-remote-comparer-root .holaf-rc-settings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 80%, black);
+    border-top: 1px solid color-mix(in srgb, var(--holaf-border-color) 50%, transparent);
+    font-size: 10px;
+    color: var(--holaf-text-secondary);
+}
+
+#holaf-remote-comparer-root .holaf-rc-settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#holaf-remote-comparer-root .holaf-rc-settings-select {
+    background: var(--holaf-input-background);
+    color: var(--holaf-text-primary);
+    border: 1px solid var(--holaf-border-color);
+    border-radius: 3px;
+    font-size: 10px;
+    padding: 2px;
+    width: 70px;
+    outline: none;
+    cursor: pointer;
+}
+
+/* Playback controls */
+#holaf-remote-comparer-root .holaf-rc-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--holaf-border-color) 50%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--holaf-border-color) 50%, transparent);
+    box-sizing: border-box;
+}
+
+#holaf-remote-comparer-root .holaf-rc-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+}
+
+#holaf-remote-comparer-root .holaf-rc-play-btn {
+    background: var(--holaf-background-secondary);
+    border: 1px solid var(--holaf-border-color);
+    color: var(--holaf-text-primary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+}
+
+#holaf-remote-comparer-root .holaf-rc-play-btn:hover {
+    border-color: var(--holaf-accent-color);
+}
+
+#holaf-remote-comparer-root .holaf-rc-frame-count {
+    font-size: 9px;
+    color: var(--holaf-text-secondary);
+    width: 35px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+/* Action buttons container */
+#holaf-remote-comparer-root .holaf-rc-actions {
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    background-color: color-mix(in srgb, var(--holaf-background-primary) 60%, black);
+}
+
+#holaf-remote-comparer-root .holaf-rc-action-btn {
+    padding: 8px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    background-color: var(--holaf-input-background);
+    transition: background-color 0.1s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    border: none;
+}
+
+#holaf-remote-comparer-root .holaf-rc-action-btn:hover {
+    background-color: var(--holaf-background-secondary);
+}
+
+#holaf-remote-comparer-root .holaf-rc-clear-btn {
+    flex: 1;
+    color: var(--holaf-error-color);
+}
+
+#holaf-remote-comparer-root .holaf-rc-save-btn {
+    width: 35px;
+    color: var(--holaf-text-secondary);
+    border: none;
+}
+
+/* Resize handle */
+#holaf-remote-comparer-root .holaf-rc-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 15px;
+    height: 15px;
+    cursor: nwse-resize;
+    z-index: 20;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+}
+
+#holaf-remote-comparer-root .holaf-rc-resize-handle:hover {
+    opacity: 0.6;
+}
+
+#holaf-remote-comparer-root .holaf-rc-resize-handle svg {
+    width: 100%;
+    height: 100%;
+    fill: var(--holaf-text-primary);
+}
