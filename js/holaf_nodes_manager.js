@@ -276,7 +276,7 @@ const holafNodesManager = {
                     <div class="holaf-nodes-manager-actions-toolbar" style="padding: 8px; border-top: 1px solid var(--holaf-border-color); display: flex; gap: 5px; flex-wrap: wrap; align-items: center;">
                         <button id="holaf-nodes-manager-update-btn" class="comfy-button" disabled title="Update selected nodes">Update</button>
                         <button id="holaf-nodes-manager-req-btn" class="comfy-button" disabled title="Install requirements">Install Req.</button>
-                        <button id="holaf-nodes-manager-delete-btn" class="comfy-button" disabled title="Delete selected nodes" style="background-color: #c0392b;">Delete</button>
+                        <button id="holaf-nodes-manager-delete-btn" class="comfy-button" disabled title="Delete selected nodes" style="background-color: var(--holaf-error-color, #c0392b);">Delete</button>
                         <div style="flex-grow: 1;"></div>
                         <button id="holaf-nodes-manager-install-url-btn" class="comfy-button" title="Install via Git URL" style="border: 1px solid var(--holaf-accent-color);">Install via URL</button>
                         <button id="holaf-nodes-manager-search-github-btn" class="comfy-button" title="Search GitHub" style="background-color: var(--holaf-accent-color); color: white;">Search GitHub</button>

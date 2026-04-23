@@ -178,9 +178,35 @@ PROFILER_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Holaf Profiler</title>
     <style>
+        :root {
+            /* Steel Blue theme for standalone profiler */
+            --holaf-accent-color: #4682B4;
+            --holaf-background-primary: #1C2024;
+            --holaf-background-secondary: #2A3038;
+            --holaf-text-primary: #D0D8E0;
+            --holaf-text-secondary: #808890;
+            --holaf-border-color: #36404A;
+            --holaf-button-background: #4682B4;
+            --holaf-button-text: #FFFFFF;
+            --holaf-input-background: #181C20;
+            --holaf-tag-background: #3A4E5E;
+            --holaf-tag-text: #D0D8E0;
+            --holaf-family-tag-background: #304050;
+            --holaf-family-tag-text: #D8E0E8;
+            --holaf-header-button-bg: rgba(208, 216, 224, 0.08);
+            --holaf-header-button-hover-bg: rgba(208, 216, 224, 0.15);
+            --holaf-header-button-text: #A0A8B0;
+            --holaf-header-button-hover-text: #D0D8E0;
+            --holaf-scrollbar-thumb: #3A4E5E;
+            --holaf-scrollbar-track: #2A3038;
+            --holaf-success-color: #4CAF50;
+            --holaf-error-color: #F44336;
+            --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+            --holaf-border-radius: 4px;
+        }
         body {
-            background-color: #1C2024;
-            color: #D0D8E0;
+            background-color: var(--holaf-background-primary);
+            color: var(--holaf-text-primary);
             font-family: sans-serif;
             margin: 0; padding: 0;
             height: 100vh;
@@ -320,7 +346,6 @@ async def holaf_get_all_settings_route(request: web.Request):
     password_is_set = current_live_config.get('password_hash') is not None
     response_data = {
         "password_is_set": password_is_set,
-        "Terminal": {"shell_command": current_live_config.get('shell_command')},
         "TerminalUI": current_live_config.get('ui_terminal'),
         "ModelManagerUI": current_live_config.get('ui_model_manager'),
         "ImageViewerUI": current_live_config.get('ui_image_viewer'),
@@ -408,8 +433,14 @@ async def upload_model_chunk_route(request: web.Request):
         upload_id = holaf_utils.sanitize_upload_id(data.get('upload_id'))
         chunk_idx = data.get('chunk_index')
         file_chunk = data.get('file_chunk')
-        if not all([upload_id, chunk_idx, file_chunk]):
-            return web.json_response({"status": "error", "message": "Missing fields."}, status=400)
+        # Validate chunk_index is a non-negative integer
+        try:
+            chunk_idx = int(chunk_idx)
+            if chunk_idx < 0: raise ValueError
+        except (ValueError, TypeError):
+            return web.json_response({"status": "error", "message": "chunk_index must be a non-negative integer."}, status=400)
+        if not all([upload_id, file_chunk]):
+            return web.json_response({"status": "error", "message": "Missing required fields."}, status=400)
         chunk_path = os.path.join(holaf_utils.TEMP_UPLOAD_DIR, f"{upload_id}-{chunk_idx}.chunk")
         if not os.path.normpath(chunk_path).startswith(os.path.normpath(holaf_utils.TEMP_UPLOAD_DIR)):
              return web.json_response({"status": "error", "message": "Invalid chunk path."}, status=400)
@@ -435,6 +466,20 @@ async def finalize_upload_model_route(request: web.Request):
         # MODIFIED: Update validation to remove checksum
         if not all([upload_id, filename_orig, total_chunks, dest_type, expected_size]):
             return web.json_response({"status": "error", "message": "Missing fields, including expected size."}, status=400)
+
+        # Validate numeric fields
+        try:
+            total_chunks = int(total_chunks)
+            if total_chunks <= 0 or total_chunks > 10000:
+                raise ValueError
+        except (ValueError, TypeError):
+            return web.json_response({"status": "error", "message": "total_chunks must be a positive integer (max 10000)."}, status=400)
+        try:
+            expected_size = int(expected_size)
+            if expected_size < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return web.json_response({"status": "error", "message": "expected_size must be a non-negative integer."}, status=400)
 
         filename = holaf_utils.sanitize_filename(filename_orig)
         if not filename: return web.json_response({"status": "error", "message": "Invalid filename."}, status=400)
@@ -787,13 +832,36 @@ if nodes_manager_helper:
             return web.json_response({"url": repo_url})
         except Exception as e: return web.json_response({"error": str(e)}, status=500)
 
-    # --- MODIFICATION START: New Node Manager Routes for Install & Search ---
+    # --- Node Manager Install & Search Routes ---
     @routes.post("/holaf/nodes/install")
-    async def nm_install_route(r): return await holaf_image_viewer_backend.install_custom_node_route(r)
+    async def nm_install_route(request: web.Request):
+        if nodes_manager_helper is None:
+            return web.json_response({"status": "error", "message": "Node manager module not available."}, status=503)
+        try:
+            data = await request.json()
+            url = data.get("url")
+            if not url:
+                return web.json_response({"status": "error", "message": "URL is required."}, status=400)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, nodes_manager_helper.install_custom_node, url)
+            return web.json_response(result)
+        except Exception as e:
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
 
     @routes.post("/holaf/nodes/search")
-    async def nm_search_route(r): return await holaf_image_viewer_backend.search_custom_nodes_route(r)
-    # --- MODIFICATION END ---
+    async def nm_search_route(request: web.Request):
+        if nodes_manager_helper is None:
+            return web.json_response({"status": "error", "message": "Node manager module not available."}, status=503)
+        try:
+            data = await request.json()
+            query = data.get("query")
+            if not query:
+                return web.json_response({"status": "error", "message": "Query is required."}, status=400)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, nodes_manager_helper.search_custom_nodes, query)
+            return web.json_response(result)
+        except Exception as e:
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 
 # System Monitor Routes

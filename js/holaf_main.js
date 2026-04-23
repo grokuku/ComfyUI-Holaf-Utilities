@@ -18,7 +18,7 @@ import "./holaf_shortcuts.js";
 import "./holaf_remote_comparer.js";
 
 const HolafModal = {
-    show(title, message, onConfirm, confirmText = "Confirm", cancelText = "Cancel") {
+    show(title, messageOrElement, onConfirm, confirmText = "Confirm", cancelText = "Cancel") {
         const existingModal = document.getElementById("holaf-modal-overlay");
         if (existingModal) existingModal.remove();
 
@@ -30,18 +30,41 @@ const HolafModal = {
         const dialog = document.createElement("div");
         dialog.id = "holaf-modal-dialog";
         dialog.className = currentTheme;
-        dialog.innerHTML = `
-            <div class="holaf-utility-header">
-                <span>${title}</span>
-            </div>
-            <div class="holaf-modal-content">
-                ${message}
-            </div>
-            <div class="holaf-modal-footer">
-                <button id="holaf-modal-cancel" class="comfy-button secondary">${cancelText}</button>
-                <button id="holaf-modal-confirm" class="comfy-button">${confirmText}</button>
-            </div>
-        `;
+
+        // Build modal DOM safely (no innerHTML with user data)
+        const header = document.createElement("div");
+        header.className = "holaf-utility-header";
+        const titleSpan = document.createElement("span");
+        titleSpan.textContent = title;
+        header.appendChild(titleSpan);
+
+        const content = document.createElement("div");
+        content.className = "holaf-modal-content";
+        // Accept either a string (rendered as text) or a DOM element (appended directly)
+        if (typeof messageOrElement === "string") {
+            content.textContent = messageOrElement;
+        } else if (messageOrElement instanceof HTMLElement) {
+            content.appendChild(messageOrElement);
+        }
+
+        const footer = document.createElement("div");
+        footer.className = "holaf-modal-footer";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.id = "holaf-modal-cancel";
+        cancelBtn.className = "comfy-button secondary";
+        cancelBtn.textContent = cancelText;
+        const confirmBtn = document.createElement("button");
+        confirmBtn.id = "holaf-modal-confirm";
+        confirmBtn.className = "comfy-button";
+        confirmBtn.textContent = confirmText;
+
+        if (!cancelText) {
+            cancelBtn.style.display = "none";
+        }
+
+        footer.appendChild(cancelBtn);
+        footer.appendChild(confirmBtn);
+        dialog.append(header, content, footer);
 
         if (!cancelText) {
             dialog.querySelector("#holaf-modal-cancel").style.display = "none";
@@ -58,15 +81,14 @@ const HolafModal = {
             overlay.remove();
         }
 
-        document.getElementById("holaf-modal-confirm").onclick = () => {
+        confirmBtn.onclick = () => {
             if (onConfirm) {
                 if (onConfirm() === false) return;
             }
             closeModal();
         };
 
-        const cancelBtn = document.getElementById("holaf-modal-cancel");
-        if (cancelBtn) cancelBtn.onclick = closeModal;
+        cancelBtn.onclick = closeModal;
 
         overlay.onclick = (e) => {
             if (e.target === overlay) closeModal();
@@ -261,16 +283,23 @@ const HolafUtilitiesMenu = {
 
             menuItem.onclick = (e) => {
                 if (itemInfo.special === 'restart') {
-                    const restartDialogContent = `
-                        <div>
-                            <p id="holaf-restart-message">Are you sure you want to restart the ComfyUI server?</p>
-                            <p id="holaf-restart-timer-line" style="visibility: hidden; margin-top: 10px; height: 1.2em;">
-                                Time elapsed: <span id="holaf-restart-timer">0</span>s
-                            </p>
-                        </div>
-                    `;
+                    const restartDiv = document.createElement("div");
+                    const restartMsg = document.createElement("p");
+                    restartMsg.id = "holaf-restart-message";
+                    restartMsg.textContent = "Are you sure you want to restart the ComfyUI server?";
+                    restartDiv.appendChild(restartMsg);
+                    const restartTimerLine = document.createElement("p");
+                    restartTimerLine.id = "holaf-restart-timer-line";
+                    restartTimerLine.style.cssText = "visibility: hidden; margin-top: 10px; height: 1.2em;";
+                    restartTimerLine.appendChild(document.createTextNode("Time elapsed: "));
+                    const restartTimerSpan = document.createElement("span");
+                    restartTimerSpan.id = "holaf-restart-timer";
+                    restartTimerSpan.textContent = "0";
+                    restartTimerLine.appendChild(restartTimerSpan);
+                    restartTimerLine.appendChild(document.createTextNode("s"));
+                    restartDiv.appendChild(restartTimerLine);
 
-                    HolafModal.show("Restart ComfyUI", restartDialogContent, () => {
+                    HolafModal.show("Restart ComfyUI", restartDiv, () => {
                         const dialog = document.getElementById("holaf-modal-dialog");
                         if (!dialog) return;
 
@@ -281,10 +310,19 @@ const HolafUtilitiesMenu = {
                         messageEl.textContent = "Sending restart command...";
                         timerLineEl.style.visibility = "visible";
 
-                        dialog.querySelector(".holaf-modal-footer").innerHTML = `
-                            <button id="holaf-restart-close-btn" class="comfy-button secondary">Close</button>
-                            <button id="holaf-restart-refresh-btn" class="comfy-button" disabled>Refresh</button>
-                        `;
+                        const footerEl = dialog.querySelector(".holaf-modal-footer");
+                        footerEl.replaceChildren();
+                        const restartCloseBtn = document.createElement("button");
+                        restartCloseBtn.id = "holaf-restart-close-btn";
+                        restartCloseBtn.className = "comfy-button secondary";
+                        restartCloseBtn.textContent = "Close";
+                        const restartRefreshBtn = document.createElement("button");
+                        restartRefreshBtn.id = "holaf-restart-refresh-btn";
+                        restartRefreshBtn.className = "comfy-button";
+                        restartRefreshBtn.disabled = true;
+                        restartRefreshBtn.textContent = "Refresh";
+                        footerEl.appendChild(restartCloseBtn);
+                        footerEl.appendChild(restartRefreshBtn);
 
                         const cleanupAndClose = () => {
                             const overlay = document.getElementById("holaf-modal-overlay");
@@ -327,7 +365,7 @@ const HolafUtilitiesMenu = {
 
                                                     if (!messageEl || !refreshBtn) return;
 
-                                                    messageEl.innerHTML = `✅ Server has rebooted successfully in <strong>${seconds}</strong> seconds.`;
+                                                    messageEl.textContent = "✅ Server has rebooted successfully in " + seconds + " seconds."
                                                     if (timerLineEl) timerLineEl.style.visibility = "hidden";
                                                     refreshBtn.textContent = "Refresh Page";
                                                     refreshBtn.disabled = false;
@@ -352,8 +390,12 @@ const HolafUtilitiesMenu = {
                                 window.holaf.restartMonitorInterval = setInterval(checkServerStatus, 2000);
                             })
                             .catch(err => {
-                                dialog.querySelector(".holaf-modal-content").innerHTML = `<p style="color:var(--holaf-error-text,red);">Failed to send restart command to the server: ${err.message}.</p>`;
-                                dialog.querySelector("#holaf-restart-refresh-btn").disabled = true;
+                                const errorP = document.createElement('p');
+                                errorP.style.color = 'var(--holaf-error-color, #F44336)';
+                                errorP.textContent = "Failed to send restart command to the server: " + (err.message || "Unknown error") + ".";
+                                dialog.querySelector(".holaf-modal-content").replaceChildren(errorP);
+                                const rb = dialog.querySelector("#holaf-restart-refresh-btn");
+                                if (rb) rb.disabled = true;
                             });
                         return false;
                     });
@@ -508,14 +550,15 @@ const HolafUtilitiesMenu = {
 
         if (checkAndApply()) return;
 
-        const observer = new MutationObserver((mutations, obs) => {
+        const observer = new MutationObserver(() => {
             if (checkAndApply()) {
-                obs.disconnect(); 
+                observer.disconnect();
+                clearTimeout(timeoutId);
             }
         });
 
         observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 10000);
+        const timeoutId = setTimeout(() => observer.disconnect(), 10000);
     },
 
     initBridgeListener() {
@@ -597,7 +640,6 @@ const HolafUtilitiesMenu = {
             "holaf_nodes_manager_styles.css",
             "holaf_settings_panel_styles.css",
             "holaf_system_monitor_styles.css",
-            "holaf_image_viewer_styles.css",
             "holaf_toasts.css",
             "holaf_profiler.css",
             "holaf_layout_tools.css",

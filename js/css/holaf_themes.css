@@ -7,6 +7,34 @@
  * Glass/semi-transparent values are derived via color-mix() in the shared panel CSS.
  */
 
+:root {
+    /* Fallback values matching Graphite Orange (default theme).
+       Overridden by .holaf-theme-* class on <body> once JS applies it. */
+    --holaf-accent-color: #D8700D;
+    --holaf-background-primary: #1E1E1E;
+    --holaf-background-secondary: #2B2B2B;
+    --holaf-text-primary: #E0E0E0;
+    --holaf-text-secondary: #A0A0A0;
+    --holaf-border-color: #3F3F3F;
+    --holaf-button-background: #D8700D;
+    --holaf-button-text: #FFFFFF;
+    --holaf-input-background: #1A1A1A;
+    --holaf-tag-background: #4F4F4F;
+    --holaf-tag-text: #DADADA;
+    --holaf-family-tag-background: #5A3E1E;
+    --holaf-family-tag-text: #E8D8C8;
+    --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
+    --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
+    --holaf-header-button-text: #B0B0B0;
+    --holaf-header-button-hover-text: #E0E0E0;
+    --holaf-scrollbar-thumb: #555555;
+    --holaf-scrollbar-track: #2B2B2B;
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+    --holaf-border-radius: 4px;
+}
+
 /* Graphite Orange Theme (Dark) - BASE THEME */
 .holaf-theme-graphite-orange {
     --holaf-accent-color: #D8700D;

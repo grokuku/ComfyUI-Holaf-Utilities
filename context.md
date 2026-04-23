@@ -149,6 +149,12 @@
   ### PROJECT STATE
 
   *   **[Stable] Image Viewer, Terminal, Node Manager, Model Manager**.
+    *   **Known Bugs — Image Viewer**:
+        *   **Ctrl+A selects all page text**: When focus is inside the prompt text area or the workflow JSON viewer, Ctrl+A selects the entire ComfyUI page content instead of being scoped to the focused element. Needs event interception to scope Select All.
+        *   **Copy Prompt button broken**: The "Copy Prompt" button in the image viewer sidebar does not successfully copy the prompt text to the clipboard. Needs investigation (likely `navigator.clipboard.writeText()` issue or missing text extraction).
+        *   **Load Workflow button broken in detached/standalone mode**: When the image viewer runs in detached (standalone gallery) mode, the "Load Workflow" button fails to load the workflow into ComfyUI. The communication channel (`BroadcastChannel`) between the standalone window and the main ComfyUI instance is likely missing or broken.
+        *   **Folder list All/None/Invert buttons scroll out of view**: In the folder selection panel, the All / None / Invert action buttons scroll away when the folder list is long. They should be sticky/pinned at the top so they are always accessible.
+    *   **Upcoming — Image Viewer Gallery UX**: Planned discussion to redesign/improve the gallery browsing experience in the standalone image viewer. Details TBD.
     *   **Bug Audit (23 bugs)**: 4 critical, 6 important, 7 moderate, 6 minor — all fixed.
     *   **Critical fixes**: `bringToFront` z-index NaN bug, CSS `.holaf-utility-panel` override breaking `position: fixed`, import ordering in `holaf_image_viewer.js`, `holaf_utils.get_thumbnail_dir()` → `holaf_utils.THUMBNAIL_CACHE_DIR`, profiler URL mismatch, NaN/Inf JSON sanitization, missing `holaf_nodes_manager` guard.
     *   **Important fixes**: `os.path.commonprefix` → `commonpath`, negative panel position rejection, `delete_models_from_db_and_disk` implemented, `POST /holaf/profiler/run-stop` route added, `_video_processing_locks` cleanup, `asyncio.get_event_loop()` → `get_running_loop()`, subprocess timeouts, lazy `ensure_trashcan_exists()`, permanent delete of trashed items, `workflow_sources: []` in initial filter state.

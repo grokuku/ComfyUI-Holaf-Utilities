@@ -2,51 +2,23 @@
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Image Viewer Stylesheet
  *
- * STANDALONE FIXES:
- * - Added :root fallback variables to restore Theme Colors (Purple) in new tab.
- * - Added SPECIFIC rule using body class to hide header ONLY in standalone mode.
- * - Added generic .holaf-utility-panel styling for dialogs in standalone mode.
+ * Theme variables are provided by holaf_themes.css (:root + .holaf-theme-* classes).
+ * Standalone mode provides its own :root via inline <style> in the HTML template.
+ * This file MUST NOT define :root to avoid overriding the ComfyUI default theme.
  */
 
-/* --- THEME DEFAULTS (Fallback for Standalone Mode) --- */
-:root {
-    /* Default to Midnight Purple look if no theme class is applied */
-    --holaf-accent-color: #8A2BE2;
-    --holaf-background-primary: #1C1C2E;
-    --holaf-background-secondary: #2A2A40;
-    --holaf-text-primary: #E0D8F0;
-    --holaf-text-secondary: #9890B0;
-    --holaf-border-color: #383850;
-    --holaf-button-background: #8A2BE2;
-    --holaf-button-text: #FFFFFF;
-    --holaf-input-background: #181828;
-    --holaf-tag-background: #4A3A5E;
-    --holaf-tag-text: #E0D8F0;
-    --holaf-family-tag-background: #4A2A60;
-    --holaf-family-tag-text: #E8D8F8;
-    --holaf-header-button-bg: rgba(224, 216, 240, 0.08);
-    --holaf-header-button-hover-bg: rgba(224, 216, 240, 0.15);
-    --holaf-header-button-text: #B0A8C0;
-    --holaf-header-button-hover-text: #E0D8F0;
-    --holaf-scrollbar-thumb: #4A3A5E;
-    --holaf-scrollbar-track: #2A2A40;
-    --holaf-success-color: #4CAF50;
-    --holaf-error-color: #F44336;
-    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
-    --holaf-border-radius: 4px;
-}
+/* --- STANDALONE MODE LAYOUT --- */
+/* These rules only apply when the viewer runs in a standalone tab.
+   In ComfyUI mode, body styles come from ComfyUI itself and must NOT be overridden. */
 
-/* --- GLOBAL LAYOUT FIX FOR STANDALONE MODE --- */
-body {
+body.holaf-standalone-mode {
     margin: 0;
     padding: 0;
     width: 100vw;
     height: 100vh;
     overflow: hidden;
-    /* App handles scrolling internally */
     background-color: var(--holaf-background-primary);
     font-family: sans-serif;
-    /* Basic fallback font */
 }
 
 /* Ensure the panel takes full space in standalone mode */

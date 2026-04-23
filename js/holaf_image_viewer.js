@@ -85,8 +85,8 @@ const holafImageViewer = {
                             opacity: 0; transition: opacity 0.3s;
                             max-width: 300px;
                         `;
-                        if (opts.type === 'error') toast.style.backgroundColor = '#d32f2f';
-                        if (opts.type === 'success') toast.style.backgroundColor = '#2e7d32';
+                        if (opts.type === 'error') toast.style.backgroundColor = 'var(--holaf-error-color, #d32f2f)';
+                        if (opts.type === 'success') toast.style.backgroundColor = 'var(--holaf-success-color, #2e7d32)';
 
                         document.body.appendChild(toast);
                         void toast.offsetWidth;
@@ -107,8 +107,8 @@ const holafImageViewer = {
                     const toast = document.getElementById(id);
                     if (toast) {
                         toast.innerHTML = opts.message;
-                        if (opts.type === 'error') toast.style.backgroundColor = '#d32f2f';
-                        if (opts.type === 'success') toast.style.backgroundColor = '#2e7d32';
+                        if (opts.type === 'error') toast.style.backgroundColor = 'var(--holaf-error-color, #d32f2f)';
+                        if (opts.type === 'success') toast.style.backgroundColor = 'var(--holaf-success-color, #2e7d32)';
                     }
                 },
                 hide: (id) => {
@@ -572,7 +572,7 @@ const holafImageViewer = {
                         const emptyTrashBtn = document.createElement('button');
                         emptyTrashBtn.textContent = 'Empty';
                         emptyTrashBtn.title = 'Permanently delete all files in the trashcan';
-                        emptyTrashBtn.style.cssText = 'font-size: 10px; padding: 2px 6px; margin-left: 10px; background-color: #802020; color: white; border: 1px solid #c03030; cursor: pointer; border-radius: 4px;';
+                        emptyTrashBtn.style.cssText = 'font-size: 10px; padding: 2px 6px; margin-left: 10px; background-color: var(--holaf-error-color, #802020); color: var(--holaf-button-text, white); border: 1px solid var(--holaf-border-color, #c03030); cursor: pointer; border-radius: 4px;';
                         emptyTrashBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this._handleEmptyTrash(); };
                         trashContainer.appendChild(emptyTrashBtn);
                         foldersEl.appendChild(trashContainer);

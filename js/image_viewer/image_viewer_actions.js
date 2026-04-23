@@ -478,7 +478,7 @@ export async function handleInjectMetadata(viewer) {
  * @param {object[]} imagesToExport - The array of image objects to export.
  */
 function _showExportOptionsDialog(viewer, imagesToExport) {
-    dialogState.isOpen = true; // Block main viewer keyboard shortcuts
+    dialogState.openCount++; // Block main viewer keyboard shortcuts
 
     const overlay = document.createElement('div');
     overlay.id = 'holaf-viewer-export-dialog-overlay';
@@ -787,7 +787,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
 
     const cleanupAndClose = () => {
         document.removeEventListener('keydown', handleKeyDown, true);
-        dialogState.isOpen = false;
+        dialogState.openCount--;
         if(overlay) overlay.remove();
     };
 

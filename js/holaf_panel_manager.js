@@ -14,9 +14,10 @@
 
 import { HOLAF_THEMES } from "./holaf_themes.js";
 
-// MODIFICATION: Global state to track if a dialog is open
+// MODIFICATION: Track open dialog count instead of boolean for proper stacking
 export const dialogState = {
-    isOpen: false
+    openCount: 0,
+    get isOpen() { return this.openCount > 0; }
 };
 
 const BASE_Z_INDEX = 1000;
@@ -50,7 +51,12 @@ export const HolafPanelManager = {
         header.className = "holaf-utility-header";
 
         const title = document.createElement("span");
-        title.innerHTML = options.title;
+        // Accept safe types: HTMLElement or DocumentFragment (for SVG icons), or string (rendered as text)
+        if (options.title instanceof Node) {
+            title.appendChild(options.title);
+        } else {
+            title.textContent = options.title || "";
+        }
         title.style.flexGrow = "1";
         title.style.overflow = "hidden";
         title.style.textOverflow = "ellipsis";
@@ -114,6 +120,13 @@ export const HolafPanelManager = {
     },
 
     bringToFront(panelEl) {
+        // Auto-cleanup: remove stale references (elements no longer in the DOM)
+        if (openPanels.size > 0 && openPanels.size % 10 === 0) {
+            for (const p of openPanels) {
+                if (!p.isConnected) openPanels.delete(p);
+            }
+        }
+
         // Track any element, not just createPanel ones
         if (!openPanels.has(panelEl)) {
             openPanels.add(panelEl);
@@ -132,6 +145,21 @@ export const HolafPanelManager = {
             currentMaxZIndex = maxZ + 1;
             panelEl.style.zIndex = currentMaxZIndex;
         }
+
+        // Normalize z-indices periodically to prevent unbounded growth
+        if (currentMaxZIndex > BASE_Z_INDEX + 100) {
+            this._normalizeZIndices();
+        }
+    },
+
+    _normalizeZIndices() {
+        const sorted = [...openPanels].sort((a, b) =>
+            (parseInt(a.style.zIndex) || BASE_Z_INDEX) - (parseInt(b.style.zIndex) || BASE_Z_INDEX)
+        );
+        sorted.forEach((p, i) => {
+            p.style.zIndex = BASE_Z_INDEX + i;
+        });
+        currentMaxZIndex = BASE_Z_INDEX + sorted.length;
     },
 
     unregister(panelEl) {
@@ -242,28 +270,17 @@ export const HolafPanelManager = {
 
     createDialog(options) {
         return new Promise((resolve) => {
-            dialogState.isOpen = true;
+            dialogState.openCount++;
 
             const overlay = document.createElement("div");
-            overlay.style.cssText = `
-                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                background: rgba(0, 0, 0, 0.6); z-index: 110000;
-                display: flex; align-items: center; justify-content: center;
-            `;
+            overlay.className = "holaf-dialog-overlay";
 
             const dialog = document.createElement("div");
-            dialog.className = "holaf-utility-panel";
-            dialog.style.position = "relative";
-            dialog.style.transform = "none";
-            dialog.style.width = "auto";
-            dialog.style.minWidth = "300px";
-            dialog.style.maxWidth = "500px";
-            dialog.style.height = "auto";
-            dialog.style.top = "auto";
-            dialog.style.left = "auto";
+            dialog.className = "holaf-utility-panel holaf-dialog-inline";
 
-            const anyPanel = document.querySelector('.holaf-utility-panel');
             let themeClass = 'holaf-theme-graphite-orange';
+            // First check any open panel, then fallback to body class
+            const anyPanel = document.querySelector('.holaf-utility-panel');
             if (anyPanel) {
                 for (const theme of HOLAF_THEMES) {
                     if (anyPanel.classList.contains(theme.className)) {
@@ -271,29 +288,33 @@ export const HolafPanelManager = {
                         break;
                     }
                 }
+            } else {
+                // No panel open — check the body for the global theme class
+                const bodyClasses = document.body.className;
+                const match = bodyClasses.match(/holaf-theme-\S+/);
+                if (match) themeClass = match[0];
             }
             dialog.classList.add(themeClass);
 
             const header = document.createElement("div");
             header.className = "holaf-utility-header";
-            header.innerHTML = `<span>${options.title || "Confirmation"}</span>`;
+            const titleSpan = document.createElement("span");
+            titleSpan.textContent = options.title || "Confirmation";
+            header.appendChild(titleSpan);
 
             const content = document.createElement("div");
-            content.innerHTML = `<p style="padding: 15px 20px; color: var(--holaf-text-primary); white-space: pre-wrap;">${options.message}</p>`;
+            content.className = "holaf-dialog-content";
+            content.textContent = options.message;
 
             const footer = document.createElement("div");
-            footer.style.cssText = `
-                padding: 10px 20px; display: flex; justify-content: flex-end;
-                gap: 10px; background-color: var(--holaf-background-secondary);
-                border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
-            `;
+            footer.className = "holaf-dialog-footer";
 
             const buttons = [];
             let focusedButtonIndex = -1;
 
             const closeDialog = (value) => {
                 document.removeEventListener("keydown", handleDialogKeyDown);
-                dialogState.isOpen = false;
+                dialogState.openCount--;
                 document.body.removeChild(overlay);
                 resolve(value);
             };
@@ -305,7 +326,7 @@ export const HolafPanelManager = {
                 if (btnInfo.type === 'cancel') {
                     button.style.backgroundColor = 'var(--holaf-tag-background)';
                 } else if (btnInfo.type === 'danger') {
-                    button.style.backgroundColor = '#c44';
+                    button.style.backgroundColor = 'var(--holaf-error-color, #c44)';
                 }
                 button.onclick = () => {
                     if (btnInfo.onClick) btnInfo.onClick();
@@ -325,6 +346,25 @@ export const HolafPanelManager = {
             };
 
             const handleDialogKeyDown = (e) => {
+                // Tab trap: cycle focus within the dialog's focusable elements
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const focusable = dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                    if (focusable.length === 0) return;
+                    // Find current position in the focusable list
+                    const currentIndex = Array.from(focusable).indexOf(document.activeElement);
+                    if (e.shiftKey) {
+                        // Shift+Tab: move backward, wrap to last if at first
+                        const prevIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
+                        focusable[prevIndex].focus();
+                    } else {
+                        // Tab: move forward, wrap to first if at last
+                        const nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+                        focusable[nextIndex].focus();
+                    }
+                    return;
+                }
+
                 if (buttons.length === 0) return;
 
                 if (e.key === 'ArrowLeft') {

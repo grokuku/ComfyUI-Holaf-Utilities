@@ -39,7 +39,7 @@
 .btn {
     padding: 8px 16px;
     background-color: var(--holaf-accent-color, #D8700D);
-    color: var(--holaf-button-text, #fff);
+    color: var(--holaf-button-text, #FFFFFF);
     border: none;
     border-radius: 3px;
     cursor: pointer;
@@ -87,7 +87,7 @@
 .toggle-chip.active {
     background-color: var(--holaf-accent-color, #D8700D);
     border-color: var(--holaf-accent-color, #D8700D);
-    color: var(--holaf-button-text, #fff);
+    color: var(--holaf-button-text, #FFFFFF);
 }
 
 /* Filter inputs in toolbar */

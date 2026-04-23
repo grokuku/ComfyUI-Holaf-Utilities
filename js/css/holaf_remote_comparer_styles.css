@@ -16,9 +16,10 @@
     background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 95%, transparent) !important;
     backdrop-filter: blur(4px) !important;
     -webkit-backdrop-filter: blur(4px) !important;
-    border: 1px solid var(--holaf-border-color, #444) !important;
+    border: 1px solid var(--holaf-border-color, #444444) !important;
+    border-radius: 8px !important;
     box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7)) !important;
-    color: var(--holaf-text-primary, #eee) !important;
+    color: var(--holaf-text-primary, #EEEEEE) !important;
 }
 
 /* Sidebar */

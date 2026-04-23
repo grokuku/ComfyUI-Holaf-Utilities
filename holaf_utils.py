@@ -91,20 +91,24 @@ async def read_file_chunk(path, offset, size):
 def assemble_chunks_blocking(final_save_path, upload_id, total_chunks, post_assembly_callback=None, expected_size=None):
     """
     Assembles chunks into a final file. Blocking.
-    Verifies file integrity against expected size and SHA256 checksum.
+    Verifies file integrity against expected size and CRC32 checksum.
     Optionally calls a callback after successful assembly and verification.
     """
+    import zlib
     chunk_files_to_clean = [os.path.join(TEMP_UPLOAD_DIR, f"{upload_id}-{i}.chunk") for i in range(total_chunks)]
     try:
-        # Assemble the file from chunks
+        # Assemble the file from chunks, computing CRC32 for integrity
         os.makedirs(os.path.dirname(final_save_path), exist_ok=True)
+        crc = 0
         with open(final_save_path, 'wb') as f_out:
             for i in range(total_chunks):
                 chunk_path = chunk_files_to_clean[i]
                 if not os.path.exists(chunk_path):
                     raise IOError(f"Missing chunk {i} for upload {upload_id}.")
                 with open(chunk_path, 'rb') as f_in:
-                    f_out.write(f_in.read())
+                    data = f_in.read()
+                    f_out.write(data)
+                    crc = zlib.crc32(data, crc)
         
         print(f"🔵 [Holaf-Utils] File assembled. Verifying integrity for '{os.path.basename(final_save_path)}'...")
 

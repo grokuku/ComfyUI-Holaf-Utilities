@@ -8,7 +8,7 @@
 
 #holaf-utilities-menu-button {
     background-color: var(--holaf-accent-color, #D8700D);
-    color: var(--holaf-button-text, #fff);
+    color: var(--holaf-button-text, #FFFFFF);
     font-size: 13px;
     padding: 4px 12px;
     height: 28px;
@@ -55,7 +55,7 @@
 
 #holaf-utilities-dropdown-menu li:hover {
     background-color: var(--holaf-accent-color, #D8700D);
-    color: var(--holaf-button-text, #fff);
+    color: var(--holaf-button-text, #FFFFFF);
 }
 
 #holaf-utilities-dropdown-menu .holaf-menu-separator {

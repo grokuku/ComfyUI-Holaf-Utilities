@@ -80,7 +80,7 @@ const HolafSettingsManager = {
                         <input type="checkbox" id="holaf-wip-checkbox" ${showWip ? "checked" : ""} style="cursor: pointer; width: 16px; height: 16px;">
                         <label for="holaf-wip-checkbox" style="font-size: 12px; cursor: pointer;">Show Work-In-Progress (WIP) Modules</label>
                     </div>
-                    <span style="font-size: 11px; color: var(--holaf-text-secondary, #888); display: block; margin-top: 5px;">Displays in-development tools (Model Manager, Nodes Manager, Profiler) in the main menu.</span>
+                    <span class="holaf-settings-field-description" style="display: block; margin-top: 5px;">Displays in-development tools (Model Manager, Nodes Manager, Profiler) in the main menu.</span>
                 </div>
 
             </div>

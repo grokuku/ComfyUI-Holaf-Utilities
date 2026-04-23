@@ -116,7 +116,7 @@ const HolafShortcuts = {
 
     loadFromGraph() {
         if (app.graph && app.graph.extra && app.graph.extra[this.GRAPH_EXTRA_KEY]) {
-            this.shortcuts = JSON.parse(JSON.stringify(app.graph.extra[this.GRAPH_EXTRA_KEY]));
+            this.shortcuts = structuredClone(app.graph.extra[this.GRAPH_EXTRA_KEY]);
         } else {
             this.shortcuts = [];
         }
@@ -126,7 +126,7 @@ const HolafShortcuts = {
     syncToGraph() {
         if (!app.graph) return;
         if (!app.graph.extra) app.graph.extra = {};
-        app.graph.extra[this.GRAPH_EXTRA_KEY] = JSON.parse(JSON.stringify(this.shortcuts));
+        app.graph.extra[this.GRAPH_EXTRA_KEY] = structuredClone(this.shortcuts);
     },
 
     addShortcut() {
@@ -216,8 +216,16 @@ const HolafShortcuts = {
         addBtn.onmousedown = (e) => e.stopPropagation(); 
         addBtn.onclick = () => this.addShortcut();
 
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "holaf-utility-close-button";
+        closeBtn.textContent = "✕";
+        closeBtn.title = "Close";
+        closeBtn.onmousedown = (e) => e.stopPropagation();
+        closeBtn.onclick = () => this.hide();
+
         header.appendChild(title);
         header.appendChild(addBtn);
+        header.appendChild(closeBtn);
 
         this.listElement = document.createElement("div");
         Object.assign(this.listElement.style, {
@@ -249,34 +257,35 @@ const HolafShortcuts = {
 
         this.shortcuts.forEach(s => {
             const row = document.createElement("div");
-            Object.assign(row.style, {
-                display: "flex", alignItems: "center", marginBottom: "4px",
-                borderRadius: "4px", padding: "4px",
-                backgroundColor: "color-mix(in srgb, var(--holaf-background-primary) 50%, black)"
-            });
+            row.className = "holaf-shortcut-row";
             row.setAttribute("data-id", s.id);
 
             const nameLabel = document.createElement("div");
+            nameLabel.className = "holaf-shortcut-name";
             nameLabel.innerText = s.name;
             
             const isDeep = s.path && s.path.length > 0;
             if (isDeep) {
                 nameLabel.title = `Subgraph View (${s.path.length} level(s))`;
-                nameLabel.innerHTML = `<small style="color:var(--holaf-accent-color); margin-right:4px;">📂</small>${s.name}`;
+                nameLabel.innerText = ""; // Clear before appending DOM nodes
+                const small = document.createElement("small");
+                small.style.color = "var(--holaf-accent-color)";
+                small.style.marginRight = "4px";
+                small.textContent = "\uD83D\uDCC2"; // folder icon
+                nameLabel.appendChild(small);
+                nameLabel.appendChild(document.createTextNode(s.name));
             }
 
-            Object.assign(nameLabel.style, {
-                flex: "1", fontSize: "12px", cursor: "pointer",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginRight: "5px",
-                color: "var(--holaf-text-primary)"
-            });
-            
             nameLabel.onclick = () => this.applyShortcut(s.id);
             
             nameLabel.ondblclick = () => {
                 nameLabel.contentEditable = true;
                 nameLabel.focus();
-                document.execCommand('selectAll', false, null);
+                const range = document.createRange();
+                    range.selectNodeContents(nameLabel);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
                 
                 const finishEdit = () => {
                     nameLabel.contentEditable = false;
@@ -288,22 +297,16 @@ const HolafShortcuts = {
                 };
             };
 
-            const btnStyle = {
-                background: "none", border: "none", color: "var(--holaf-text-secondary)",
-                cursor: "pointer", fontSize: "12px", padding: "0 2px", marginLeft: "2px"
-            };
-
             const updateBtn = document.createElement("button");
-            updateBtn.innerHTML = "💾"; 
+            updateBtn.innerHTML = "\U0001f4be"; 
             updateBtn.title = "Update with current view";
-            updateBtn.className = "update-btn";
-            Object.assign(updateBtn.style, btnStyle);
+            updateBtn.className = "holaf-shortcut-btn update-btn";
             updateBtn.onclick = (e) => { e.stopPropagation(); this.updateShortcut(s.id); };
 
             const delBtn = document.createElement("button");
             delBtn.innerHTML = "✕";
             delBtn.title = "Delete";
-            Object.assign(delBtn.style, btnStyle);
+            delBtn.className = "holaf-shortcut-btn";
             delBtn.onmouseenter = () => delBtn.style.color = "#ff5555";
             delBtn.onmouseleave = () => delBtn.style.color = "var(--holaf-text-secondary)";
             delBtn.onclick = (e) => { e.stopPropagation(); this.deleteShortcut(s.id); };

@@ -85,7 +85,7 @@ export function initProfiler() {
                     </tr>
                 </thead>
                 <tbody id="profiler-table-body">
-                    <tr><td colspan="8" style="text-align:center; color:#777;">Ready. Click "Update Nodes".</td></tr>
+                    <tr><td colspan="8" style="text-align:center; color:var(--holaf-text-secondary);">Ready. Click "Update Nodes".</td></tr>
                 </tbody>
             </table>
         </div>

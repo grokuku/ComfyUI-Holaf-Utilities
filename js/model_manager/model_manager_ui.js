@@ -101,7 +101,7 @@ function populatePanelContent(manager) {
                 <button id="holaf-manager-upload-button" class="comfy-button" title="Upload new models.">Upload</button>
                 <button id="holaf-manager-download-button" class="comfy-button" title="Download selected models.">Download</button>
                 <button id="holaf-manager-deep-scan-button" class="comfy-button" title="Deep Scan selected .safetensors models for metadata and hash.">Deep Scan</button>
-                <button id="holaf-manager-delete-button" class="comfy-button" title="Delete selected models from server." style="background-color: #D32F2F;">Delete</button>
+                <button id="holaf-manager-delete-button" class="comfy-button" title="Delete selected models from server." style="background-color: var(--holaf-error-color, #D32F2F);">Delete</button>
             </div>
         </div>
         <div class="holaf-manager-list-header">
@@ -188,6 +188,7 @@ export function createUploadDialog(manager) {
     header.innerHTML = `<span>Upload Models</span><button class="holaf-utility-close-button" style="margin-left:auto;">✖</button>`;
     header.querySelector('.holaf-utility-close-button').onclick = () => {
         dialogEl.style.display = 'none';
+        HolafPanelManager.unregister(dialogEl);
     };
     HolafPanelManager.makeDraggable(dialogEl, header);
 

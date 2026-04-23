@@ -7,6 +7,10 @@
  * MODIFIED: Added fullscreen state management (double-click on header).
  * CORRECTION: Removed dynamic menu registration. Added object to `app` for static menu access.
  * CORRECTION: Re-integrated critical CSS for terminal container layout.
+ *
+ * SECURITY NOTE: Terminal passwords are sent as plaintext over WebSocket.
+ *   This is acceptable for local/loopback connections. For remote deployments,
+ *   ensure ComfyUI is served over HTTPS/WSS to protect credentials in transit.
  * === End Documentation ===
  */
 import { app } from "./holaf_api_compat.js";
@@ -22,6 +26,9 @@ function loadScript(src) {
             return;
         }
         if (existingScript && !existingScript.dataset.loaded) {
+            // Script tag exists but may not have fired its load event yet.
+            // Attach listeners, but also check readyState as a fallback
+            // for scripts that finished loading before listeners were attached.
             let resolved = false;
             const handleLoad = () => {
                 if (!resolved) {
@@ -40,7 +47,10 @@ function loadScript(src) {
             existingScript.addEventListener('load', handleLoad);
             existingScript.addEventListener('error', handleError);
 
+            // readyState fallback for scripts that completed loading
+            // before our listeners were attached (IE/old Edge)
             if (existingScript.readyState === 'loaded' || existingScript.readyState === 'complete') {
+                // Defer to allow the browser to finish firing its events
                 setTimeout(() => {
                     if (!existingScript.dataset.loaded && !resolved) {
                         existingScript.dataset.loaded = true;
@@ -85,14 +95,21 @@ const holafTerminal = {
     saveTimeout: null,
 
     async ensureScriptsLoaded() {
-        if (this.scriptsLoaded) return true;
+        if (this.scriptsLoaded && window.Terminal && window.FitAddon) return true;
         try {
             const basePath = "extensions/ComfyUI-Holaf-Utilities/js/";
             if (!window.Terminal) {
                 await loadScript(`${basePath}xterm.js`);
+                // Verify the global is now available (guard against race conditions)
+                if (!window.Terminal) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
             }
             if (!window.FitAddon) {
                 await loadScript(`${basePath}xterm-addon-fit.js`);
+                if (!window.FitAddon) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
             }
             this.scriptsLoaded = true;
             return true;
@@ -150,7 +167,7 @@ const holafTerminal = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-terminal-panel",
-                title: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: -3px; margin-right: 6px;"><path d="M5 7L10 12L5 17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 17H19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>Holaf Terminal`,
+                title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode("Holaf Terminal")); return f; })(),
                 headerContent: terminalHeaderControlsGroup,
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
@@ -179,29 +196,7 @@ const holafTerminal = {
         }
 
         // --- CORRECTION : Ce bloc CSS est essentiel pour le redimensionnement ---
-        const styleId = "holaf-terminal-specific-styles";
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement("style");
-            style.id = styleId;
-            style.innerHTML = `
-                #holaf-terminal-panel .holaf-utility-header .holaf-header-button-group {
-                     order: -1; margin-left: 0; margin-right: 8px;
-                }
-                #holaf-terminal-panel .holaf-terminal-non-terminal-view { 
-                    padding: 15px; width: 100%; box-sizing: border-box; flex-grow: 1; display: flex; 
-                    flex-direction: column; justify-content: center; align-items: center; text-align:center;
-                }
-                #holaf-terminal-panel .holaf-terminal-view-wrapper { 
-                    flex-grow: 1; padding: 0 5px 5px 10px; overflow: hidden; width: 100%; 
-                    display: flex; flex-direction: column; 
-                }
-                #holaf-terminal-panel .holaf-terminal-view-wrapper > div {
-                    flex-grow: 1; width: 100% !important; display: flex; flex-direction: column; 
-                    overflow: hidden; 
-                }
-            `;
-            document.head.appendChild(style);
-        }
+        // Terminal-specific header button ordering is now in holaf_terminal_styles.css
 
         this.contentContainer = this.panelElements.contentEl;
         this.terminalContainer = this.createTerminalView();
@@ -375,7 +370,7 @@ const holafTerminal = {
         const p2 = document.createElement("p"); p2.innerHTML = "1. Manually create/edit <code>ComfyUI/custom_nodes/ComfyUI-Holaf-Utilities/config.ini</code><br>2. Add the following under a <code>[Security]</code> section:<br>"; p2.style.margin = "10px 0"; p2.style.textAlign = "left";
         this.hashDisplay = document.createElement("input"); this.hashDisplay.type = "text"; this.hashDisplay.readOnly = true; this.hashDisplay.style.cssText = "width: 100%; font-family: monospace; margin: 5px 0; padding: 5px;";
         const copyButton = document.createElement("button"); copyButton.textContent = "Copy Hash String"; copyButton.className = "comfy-button"; copyButton.style.marginTop = "5px";
-        copyButton.addEventListener("click", () => { if (this.hashDisplay) { this.hashDisplay.select(); document.execCommand("copy"); } });
+        copyButton.addEventListener("click", () => { if (this.hashDisplay) { this.hashDisplay.select(); navigator.clipboard.writeText(this.hashDisplay.value).catch(() => document.execCommand("copy")); } });
         const p3 = document.createElement("p"); p3.innerHTML = "3. Restart ComfyUI."; p3.style.textAlign = "left";
         view.append(title, p1, p2, this.hashDisplay, copyButton, p3);
         return view;

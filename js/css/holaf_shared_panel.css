@@ -12,6 +12,14 @@
  */
 
 /* ==========================================================================
+   Base floating window — minimal contract
+   ========================================================================== */
+
+.holaf-floating-window {
+    position: fixed;
+}
+
+/* ==========================================================================
    Base floating panel — glass style
    ========================================================================== */
 
@@ -314,6 +322,50 @@
 .holaf-dialog-item-focused label {
     outline: 2px solid var(--holaf-accent-color) !important;
     outline-offset: 2px !important;
+}
+
+/* ==========================================================================
+   Inline dialog (createDialog) — positioned relative within overlay
+   ========================================================================== */
+
+.holaf-dialog-inline {
+    position: relative !important;
+    transform: none !important;
+    width: auto !important;
+    min-width: 300px !important;
+    max-width: 500px !important;
+    height: auto !important;
+    top: auto !important;
+    left: auto !important;
+}
+
+.holaf-dialog-content {
+    padding: 15px 20px;
+    color: var(--holaf-text-primary);
+    white-space: pre-wrap;
+}
+
+.holaf-dialog-footer {
+    padding: 10px 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    background-color: var(--holaf-background-secondary);
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.holaf-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 110000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* ==========================================================================

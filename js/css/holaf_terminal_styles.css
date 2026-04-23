@@ -4,12 +4,21 @@
  */
 
 /* Login / Setup views */
+#holaf-terminal-panel .holaf-utility-header .holaf-header-button-group {
+    order: -1;
+    margin-left: 0;
+    margin-right: 8px;
+}
+
 #holaf-terminal-panel .holaf-terminal-non-terminal-view {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    text-align: center;
+    padding: 15px;
+    width: 100%;
+    flex-grow: 1;
     height: 100%;
     box-sizing: border-box;
 }
@@ -67,9 +76,11 @@
 /* xterm.js wrapper */
 #holaf-terminal-panel .holaf-terminal-view-wrapper {
     flex-grow: 1;
+    padding: 0 5px 5px 10px;
     overflow: hidden;
+    width: 100%;
     display: flex;
-    padding: 0;
+    flex-direction: column;
 }
 
 #holaf-terminal-panel .holaf-terminal-view-wrapper > div {
@@ -89,10 +100,10 @@
     box-sizing: border-box;
 }
 
-/* Terminal scrollbar (zoom-aware) */
+/* Terminal scrollbar — fixed size (xterm handles its own zoom) */
 #holaf-terminal-panel .holaf-terminal-view-wrapper .xterm-viewport::-webkit-scrollbar,
 #holaf-terminal-panel .holaf-terminal-view-wrapper .terminal::-webkit-scrollbar {
-    width: calc(10px * var(--holaf-mm-zoom-factor, 1));
+    width: 10px;
 }
 
 #holaf-terminal-panel .holaf-terminal-view-wrapper .xterm-viewport::-webkit-scrollbar-track,
@@ -103,8 +114,8 @@
 #holaf-terminal-panel .holaf-terminal-view-wrapper .xterm-viewport::-webkit-scrollbar-thumb,
 #holaf-terminal-panel .holaf-terminal-view-wrapper .terminal::-webkit-scrollbar-thumb {
     background-color: var(--holaf-scrollbar-thumb);
-    border-radius: calc(5px * var(--holaf-mm-zoom-factor, 1));
-    border: calc(2px * var(--holaf-mm-zoom-factor, 1)) solid var(--holaf-scrollbar-track);
+    border-radius: 5px;
+    border: 2px solid var(--holaf-scrollbar-track);
 }
 
 #holaf-terminal-panel .holaf-terminal-view-wrapper .xterm-viewport::-webkit-scrollbar-thumb:hover,
