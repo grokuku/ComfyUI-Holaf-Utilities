@@ -255,3 +255,24 @@
     height: 100%;
     fill: var(--holaf-text-primary);
 }
+
+/* ==========================================================================
+   Standalone mode (pop-out tab)
+   ========================================================================== */
+
+body.holaf-standalone-comparer #holaf-remote-comparer-root {
+    width: 100vw !important;
+    height: 100vh !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+body.holaf-standalone-comparer .holaf-utility-header .holaf-utility-close-button,
+body.holaf-standalone-comparer #holaf-remote-comparer-root .holaf-rc-resize-handle {
+    display: none !important;
+}

@@ -10,12 +10,17 @@
 
 import { app, api } from "./holaf_api_compat.js";
 
+const COMPARER_CHANNEL = 'holaf_comparer_bridge';
+
 const HolafRemoteComparer = {
     name: "Holaf.RemoteComparer",
     isOpen: false,
     isFullscreen: false,
     isPoppedOut: false,
+    isStandalone: false,
     isSidebarOpen: true,
+    _bridge: null,
+    _popupTab: null,
 
     // --- DOM Elements ---
     rootElement: null,
@@ -81,29 +86,96 @@ const HolafRemoteComparer = {
     STORAGE_KEY: "holaf_remote_comparer_state_v2",
 
     init() {
+        this.isStandalone = window.location.pathname === '/holaf/comparer';
+
         this.restoreState();
+
+        // --- BroadcastChannel bridge ---
+        this._bridge = new BroadcastChannel(COMPARER_CHANNEL);
+
+        if (this.isStandalone) {
+            // Standalone tab: listen for payloads from the main ComfyUI tab
+            this._bridge.onmessage = (event) => {
+                const { type, payload } = event.data;
+                if (type === 'COMPARER_PAYLOAD') {
+                    const compName = payload.comparison_name || "Unnamed Comparison";
+                    const mediaMeta = payload.media || [];
+                    if (mediaMeta.length === 0) return;
+                    this.latestImagesMeta = mediaMeta;
+                    this.history = this.history.filter(h => h.name !== compName);
+                    this.history.unshift({ name: compName, imagesMeta: mediaMeta });
+                    this.renderSidebarHistory();
+                    this.statusTextEl.style.display = "none";
+                    if (!this.isOpen) this.show();
+                    this.resetZoom();
+                    this.loadMedia(mediaMeta).then(() => this.draw());
+                }
+                if (type === 'COMPARER_HISTORY') {
+                    this.history = payload.history || [];
+                    this.latestImagesMeta = payload.latestImagesMeta || [];
+                    this.renderSidebarHistory();
+                }
+                if (type === 'COMPARER_SETTINGS') {
+                    this.globalSettings = { ...this.globalSettings, ...payload };
+                    this.syncSettingsToBackend();
+                }
+            };
+        } else {
+            // Main tab: relay executed events to the standalone comparer tab
+            api.addEventListener("executed", (e) => this.handleNodeExecution(e));
+
+            this._bridge.onmessage = (event) => {
+                const { type } = event.data;
+                // If standalone tab requests current state, send it
+                if (type === 'COMPARER_REQUEST_STATE') {
+                    this._bridge.postMessage({
+                        type: 'COMPARER_HISTORY',
+                        payload: {
+                            history: this.history,
+                            latestImagesMeta: this.latestImagesMeta
+                        }
+                    });
+                }
+                // If standalone tab closed, restore the in-page comparer
+                if (type === 'COMPARER_STANDALONE_CLOSED') {
+                    this.isPoppedOut = false;
+                    this._popupTab = null;
+                    this.floatingPopoutBtn.style.display = "flex";
+                    this.floatingPopinBtn.style.display = "none";
+                    if (this.isOpen) {
+                        this.rootElement.style.display = "flex";
+                        this.updateVisualPosition();
+                    }
+                }
+            };
+        }
+
         this.buildUI();
 
         window.addEventListener("resize", () => {
-            if (!this.isFullscreen && !this.isPoppedOut) {
+            if (!this.isFullscreen && !this.isPoppedOut && !this.isStandalone) {
                 this.updateVisualPosition();
             }
         });
-        api.addEventListener("executed", (e) => this.handleNodeExecution(e));
 
         // Sync initial settings to backend
         this.syncSettingsToBackend();
 
-        if (this.isOpen) {
+        if (this.isStandalone) {
+            // In standalone mode, show immediately and request state from main tab
+            this.show();
+            this._bridge.postMessage({ type: 'COMPARER_REQUEST_STATE' });
+        } else if (this.isOpen) {
             setTimeout(() => this.show(), 300);
         }
-        console.log("[Holaf Remote Comparer] Initialized Universal Mode.");
+        console.log("[Holaf Remote Comparer] Initialized." + (this.isStandalone ? " (Standalone mode)" : ""));
     },
 
     // --- SETTINGS BRIDGE LOGIC ---
 
     syncSettingsToBackend() {
-        api.fetchApi("/holaf/comparer/settings", {
+        const fetchFn = api.fetchApi || fetch;
+        fetchFn("/holaf/comparer/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(this.globalSettings)
@@ -120,6 +192,10 @@ const HolafRemoteComparer = {
 
     buildUI() {
         if (this.rootElement) return;
+
+        if (this.isStandalone) {
+            document.body.classList.add('holaf-standalone-comparer');
+        }
 
         this.rootElement = document.createElement("div");
         this.rootElement.id = "holaf-remote-comparer-root";
@@ -151,6 +227,7 @@ const HolafRemoteComparer = {
         // Hover handled by CSS
         closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
+        if (this.isStandalone) closeBtn.style.display = "none";
 
         btnContainer.appendChild(closeBtn);
         header.appendChild(title);
@@ -211,7 +288,7 @@ const HolafRemoteComparer = {
         this.floatingPopoutBtn.className = "holaf-rc-float-btn";
         Object.assign(this.floatingPopoutBtn.style, {
             position: "absolute", top: "10px", right: "10px", zIndex: "100",
-            display: "flex", alignItems: "center", justifyContent: "center"
+            display: this.isStandalone ? "none" : "flex", alignItems: "center", justifyContent: "center"
         });
         this.floatingPopoutBtn.onclick = () => this.popOut();
 
@@ -247,6 +324,7 @@ const HolafRemoteComparer = {
         this.mainContainer.appendChild(this.contentElement);
 
         this.createResizeHandle();
+        if (this.isStandalone) this.resizeHandle.style.display = "none";
         this.buildBottomSidebar();
 
         this.rootElement.appendChild(header);
@@ -578,6 +656,14 @@ const HolafRemoteComparer = {
 
         if (mediaMeta.length === 0) return;
 
+        // Relay to standalone comparer tab if popped out
+        if (this.isPoppedOut) {
+            this._bridge.postMessage({
+                type: 'COMPARER_PAYLOAD',
+                payload: payload
+            });
+        }
+
         this.latestImagesMeta = mediaMeta;
         this.history = this.history.filter(h => h.name !== compName);
         this.history.unshift({ name: compName, imagesMeta: mediaMeta });
@@ -689,7 +775,9 @@ const HolafRemoteComparer = {
                 }
 
                 const params = new URLSearchParams({ filename: meta.filename, type: meta.type, subfolder: meta.subfolder || "" });
-                mediaEl.src = api.apiURL(`/view?${params.toString()}`);
+                // Use api.apiURL if available, otherwise fallback to a direct URL
+                const viewUrl = api.apiURL ? api.apiURL(`/view?${params.toString()}`) : `/view?${params.toString()}`;
+                mediaEl.src = viewUrl;
 
                 // Tag the element for rendering logic
                 mediaEl._holafFormat = meta.format;
@@ -1005,41 +1093,35 @@ const HolafRemoteComparer = {
     },
 
     popOut() {
-        if (this.isPoppedOut) return;
+        if (this.isPoppedOut || this.isStandalone) return;
         this.isPoppedOut = true;
         this.rootElement.style.display = "none";
         if (this.isFullscreen) this.toggleFullscreen();
 
-        this.popupWindow = window.open("", "HolafRemoteComparerPopup", `width=${this.storedPos.width},height=${this.storedPos.height},menubar=no,toolbar=no,location=no,status=no`);
-        if (!this.popupWindow) {
-            alert("Popup blocked! Please allow popups for ComfyUI.");
-            this.isPoppedOut = false; this.rootElement.style.display = "flex"; return;
-        }
+        // Open in a new browser tab instead of a popup window
+        this._popupTab = window.open('/holaf/comparer', '_blank');
 
-        const doc = this.popupWindow.document;
-        doc.title = "Holaf Remote Comparer";
-        Object.assign(doc.body.style, { margin: "0", backgroundColor: "color-mix(in srgb, var(--holaf-background-primary) 50%, black)", overflow: "hidden", display: "flex", flexDirection: "column", height: "100vh" });
-        doc.body.appendChild(this.mainContainer);
-        
-        this.floatingPopoutBtn.style.display = "none"; this.floatingPopinBtn.style.display = "flex";
-        this.popupWindow.onbeforeunload = () => this.popIn();
+        // Hide the in-page panel (the standalone tab will handle display)
+        this.floatingPopoutBtn.style.display = "none";
+        this.floatingPopinBtn.style.display = "flex";
+        this.saveState();
     },
 
     popIn() {
         if (!this.isPoppedOut) return;
         this.isPoppedOut = false;
-        this.rootElement.insertBefore(this.mainContainer, this.resizeHandle);
-        this.floatingPopoutBtn.style.display = "flex"; this.floatingPopinBtn.style.display = "none";
+        this.floatingPopoutBtn.style.display = "flex";
+        this.floatingPopinBtn.style.display = "none";
 
-        if (this.popupWindow && !this.popupWindow.closed) {
-            this.popupWindow.onbeforeunload = null; this.popupWindow.close();
+        if (this._popupTab && !this._popupTab.closed) {
+            this._popupTab.close();
         }
-        this.popupWindow = null;
+        this._popupTab = null;
         if (this.isOpen) { this.rootElement.style.display = "flex"; this.updateVisualPosition(); }
     },
 
     updateVisualPosition() {
-        if (!this.rootElement || this.isFullscreen || this.isPoppedOut) return;
+        if (!this.rootElement || this.isFullscreen || this.isPoppedOut || this.isStandalone) return;
         this.rootElement.style.width = this.storedPos.width + "px";
         this.rootElement.style.height = this.storedPos.height + "px";
         const visualRight = Math.max(0, Math.min(this.storedPos.right, window.innerWidth - this.storedPos.width));
@@ -1117,7 +1199,17 @@ const HolafRemoteComparer = {
     show() {
         if (!this.rootElement) this.buildUI();
         this.isOpen = true;
-        if (!this.isPoppedOut) {
+
+        if (this.isStandalone) {
+            // In standalone mode, the panel fills the entire viewport
+            this.rootElement.style.display = "flex";
+            this.rootElement.style.inset = "0";
+            // Remove inline width/height so it fills viewport
+            this.rootElement.style.width = "100vw";
+            this.rootElement.style.height = "100vh";
+            this.rootElement.style.right = "auto";
+            this.rootElement.style.bottom = "auto";
+        } else if (!this.isPoppedOut) {
             this.rootElement.style.display = "flex";
             if (!this.isFullscreen) this.updateVisualPosition();
         }
@@ -1131,13 +1223,28 @@ const HolafRemoteComparer = {
         if (this.rootElement) this.rootElement.style.display = "none";
         this.images.forEach(m => { if (m instanceof HTMLMediaElement) m.pause(); });
         this.saveState();
-    }
+    },
 };
 
-app.registerExtension({
-    name: HolafRemoteComparer.name,
-    async setup() {
-        HolafRemoteComparer.init();
-        app.holafRemoteComparer = HolafRemoteComparer;
-    }
-});
+// --- Standalone Initialization ---
+// Called from /holaf/comparer page
+export function initStandaloneComparer() {
+    console.log("[Holaf Remote Comparer] Initializing Standalone mode...");
+    HolafRemoteComparer.init();
+
+    // Notify the main tab when this standalone tab closes
+    window.addEventListener('beforeunload', () => {
+        HolafRemoteComparer._bridge.postMessage({ type: 'COMPARER_STANDALONE_CLOSED' });
+    });
+}
+
+// Only register as ComfyUI extension when not in standalone mode
+if (window.location.pathname !== '/holaf/comparer') {
+    app.registerExtension({
+        name: HolafRemoteComparer.name,
+        async setup() {
+            HolafRemoteComparer.init();
+            app.holafRemoteComparer = HolafRemoteComparer;
+        }
+    });
+}

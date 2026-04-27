@@ -93,7 +93,10 @@ GALLERY_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Holaf Gallery</title>
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_themes.css">
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_shared_panel.css">
     <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css">
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_toasts.css">
     <style>
         /* Shim for ComfyUI variables to maintain dark theme */
         :root {
@@ -234,6 +237,66 @@ PROFILER_HTML = """
 </html>
 """
 
+# --- REMOTE COMPARER HTML TEMPLATE ---
+COMPARER_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holaf Remote Comparer</title>
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_themes.css">
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_shared_panel.css">
+    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_remote_comparer_styles.css">
+    <style>
+        :root {
+            /* Holaf theme variables - Steel Blue dark theme */
+            --holaf-accent-color: #4682B4;
+            --holaf-background-primary: #1C2024;
+            --holaf-background-secondary: #2A3038;
+            --holaf-text-primary: #D0D8E0;
+            --holaf-text-secondary: #808890;
+            --holaf-border-color: #36404A;
+            --holaf-button-background: #4682B4;
+            --holaf-button-text: #FFFFFF;
+            --holaf-input-background: #24282D;
+            --holaf-tag-background: #3A4E5E;
+            --holaf-tag-text: #D0D8E0;
+            --holaf-family-tag-background: #304050;
+            --holaf-family-tag-text: #D8E0E8;
+            --holaf-header-button-bg: rgba(208, 216, 224, 0.08);
+            --holaf-header-button-hover-bg: rgba(208, 216, 224, 0.15);
+            --holaf-header-button-text: #A0A8B0;
+            --holaf-header-button-hover-text: #D0D8E0;
+            --holaf-scrollbar-thumb: #3A4E5E;
+            --holaf-scrollbar-track: #2A3038;
+            --holaf-success-color: #4CAF50;
+            --holaf-error-color: #F44336;
+            --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+            --holaf-border-radius: 4px;
+        }
+        body {
+            background-color: var(--holaf-background-primary);
+            color: var(--holaf-text-primary);
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body class="holaf-theme-steel-blue">
+    <script type="module">
+        import { initStandaloneComparer } from '/extensions/ComfyUI-Holaf-Utilities/holaf_remote_comparer.js';
+        initStandaloneComparer();
+    </script>
+</body>
+</html>
+"""
+
 # --- API Route Definitions ---
 routes = server.PromptServer.instance.routes
 
@@ -337,6 +400,10 @@ if profiler_engine:
 @routes.get("/holaf/view")
 async def gallery_view_route(request: web.Request):
     return web.Response(text=GALLERY_HTML, content_type='text/html')
+
+@routes.get("/holaf/comparer")
+async def comparer_view_route(request: web.Request):
+    return web.Response(text=COMPARER_HTML, content_type='text/html')
 # ------------------------------------------
 
 # Shared/Utility Routes
