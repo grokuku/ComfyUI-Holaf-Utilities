@@ -149,7 +149,7 @@ async function displayInfoForImage(image) {
             return b;
         };
 
-        finalMetadataContainer.innerHTML += `<p><span class="holaf-viewer-metadata-label">Prompt:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.prompt_source)}</span></p>`;
+        finalMetadataContainer.insertAdjacentHTML('beforeend', `<p><span class="holaf-viewer-metadata-label">Prompt:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.prompt_source)}</span></p>`);
         const promptActions = document.createElement('div');
         promptActions.className = 'holaf-viewer-info-actions';
         promptActions.appendChild(createButton('📋 Copy Prompt', (e) => {
@@ -174,13 +174,19 @@ async function displayInfoForImage(image) {
                 finalMetadataContainer.appendChild(promptBox);
                 requestAnimationFrame(() => autoResizeTextarea(promptBox));
             } else {
-                finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
+                const msg = document.createElement('p');
+                msg.className = 'holaf-viewer-message';
+                msg.innerHTML = '<em>Not available.</em>';
+                finalMetadataContainer.appendChild(msg);
             }
         } else {
-            finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
+            const msg = document.createElement('p');
+            msg.className = 'holaf-viewer-message';
+            msg.innerHTML = '<em>Not available.</em>';
+            finalMetadataContainer.appendChild(msg);
         }
 
-        finalMetadataContainer.innerHTML += `<p style="margin-top:15px;"><span class="holaf-viewer-metadata-label">Workflow:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.workflow_source)}</span></p>`;
+        finalMetadataContainer.insertAdjacentHTML('beforeend', `<p style="margin-top:15px;"><span class="holaf-viewer-metadata-label">Workflow:</span><span class="holaf-viewer-metadata-source">${getSourceLabel(data.workflow_source)}</span></p>`);
         const workflowActions = document.createElement('div');
         workflowActions.className = 'holaf-viewer-info-actions';
         
@@ -237,9 +243,9 @@ async function displayInfoForImage(image) {
             copyWfActions.appendChild(copyWorkflowBtn);
             finalMetadataContainer.appendChild(copyWfActions);
         } else if (data.workflow && data.workflow.error) {
-            finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message error"><em>Error: ${data.workflow.error}</em></p>`;
+            finalMetadataContainer.insertAdjacentHTML('beforeend', `<p class="holaf-viewer-message error"><em>Error: ${data.workflow.error}</em></p>`);
         } else {
-            finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>No workflow found.</em></p>`;
+            finalMetadataContainer.insertAdjacentHTML('beforeend', `<p class="holaf-viewer-message"><em>No workflow found.</em></p>`);
         }
     } catch (err) {
         if (err.name !== 'AbortError') {
