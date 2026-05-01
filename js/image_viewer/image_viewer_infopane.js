@@ -20,6 +20,18 @@ let abortController = null;
 let lastProcessedPath = null;
 
 /**
+ * Auto-resizes a textarea to fit its content, respecting max-height.
+ * @param {HTMLTextAreaElement} textarea
+ */
+function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto';
+    const computed = getComputedStyle(textarea);
+    const maxH = parseFloat(computed.maxHeight) || 140;
+    const scrollH = textarea.scrollHeight;
+    textarea.style.height = Math.min(scrollH, maxH) + 'px';
+}
+
+/**
  * Copies text to the clipboard using the best available method.
  * First tries execCommand (user gesture), then clipboard API as fallback.
  * @param {string} text - The text to copy.
@@ -153,11 +165,17 @@ async function displayInfoForImage(image) {
         finalMetadataContainer.appendChild(promptActions);
 
         if (data.prompt) {
-            const promptBox = document.createElement('textarea');
-            promptBox.className = 'holaf-viewer-metadata-box';
-            promptBox.readOnly = true;
-            promptBox.value = data.prompt;
-            finalMetadataContainer.appendChild(promptBox);
+            const promptText = data.prompt.trim();
+            if (promptText) {
+                const promptBox = document.createElement('textarea');
+                promptBox.className = 'holaf-viewer-metadata-box';
+                promptBox.readOnly = true;
+                promptBox.value = promptText;
+                finalMetadataContainer.appendChild(promptBox);
+                requestAnimationFrame(() => autoResizeTextarea(promptBox));
+            } else {
+                finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
+            }
         } else {
             finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
         }
@@ -196,6 +214,7 @@ async function displayInfoForImage(image) {
             workflowBox.readOnly = true;
             workflowBox.value = JSON.stringify(data.workflow, null, 2);
             finalMetadataContainer.appendChild(workflowBox);
+            requestAnimationFrame(() => autoResizeTextarea(workflowBox));
 
             // Add Copy Workflow button
             const copyWorkflowBtn = document.createElement('button');

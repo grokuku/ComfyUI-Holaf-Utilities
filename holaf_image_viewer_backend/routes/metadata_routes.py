@@ -43,7 +43,10 @@ async def get_metadata_route(request: web.Request):
         holaf_database.close_db_connection()
         conn = None # Connection is closed, prevent finally block re-closing it.
 
-        if db_data and db_data['workflow_source']: # Use 'workflow_source' as a sign that data is populated
+        # Only use cached DB data if BOTH workflow and prompt are present.
+        # If prompt_text is None (e.g., .txt was added after last sync), fall through
+        # to live extraction which reads sidecar files directly from disk.
+        if db_data and db_data['workflow_source'] and db_data['prompt_text'] is not None:
             workflow_data = None
             if db_data['workflow_json']:
                 try: workflow_data = json.loads(db_data['workflow_json'])
