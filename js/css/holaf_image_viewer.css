@@ -662,6 +662,20 @@ body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
     color: var(--holaf-text-primary);
 }
 
+/* Override default textarea styles to match the div version */
+textarea.holaf-viewer-metadata-box {
+    font-family: inherit;
+    resize: none;
+    width: 100%;
+    box-sizing: border-box;
+    line-height: 1.4;
+}
+
+textarea.holaf-viewer-metadata-box:focus {
+    outline: 1px solid var(--holaf-accent-color);
+    outline-offset: -1px;
+}
+
 #holaf-editor-content {
     display: flex;
     flex-direction: column;

@@ -20,30 +20,47 @@ let abortController = null;
 let lastProcessedPath = null;
 
 /**
- * Copies text to the user's clipboard.
+ * Copies text to the clipboard using the best available method.
+ * First tries execCommand (user gesture), then clipboard API as fallback.
  * @param {string} text - The text to copy.
  * @returns {Promise<void>}
  */
 function copyTextToClipboard(text) {
     return new Promise((resolve, reject) => {
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text).then(resolve).catch(reject);
-        } else {
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";
-            textArea.style.top = "-9999px";
-            textArea.style.left = "-9999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-                if (document.execCommand('copy')) resolve();
-                else reject(new Error('Copy command failed.'));
-            } catch (err) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '0';
+        textarea.style.top = '0';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        textarea.style.width = '1px';
+        textarea.style.height = '1px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+
+        try {
+            const success = document.execCommand('copy');
+            if (success) {
+                resolve();
+            } else {
+                // execCommand failed, try clipboard API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(resolve, reject);
+                } else {
+                    reject(new Error('Copy not supported'));
+                }
+            }
+        } catch (err) {
+            // execCommand threw, try clipboard API
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(resolve, reject);
+            } else {
                 reject(err);
             }
-            document.body.removeChild(textArea);
+        } finally {
+            document.body.removeChild(textarea);
         }
     });
 }
@@ -136,9 +153,10 @@ async function displayInfoForImage(image) {
         finalMetadataContainer.appendChild(promptActions);
 
         if (data.prompt) {
-            const promptBox = document.createElement('div');
+            const promptBox = document.createElement('textarea');
             promptBox.className = 'holaf-viewer-metadata-box';
-            promptBox.textContent = data.prompt;
+            promptBox.readOnly = true;
+            promptBox.value = data.prompt;
             finalMetadataContainer.appendChild(promptBox);
         } else {
             finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message"><em>Not available.</em></p>`;
@@ -173,10 +191,32 @@ async function displayInfoForImage(image) {
         finalMetadataContainer.appendChild(workflowActions);
 
         if (data.workflow && !data.workflow.error) {
-            const workflowBox = document.createElement('div');
+            const workflowBox = document.createElement('textarea');
             workflowBox.className = 'holaf-viewer-metadata-box';
-            workflowBox.textContent = JSON.stringify(data.workflow, null, 2);
+            workflowBox.readOnly = true;
+            workflowBox.value = JSON.stringify(data.workflow, null, 2);
             finalMetadataContainer.appendChild(workflowBox);
+
+            // Add Copy Workflow button
+            const copyWorkflowBtn = document.createElement('button');
+            copyWorkflowBtn.className = 'holaf-viewer-info-button';
+            copyWorkflowBtn.textContent = '📋 Copy Workflow';
+            copyWorkflowBtn.onclick = (e) => {
+                workflowBox.focus();
+                workflowBox.select();
+                copyTextToClipboard(workflowBox.value).then(() => {
+                    e.target.textContent = 'Copied!';
+                    setTimeout(() => e.target.textContent = '📋 Copy Workflow', 1500);
+                }).catch(err => {
+                    console.error('Copy workflow failed:', err);
+                    e.target.textContent = 'Copy Failed!';
+                    setTimeout(() => e.target.textContent = '📋 Copy Workflow', 2000);
+                });
+            };
+            const copyWfActions = document.createElement('div');
+            copyWfActions.className = 'holaf-viewer-info-actions';
+            copyWfActions.appendChild(copyWorkflowBtn);
+            finalMetadataContainer.appendChild(copyWfActions);
         } else if (data.workflow && data.workflow.error) {
             finalMetadataContainer.innerHTML += `<p class="holaf-viewer-message error"><em>Error: ${data.workflow.error}</em></p>`;
         } else {
