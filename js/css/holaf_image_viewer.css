@@ -305,13 +305,9 @@ body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
 #holaf-viewer-gallery {
     flex-grow: 1;
     overflow-y: auto;
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    gap: 4px;
+    position: relative;
     padding: 10px;
     box-sizing: border-box;
-    position: relative;
     background-color: color-mix(in srgb, var(--holaf-background-primary) 50%, black);
 }
 
@@ -349,9 +345,6 @@ body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
 }
 
 .holaf-viewer-thumbnail-placeholder {
-    flex-basis: var(--holaf-thumbnail-size);
-    flex-grow: 0;
-    max-width: calc(var(--holaf-thumbnail-size) * 1.8);
     position: relative;
     aspect-ratio: 1 / 1;
     cursor: pointer;

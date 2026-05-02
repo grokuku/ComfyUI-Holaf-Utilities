@@ -395,7 +395,7 @@ export async function handleKeyDown(viewer, e) {
             if (currentMode !== 'gallery' || !state.activeImage) break;
             e.preventDefault();
 
-            const currentSelection = new Set([...state.selectedImages].map(img => img.path_canon));
+            const currentSelection = new Set(state.selectedPaths); // Copy for mutation
             const activeImagePath = state.activeImage.path_canon;
 
             if (currentSelection.has(activeImagePath)) {
@@ -432,7 +432,7 @@ export async function handleKeyDown(viewer, e) {
                         await navigate(viewer, -1);
                     }
                 }
-            } else if (state.selectedImages.length > 0) {
+            } else if (state.selectedPaths.size > 0) {
                 const success = await handleDeletion(viewer, isPermanent, null);
                 if (success) {
                     imageViewerState.setState({ selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });

@@ -655,7 +655,7 @@ const holafImageViewer = {
             }
 
             const currentState = imageViewerState.getState();
-            const currentSelectedPaths = new Set(Array.from(currentState.selectedImages).map(img => img.path_canon));
+            const currentSelectedPaths = new Set(currentState.selectedPaths); // Copy for mutation
             const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
 
             imageViewerState.setState({ selectedImages: new Set() });
@@ -932,7 +932,7 @@ const holafImageViewer = {
             statusText += ` | Thumbnails: N/A`;
         }
 
-        const selectedCount = imageViewerState.getState().selectedImages.size;
+        const selectedCount = imageViewerState.getState().selectedPaths.size;
         if (selectedCount > 0) {
             statusText += ` | Selected: ${selectedCount}`;
         }

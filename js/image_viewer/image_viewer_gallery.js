@@ -36,7 +36,7 @@ let isBenchmarking = false;
 
 // --- LRU CACHE IMPLEMENTATION ---
 class ThumbnailLRUCache {
-    constructor(capacity = 300) {
+    constructor(capacity = 2000) {
         this.capacity = capacity;
         this.cache = new Map(); // path_canon -> blobURL
     }
@@ -247,7 +247,7 @@ function renderVisibleItems() {
         renderRequestID = null;
 
         if (columnCount === 0) return;
-        const { images, activeImage, selectedImages } = imageViewerState.getState();
+        const { images, activeImage, selectedPaths } = imageViewerState.getState();
 
         if (!images.length || !galleryEl || !galleryGridEl || itemHeight === 0) {
             return;
@@ -290,12 +290,6 @@ function renderVisibleItems() {
                 applyCachedThumbnail(placeholder, path);
             }
 
-            // --- FIX: REMOVED forced JS style for images. CSS classes handle it. ---
-            const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
-            if (img) {
-                img.style.objectFit = ''; // Ensure no inline style overrides CSS
-            }
-
             const row = Math.floor(i / columnCount);
             const col = i % columnCount;
             const top = row * itemHeightWithGap;
@@ -310,8 +304,8 @@ function renderVisibleItems() {
             placeholder.style.height = `${itemHeight}px`;
 
             placeholder.classList.toggle('active', activeImage && activeImage.path_canon === path);
-            const isSelected = [...selectedImages].some(selImg => selImg.path_canon === path);
-            placeholder.querySelector('.holaf-viewer-thumb-checkbox').checked = isSelected;
+            const isSelected = selectedPaths.has(path);
+            placeholder._checkbox.checked = isSelected;
 
             newPlaceholdersToRender.set(path, placeholder);
         }
@@ -724,6 +718,7 @@ function createPlaceholder(viewer, image, index) {
     checkbox.type = 'checkbox';
     checkbox.className = 'holaf-viewer-thumb-checkbox';
     checkbox.title = "Select image";
+    placeholder._checkbox = checkbox; // Cache ref for O(1) access in render loop
     placeholder.appendChild(checkbox);
 
     placeholder.addEventListener('click', (e) => {
@@ -734,7 +729,7 @@ function createPlaceholder(viewer, image, index) {
         const clickedImageData = state.images[clickedIndex];
         if (!clickedImageData) return;
         const anchorIndex = state.currentNavIndex > -1 ? state.currentNavIndex : clickedIndex;
-        const selectedPaths = new Set([...state.selectedImages].map(img => img.path_canon));
+        const selectedPaths = new Set(state.selectedPaths); // Copy for mutation
         if (e.shiftKey) {
             if (!e.ctrlKey) selectedPaths.clear();
             const start = Math.min(anchorIndex, clickedIndex);

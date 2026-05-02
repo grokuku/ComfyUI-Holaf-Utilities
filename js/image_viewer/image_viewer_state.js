@@ -10,6 +10,7 @@ class ImageViewerState {
             // Données principales
             images: [],
             selectedImages: new Set(),
+            selectedPaths: new Set(), // Derived from selectedImages for O(1) lookups
             activeImage: null,
             currentNavIndex: -1,
 
@@ -119,8 +120,11 @@ class ImageViewerState {
             }
         }
         
-        // LOG REMOVED to keep console clean during polling
-        // console.log("Image Viewer State Updated:", partialState);
+        // Keep selectedPaths in sync with selectedImages for O(1) lookups in render loop
+        if (partialState.selectedImages !== undefined) {
+            this.state.selectedPaths = new Set([...this.state.selectedImages].map(img => img.path_canon));
+        }
+
         this._notify();
     }
 
@@ -158,7 +162,10 @@ class ImageViewerState {
             },
 
             // Conversion explicite et fiable du Set en Array
-            selectedImages: Array.from(state.selectedImages)
+            selectedImages: Array.from(state.selectedImages),
+
+            // OPTIMISATION: Direct reference for O(1) lookups in render loop
+            selectedPaths: state.selectedPaths
         };
         return stateCopy;
     }
