@@ -105,26 +105,72 @@
 }
 
 /* ==========================================================================
-   Resize handle — SVG-style subtle grip
+   Resize handles — 8 directions (N, S, E, W, NE, NW, SE, SW)
    ========================================================================== */
 
-.holaf-utility-resize-handle {
-    position: absolute !important;
-    bottom: 0 !important;
-    right: 0 !important;
-    width: 15px !important;
-    height: 15px !important;
-    cursor: se-resize !important;
-    z-index: 2 !important;
-    opacity: 0.3;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M22 22H12v-2h10v-10h2v12z'/%3E%3C/svg%3E") !important;
-    background-size: contain !important;
-    background-repeat: no-repeat !important;
-    background-position: center !important;
-    transition: opacity 0.2s;
+.holaf-resize-handle {
+    position: absolute;
+    z-index: 3;
 }
 
-.holaf-utility-resize-handle:hover {
+/* --- Edge handles --- */
+
+.holaf-resize-n {
+    top: 0; left: 0; right: 0; height: 7px;
+    cursor: n-resize;
+}
+.holaf-resize-s {
+    bottom: 0; left: 0; right: 0; height: 7px;
+    cursor: s-resize;
+}
+.holaf-resize-e {
+    top: 0; right: 0; bottom: 0; width: 7px;
+    cursor: e-resize;
+}
+.holaf-resize-w {
+    top: 0; left: 0; bottom: 0; width: 7px;
+    cursor: w-resize;
+}
+
+/* --- Corner handles (higher z-index takes priority over edges) --- */
+
+.holaf-resize-ne {
+    top: 0; right: 0; width: 14px; height: 14px;
+    cursor: ne-resize;
+    z-index: 4;
+}
+.holaf-resize-nw {
+    top: 0; left: 0; width: 14px; height: 14px;
+    cursor: nw-resize;
+    z-index: 4;
+}
+.holaf-resize-se {
+    bottom: 0; right: 0; width: 14px; height: 14px;
+    cursor: se-resize;
+    z-index: 4;
+}
+.holaf-resize-sw {
+    bottom: 0; left: 0; width: 14px; height: 14px;
+    cursor: sw-resize;
+    z-index: 4;
+}
+
+/* SE corner visual grip indicator (discoverability) */
+.holaf-resize-se::after {
+    content: '';
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 15px; height: 15px;
+    opacity: 0.3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M22 22H12v-2h10v-10h2v12z'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.holaf-resize-se:hover::after {
     opacity: 0.6;
 }
 
@@ -384,7 +430,7 @@
     transition: all 0.2s ease-in-out;
 }
 
-.holaf-panel-fullscreen .holaf-utility-resize-handle {
+.holaf-panel-fullscreen .holaf-resize-handle {
     display: none !important;
 }
 

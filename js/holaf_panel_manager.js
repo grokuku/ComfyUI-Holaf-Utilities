@@ -104,14 +104,20 @@ export const HolafPanelManager = {
         content.style.overflow = "hidden";
         content.style.position = "relative";
 
-        const resizeHandle = document.createElement("div");
-        resizeHandle.className = "holaf-utility-resize-handle";
+        // Create 8 directional resize handles (N, S, E, W, NE, NW, SE, SW)
+        const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+        directions.forEach(dir => {
+            const handle = document.createElement("div");
+            handle.className = `holaf-resize-handle holaf-resize-${dir}`;
+            handle.dataset.dir = dir;
+            panel.appendChild(handle);
+        });
 
-        panel.append(header, content, resizeHandle);
+        panel.append(header, content);
         document.body.appendChild(panel);
 
         this.makeDraggable(panel, header, options.onStateChange);
-        this.makeResizable(panel, resizeHandle, options.onStateChange, options.onResize);
+        this.makeResizable(panel, options.onStateChange, options.onResize);
         this.setupFullscreenToggle(panel, header, options.onFullscreenToggle);
 
         this.bringToFront(panel);
@@ -216,41 +222,76 @@ export const HolafPanelManager = {
         });
     },
 
-    makeResizable(panel, handle, onStateChange, onResize) {
-        handle.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+    makeResizable(panel, onStateChange, onResize) {
+        const handles = panel.querySelectorAll('.holaf-resize-handle');
+        handles.forEach(handle => {
+            handle.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
 
-            this.bringToFront(panel);
-            this._bakePosition(panel);
+                const dir = handle.dataset.dir;
+                const resizeN = dir.includes('n');
+                const resizeS = dir.includes('s');
+                const resizeE = dir.includes('e');
+                const resizeW = dir.includes('w');
 
-            const initialX = e.clientX;
-            const initialY = e.clientY;
-            const initialWidth = panel.offsetWidth;
-            const initialHeight = panel.offsetHeight;
-            const minWidth = parseInt(getComputedStyle(panel).minWidth) || 100;
-            const minHeight = parseInt(getComputedStyle(panel).minHeight) || 50;
+                this.bringToFront(panel);
+                this._bakePosition(panel);
 
-            const onResizeMove = (moveEvent) => {
-                const deltaX = moveEvent.clientX - initialX;
-                const deltaY = moveEvent.clientY - initialY;
-                let newWidth = Math.max(minWidth, initialWidth + deltaX);
-                let newHeight = Math.max(minHeight, initialHeight + deltaY);
-                panel.style.width = `${newWidth}px`;
-                panel.style.height = `${newHeight}px`;
-                if (onResize) onResize();
-            };
+                const initialX = e.clientX;
+                const initialY = e.clientY;
+                const initialWidth = panel.offsetWidth;
+                const initialHeight = panel.offsetHeight;
+                const initialLeft = panel.offsetLeft;
+                const initialTop = panel.offsetTop;
+                const minWidth = parseInt(getComputedStyle(panel).minWidth) || 100;
+                const minHeight = parseInt(getComputedStyle(panel).minHeight) || 50;
 
-            const onResizeUp = () => {
-                document.removeEventListener("mousemove", onResizeMove);
-                document.removeEventListener("mouseup", onResizeUp);
-                if (onStateChange) {
-                    onStateChange({ x: panel.offsetLeft, y: panel.offsetTop, width: panel.offsetWidth, height: panel.offsetHeight });
-                }
-            };
+                const onResizeMove = (moveEvent) => {
+                    const deltaX = moveEvent.clientX - initialX;
+                    const deltaY = moveEvent.clientY - initialY;
 
-            document.addEventListener("mousemove", onResizeMove);
-            document.addEventListener("mouseup", onResizeUp);
+                    let newWidth = initialWidth;
+                    let newHeight = initialHeight;
+                    let newLeft = initialLeft;
+                    let newTop = initialTop;
+
+                    // Horizontal resize
+                    if (resizeE) {
+                        newWidth = Math.max(minWidth, initialWidth + deltaX);
+                    }
+                    if (resizeW) {
+                        newWidth = Math.max(minWidth, initialWidth - deltaX);
+                        newLeft = initialLeft + initialWidth - newWidth;
+                    }
+
+                    // Vertical resize
+                    if (resizeS) {
+                        newHeight = Math.max(minHeight, initialHeight + deltaY);
+                    }
+                    if (resizeN) {
+                        newHeight = Math.max(minHeight, initialHeight - deltaY);
+                        newTop = initialTop + initialHeight - newHeight;
+                    }
+
+                    panel.style.width = `${newWidth}px`;
+                    panel.style.height = `${newHeight}px`;
+                    panel.style.left = `${newLeft}px`;
+                    panel.style.top = `${newTop}px`;
+                    if (onResize) onResize();
+                };
+
+                const onResizeUp = () => {
+                    document.removeEventListener("mousemove", onResizeMove);
+                    document.removeEventListener("mouseup", onResizeUp);
+                    if (onStateChange) {
+                        onStateChange({ x: panel.offsetLeft, y: panel.offsetTop, width: panel.offsetWidth, height: panel.offsetHeight });
+                    }
+                };
+
+                document.addEventListener("mousemove", onResizeMove);
+                document.addEventListener("mouseup", onResizeUp);
+            });
         });
     },
 

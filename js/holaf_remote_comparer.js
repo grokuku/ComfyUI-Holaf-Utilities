@@ -32,7 +32,6 @@ const HolafRemoteComparer = {
     canvasEl: null,
     ctx: null,
     statusTextEl: null,
-    resizeHandle: null,
     popupWindow: null,
     floatingSidebarBtn: null,
     floatingPopoutBtn: null,
@@ -323,13 +322,13 @@ const HolafRemoteComparer = {
         this.mainContainer.appendChild(this.sidebarElement);
         this.mainContainer.appendChild(this.contentElement);
 
-        this.createResizeHandle();
-        if (this.isStandalone) this.resizeHandle.style.display = "none";
+        this.createResizeHandles();
+        if (this.isStandalone) this.setResizeHandlesVisible(false);
         this.buildBottomSidebar();
 
         this.rootElement.appendChild(header);
         this.rootElement.appendChild(this.mainContainer);
-        this.rootElement.appendChild(this.resizeHandle);
+        // Resize handles are already appended inside createResizeHandles()
 
         document.body.appendChild(this.rootElement);
 
@@ -1084,10 +1083,10 @@ const HolafRemoteComparer = {
         this.isFullscreen = !this.isFullscreen;
         if (this.isFullscreen) {
             Object.assign(this.rootElement.style, { width: "100vw", height: "100vh", right: "0px", bottom: "0px", borderRadius: "0px" });
-            this.resizeHandle.style.display = "none";
+            this.setResizeHandlesVisible(false);
         } else {
             this.rootElement.style.borderRadius = "8px";
-            this.resizeHandle.style.display = "block";
+            this.setResizeHandlesVisible(true);
             this.updateVisualPosition();
         }
     },
@@ -1152,34 +1151,79 @@ const HolafRemoteComparer = {
         });
     },
 
-    createResizeHandle() {
-        this.resizeHandle = document.createElement("div");
-        this.resizeHandle.className = "holaf-rc-resize-handle";
-        Object.assign(this.resizeHandle.style, { position: "absolute", bottom: "0", right: "0", width: "15px", height: "15px", cursor: "nwse-resize", zIndex: "20" });
-        this.resizeHandle.innerHTML = `<svg viewBox="0 0 24 24" style="width:100%; height:100%;"><path d="M22 22H12v-2h10v-10h2v12z"/></svg>`;
-        let isResizing = false, startX, startY, startW, startH, startRight, startBottom;
+    createResizeHandles() {
+        const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+        directions.forEach(dir => {
+            const handle = document.createElement("div");
+            handle.className = `holaf-resize-handle holaf-resize-${dir}`;
+            handle.dataset.dir = dir;
 
-        this.resizeHandle.addEventListener('mousedown', (e) => {
-            if (this.isFullscreen) return;
-            e.stopPropagation(); isResizing = true; startX = e.clientX; startY = e.clientY;
-            const rect = this.rootElement.getBoundingClientRect();
-            startW = rect.width; startH = rect.height; startRight = window.innerWidth - rect.right; startBottom = window.innerHeight - rect.bottom;
-            e.preventDefault();
+            handle.addEventListener('mousedown', (e) => {
+                if (this.isFullscreen) return;
+                e.stopPropagation();
+                e.preventDefault();
 
-            const onMouseMove = (ev) => {
-                if (!isResizing) return;
-                const newW = Math.max(300, startW + (ev.clientX - startX));
-                const newH = Math.max(200, startH + (ev.clientY - startY));
-                this.storedPos.width = newW; this.storedPos.height = newH;
-                this.storedPos.right = startRight - (newW - startW); this.storedPos.bottom = startBottom - (newH - startH);
-                this.updateVisualPosition();
-            };
+                const resizeN = dir.includes('n');
+                const resizeS = dir.includes('s');
+                const resizeE = dir.includes('e');
+                const resizeW = dir.includes('w');
 
-            const onMouseUp = () => {
-                if (isResizing) { isResizing = false; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); this.saveState(); }
-            };
-            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const rect = this.rootElement.getBoundingClientRect();
+                const startW = rect.width;
+                const startH = rect.height;
+                const startRight = window.innerWidth - rect.right;
+                const startBottom = window.innerHeight - rect.bottom;
+
+                const onMouseMove = (ev) => {
+                    const dx = ev.clientX - startX;
+                    const dy = ev.clientY - startY;
+
+                    let newW = startW;
+                    let newH = startH;
+                    let newRight = startRight;
+                    let newBottom = startBottom;
+
+                    if (resizeE) {
+                        newW = Math.max(300, startW + dx);
+                        newRight = startRight - (newW - startW);
+                    }
+                    if (resizeW) {
+                        newW = Math.max(300, startW - dx);
+                    }
+                    if (resizeS) {
+                        newH = Math.max(200, startH + dy);
+                        newBottom = startBottom - (newH - startH);
+                    }
+                    if (resizeN) {
+                        newH = Math.max(200, startH - dy);
+                    }
+
+                    this.storedPos.width = newW;
+                    this.storedPos.height = newH;
+                    this.storedPos.right = newRight;
+                    this.storedPos.bottom = newBottom;
+                    this.updateVisualPosition();
+                };
+
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    this.saveState();
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            this.rootElement.appendChild(handle);
         });
+    },
+
+    setResizeHandlesVisible(visible) {
+        const handles = this.rootElement.querySelectorAll('.holaf-resize-handle');
+        handles.forEach(h => h.style.display = visible ? '' : 'none');
     },
 
     resizeCanvas() {

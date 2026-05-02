@@ -233,27 +233,12 @@
     border: none;
 }
 
-/* Resize handle */
-#holaf-remote-comparer-root .holaf-rc-resize-handle {
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    width: 15px;
-    height: 15px;
-    cursor: nwse-resize;
-    z-index: 20;
-    opacity: 0.3;
-    transition: opacity 0.2s;
+/* Resize handles (now using shared .holaf-resize-handle classes) */
+#holaf-remote-comparer-root .holaf-resize-se::after {
+    opacity: 0.4;
 }
-
-#holaf-remote-comparer-root .holaf-rc-resize-handle:hover {
-    opacity: 0.6;
-}
-
-#holaf-remote-comparer-root .holaf-rc-resize-handle svg {
-    width: 100%;
-    height: 100%;
-    fill: var(--holaf-text-primary);
+#holaf-remote-comparer-root .holaf-resize-se:hover::after {
+    opacity: 0.7;
 }
 
 /* ==========================================================================
@@ -273,6 +258,6 @@ body.holaf-standalone-comparer #holaf-remote-comparer-root {
 }
 
 body.holaf-standalone-comparer .holaf-utility-header .holaf-utility-close-button,
-body.holaf-standalone-comparer #holaf-remote-comparer-root .holaf-rc-resize-handle {
+body.holaf-standalone-comparer #holaf-remote-comparer-root .holaf-resize-handle {
     display: none !important;
 }

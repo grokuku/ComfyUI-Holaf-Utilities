@@ -6,7 +6,6 @@ const HolafShortcuts = {
     isVisible: false,
     rootElement: null,
     listElement: null,
-    resizeHandle: null,
     
     // --- Data State ---
     shortcuts: [], // Array of { id, name, x, y, zoom, path }
@@ -234,11 +233,11 @@ const HolafShortcuts = {
             padding: "5px"
         });
 
-        this.createResizeHandle();
+        this.createResizeHandles();
 
         this.rootElement.appendChild(header);
         this.rootElement.appendChild(this.listElement);
-        this.rootElement.appendChild(this.resizeHandle); 
+        // Resize handles are already appended inside createResizeHandles()
         
         document.body.appendChild(this.rootElement);
 
@@ -381,55 +380,77 @@ const HolafShortcuts = {
         });
     },
 
-    createResizeHandle() {
-        this.resizeHandle = document.createElement("div");
-        this.resizeHandle.className = "holaf-utility-resize-handle";
+    createResizeHandles() {
+        const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+        directions.forEach(dir => {
+            const handle = document.createElement("div");
+            handle.className = `holaf-resize-handle holaf-resize-${dir}`;
+            handle.dataset.dir = dir;
 
-        let isResizing = false;
-        let startX, startY, startW, startH, startRight, startBottom;
+            handle.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
 
-        this.resizeHandle.addEventListener('mousedown', (e) => {
-            e.stopPropagation(); 
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            
-            const rect = this.rootElement.getBoundingClientRect();
-            startW = rect.width;
-            startH = rect.height;
-            startRight = window.innerWidth - rect.right;
-            startBottom = window.innerHeight - rect.bottom;
+                const resizeN = dir.includes('n');
+                const resizeS = dir.includes('s');
+                const resizeE = dir.includes('e');
+                const resizeW = dir.includes('w');
 
-            e.preventDefault();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const rect = this.rootElement.getBoundingClientRect();
+                const startW = rect.width;
+                const startH = rect.height;
+                const startRight = window.innerWidth - rect.right;
+                const startBottom = window.innerHeight - rect.bottom;
 
-            const onMouseMove = (ev) => {
-                if (!isResizing) return;
-                const dx = ev.clientX - startX; 
-                const dy = ev.clientY - startY;
-                
-                const newW = Math.max(150, startW + dx);
-                const newH = Math.max(100, startH + dy);
+                const onMouseMove = (ev) => {
+                    const dx = ev.clientX - startX;
+                    const dy = ev.clientY - startY;
 
-                this.storedPos.width = newW;
-                this.storedPos.height = newH;
-                
-                this.storedPos.right = startRight - (newW - startW);
-                this.storedPos.bottom = startBottom - (newH - startH);
-                
-                this.updateVisualPosition();
-            };
+                    let newW = startW;
+                    let newH = startH;
+                    let newRight = startRight;
+                    let newBottom = startBottom;
 
-            const onMouseUp = () => {
-                if (isResizing) {
-                    isResizing = false;
+                    // Horizontal resize
+                    if (resizeE) {
+                        newW = Math.max(150, startW + dx);
+                        newRight = startRight - (newW - startW);
+                    }
+                    if (resizeW) {
+                        newW = Math.max(150, startW - dx);
+                        // Right edge stays fixed
+                    }
+
+                    // Vertical resize
+                    if (resizeS) {
+                        newH = Math.max(100, startH + dy);
+                        newBottom = startBottom - (newH - startH);
+                    }
+                    if (resizeN) {
+                        newH = Math.max(100, startH - dy);
+                        // Bottom edge stays fixed
+                    }
+
+                    this.storedPos.width = newW;
+                    this.storedPos.height = newH;
+                    this.storedPos.right = newRight;
+                    this.storedPos.bottom = newBottom;
+                    this.updateVisualPosition();
+                };
+
+                const onMouseUp = () => {
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
-                    this.saveState(); 
-                }
-            };
+                    this.saveState();
+                };
 
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            this.rootElement.appendChild(handle);
         });
     },
 

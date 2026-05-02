@@ -2,20 +2,20 @@
     import { app, api } from "./holaf_api_compat.js";
     import { HolafPanelManager } from "./holaf_panel_manager.js";
     import "./chart.min.js"; // Import Chart.js
-    
+
     const HolafSystemMonitor = {
         name: "Holaf.SystemMonitor",
         isVisible: false,
         ws: null,
         monitorElement: null,
-        resizeHandle: null,
+        
         mainChart: null,
         resizeObserver: null,
         chartData: {
             labels: [],
             datasets: []
         },
-    
+
         // --- NEW: Internal state for Ghost Position ---
         storedPos: {
             right: 20,
@@ -24,19 +24,19 @@
             height: 260
         },
         STORAGE_KEY: "holaf_monitor_state_v2", // Versioned key
-    
+
         // Configuration
         baseMaxPoints: 60,       // Normal mode (1.5s rate)
         turboMaxPoints: 300,     // Turbo mode (0.25s rate) - 5x density
         currentMaxPoints: 60,    // Dynamic current limit
-        
+
         config: {
             update_interval_ms: 1500,
             max_history_points: 60,
         },
         gpuDataInitialized: false,
         hiddenDatasetIds: new Set(), // Store user preference for hidden lines
-    
+
         // Palette for multiple GPUs.
         GPU_PALETTE: [
             { load: '#4bc0c0', vram: '#9966ff' }, // GPU 0
@@ -44,27 +44,27 @@
             { load: '#36a2eb', vram: '#ff6384' }, // GPU 2
             { load: '#4d5360', vram: '#c9cbcf' }  // GPU 3
         ],
-    
+
         COLORS: {
             CPU_BAR: '#ff6384',
             RAM_BAR: '#36a2eb'
         },
-    
+
         init() {
             this.loadSettingsFromGlobalOrFetch();
             this.restoreState(); // Loads storedPos and isVisible
             this.createMonitorElement();
             this.setupComfyListeners();
-    
+
             // Handle window resizing to keep tool visible without breaking storedPos
             window.addEventListener("resize", () => this.updateVisualPosition());
-    
+
             // Auto-start if it was visible in previous session
             if (this.isVisible) {
                 setTimeout(() => this.show(), 300);
             }
         },
-        
+
         async loadSettingsFromGlobalOrFetch() {
             if (app.holafSettingsManager?.settingsData?.SystemMonitor) {
                 this.config = app.holafSettingsManager.settingsData.SystemMonitor;
@@ -74,7 +74,7 @@
             // Init labels array
             this.chartData.labels = Array(this.currentMaxPoints).fill("");
         },
-    
+
         // --- TURBO MODE LOGIC ---
         setupComfyListeners() {
             api.addEventListener("execution_start", () => this.setTurboMode(true));
@@ -83,19 +83,19 @@
                 if (e.detail === null) this.setTurboMode(false);
             });
         },
-    
+
         setTurboMode(enable) {
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-            
+
             // 1. Send Command to Backend
             const cmd = enable ? "turbo_on" : "turbo_off";
             this.ws.send(JSON.stringify({ cmd: cmd }));
-    
+
             // 2. Adjust Graph Density (Counterbalance Acceleration)
             // When turbo (fast updates), we want MORE points so they appear closer together
             // and the total time window on screen remains roughly consistent.
             this.currentMaxPoints = enable ? this.turboMaxPoints : this.baseMaxPoints;
-            
+
             // Adjust labels array length immediately to avoid Chart.js errors
             // (Data arrays adjust automatically in updateChartData)
             if (this.chartData.labels.length > this.currentMaxPoints) {
@@ -106,15 +106,15 @@
                 }
             }
         },
-    
+
         createMonitorElement() {
             if (this.monitorElement) return;
-    
+
             // --- 1. MAIN WINDOW ---
             this.monitorElement = document.createElement("div");
             this.monitorElement.id = "holaf-monitor-root";
             this.monitorElement.classList.add("holaf-floating-window");
-            
+
             Object.assign(this.monitorElement.style, {
                 display: "none",
                 position: "fixed",
@@ -128,14 +128,14 @@
                 fontFamily: "monospace",
                 boxSizing: "border-box",
                 overflow: "hidden",
-                pointerEvents: "auto", 
+                pointerEvents: "auto",
                 cursor: "default",
                 flexDirection: "column"
             });
-    
+
             this.enableWindowDragging();
-            this.createResizeHandle();
-    
+            this.createResizeHandles();
+
             // --- 2. HEADER ---
             const headerContainer = document.createElement("div");
             headerContainer.id = "holaf-monitor-header";
@@ -148,11 +148,11 @@
                 flexDirection: "column",
                 gap: "8px"
             });
-    
+
             const createBar = (id, label, color) => {
                 const wrapper = document.createElement("div");
                 wrapper.style.display = "flex"; wrapper.style.flexDirection = "column";
-                
+
                 const labelRow = document.createElement("div");
                 Object.assign(labelRow.style, {
                     display: "flex", justifyContent: "space-between",
@@ -160,7 +160,7 @@
                     marginBottom: "3px", paddingRight: "10px"
                 });
                 labelRow.innerHTML = `<span>${label}</span><span id="${id}-val">0%</span>`;
-    
+
                 const track = document.createElement("div");
                 Object.assign(track.style, {
                     height: "10px", width: "100%", backgroundColor: "rgba(255,255,255,0.15)",
@@ -169,16 +169,16 @@
                 const fill = document.createElement("div");
                 fill.id = `${id}-fill`;
                 Object.assign(fill.style, { height: "100%", width: "0%", backgroundColor: color, transition: "width 0.3s ease" });
-                
+
                 track.appendChild(fill);
                 wrapper.appendChild(labelRow);
                 wrapper.appendChild(track);
                 return wrapper;
             };
-    
+
             headerContainer.appendChild(createBar("holaf-cpu", "CPU", this.COLORS.CPU_BAR));
             headerContainer.appendChild(createBar("holaf-ram", "RAM", this.COLORS.RAM_BAR));
-    
+
             // --- 3. CHART WRAPPER ---
             const chartWrapper = document.createElement("div");
             chartWrapper.id = "holaf-monitor-chart-wrapper";
@@ -187,169 +187,175 @@
                 position: "relative",
                 width: "100%",
                 minHeight: "0",
-                padding: "0 10px 5px 0", 
+                padding: "0 10px 5px 0",
                 boxSizing: "border-box",
                 overflow: "hidden"
             });
-    
+
             const chartCanvas = document.createElement("canvas");
             chartCanvas.id = "holaf-main-monitor-chart";
             Object.assign(chartCanvas.style, { display: "block", width: "100%", height: "100%" });
-    
+
             chartWrapper.appendChild(chartCanvas);
-    
+
             this.monitorElement.appendChild(headerContainer);
             this.monitorElement.appendChild(chartWrapper);
             document.body.appendChild(this.monitorElement);
-    
+
             this.resizeObserver = new ResizeObserver(() => {
                 if (this.mainChart) this.mainChart.resize();
             });
             this.resizeObserver.observe(chartWrapper);
-    
+
             // Apply visual clamping
             this.updateVisualPosition();
         },
-    
+
         // --- NEW: Visual clamping logic ---
         updateVisualPosition() {
             if (!this.monitorElement) return;
-    
+
             // Apply stored size
             this.monitorElement.style.width = this.storedPos.width + "px";
             this.monitorElement.style.height = this.storedPos.height + "px";
-    
+
             // Calculate viewport limits
             const maxRight = window.innerWidth - this.storedPos.width;
             const maxBottom = window.innerHeight - this.storedPos.height;
-    
+
             // Visual clamping: cap the display between 0 and screen limits
             const visualRight = Math.max(0, Math.min(this.storedPos.right, maxRight));
             const visualBottom = Math.max(0, Math.min(this.storedPos.bottom, maxBottom));
-    
+
             Object.assign(this.monitorElement.style, {
                 left: "auto",
                 top: "auto",
                 right: visualRight + "px",
                 bottom: visualBottom + "px"
             });
-    
+
             if (this.mainChart) this.mainChart.resize();
         },
-    
+
         enableWindowDragging() {
             let isDragging = false;
             let startX, startY, dragStartRight, dragStartBottom;
-    
+
             this.monitorElement.addEventListener('mousedown', (e) => {
-                if (e.target === this.resizeHandle || this.resizeHandle?.contains(e.target)) return;
-                
+                if (e.target.closest('.holaf-resize-handle')) return;
+
                 isDragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
-                
+
                 // Current visual state as starting point
                 const rect = this.monitorElement.getBoundingClientRect();
                 dragStartRight = window.innerWidth - rect.right;
                 dragStartBottom = window.innerHeight - rect.bottom;
-                
+
                 this.monitorElement.style.cursor = "move";
                 e.preventDefault();
-                
+
                 const onMouseMove = (ev) => {
                     if (!isDragging) return;
                     const dx = ev.clientX - startX;
                     const dy = ev.clientY - startY;
-    
+
                     // Update STORED position directly
                     this.storedPos.right = dragStartRight - dx;
                     this.storedPos.bottom = dragStartBottom - dy;
-    
+
                     this.updateVisualPosition();
                 };
-    
+
                 const onMouseUp = () => {
                     if (isDragging) {
                         isDragging = false;
                         this.monitorElement.style.cursor = "default";
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
-                        this.saveState(); 
+                        this.saveState();
                     }
                 };
-    
+
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
             });
         },
-    
-        createResizeHandle() {
-            this.resizeHandle = document.createElement("div");
-            Object.assign(this.resizeHandle.style, {
-                position: "absolute", bottom: "0", right: "0",
-                width: "24px", height: "24px", cursor: "nwse-resize",
-                backgroundColor: "rgba(255, 255, 255, 0.1)", zIndex: "20",
-                borderBottomRightRadius: "10px", borderTopLeftRadius: "10px",
-                pointerEvents: "auto"
-            });
-            this.resizeHandle.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24" style="fill:white; opacity:0.8;"><path d="M22 22H2v-2h20v2zM22 18H6v-2h16v2zM22 14H10v-2h12v2z"/></svg>`; 
-    
-            let isResizing = false;
-            let startX, startY, startW, startH, startRight, startBottom;
-    
-            this.resizeHandle.addEventListener('mousedown', (e) => {
-                e.stopPropagation(); 
-                isResizing = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                
-                const rect = this.monitorElement.getBoundingClientRect();
-                startW = rect.width;
-                startH = rect.height;
-                startRight = window.innerWidth - rect.right;
-                startBottom = window.innerHeight - rect.bottom;
-    
-                e.preventDefault();
-    
-                const onMouseMove = (ev) => {
-                    if (!isResizing) return;
-                    const dx = ev.clientX - startX; 
-                    const dy = ev.clientY - startY;
-                    
-                    const newW = Math.max(250, startW + dx);
-                    const newH = Math.max(180, startH + dy);
-    
-                    // Update size
-                    this.storedPos.width = newW;
-                    this.storedPos.height = newH;
-                    
-                    // Adjust position to keep top-left corner fixed
-                    this.storedPos.right = startRight - (newW - startW);
-                    this.storedPos.bottom = startBottom - (newH - startH);
-                    
-                    this.updateVisualPosition();
-                };
-    
-                const onMouseUp = () => {
-                    if (isResizing) {
-                        isResizing = false;
+
+        createResizeHandles() {
+            const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+            directions.forEach(dir => {
+                const handle = document.createElement("div");
+                handle.className = `holaf-resize-handle holaf-resize-${dir}`;
+                handle.dataset.dir = dir;
+
+                handle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    const resizeN = dir.includes('n');
+                    const resizeS = dir.includes('s');
+                    const resizeE = dir.includes('e');
+                    const resizeW = dir.includes('w');
+
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const rect = this.monitorElement.getBoundingClientRect();
+                    const startW = rect.width;
+                    const startH = rect.height;
+                    const startRight = window.innerWidth - rect.right;
+                    const startBottom = window.innerHeight - rect.bottom;
+
+                    const onMouseMove = (ev) => {
+                        const dx = ev.clientX - startX;
+                        const dy = ev.clientY - startY;
+
+                        let newW = startW;
+                        let newH = startH;
+                        let newRight = startRight;
+                        let newBottom = startBottom;
+
+                        if (resizeE) {
+                            newW = Math.max(250, startW + dx);
+                            newRight = startRight - (newW - startW);
+                        }
+                        if (resizeW) {
+                            newW = Math.max(250, startW - dx);
+                        }
+                        if (resizeS) {
+                            newH = Math.max(180, startH + dy);
+                            newBottom = startBottom - (newH - startH);
+                        }
+                        if (resizeN) {
+                            newH = Math.max(180, startH - dy);
+                        }
+
+                        this.storedPos.width = newW;
+                        this.storedPos.height = newH;
+                        this.storedPos.right = newRight;
+                        this.storedPos.bottom = newBottom;
+                        this.updateVisualPosition();
+                    };
+
+                    const onMouseUp = () => {
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
-                        this.saveState(); 
-                    }
-                };
-    
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
+                        this.saveState();
+                    };
+
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+
+                this.monitorElement.appendChild(handle);
             });
-    
-            this.monitorElement.appendChild(this.resizeHandle);
         },
-    
+
         // --- PERSISTENCE ---
         saveState() {
             if (!this.monitorElement) return;
-            
+
             // Also save hidden datasets
             const hiddenIds = [];
             if (this.mainChart) {
@@ -358,15 +364,15 @@
                     if (meta.hidden) hiddenIds.push(ds.id);
                 });
             }
-    
-            const state = { 
+
+            const state = {
                 ...this.storedPos,
                 isVisible: this.isVisible, // Persist visibility
                 hiddenDatasets: hiddenIds // Save visibility preference
             };
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
         },
-    
+
         restoreState() {
             try {
                 const saved = localStorage.getItem(this.STORAGE_KEY);
@@ -377,21 +383,21 @@
                     this.storedPos.width = state.width ?? 400;
                     this.storedPos.height = state.height ?? 260;
                     this.isVisible = !!state.isVisible;
-                    
+
                     if (state.hiddenDatasets && Array.isArray(state.hiddenDatasets)) {
                         this.hiddenDatasetIds = new Set(state.hiddenDatasets);
                     }
                 }
             } catch (e) {}
         },
-    
+
         toggle() {
             this.isVisible = !this.isVisible;
             this.isVisible ? this.show() : this.hide();
             this.saveState(); // Save on toggle
             return this.isVisible;
         },
-    
+
         show() {
             if (!this.monitorElement) this.createMonitorElement();
             this.monitorElement.style.display = "flex";
@@ -401,7 +407,7 @@
             this.connectWebSocket();
             this.updateVisualPosition();
         },
-    
+
         hide() {
             if (this.monitorElement) {
                 HolafPanelManager.unregister(this.monitorElement);
@@ -410,21 +416,21 @@
             this.isVisible = false;
             this.disconnectWebSocket();
         },
-    
+
         initializeMainChart() {
             if (this.mainChart) {
                 this.mainChart.destroy();
                 this.mainChart = null;
             }
             this.chartData.datasets = [];
-    
+
             const canvas = document.getElementById("holaf-main-monitor-chart");
             if (!canvas) return;
-            
+
             const ctx = canvas.getContext("2d");
             const chartOptions = {
                 responsive: true,
-                maintainAspectRatio: false, 
+                maintainAspectRatio: false,
                 animation: false,
                 layout: {
                     padding: { left: 0, right: 10, top: 5, bottom: 0 }
@@ -433,25 +439,25 @@
                 events: ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove'],
                 scales: {
                     x: { display: false },
-                    y: { 
+                    y: {
                         position: 'left',
                         min: 0, max: 100,
                         beginAtZero: false,
-                        ticks: { 
+                        ticks: {
                             display: true, color: '#ffffff',
                             font: { size: 10, family: 'monospace' },
                             padding: 5,
                             callback: function(value) { return value + '%'; }
-                        }, 
-                        grid: { color: 'rgba(255, 255, 255, 0.1)', drawBorder: false } 
+                        },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)', drawBorder: false }
                     }
                 },
                 plugins: {
-                    legend: { 
+                    legend: {
                         display: true, position: "bottom",
-                        labels: { 
-                            boxWidth: 12, boxHeight: 3, padding: 15, 
-                            font: { size: 11, weight: 'bold', family: 'monospace' }, 
+                        labels: {
+                            boxWidth: 12, boxHeight: 3, padding: 15,
+                            font: { size: 11, weight: 'bold', family: 'monospace' },
                             color: "#ccc",
                             generateLabels: (chart) => {
                                 const original = Chart.defaults.plugins.legend.labels.generateLabels(chart);
@@ -511,7 +517,7 @@
                 },
                 elements: { point: { radius: 0, hoverRadius: 4 }, line: { borderWidth: 2, tension: 0.2 } }
             };
-            
+
             try {
                 this.mainChart = new Chart(ctx, {
                     type: "line",
@@ -520,67 +526,67 @@
                 });
             } catch (e) { }
         },
-    
+
         updateBars(stats) {
             const cpuEl = document.getElementById("holaf-cpu-val");
             const cpuFill = document.getElementById("holaf-cpu-fill");
             if (cpuEl) cpuEl.textContent = stats.cpu_percent.toFixed(0) + "%";
             if (cpuFill) cpuFill.style.width = stats.cpu_percent + "%";
-    
+
             const ramEl = document.getElementById("holaf-ram-val");
             const ramFill = document.getElementById("holaf-ram-fill");
             if (ramEl) ramEl.textContent = `${stats.ram.percent.toFixed(0)}% (${stats.ram.used_gb.toFixed(1)}GB)`;
             if (ramFill) ramFill.style.width = stats.ram.percent + "%";
         },
-    
+
         initializeGpuDatasets(gpuStatsArray) {
             if (!this.monitorElement || this.gpuDataInitialized) return;
             this.chartData.datasets = [];
-            
+
             gpuStatsArray.forEach((gpu, index) => {
                 const colorPair = this.GPU_PALETTE[index % this.GPU_PALETTE.length];
-                
+
                 const loadId = `GPU_${gpu.id}_LOAD`;
                 const vramId = `GPU_${gpu.id}_VRAM`;
-    
+
                 // LOAD Dataset
                 this.chartData.datasets.push({
-                    id: loadId, 
+                    id: loadId,
                     label: `GPU ${gpu.id} Load`,
-                    baseLabel: `GPU ${gpu.id} Load`, 
+                    baseLabel: `GPU ${gpu.id} Load`,
                     data: Array(this.currentMaxPoints).fill(null),
-                    borderColor: colorPair.load, 
+                    borderColor: colorPair.load,
                     backgroundColor: 'transparent',
                     borderWidth: 2,
                     borderDash: [4, 4],
-                    pointRadius: 0, 
+                    pointRadius: 0,
                     fill: false,
                     isVram: false,
                     hidden: this.hiddenDatasetIds.has(loadId) // Restore hidden state
                 });
-    
+
                 // VRAM Dataset
                 this.chartData.datasets.push({
-                    id: vramId, 
+                    id: vramId,
                     label: `GPU ${gpu.id} VRAM`,
                     baseLabel: `GPU ${gpu.id} VRAM`,
                     data: Array(this.currentMaxPoints).fill(null),
-                    borderColor: colorPair.vram, 
+                    borderColor: colorPair.vram,
                     backgroundColor: 'transparent',
-                    borderWidth: 2, 
+                    borderWidth: 2,
                     borderDash: [],
-                    pointRadius: 0, 
+                    pointRadius: 0,
                     fill: false,
                     isVram: true,
                     totalVramMb: gpu.memory_total_mb,
                     hidden: this.hiddenDatasetIds.has(vramId) // Restore hidden state
                 });
             });
-            
+
             this.gpuDataInitialized = true;
             if (this.mainChart) this.mainChart.update('none');
         },
-    
+
         updateChartData(datasetId, newValue) {
             if (!this.mainChart) return;
             const dataset = this.chartData.datasets.find(ds => ds.id === datasetId);
@@ -592,33 +598,33 @@
                 }
             }
         },
-    
+
         connectWebSocket() {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
             if (this.ws) this.ws.close();
-    
+
             const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
             const host = window.location.host;
             let basePath = api.api_base || "";
             if (basePath.startsWith("/")) basePath = basePath.substring(1);
             if (basePath.length > 0 && !basePath.endsWith("/")) basePath += "/";
             const wsUrl = `${protocol}//${host}/${basePath}holaf/monitor/ws`;
-    
+
             try {
                 this.ws = new WebSocket(wsUrl);
             } catch (e) { return; }
-    
+
             this.ws.onmessage = (event) => {
                 try {
                     const stats = JSON.parse(event.data);
                     this.updateBars(stats);
-    
+
                     if (stats.gpus && stats.gpus.length > 0 && !this.gpuDataInitialized) {
                         this.initializeGpuDatasets(stats.gpus);
                     }
-                    
+
                     let minVisibleValue = 100;
-    
+
                     if(stats.gpus && this.gpuDataInitialized) {
                         stats.gpus.forEach(gpu => {
                             const loadVal = gpu.utilization_percent;
@@ -626,10 +632,10 @@
                             if (gpu.memory_total_mb > 0) {
                                 vramPercent = (gpu.memory_used_mb / gpu.memory_total_mb) * 100;
                             }
-                            
+
                             this.updateChartData(`GPU_${gpu.id}_LOAD`, loadVal);
                             this.updateChartData(`GPU_${gpu.id}_VRAM`, vramPercent);
-    
+
                             // Scaling
                             const loadDs = this.chartData.datasets.find(ds => ds.id === `GPU_${gpu.id}_LOAD`);
                             if (loadDs && this.mainChart.isDatasetVisible(this.chartData.datasets.indexOf(loadDs))) {
@@ -643,22 +649,22 @@
                             }
                         });
                     }
-                    
+
                     if (this.mainChart) {
-                        if (minVisibleValue > 95) minVisibleValue = 95; 
+                        if (minVisibleValue > 95) minVisibleValue = 95;
                         if (minVisibleValue < 0) minVisibleValue = 0;
                         const newMin = Math.max(0, Math.floor(minVisibleValue - 5));
-                        
+
                         if (this.mainChart.options.scales.y.min !== newMin) {
                             this.mainChart.options.scales.y.min = newMin;
                         }
-                        this.mainChart.update('none'); 
+                        this.mainChart.update('none');
                     }
-    
+
                 } catch (e) { }
             };
         },
-    
+
         disconnectWebSocket() {
             if (this.ws) {
                 this.ws.close();
@@ -672,7 +678,7 @@
             this.gpuDataInitialized = false;
         },
     };
-    
+
     app.registerExtension({
         name: HolafSystemMonitor.name,
         async setup() {
