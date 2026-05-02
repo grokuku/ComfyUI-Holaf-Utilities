@@ -29,6 +29,7 @@ const HOVER_DELAY_MS = 100; // Slight delay before playing video to prevent craz
 // Standard browser limit is 6. With the new backend architecture (In-Memory Stats),
 // we can safely use the full pipe without fearing DB locks.
 let currentConcurrencyLimit = 6;
+const PREFETCH_ROWS = 3; // Number of rows ahead of viewport to prefetch thumbnails for
 let benchmarkCacheBuster = ''; // Used to bypass browser cache during tests
 let benchmarkStartTime = 0;
 let benchmarkTotalItems = 0;
@@ -93,6 +94,9 @@ let isWheelScrolling = false;
 let wheelScrollTimeout = null;
 let activeThumbnailLoads = 0;
 
+// --- UNLOADED TRACKING: O(1) lookup for next thumbnail to fetch ---
+const unloadedVisiblePaths = new Set(); // path_canon of visible items not yet loaded
+
 // --- LOAD QUEUE GENERATION ---
 // Simple kick-based scheduler - completed fetches always re-kick.
 // Queue fill is synchronous; no generation tracking needed.
@@ -125,9 +129,11 @@ window.holaf.runBenchmark = (concurrency = 6) => {
         for (const controller of activeFetches.values()) controller.abort();
         activeFetches.clear();
         activeThumbnailLoads = 0;
+        unloadedVisiblePaths.clear();
 
         // Clear DOM to force re-render
         galleryGridEl.innerHTML = '';
+        placeholderPool.length = 0; // Clear pool on benchmark reset
         renderedPlaceholders.clear();
 
         // 3. Start Timer and Trigger Render
@@ -284,7 +290,7 @@ function renderVisibleItems() {
                 placeholder.dataset.index = i;
                 renderedPlaceholders.delete(path);
             } else {
-                placeholder = createPlaceholder(viewerInstance, image, i);
+                placeholder = acquirePlaceholder(viewerInstance, image, i);
                 fragment.appendChild(placeholder);
                 // Try to load immediately from Cache
                 applyCachedThumbnail(placeholder, path);
@@ -308,6 +314,11 @@ function renderVisibleItems() {
             placeholder._checkbox.checked = isSelected;
 
             newPlaceholdersToRender.set(path, placeholder);
+
+            // Track unloaded thumbnails for O(1) queue lookup
+            if (!placeholder.dataset.thumbnailLoadingOrLoaded) {
+                unloadedVisiblePaths.add(path);
+            }
         }
 
         // Cleanup: remove placeholders leaving the viewport
@@ -317,7 +328,8 @@ function renderVisibleItems() {
                 clearTimeout(hoverTimeouts.get(path));
                 hoverTimeouts.delete(path);
             }
-            element.remove();
+            releasePlaceholder(element);
+            unloadedVisiblePaths.delete(path);
         }
 
         if (fragment.childElementCount > 0) {
@@ -351,6 +363,7 @@ function applyCachedThumbnail(placeholder, pathCanon) {
 
         placeholder.prepend(img);
         placeholder.dataset.thumbnailLoadingOrLoaded = "true";
+        unloadedVisiblePaths.delete(pathCanon);
         return true;
     }
     return false;
@@ -362,16 +375,7 @@ function addFullscreenIcon(placeholder, image) {
         fsIcon.className = 'holaf-viewer-fullscreen-icon';
         fsIcon.innerHTML = '⛶';
         fsIcon.title = 'View fullscreen';
-        fsIcon.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (image) {
-                const imageIndex = parseInt(placeholder.dataset.index, 10);
-                if (!isNaN(imageIndex)) {
-                    imageViewerState.setState({ activeImage: image, currentNavIndex: imageIndex });
-                }
-                showFullscreenView(viewerInstance, image);
-            }
-        });
+        // Click handled via delegation on galleryGridEl
         placeholder.appendChild(fsIcon);
     }
 }
@@ -386,6 +390,7 @@ function _doKick() {
     kickQueued = false;
     clearTimeout(idleRestartTimer);
 
+    // Phase 1: Load visible unloaded thumbnails
     while (activeThumbnailLoads < currentConcurrencyLimit) {
         const next = _findNextUnloaded();
         if (!next) break;
@@ -409,6 +414,11 @@ function _doKick() {
         }
     }
 
+    // Phase 2: Prefetch thumbnails ahead of viewport into cache (no DOM)
+    if (activeThumbnailLoads < currentConcurrencyLimit) {
+        _prefetchAhead();
+    }
+
     if (activeThumbnailLoads === 0) {
         idleRestartTimer = setTimeout(() => {
             const children = galleryGridEl.children;
@@ -422,12 +432,91 @@ function _doKick() {
     }
 }
 
+function _prefetchAhead() {
+    if (!galleryEl || !galleryGridEl || columnCount === 0 || itemHeight === 0) return;
+
+    const { images } = imageViewerState.getState();
+    if (!images || !images.length) return;
+
+    const viewportHeight = galleryEl.clientHeight;
+    const scrollTop = galleryEl.scrollTop;
+    const itemHeightWithGap = itemHeight + gap;
+
+    // Calculate visible range
+    const buffer = viewportHeight * 0.75;
+    const visibleAreaEnd = scrollTop + viewportHeight + buffer;
+    const endRow = Math.ceil(visibleAreaEnd / itemHeightWithGap);
+
+    // Prefetch zone: PREFETCH_ROWS beyond visible
+    const prefetchStartIndex = endRow * columnCount;
+    const prefetchEndIndex = Math.min(images.length - 1, prefetchStartIndex + (PREFETCH_ROWS * columnCount) - 1);
+
+    for (let i = prefetchStartIndex; i <= prefetchEndIndex; i++) {
+        if (activeThumbnailLoads >= currentConcurrencyLimit) break;
+
+        const image = images[i];
+        if (!image) continue;
+        const pathCanon = image.path_canon;
+
+        // Skip if already cached, loading, or fetched
+        if (thumbnailCache.get(pathCanon)) continue;
+        if (activeFetches.has(pathCanon)) continue;
+        if (renderedPlaceholders.has(pathCanon)) continue; // Will be handled by normal queue
+
+        // Fetch into cache only (no DOM placeholder needed)
+        activeThumbnailLoads++;
+        fetchPrefetchThumbnail(image).finally(() => {
+            activeThumbnailLoads = Math.max(0, activeThumbnailLoads - 1);
+            kickLoadQueue();
+        });
+    }
+}
+
+async function fetchPrefetchThumbnail(image) {
+    const pathCanon = image.path_canon;
+    if (activeFetches.has(pathCanon)) return;
+
+    const imageUrl = new URL(window.location.origin);
+    imageUrl.pathname = '/holaf/images/thumbnail';
+    const cacheBuster = image.thumb_hash ? image.thumb_hash : (image.mtime || '');
+    const params = {
+        filename: image.filename,
+        subfolder: image.subfolder,
+        path_canon: image.path_canon,
+        mtime: cacheBuster
+    };
+    imageUrl.search = new URLSearchParams(params);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort('timeout'), FETCH_TIMEOUT_MS);
+    activeFetches.set(pathCanon, controller);
+
+    try {
+        const response = await fetch(imageUrl.href, { signal: controller.signal, priority: 'low' });
+        clearTimeout(timeoutId);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const blob = await response.blob();
+        const objectURL = URL.createObjectURL(blob);
+        thumbnailCache.put(pathCanon, objectURL);
+    } catch (err) {
+        clearTimeout(timeoutId);
+        // Silently ignore prefetch errors — they'll retry when visible
+    } finally {
+        activeFetches.delete(pathCanon);
+    }
+}
+
 function _findNextUnloaded() {
-    const children = galleryGridEl.children;
-    for (let i = 0; i < children.length; i++) {
-        const p = children[i];
-        if (!p.dataset.thumbnailLoadingOrLoaded && !activeFetches.has(p.dataset.pathCanon)) {
-            return p;
+    // O(1) average case: iterate the Set of known-unloaded visible paths
+    for (const pathCanon of unloadedVisiblePaths) {
+        if (!activeFetches.has(pathCanon)) {
+            const placeholder = renderedPlaceholders.get(pathCanon);
+            if (placeholder && placeholder.isConnected) {
+                return placeholder;
+            }
+            // Stale entry — remove from tracking
+            unloadedVisiblePaths.delete(pathCanon);
         }
     }
     return null;
@@ -517,6 +606,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         // But simplified logic: just prepend.
         placeholder.prepend(img);
         placeholder.dataset.thumbnailLoadingOrLoaded = "true";
+        unloadedVisiblePaths.delete(pathCanon);
 
     } catch (err) {
         clearTimeout(timeoutId);
@@ -532,6 +622,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
             if (placeholder.isConnected) {
                 placeholder.classList.add('error');
                 placeholder.dataset.thumbnailLoadingOrLoaded = "error";
+                unloadedVisiblePaths.delete(pathCanon);
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'holaf-viewer-error-overlay';
                 errorDiv.textContent = isTimeout ? 'Timeout' : 'Err';
@@ -550,181 +641,292 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
     }
 }
 
-function createPlaceholder(viewer, image, index) {
-    const placeholder = document.createElement('div');
-    placeholder.className = 'holaf-viewer-thumbnail-placeholder';
-    placeholder.style.position = 'absolute';
-    placeholder.dataset.index = index;
-    placeholder.dataset.pathCanon = image.path_canon;
+// --- Placeholder Object Pool ---
+// Reuse placeholder divs instead of creating/destroying on every scroll.
+// This avoids createElement/GC overhead and keeps the checkbox ref cached.
+const placeholderPool = [];
+const POOL_MAX_SIZE = 200;
 
-    const actionIcon = document.createElement('div');
-    actionIcon.className = 'holaf-viewer-edit-icon';
+function acquirePlaceholder(viewer, image, index) {
+    let placeholder;
+    const isVideo = ['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format);
+    const isAudio = ['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format);
 
-    if (['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format)) {
-        actionIcon.innerHTML = '🎥';
-        actionIcon.title = "Play Video";
+    if (placeholderPool.length > 0) {
+        // Recycle from pool
+        placeholder = placeholderPool.pop();
 
-        // [MODIFIED] Logic to show filled/active icon if edited
-        if (image.has_edit_file) {
-            actionIcon.classList.add('active'); // CSS should handle opacity
+        // Update data attributes
+        placeholder.dataset.index = index;
+        placeholder.dataset.pathCanon = image.path_canon;
+
+        // Reset visual state
+        placeholder.classList.remove('active', 'error');
+        placeholder._checkbox.checked = false;
+        placeholder._hoverGeneration = 0;
+
+        // Remove leftover dynamic children (img, video, error overlays)
+        const oldImg = placeholder.querySelector('img');
+        if (oldImg) oldImg.remove();
+        const oldVideo = placeholder.querySelector('video.holaf-hover-preview');
+        if (oldVideo) { oldVideo.pause(); oldVideo.src = ""; oldVideo.remove(); }
+        const oldError = placeholder.querySelector('.holaf-viewer-error-overlay');
+        if (oldError) oldError.remove();
+        const oldFsIcon = placeholder.querySelector('.holaf-viewer-fullscreen-icon');
+        if (oldFsIcon) oldFsIcon.remove();
+
+        // Reset thumbnail loading state
+        delete placeholder.dataset.thumbnailLoadingOrLoaded;
+
+        // Update action icon
+        const actionIcon = placeholder._actionIcon;
+        actionIcon.classList.remove('active');
+        if (isVideo) {
+            actionIcon.innerHTML = '🎥';
+            actionIcon.title = "Play Video";
+            if (image.has_edit_file) actionIcon.classList.add('active');
+        } else if (isAudio) {
+            actionIcon.innerHTML = '\uD83C\uDFB5';
+            actionIcon.title = "Play Audio";
+            if (image.has_edit_file) actionIcon.classList.add('active');
+        } else {
+            actionIcon.innerHTML = '✎';
+            actionIcon.title = "Edit image";
+            if (image.has_edit_file) actionIcon.classList.add('active');
         }
 
-        actionIcon.onclick = (e) => {
-            e.stopPropagation();
-            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
-            viewer._showZoomedView(image);
-        };
+        // Remove old hover listeners if this was a video placeholder
+        if (placeholder._hoverCleanup) {
+            placeholder._hoverCleanup();
+            placeholder._hoverCleanup = null;
+        }
 
-        // --- HOVER PREVIEW LOGIC FOR VIDEO (WITH EDIT SUPPORT) ---
-        // FIX: Use a generation counter to prevent race conditions when
-        // the user leaves during an async fetch (video would play after mouse left).
-        placeholder.addEventListener('mouseenter', async () => {
-            // Increment the hover generation to invalidate any stale inflight request
-            const generation = (placeholder._hoverGeneration || 0) + 1;
-            placeholder._hoverGeneration = generation;
-
-            // Clear any existing timeout to avoid overlaps
-            if (hoverTimeouts.has(image.path_canon)) {
-                clearTimeout(hoverTimeouts.get(image.path_canon));
-                hoverTimeouts.delete(image.path_canon);
-            }
-
-            // Fetch potential edits (Soft Edit)
-            let editData = null;
-            if (image.has_edit_file) {
-                try {
-                    // --- FIX: Correct URL for edits ---
-                    const response = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(image.path_canon)}`);
-                    // FIX: Check if the hover was cancelled while we were fetching
-                    if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
-                    if (response.ok) {
-                        const result = await response.json();
-                        if (result.status === 'ok') editData = result.edits;
-                    }
-                } catch (e) {
-                    if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
-                    console.warn("Failed to load hover edits", e);
-                }
-            }
-
-            // Double-check: reject if mouse left during fetch
-            if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
-
-            // Set a delay to avoid playing if just passing through
-            const timeoutId = setTimeout(() => {
-                // Remove the timeout from the map since it has now fired
-                hoverTimeouts.delete(image.path_canon);
-                if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
-
-                const existingVideo = placeholder.querySelector('video.holaf-hover-preview');
-                if (existingVideo) return; // Already playing
-
-                const videoUrl = getFullImageUrl(image);
-                const vid = document.createElement('video');
-                vid.className = 'holaf-hover-preview';
-                vid.src = videoUrl;
-                vid.muted = true;
-                vid.loop = true;
-                vid.autoplay = true;
-                vid.playsInline = true;
-
-                // Construct filter string
-                let filterStr = "";
-                if (editData) {
-                    if (editData.brightness) filterStr += `brightness(${editData.brightness}) `;
-                    if (editData.contrast) filterStr += `contrast(${editData.contrast}) `;
-                    if (editData.saturation) filterStr += `saturate(${editData.saturation}) `;
-                    if (editData.hue && parseFloat(editData.hue) !== 0) filterStr += `hue-rotate(${editData.hue}deg) `;
-
-                    // --- FIX: Apply playback rate for hover preview ---
-                    if (editData.playbackRate) {
-                        vid.playbackRate = parseFloat(editData.playbackRate);
-                    }
-                }
-
-                // --- FIX: READ COMPUTED STYLE FROM THE IMAGE TO MATCH CSS ---
-                // Instead of guessing the state key, we trust the CSS that applies to the image.
-                const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
-                let fitMode = 'cover';
-                if (img) {
-                    // This reads what CSS (and the 'nocrop' class on parent) actually did to the image.
-                    fitMode = getComputedStyle(img).objectFit || 'cover';
-                }
-
-                // Style to cover the thumbnail completely
-                vid.style.cssText = `
-                    position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-                    object-fit: ${fitMode}; z-index: 2; pointer-events: none;
-                    filter: ${filterStr};
-                `;
-
-                // Handling load errors smoothly
-                vid.onerror = () => { vid.remove(); };
-
-                placeholder.appendChild(vid);
-            }, HOVER_DELAY_MS);
-
-            hoverTimeouts.set(image.path_canon, timeoutId);
-        });
-
-        placeholder.addEventListener('mouseleave', () => {
-            // FIX: Bump the generation so any inflight fetch or pending timeout is rejected
-            placeholder._hoverGeneration = (placeholder._hoverGeneration || 0) + 1;
-
-            if (hoverTimeouts.has(image.path_canon)) {
-                clearTimeout(hoverTimeouts.get(image.path_canon));
-                hoverTimeouts.delete(image.path_canon);
-            }
-
-            const vid = placeholder.querySelector('video.holaf-hover-preview');
-            if (vid) {
-                vid.pause();
-                vid.src = ""; // Help gc
-                vid.remove();
-            }
-        });
-        // --- END HOVER PREVIEW ---
-
-    } else if (['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format)) {
-        actionIcon.innerHTML = '\uD83C\uDFB5';
-        actionIcon.title = "Play Audio";
-        actionIcon.classList.toggle('active', image.has_edit_file);
-
-        actionIcon.onclick = (e) => {
-            e.stopPropagation();
-            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
-            viewer._showZoomedView(image);
-        };
-        placeholder.addEventListener('dblclick', (e) => {
-            if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon, .holaf-viewer-thumb-checkbox')) return;
-            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
-            viewer._showZoomedView(image);
-        });
+        // Add new hover listeners for videos
+        if (isVideo) {
+            placeholder._hoverCleanup = attachVideoHoverListeners(placeholder, image);
+        }
 
     } else {
-        actionIcon.innerHTML = '✎';
-        actionIcon.title = "Edit image";
-        actionIcon.classList.toggle('active', image.has_edit_file);
+        // Create new placeholder
+        placeholder = document.createElement('div');
+        placeholder.className = 'holaf-viewer-thumbnail-placeholder';
+        placeholder.style.position = 'absolute';
+        placeholder.dataset.index = index;
+        placeholder.dataset.pathCanon = image.path_canon;
 
-        actionIcon.onclick = (e) => {
-            e.stopPropagation();
-            imageViewerState.setState({ activeImage: image, currentNavIndex: index });
-            viewer._showZoomedView(image);
-        };
+        const actionIcon = document.createElement('div');
+        actionIcon.className = 'holaf-viewer-edit-icon';
+        placeholder._actionIcon = actionIcon;
+
+        if (isVideo) {
+            actionIcon.innerHTML = '🎥';
+            actionIcon.title = "Play Video";
+            if (image.has_edit_file) actionIcon.classList.add('active');
+            placeholder._hoverCleanup = attachVideoHoverListeners(placeholder, image);
+        } else if (isAudio) {
+            actionIcon.innerHTML = '\uD83C\uDFB5';
+            actionIcon.title = "Play Audio";
+            if (image.has_edit_file) actionIcon.classList.add('active');
+        } else {
+            actionIcon.innerHTML = '✎';
+            actionIcon.title = "Edit image";
+            if (image.has_edit_file) actionIcon.classList.add('active');
+        }
+        placeholder.appendChild(actionIcon);
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'holaf-viewer-thumb-checkbox';
+        checkbox.title = "Select image";
+        placeholder._checkbox = checkbox;
+        placeholder.appendChild(checkbox);
     }
-    placeholder.appendChild(actionIcon);
 
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'holaf-viewer-thumb-checkbox';
-    checkbox.title = "Select image";
-    placeholder._checkbox = checkbox; // Cache ref for O(1) access in render loop
-    placeholder.appendChild(checkbox);
+    return placeholder;
+}
 
-    placeholder.addEventListener('click', (e) => {
-        if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon')) return;
+function releasePlaceholder(placeholder) {
+    // Clean up hover listeners for videos
+    if (placeholder._hoverCleanup) {
+        placeholder._hoverCleanup();
+        placeholder._hoverCleanup = null;
+    }
+
+    // Remove from DOM
+    if (placeholder.parentNode) {
+        placeholder.parentNode.removeChild(placeholder);
+    }
+
+    // Return to pool if not too large
+    if (placeholderPool.length < POOL_MAX_SIZE) {
+        // Clean up dynamic children for pool hygiene
+        const img = placeholder.querySelector('img');
+        if (img) img.remove();
+        const vid = placeholder.querySelector('video.holaf-hover-preview');
+        if (vid) { vid.pause(); vid.src = ""; vid.remove(); }
+        const err = placeholder.querySelector('.holaf-viewer-error-overlay');
+        if (err) err.remove();
+        const fs = placeholder.querySelector('.holaf-viewer-fullscreen-icon');
+        if (fs) fs.remove();
+
+        // Reset state
+        placeholder.classList.remove('active', 'error');
+        placeholder._checkbox.checked = false;
+        placeholder._hoverGeneration = 0;
+        delete placeholder.dataset.thumbnailLoadingOrLoaded;
+
+        placeholderPool.push(placeholder);
+    } else {
+        // Pool is full, let GC collect
+    }
+}
+
+// --- Video Hover Preview (extracted for reuse with pooled placeholders) ---
+function attachVideoHoverListeners(placeholder, image) {
+    const mouseenterHandler = async () => {
+        const generation = (placeholder._hoverGeneration || 0) + 1;
+        placeholder._hoverGeneration = generation;
+
+        if (hoverTimeouts.has(image.path_canon)) {
+            clearTimeout(hoverTimeouts.get(image.path_canon));
+            hoverTimeouts.delete(image.path_canon);
+        }
+
+        let editData = null;
+        if (image.has_edit_file) {
+            try {
+                const response = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(image.path_canon)}`);
+                if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.status === 'ok') editData = result.edits;
+                }
+            } catch (e) {
+                if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
+                console.warn("Failed to load hover edits", e);
+            }
+        }
+
+        if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
+
+        const timeoutId = setTimeout(() => {
+            hoverTimeouts.delete(image.path_canon);
+            if (!placeholder.isConnected || placeholder._hoverGeneration !== generation) return;
+
+            const existingVideo = placeholder.querySelector('video.holaf-hover-preview');
+            if (existingVideo) return;
+
+            const videoUrl = getFullImageUrl(image);
+            const vid = document.createElement('video');
+            vid.className = 'holaf-hover-preview';
+            vid.src = videoUrl;
+            vid.muted = true;
+            vid.loop = true;
+            vid.autoplay = true;
+            vid.playsInline = true;
+
+            let filterStr = "";
+            if (editData) {
+                if (editData.brightness) filterStr += `brightness(${editData.brightness}) `;
+                if (editData.contrast) filterStr += `contrast(${editData.contrast}) `;
+                if (editData.saturation) filterStr += `saturate(${editData.saturation}) `;
+                if (editData.hue && parseFloat(editData.hue) !== 0) filterStr += `hue-rotate(${editData.hue}deg) `;
+
+                if (editData.playbackRate) {
+                    vid.playbackRate = parseFloat(editData.playbackRate);
+                }
+            }
+
+            const img = placeholder.querySelector('img.holaf-image-viewer-thumbnail');
+            let fitMode = 'cover';
+            if (img) {
+                fitMode = getComputedStyle(img).objectFit || 'cover';
+            }
+
+            vid.style.cssText = `
+                position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                object-fit: ${fitMode}; z-index: 2; pointer-events: none;
+                filter: ${filterStr};
+            `;
+
+            vid.onerror = () => { vid.remove(); };
+            placeholder.appendChild(vid);
+        }, HOVER_DELAY_MS);
+
+        hoverTimeouts.set(image.path_canon, timeoutId);
+    };
+
+    const mouseleaveHandler = () => {
+        placeholder._hoverGeneration = (placeholder._hoverGeneration || 0) + 1;
+        if (hoverTimeouts.has(image.path_canon)) {
+            clearTimeout(hoverTimeouts.get(image.path_canon));
+            hoverTimeouts.delete(image.path_canon);
+        }
+        const vid = placeholder.querySelector('video.holaf-hover-preview');
+        if (vid) {
+            vid.pause();
+            vid.src = "";
+            vid.remove();
+        }
+    };
+
+    placeholder.addEventListener('mouseenter', mouseenterHandler);
+    placeholder.addEventListener('mouseleave', mouseleaveHandler);
+
+    // Return cleanup function to remove listeners
+    return () => {
+        placeholder.removeEventListener('mouseenter', mouseenterHandler);
+        placeholder.removeEventListener('mouseleave', mouseleaveHandler);
+    };
+}
+// --- Functions to be exported ---
+
+function initGallery(viewer) {
+    viewerInstance = viewer;
+    galleryEl = document.getElementById("holaf-viewer-gallery");
+
+    document.addEventListener('holaf-refresh-thumbnail', (e) => {
+        const { path_canon } = e.detail;
+        if (path_canon) refreshThumbnailInGallery(path_canon);
+    });
+
+    galleryEl.innerHTML = `
+        <div id="holaf-gallery-sizer" style="position: relative; width: 100%; height: 0; pointer-events: none;"></div>
+        <div id="holaf-gallery-grid" style="position: absolute; top: 0; left: 0; width: 100%;"></div>
+    `;
+    gallerySizerEl = document.getElementById("holaf-gallery-sizer");
+    galleryGridEl = document.getElementById("holaf-gallery-grid");
+
+    // --- Event Delegation: single listeners on galleryGridEl instead of per-item ---
+    galleryGridEl.addEventListener('click', (e) => {
+        const placeholder = e.target.closest('.holaf-viewer-thumbnail-placeholder');
+        if (!placeholder) return;
+
+        const idx = parseInt(placeholder.dataset.index, 10);
+        const img = imageViewerState.getState().images[idx];
+
+        // Fullscreen icon delegates to fullscreen view
+        if (e.target.closest('.holaf-viewer-fullscreen-icon')) {
+            e.stopPropagation();
+            if (img) {
+                imageViewerState.setState({ activeImage: img, currentNavIndex: idx });
+                showFullscreenView(viewerInstance, img);
+            }
+            return;
+        }
+
+        // Edit icon delegates to zoomed view
+        if (e.target.closest('.holaf-viewer-edit-icon')) {
+            e.stopPropagation();
+            if (img) {
+                imageViewerState.setState({ activeImage: img, currentNavIndex: idx });
+                viewerInstance._showZoomedView(img);
+            }
+            return;
+        }
+
         const state = imageViewerState.getState();
-        const clickedIndex = parseInt(e.currentTarget.dataset.index, 10);
+        const clickedIndex = parseInt(placeholder.dataset.index, 10);
         if (isNaN(clickedIndex)) return;
         const clickedImageData = state.images[clickedIndex];
         if (!clickedImageData) return;
@@ -750,36 +952,20 @@ function createPlaceholder(viewer, image, index) {
         const newSelectedImages = new Set(state.images.filter(img => selectedPaths.has(img.path_canon)));
         imageViewerState.setState({ selectedImages: newSelectedImages, activeImage: clickedImageData, currentNavIndex: clickedIndex });
         renderVisibleItems();
-        viewer._updateActionButtonsState();
+        viewerInstance._updateActionButtonsState();
     });
 
-    placeholder.addEventListener('dblclick', (e) => {
+    galleryGridEl.addEventListener('dblclick', (e) => {
         if (e.target.closest('.holaf-viewer-edit-icon, .holaf-viewer-fullscreen-icon, .holaf-viewer-thumb-checkbox')) return;
-        imageViewerState.setState({ activeImage: image, currentNavIndex: index });
-        viewer._showZoomedView(image);
+        const placeholder = e.target.closest('.holaf-viewer-thumbnail-placeholder');
+        if (!placeholder) return;
+        const idx = parseInt(placeholder.dataset.index, 10);
+        const img = imageViewerState.getState().images[idx];
+        if (img) {
+            imageViewerState.setState({ activeImage: img, currentNavIndex: idx });
+            viewerInstance._showZoomedView(img);
+        }
     });
-
-    return placeholder;
-}
-
-
-// --- Functions to be exported ---
-
-function initGallery(viewer) {
-    viewerInstance = viewer;
-    galleryEl = document.getElementById("holaf-viewer-gallery");
-
-    document.addEventListener('holaf-refresh-thumbnail', (e) => {
-        const { path_canon } = e.detail;
-        if (path_canon) refreshThumbnailInGallery(path_canon);
-    });
-
-    galleryEl.innerHTML = `
-        <div id="holaf-gallery-sizer" style="position: relative; width: 100%; height: 0; pointer-events: none;"></div>
-        <div id="holaf-gallery-grid" style="position: absolute; top: 0; left: 0; width: 100%;"></div>
-    `;
-    gallerySizerEl = document.getElementById("holaf-gallery-sizer");
-    galleryGridEl = document.getElementById("holaf-gallery-grid");
 
     resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(galleryEl);
@@ -839,6 +1025,7 @@ function syncGallery(viewer, images) {
     for (const controller of activeFetches.values()) controller.abort();
     activeFetches.clear();
     activeThumbnailLoads = 0;
+    unloadedVisiblePaths.clear();
 
     // Keep LRU Cache alive! Don't clear it — thumbnails are still valid.
     // thumbnailCache.clear();
@@ -847,6 +1034,7 @@ function syncGallery(viewer, images) {
         while (galleryGridEl.firstChild) galleryGridEl.removeChild(galleryGridEl.firstChild);
     }
     renderedPlaceholders.clear();
+    placeholderPool.length = 0; // Clear pool on full rebuild
 
     const messageEl = galleryEl.querySelector('.holaf-viewer-message');
     if (messageEl) messageEl.remove();
