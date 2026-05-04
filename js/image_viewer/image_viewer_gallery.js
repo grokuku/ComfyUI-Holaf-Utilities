@@ -29,7 +29,7 @@ const HOVER_DELAY_MS = 100; // Slight delay before playing video to prevent craz
 // Standard browser limit is 6. With the new backend architecture (In-Memory Stats),
 // we can safely use the full pipe without fearing DB locks.
 let currentConcurrencyLimit = 6;
-const PREFETCH_ROWS = 3; // Number of rows ahead of viewport to prefetch thumbnails for
+const PREFETCH_ROWS = 8; // Number of rows ahead of viewport to prefetch thumbnails for
 let benchmarkCacheBuster = ''; // Used to bypass browser cache during tests
 let benchmarkStartTime = 0;
 let benchmarkTotalItems = 0;
@@ -263,7 +263,7 @@ function renderVisibleItems() {
         const scrollTop = galleryEl.scrollTop;
 
         // Increased buffer to smooth out fast scrolling
-        const buffer = viewportHeight * 0.75;
+        const buffer = viewportHeight * 1.5;
         const visibleAreaStart = Math.max(0, scrollTop - buffer);
         const visibleAreaEnd = scrollTop + viewportHeight + buffer;
 
@@ -443,7 +443,7 @@ function _prefetchAhead() {
     const itemHeightWithGap = itemHeight + gap;
 
     // Calculate visible range
-    const buffer = viewportHeight * 0.75;
+    const buffer = viewportHeight * 1.5;
     const visibleAreaEnd = scrollTop + viewportHeight + buffer;
     const endRow = Math.ceil(visibleAreaEnd / itemHeightWithGap);
 

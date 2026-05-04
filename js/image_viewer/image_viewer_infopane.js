@@ -198,14 +198,13 @@ async function displayInfoForImage(image) {
                     buttons: [{ text: 'Cancel', value: false }, { text: 'Load', value: true }]
                 })) {
                     // BRIDGE LOGIC HERE
-                    if (comfyApp) {
+                    if (comfyApp && typeof comfyApp.loadGraphData === 'function') {
                         // We are in the main tab, load directly
                         comfyApp.loadGraphData(data.workflow);
                     } else {
-                        // We are in standalone mode, send via bridge
+                        // We are in standalone/deported mode, send via bridge
                         holafBridge.send('LOAD_WORKFLOW', data.workflow);
                         
-                        // Optional: Show feedback
                         if (window.holaf && window.holaf.toastManager) {
                             window.holaf.toastManager.show({ message: "Workflow sent to main window!", type: "success" });
                         }
