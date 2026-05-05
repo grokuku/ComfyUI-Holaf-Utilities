@@ -120,8 +120,7 @@ class HolafRemoteComparerNode:
                     filepath = os.path.join(temp_dir, filename)
                     
                     image = data[0]
-                    i = 255. * image.cpu().numpy()
-                    img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+                    img = Image.fromarray(image.cpu().float().mul(255).clamp(0, 255).byte().numpy())
                     
                     save_kwargs = {}
                     if fmt in ["jpeg", "webp"]:
@@ -161,7 +160,7 @@ class HolafRemoteComparerNode:
                         
                     cmd.extend(['-pix_fmt', 'yuv420p', filepath])
                     
-                    frames = np.clip(255. * data.cpu().numpy(), 0, 255).astype(np.uint8)
+                    frames = data.cpu().float().mul(255).clamp(0, 255).byte().numpy()
                     
                     try:
                         process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -184,7 +183,7 @@ class HolafRemoteComparerNode:
                     filepath = os.path.join(temp_dir, filename)
                     
                     # CPU push and numpy conversion
-                    waveform = data["waveform"].cpu().numpy()
+                    waveform = data["waveform"].cpu().float().numpy()
                     
                     # Handle shape [Batch, Channels, Length] -> [Channels, Length]
                     if len(waveform.shape) == 3: 
