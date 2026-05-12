@@ -122,6 +122,10 @@ class HolafRemoteComparerNode:
                     image = data[0]
                     img = Image.fromarray(image.cpu().float().mul(255).clamp(0, 255).byte().numpy())
                     
+                    # JPEG cannot handle alpha channel (RGBA), convert to RGB
+                    if fmt in ["jpeg", "jpg"] and img.mode == "RGBA":
+                        img = img.convert("RGB")
+                    
                     save_kwargs = {}
                     if fmt in ["jpeg", "webp"]:
                         save_kwargs["quality"] = 90

@@ -1074,7 +1074,11 @@ const HolafRemoteComparer = {
             const a = document.createElement('a');
             a.style.display = 'none'; a.href = url; a.download = filename;
             document.body.appendChild(a); a.click();
-            window.URL.revokeObjectURL(url); document.body.removeChild(a);
+            // Delay cleanup to let the browser start the download before revoking the blob URL
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 250);
         }).catch(err => console.error("[Holaf Remote Comparer] Save failed:", err));
     },
 
