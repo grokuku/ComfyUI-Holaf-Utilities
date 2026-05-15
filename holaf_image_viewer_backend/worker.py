@@ -7,7 +7,9 @@ import queue
 import json
 import traceback
 from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 from watchdog.events import FileSystemEventHandler
+import errno
 
 import folder_paths # ComfyUI global
 
@@ -136,7 +138,8 @@ def run_event_queue_processor(stop_event):
 
 
 def run_filesystem_monitor(stop_event):
-    """Worker that watches the filesystem for changes."""
+    """Worker that watches the filesystem for changes.
+    Tries inotify first; falls back to polling if the inotify watch limit is reached."""
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor started.")
     
     observer = None
@@ -144,9 +147,22 @@ def run_filesystem_monitor(stop_event):
         output_dir = folder_paths.get_output_directory()
         print(f"  -> Monitoring directory: {output_dir}")
         event_handler = HolafFileSystemEventHandler(output_dir)
-        observer = Observer()
-        observer.schedule(event_handler, output_dir, recursive=True)
-        observer.start()
+        
+        # Try inotify first (fast, low CPU)
+        try:
+            observer = Observer()
+            observer.schedule(event_handler, output_dir, recursive=True)
+            observer.start()
+            print("  -> Using inotify backend.")
+        except OSError as e:
+            if e.errno == errno.ENOSPC:
+                print(f"  -> inotify watch limit reached ({e}). Falling back to polling observer.")
+                observer = PollingObserver(timeout=2.0)
+                observer.schedule(event_handler, output_dir, recursive=True)
+                observer.start()
+                print("  -> Using polling backend (slower but no watch limit).")
+            else:
+                raise
         
         while not stop_event.is_set():
             stop_event.wait(1)
