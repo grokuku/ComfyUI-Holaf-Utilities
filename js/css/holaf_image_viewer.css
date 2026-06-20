@@ -903,6 +903,11 @@ video::-webkit-media-controls {
     box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7));
     min-width: 400px;
     max-width: 90%;
+    /* FIX: Constrain height and use flex column so the footer stays visible */
+    max-height: 90%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .holaf-viewer-export-header {
@@ -918,6 +923,9 @@ video::-webkit-media-controls {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    /* FIX: Scroll only the content area, keep header and footer fixed */
+    overflow-y: auto;
+    flex-shrink: 1;
 }
 
 .holaf-viewer-export-option-group {
@@ -950,6 +958,8 @@ video::-webkit-media-controls {
     gap: 10px;
     padding: 10px 15px;
     border-top: 1px solid var(--holaf-border-color);
+    /* FIX: Prevent footer from shrinking when content scrolls */
+    flex-shrink: 0;
 }
 
 .holaf-viewer-search-bar {
