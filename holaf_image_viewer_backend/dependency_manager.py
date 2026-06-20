@@ -116,13 +116,28 @@ def install_rife():
                 extracted_root = temp_dir
 
             # 5. Move content to final destination
-            # Clear existing if any (reinstall/update)
+            # FIX: Backup the existing installation BEFORE deleting it.
+            # If shutil.move fails (disk full, permissions), the old installation
+            # is restored instead of leaving the user with nothing.
+            backup_dir = None
             if os.path.exists(RIFE_DIR):
-                shutil.rmtree(RIFE_DIR)
-            
+                backup_dir = RIFE_DIR + "_old"
+                # Remove any stale backup first
+                if os.path.exists(backup_dir):
+                    shutil.rmtree(backup_dir)
+                shutil.move(RIFE_DIR, backup_dir)
+                print(f"📦 [Holaf-Deps] Backed up existing installation to {os.path.basename(backup_dir)}")
+
             # Move the FOLDER, not just content, to ensure structure
-            # But shutil.move needs the destination to NOT exist if we want to rename the source to it
-            shutil.move(extracted_root, RIFE_DIR)
+            # shutil.move needs the destination to NOT exist if we want to rename the source to it
+            try:
+                shutil.move(extracted_root, RIFE_DIR)
+            except Exception as move_err:
+                # Restore backup if the move failed
+                if backup_dir and os.path.exists(backup_dir):
+                    shutil.move(backup_dir, RIFE_DIR)
+                    print(f"🟡 [Holaf-Deps] Install failed, restored previous RIFE installation.")
+                raise move_err
             
             # 6. Set Permissions (Linux/Mac)
             final_exe_path = os.path.join(RIFE_DIR, exe_name)

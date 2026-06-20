@@ -225,7 +225,12 @@ async def websocket_handler(request: web.Request, global_app_config):
             finally:
                 loop.call_soon_threadsafe(pty_queue.put_nowait, None) # Signal EOF to sender
 
-        reader_thread = asyncio.to_thread(pty_reader_thread_target)
+        # FIX: Create explicit Tasks for all three concurrent operations.
+        # Old code used `asyncio.gather()` with all three, but when the client
+        # disconnected, the PTY reader thread (blocked on os.read) and the sender
+        # task (blocked on queue.get) could never complete because the PTY was
+        # only terminated in the `finally` block AFTER `gather()` returned → deadlock.
+        reader_task = asyncio.create_task(asyncio.to_thread(pty_reader_thread_target))
 
         # Task to send data from queue to WebSocket
         async def pty_to_ws_sender():
@@ -239,7 +244,7 @@ async def websocket_handler(request: web.Request, global_app_config):
                     break # Client disconnected
             if not ws.closed:
                 await ws.close()
-        
+
         sender_task = asyncio.create_task(pty_to_ws_sender())
 
         # Task to receive data from WebSocket and write to PTY
@@ -261,12 +266,34 @@ async def websocket_handler(request: web.Request, global_app_config):
                 elif msg.type == web.WSMsgType.ERROR:
                     print(f'🔴 [Holaf-Terminal] WebSocket error: {ws.exception()}')
                     break
-            # When ws_to_pty_receiver finishes (e.g. socket closed by client),
-            # it will implicitly allow pty_to_ws_sender to break if it's waiting on queue.
-        
+
         receiver_task = asyncio.create_task(ws_to_pty_receiver())
 
-        await asyncio.gather(sender_task, receiver_task, reader_thread)
+        # FIX: Wait for ANY task to finish (client disconnect, PTY exit, or error),
+        # then terminate the PTY and close the WebSocket to unblock remaining tasks.
+        done, pending = await asyncio.wait(
+            [sender_task, receiver_task, reader_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # Terminate PTY to unblock the reader thread (causes os.read to return)
+        if proc_adapter and proc_adapter.is_alive():
+            proc_adapter.terminate(force=True)
+
+        # Close WebSocket to unblock the receiver task if it's still running
+        if not ws.closed:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
+        # Wait for remaining tasks to finish cleanup (with timeout)
+        for task in pending:
+            try:
+                await asyncio.wait_for(task, timeout=3.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                if not task.done():
+                    task.cancel()
 
     except Exception as e:
         print(f"🔴 [Holaf-Terminal] Unhandled error in WebSocket PTY handler: {e}")

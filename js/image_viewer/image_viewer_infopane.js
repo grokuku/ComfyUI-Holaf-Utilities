@@ -17,6 +17,19 @@ import { app as comfyApp } from "../holaf_api_compat.js";
 
 // Module-level variables to manage state
 let abortController = null;
+
+// FIX: Scope Ctrl+A (Select All) to the focused textarea within the viewer,
+// instead of letting ComfyUI's global handler select the entire page.
+// This listener is registered once at module load and uses event delegation.
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
+        const target = e.target;
+        if (target && target.tagName === 'TEXTAREA' && target.closest('#holaf-viewer-info-content')) {
+            e.stopPropagation();
+            e.target.select();
+        }
+    }
+}, true); // capture: true to intercept before ComfyUI's handler
 let lastProcessedPath = null;
 
 /**

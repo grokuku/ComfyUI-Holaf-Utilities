@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import threading
 import tempfile
-from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance
+from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance, ImageFont
 import folder_paths
 
 # --- Per-path lock to prevent concurrent video processing of the same file ---

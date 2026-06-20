@@ -131,20 +131,30 @@ class ProfilerEngine:
         try:
             self.active_run_id = self.db.create_run(name, workflow_hash, global_comment)
             self.is_profiling = True
-            
-            if self.monitor_thread is None or not self.monitor_thread.is_alive():
-                self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-                self.monitor_thread.start()
-            
+
+            # FIX: Always create a fresh monitor thread for each run.
+            # The old code checked `self.monitor_thread.is_alive()`, which meant a
+            # rapid stop_run() → start_run() cycle would reuse the old thread,
+            # causing stale stats from the previous run to bleed into the new one.
+            self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+            self.monitor_thread.start()
+
             return self.active_run_id
         except Exception as e:
             print(f"[Holaf Profiler] Error starting run: {e}")
             return None
 
     def stop_run(self):
+        # FIX: Set is_profiling = False first so the monitor loop exits cleanly.
         self.is_profiling = False
         self.active_run_id = None
         self.current_node_id = None
+
+        # FIX: Wait briefly for the monitor thread to exit to avoid a
+        # race condition where a rapid start_run() creates a duplicate thread.
+        if self.monitor_thread is not None and self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=2.0)
+        self.monitor_thread = None
 
     def handle_execution_start(self, node_id):
         if not self.is_profiling: return

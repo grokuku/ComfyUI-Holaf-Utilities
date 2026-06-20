@@ -971,6 +971,13 @@ video::-webkit-media-controls {
     border-bottom: 1px solid var(--holaf-border-color);
     padding-bottom: 5px;
     margin-bottom: 10px;
+    /* FIX: Keep the header (with All/None/Invert buttons) visible when
+       the folder list below scrolls. The background must be opaque to
+       cover content scrolling underneath. */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--holaf-background-secondary);
 }
 
 .holaf-viewer-filter-header h4 {
