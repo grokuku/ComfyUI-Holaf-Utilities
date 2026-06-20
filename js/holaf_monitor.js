@@ -603,6 +603,12 @@
             if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
             if (this.ws) this.ws.close();
 
+            // FIX: Clear any pending reconnection timeout
+            if (this._reconnectTimeout) {
+                clearTimeout(this._reconnectTimeout);
+                this._reconnectTimeout = null;
+            }
+
             const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
             const host = window.location.host;
             let basePath = api.api_base || "";
@@ -613,6 +619,11 @@
             try {
                 this.ws = new WebSocket(wsUrl);
             } catch (e) { return; }
+
+            // FIX: onopen — reset reconnection attempts counter
+            this.ws.onopen = () => {
+                this._reconnectAttempts = 0;
+            };
 
             this.ws.onmessage = (event) => {
                 try {
@@ -663,10 +674,39 @@
 
                 } catch (e) { }
             };
+
+            // FIX: onclose — auto-reconnect if monitor is still visible
+            this.ws.onclose = (event) => {
+                this.ws = null;
+                if (this.isVisible) {
+                    this._reconnectAttempts = (this._reconnectAttempts || 0) + 1;
+                    // Exponential backoff: 1s, 2s, 4s, 8s... max 30s
+                    const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 30000);
+                    console.warn(`[Holaf Monitor] WebSocket closed. Reconnecting in ${delay / 1000}s... (attempt ${this._reconnectAttempts})`);
+                    this._reconnectTimeout = setTimeout(() => {
+                        if (this.isVisible) {
+                            this.connectWebSocket();
+                        }
+                    }, delay);
+                }
+            };
+
+            // FIX: onerror — log error, let onclose handle reconnection
+            this.ws.onerror = (e) => {
+                console.error("[Holaf Monitor] WebSocket error:", e);
+            };
         },
 
         disconnectWebSocket() {
+            // FIX: Cancel any pending reconnection
+            if (this._reconnectTimeout) {
+                clearTimeout(this._reconnectTimeout);
+                this._reconnectTimeout = null;
+            }
+            this._reconnectAttempts = 0;
+
             if (this.ws) {
+                this.ws.onclose = null; // Prevent auto-reconnect during intentional disconnect
                 this.ws.close();
                 this.ws = null;
             }

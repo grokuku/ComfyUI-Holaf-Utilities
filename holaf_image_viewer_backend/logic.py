@@ -6,7 +6,6 @@ import math
 import time
 import datetime
 import traceback
-import uuid
 import shutil
 import subprocess
 import threading
@@ -1226,7 +1225,23 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
                 if conn_fail_db_inner:
                     holaf_database.close_db_connection(exception=inner_exception)
     except UnidentifiedImageError as e:
+        # FIX: Missing DB update — thumbnail stayed at status 1 forever, causing
+        # the worker to retry corrupted/unidentified images in an infinite loop.
         update_exception = e
+        print(f"🟡 [Holaf-ImageViewer] Unidentified image (cannot generate thumbnail): {original_path_abs}")
+        if image_path_canon_for_db_update:
+            conn_fail_db_inner = None
+            inner_exception = None
+            try:
+                conn_fail_db_inner = holaf_database.get_db_connection()
+                cursor_inner = conn_fail_db_inner.cursor()
+                cursor_inner.execute("UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?", (image_path_canon_for_db_update,))
+                conn_fail_db_inner.commit()
+            except Exception as e_fail_inner:
+                inner_exception = e_fail_inner
+            finally:
+                if conn_fail_db_inner:
+                    holaf_database.close_db_connection(exception=inner_exception)
     except Exception as e:
         update_exception = e
         print(f"🔴 [Holaf-ImageViewer] Error in _create_thumbnail_blocking for {original_path_abs}: {e}")
