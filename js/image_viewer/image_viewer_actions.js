@@ -576,6 +576,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                             <span id="holaf-export-gif-fps-val" style="min-width: 32px; text-align: right;">15</span>
                         </div>
                         <!-- WAV/MP3 Info -->
+                        <div id="holaf-export-audio-info-row" style="display: none;">
                             <span style="opacity: 0.6; font-size: 0.85em;">Audio format — file will be copied or transcoded.</span>
                         </div>
                         <!-- MP3 Bitrate -->
