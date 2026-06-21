@@ -916,6 +916,8 @@ video::-webkit-media-controls {
     font-size: 12px;
     font-weight: bold;
     background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
+    /* FIX: Prevent header from shrinking when content scrolls */
+    flex-shrink: 0;
 }
 
 .holaf-viewer-export-content {

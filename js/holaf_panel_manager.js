@@ -345,7 +345,12 @@ export const HolafPanelManager = {
 
             const content = document.createElement("div");
             content.className = "holaf-dialog-content";
-            content.textContent = options.message;
+            // FIX: Support both plain text (message) and custom DOM (messageElement)
+            if (options.messageElement instanceof HTMLElement) {
+                content.appendChild(options.messageElement);
+            } else {
+                content.textContent = options.message || "";
+            }
 
             const footer = document.createElement("div");
             footer.className = "holaf-dialog-footer";
@@ -434,6 +439,19 @@ export const HolafPanelManager = {
 
             dialog.append(header, content, footer);
             overlay.appendChild(dialog);
+
+            // FIX: Clicking the overlay backdrop closes/cancels the dialog
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
+                    if (cancelButton) {
+                        cancelButton.click();
+                    } else {
+                        closeDialog(false);
+                    }
+                }
+            });
+
             document.body.appendChild(overlay);
 
             if (buttons.length > 0) {

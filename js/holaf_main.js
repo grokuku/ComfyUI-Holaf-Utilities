@@ -5,6 +5,7 @@
 
 import { app } from "./holaf_api_compat.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
+import { HolafPanelManager } from "./holaf_panel_manager.js";
 
 import "./holaf_themes.js";
 import "./holaf_terminal.js";
@@ -443,7 +444,7 @@ const HolafUtilitiesMenu = {
                     if (handler && typeof handler.show === 'function') {
                         handler.show();
                     } else {
-                        HolafModal.show("Not Implemented", `The panel for "${itemInfo.label}" is not available yet.`, () => { }, "OK", null);
+                        HolafPanelManager.createDialog({ title: "Not Implemented", message: `The panel for "${itemInfo.label}" is not available yet.`, buttons: [{ text: "OK", value: true }] });
                     }
                 }
 
