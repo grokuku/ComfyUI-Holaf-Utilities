@@ -116,7 +116,7 @@ export class ImageEditor {
         this.nativeFps = 0;
         this.processedVideoUrl = null;
         this._clearCanvasCache();
-        this._removeCompareOverlay();
+        this._compareCleanup();
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
         this._updateUIFromState();
@@ -126,11 +126,12 @@ export class ImageEditor {
     }
 
     _hide() {
+        if (this._previewTimer) { clearTimeout(this._previewTimer); this._previewTimer = null; }
         if (this.isDirty) { this.currentState = { ...this.originalState }; this.applyPreview(); this.isDirty = false; }
         if (this.panelEl) this.panelEl.style.display = 'none';
         this._dispatchVideoOverride(null);
         this._getPreviewElements().forEach(el => { if (el) el.style.filter = 'none'; });
-        this._removeCompareOverlay();
+        this._compareCleanup();
         this._clearCanvasCache();
         this.activeImage = null;
     }
@@ -182,8 +183,31 @@ export class ImageEditor {
         else rate = this.currentState.playbackRate || 1.0;
         if (this.processedVideoUrl) rate = 1.0;
 
-        if (this._hasRangedAdjustments()) this._processRangedPreviewOnCanvas(els);
-        else this._applyCssFilter(els, rate);
+        // Cancel any pending ranged preview to avoid overlapping async renders
+        if (this._rangedPreviewPending) { this._rangedPreviewPending = false; }
+
+        if (this._hasRangedAdjustments()) {
+            this._rangedPreviewPending = true;
+            this._processRangedPreviewOnCanvas(els);
+        } else {
+            this._applyCssFilter(els, rate);
+        }
+
+        // Refresh compare canvas if active
+        this._compareRefresh();
+    }
+
+    _schedulePreview() {
+        if (this._previewTimer) clearTimeout(this._previewTimer);
+        this._previewTimer = setTimeout(() => { this._previewTimer = null; this.applyPreview(); }, 16);
+    }
+
+    _compareRefresh() {
+        const canvas = document.getElementById('holaf-compare-canvas');
+        if (!canvas) return;
+        // Signal the running render loop to re-read the filter on next frame
+        // instead of tearing down and rebuilding the entire compare setup
+        this._compareFilterDirty = true;
     }
 
     _applyCssFilter(els, rate) {
@@ -197,30 +221,34 @@ export class ImageEditor {
     }
 
     _buildCssFilter() {
-        let b = 1, c = 1, s = 1;
+        let b = 1, c = 1, s = 1, h = 0;
         for (const ctrl of this.currentState.controls || []) {
-            if (ctrl.range !== 'all') continue; // only 'all' ranges via CSS
+            if (ctrl.range !== 'all') continue;
             if (ctrl.type === 'brightness') b = ctrl.value;
             if (ctrl.type === 'contrast') c = ctrl.value;
             if (ctrl.type === 'saturation') s = ctrl.value;
+            if (ctrl.type === 'hue') h = ctrl.value;
         }
-        return `brightness(${b}) contrast(${c}) saturate(${s})`;
+        return `brightness(${b}) contrast(${c}) saturate(${s}) hue-rotate(${h}deg)`;
     }
 
     _hasRangedAdjustments() {
         if (this.nativeFps > 0) return false;
-        return (this.currentState.controls || []).some(c => c.range && c.range !== 'all' && c.type !== 'hue');
+        return (this.currentState.controls || []).some(c => c.range && c.range !== 'all');
     }
 
     async _processRangedPreviewOnCanvas(els) {
         const imgEl = els[0];
-        if (!imgEl || imgEl.tagName !== 'IMG' || !imgEl.src) return;
+        if (!imgEl || imgEl.tagName !== 'IMG') return;
+        // Use the ORIGINAL image URL as cache key, not the current src (which may be a blob URL)
+        const originalUrl = imgEl.dataset.originalSrc || imgEl.src;
+        if (!originalUrl) return;
         try {
-            if (!this._originalImgData || this._originalImgSrc !== imgEl.src) {
-                this._originalImgSrc = imgEl.src;
+            if (!this._originalImgData || this._originalImgSrc !== originalUrl) {
+                this._originalImgSrc = originalUrl;
                 const loadImg = new Image();
                 loadImg.crossOrigin = 'anonymous';
-                await new Promise((res, rej) => { loadImg.onload = res; loadImg.onerror = rej; loadImg.src = imgEl.src; });
+                await new Promise((res, rej) => { loadImg.onload = res; loadImg.onerror = rej; loadImg.src = originalUrl; });
                 this._previewCanvas = document.createElement('canvas');
                 this._previewCanvas.width = loadImg.naturalWidth;
                 this._previewCanvas.height = loadImg.naturalHeight;
@@ -259,6 +287,38 @@ export class ImageEditor {
                             g += (sat(oG, oGray) - oG) * weight;
                             b += (sat(oB, oGray) - oB) * weight;
                         }
+                    } else if (ctrl.type === 'hue') {
+                        // RGB -> HSV -> rotate H -> HSV -> RGB
+                        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                        const d = max - min;
+                        let h;
+                        if (d === 0) h = 0;
+                        else if (max === r) h = ((g - b) / d) % 6;
+                        else if (max === g) h = (b - r) / d + 2;
+                        else h = (r - g) / d + 4;
+                        h = h * 60; if (h < 0) h += 360;
+                        const s = max === 0 ? 0 : d / max;
+                        const v = max;
+                        // Rotate hue
+                        let nH = (h + val) % 360; if (nH < 0) nH += 360;
+                        // HSV -> RGB
+                        const c = v * s;
+                        const x = c * (1 - Math.abs((nH / 60) % 2 - 1));
+                        const m = v - c;
+                        let nr, ng, nb;
+                        if (nH < 60) { nr = c; ng = x; nb = 0; }
+                        else if (nH < 120) { nr = x; ng = c; nb = 0; }
+                        else if (nH < 180) { nr = 0; ng = c; nb = x; }
+                        else if (nH < 240) { nr = 0; ng = x; nb = c; }
+                        else if (nH < 300) { nr = x; ng = 0; nb = c; }
+                        else { nr = c; ng = 0; nb = x; }
+                        const adjR = nr + m, adjG = ng + m, adjB = nb + m;
+                        if (range === 'all') { r = adjR; g = adjG; b = adjB; }
+                        else {
+                            r += (adjR - oR) * weight;
+                            g += (adjG - oG) * weight;
+                            b += (adjB - oB) * weight;
+                        }
                     }
                 }
 
@@ -274,6 +334,8 @@ export class ImageEditor {
         } catch (e) {
             console.warn('[Holaf Editor] Ranged preview fallback:', e);
             this._applyCssFilter(els, 1.0);
+        } finally {
+            this._rangedPreviewPending = false;
         }
     }
 
@@ -361,6 +423,9 @@ export class ImageEditor {
         this._renderControlsList();
 
         const vs = this.panelEl.querySelector('#holaf-editor-video-section');
+        // Hide compare checkbox for videos (compare only works on images)
+        const compareLabel = this.panelEl.querySelector('label[title="Split view: left = original, right = edited"]');
+        if (compareLabel) compareLabel.style.display = this.nativeFps > 0 ? 'none' : '';
         if (vs) {
             if (this.nativeFps > 0) {
                 vs.style.display = 'block';
@@ -419,7 +484,7 @@ export class ImageEditor {
                 if (!sel) return;
                 const ctrlId = sel.dataset.rangeFor;
                 const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
-                if (ctrl) { ctrl.range = sel.value; this.isDirty = true; this._updateButtonStates(); this.applyPreview(); }
+                if (ctrl) { ctrl.range = sel.value; this.isDirty = true; this._updateButtonStates(); this._schedulePreview(); }
             });
 
             // Slider input
@@ -437,7 +502,7 @@ export class ImageEditor {
                 if (valEl) valEl.textContent = ctrl.type === 'hue' ? rawVal : Math.round(rawVal);
                 this.isDirty = true;
                 this._updateButtonStates();
-                this.applyPreview();
+                this._schedulePreview();
             });
 
             // Double-click on container to reset control
@@ -453,7 +518,7 @@ export class ImageEditor {
                 ctrl.range = 'all';
                 this.isDirty = true;
                 this._updateUIFromState();
-                this.applyPreview();
+                this._schedulePreview();
                 this._updateButtonStates();
             });
 
@@ -544,6 +609,7 @@ export class ImageEditor {
 
     _cancelEdits() {
         if (!this.isDirty) return;
+        this._compareCleanup();
         this.currentState = { ...this.originalState };
         this.isDirty = false;
         this._updateUIFromState();
@@ -569,6 +635,11 @@ export class ImageEditor {
             this.isDirty = false;
             this.processedVideoUrl = null;
             this._dispatchVideoOverride(null);
+            this._clearCanvasCache();
+            // Restore original image src if it was replaced by a blob URL
+            this._getPreviewElements().forEach(el => {
+                if (el && el.dataset.originalSrc) { el.src = el.dataset.originalSrc; delete el.dataset.originalSrc; }
+            });
             this._updateUIFromState();
             this.applyPreview();
             this._updateButtonStates();
@@ -594,20 +665,40 @@ export class ImageEditor {
         finally { document.dispatchEvent(new Event('holaf-video-processing-end')); }
     }
 
-    // ── Compare mode (split before/after) ──
+    // ── Compare mode (canvas-based split like remote comparer) ──
 
     _toggleCompareMode(active) {
-        if (!this.activeImage) return;
-        this._removeCompareOverlay();
-        if (!active) return;
+        if (!this.activeImage) { this._compareCleanup(); return; }
+
+        if (!active) {
+            this._compareCleanup();
+            return;
+        }
 
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
-        if (!zoomView) return;
+        const editedImg = zoomView?.querySelector('img');
+        if (!zoomView || !editedImg || !editedImg.src) return;
 
-        const editedImg = zoomView.querySelector('img');
-        if (!editedImg || !editedImg.src) return;
+        // Clean up any previous compare state (including event listeners)
+        if (this._compareCleanups) { this._compareCleanups.forEach(fn => fn()); this._compareCleanups = null; }
+        if (this._compareRaf) { cancelAnimationFrame(this._compareRaf); this._compareRaf = null; }
+        if (this._compareResizeObserver) { this._compareResizeObserver.disconnect(); this._compareResizeObserver = null; }
+        const oldCanvas = document.getElementById('holaf-compare-canvas');
+        if (oldCanvas) oldCanvas.remove();
 
-        // Build original image URL (same as edited but without path rewrite from canvas)
+        // Create canvas overlay
+        const canvas = document.createElement('canvas');
+        canvas.id = 'holaf-compare-canvas';
+        canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:50;pointer-events:none;';
+        zoomView.appendChild(canvas);
+
+        // Resize canvas to match zoom view dimensions
+        const rect = zoomView.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        const ctx = canvas.getContext('2d');
+
+        // Determine original URL and edited URL
         const originalUrl = editedImg.dataset.originalSrc || (
             window.location.origin + '/view?' +
             new URLSearchParams({
@@ -616,56 +707,140 @@ export class ImageEditor {
                 type: 'output'
             }).toString()
         );
+        const editedUrl = editedImg.src;
 
-        const overlay = document.createElement('div');
-        overlay.id = 'holaf-compare-overlay';
-        overlay.style.cssText = `
-            position: absolute; top: 0; left: 0; width: 50%; height: 100%;
-            z-index: 50; overflow: hidden; pointer-events: none;
-        `;
+        // Load both images
+        const origImg = new Image();
+        origImg.crossOrigin = 'anonymous';
+        const editImg = new Image();
+        editImg.crossOrigin = 'anonymous';
 
-        const origImg = document.createElement('img');
-        origImg.src = originalUrl;
-        origImg.draggable = false;
-        origImg.style.cssText = `
-            width: 100%; height: 100%; object-fit: contain;
-            position: absolute; top: 0; left: 0;
-        `;
-        overlay.appendChild(origImg);
-
-        // Divider line
-        const divider = document.createElement('div');
-        divider.style.cssText = `
-            position: absolute; top: 0; left: 100%; width: 2px; height: 100%;
-            background: var(--holaf-accent-color, #4682B4);
-            z-index: 60;
-        `;
-        overlay.appendChild(divider);
-
-        zoomView.appendChild(overlay);
-
-        // Mouse move handler
-        this._compareOnMove = (e) => {
-            const rect = zoomView.getBoundingClientRect();
-            let x = e.clientX - rect.left;
-            x = Math.max(0, Math.min(rect.width, x));
-            const pct = (x / rect.width) * 100;
-            overlay.style.width = pct + '%';
+        let imagesLoaded = 0;
+        const onLoad = () => {
+            imagesLoaded++;
+            if (imagesLoaded < 2) return;
+            this._compareStartLoop(zoomView, canvas, ctx, origImg, editImg, editedUrl);
         };
+        origImg.onload = onLoad;
+        editImg.onload = onLoad;
+        origImg.src = originalUrl;
+        editImg.src = editedUrl;
 
-        zoomView.addEventListener('mousemove', this._compareOnMove);
+        // Resize observer to update canvas dimensions
+        this._compareResizeObserver = new ResizeObserver(() => {
+            const r = zoomView.getBoundingClientRect();
+            canvas.width = r.width;
+            canvas.height = r.height;
+        });
+        this._compareResizeObserver.observe(zoomView);
     }
 
-    _removeCompareOverlay() {
-        const old = document.getElementById('holaf-compare-overlay');
-        if (old) old.remove();
-        const zoomView = document.getElementById('holaf-viewer-zoom-view');
-        if (zoomView && this._compareOnMove) {
-            zoomView.removeEventListener('mousemove', this._compareOnMove);
-            this._compareOnMove = null;
-        }
-        // Reset compare checkbox state
+    _compareStartLoop(zoomView, canvas, ctx, origImg, editImg, initialEditedUrl) {
+        // Read current CSS filter from the edited element
+        const editedEl = zoomView.querySelector('img');
+        let filterValue = editedEl ? getComputedStyle(editedEl).filter : 'none';
+
+        let mouseX = canvas.width / 2;
+        let isOver = false;
+
+        const onMove = (e) => {
+            const r = canvas.getBoundingClientRect();
+            mouseX = Math.max(0, Math.min(r.width, e.clientX - r.left));
+            isOver = true;
+        };
+        const onLeave = () => { isOver = false; };
+
+        zoomView.addEventListener('mousemove', onMove);
+        zoomView.addEventListener('mouseleave', onLeave);
+        this._compareCleanups = [
+            () => zoomView.removeEventListener('mousemove', onMove),
+            () => zoomView.removeEventListener('mouseleave', onLeave),
+        ];
+
+        // Track the edited image src to detect blob URL changes
+        let currentEditedSrc = initialEditedUrl;
+
+        const render = () => {
+            const w = canvas.width, h = canvas.height;
+            if (w === 0 || h === 0) { this._compareRaf = requestAnimationFrame(render); return; }
+
+            // Re-read filter if dirty (slider changed)
+            if (this._compareFilterDirty) {
+                this._compareFilterDirty = false;
+                const el = zoomView.querySelector('img');
+                if (el) {
+                    filterValue = getComputedStyle(el).filter;
+                    // If the edited image src changed (new blob from ranged processing), reload
+                    if (el.src !== currentEditedSrc) {
+                        currentEditedSrc = el.src;
+                        editImg.src = currentEditedSrc;
+                    }
+                }
+            }
+
+            // Skip rendering if edited image is still loading after a src change
+            if (!editImg.complete || editImg.naturalWidth === 0) {
+                this._compareRaf = requestAnimationFrame(render);
+                return;
+            }
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Calculate draw rect (object-fit: contain)
+            const imgAspect = origImg.naturalWidth / origImg.naturalHeight;
+            const canvasAspect = w / h;
+            let dw, dh, ox = 0, oy = 0;
+            if (imgAspect > canvasAspect) {
+                dw = w; dh = w / imgAspect; oy = (h - dh) / 2;
+            } else {
+                dh = h; dw = h * imgAspect; ox = (w - dw) / 2;
+            }
+
+            // 1. Draw ORIGINAL image (full)
+            ctx.drawImage(origImg, ox, oy, dw, dh);
+
+            // 2. Draw EDITED image (clipped to left of mouse, with CSS filter)
+            if (isOver && mouseX !== null) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(ox, oy, Math.max(0, mouseX - ox), dh);
+                ctx.clip();
+
+                // Apply the same CSS filter as the edited image
+                ctx.filter = filterValue;
+                ctx.drawImage(editImg, ox, oy, dw, dh);
+                ctx.filter = 'none';
+
+                ctx.restore();
+
+                // 3. Split line
+                if (mouseX >= ox && mouseX <= ox + dw) {
+                    ctx.beginPath();
+                    ctx.moveTo(mouseX, oy);
+                    ctx.lineTo(mouseX, oy + dh);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.globalCompositeOperation = 'difference';
+                    ctx.stroke();
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            }
+
+            this._compareRaf = requestAnimationFrame(render);
+        };
+
+        render();
+    }
+
+    _compareCleanup() {
+        const canvas = document.getElementById('holaf-compare-canvas');
+        if (canvas) canvas.remove();
+        if (this._compareRaf) { cancelAnimationFrame(this._compareRaf); this._compareRaf = null; }
+        if (this._compareResizeObserver) { this._compareResizeObserver.disconnect(); this._compareResizeObserver = null; }
+        if (this._compareCleanups) { this._compareCleanups.forEach(fn => fn()); this._compareCleanups = null; }
+        this._compareFilterDirty = false;
+        // Reset checkbox only on explicit cleanup (not during toggle setup)
         const cb = this.panelEl?.querySelector('#holaf-editor-compare-check');
-        if (cb) cb.checked = false;
+        if (cb && cb.checked) cb.checked = false;
     }
 }
