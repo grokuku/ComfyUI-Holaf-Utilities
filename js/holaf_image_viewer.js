@@ -162,6 +162,19 @@ const holafImageViewer = {
             if (!this.filterRefreshIntervalId) {
                 this.filterRefreshIntervalId = setInterval(() => this.checkForUpdates(), FILTER_REFRESH_INTERVAL_MS);
             }
+
+            // Track gallery scrolling to skip update checks during active scroll
+            const galleryEl = document.getElementById('holaf-viewer-gallery');
+            if (galleryEl && !this._scrollTrackerSetup) {
+                this._scrollTrackerSetup = true;
+                let scrollStopTimer = null;
+                galleryEl.addEventListener('scroll', () => {
+                    this._isGalleryScrolling = true;
+                    clearTimeout(scrollStopTimer);
+                    scrollStopTimer = setTimeout(() => { this._isGalleryScrolling = false; }, 500);
+                }, { passive: true });
+            }
+
             this._updateViewerActivity(true);
             this.checkForUpdates();
         }
@@ -393,6 +406,11 @@ const holafImageViewer = {
 
     async checkForUpdates() {
         if (this.isLoading) return;
+        // Skip update check if user is actively scrolling the gallery
+        // to avoid JSON.parse of large payloads blocking the main thread
+        if (this._isGalleryScrolling) {
+            return;
+        }
         try {
             const response = await fetch('/holaf/images/last-update-time', { cache: 'no-store' });
             if (!response.ok) return;

@@ -391,11 +391,23 @@ function _doKick() {
     clearTimeout(idleRestartTimer);
 
     // Phase 1: Load visible unloaded thumbnails
+    // Limit cache-hit processing per tick to avoid blocking the main thread.
+    // Each cache hit does DOM manipulation (createElement + prepend), so
+    // processing 200 items synchronously in a microtask can freeze the UI.
+    let cacheHitsThisTick = 0;
+    const MAX_CACHE_HITS_PER_TICK = 20;
+
     while (activeThumbnailLoads < currentConcurrencyLimit) {
         const next = _findNextUnloaded();
         if (!next) break;
 
         if (applyCachedThumbnail(next, next.dataset.pathCanon)) {
+            cacheHitsThisTick++;
+            if (cacheHitsThisTick >= MAX_CACHE_HITS_PER_TICK) {
+                // Yield to main thread, resume on next tick
+                setTimeout(kickLoadQueue, 0);
+                return;
+            }
             continue;
         }
 
@@ -1031,7 +1043,8 @@ function syncGallery(viewer, images) {
     // thumbnailCache.clear();
 
     if (galleryGridEl) {
-        while (galleryGridEl.firstChild) galleryGridEl.removeChild(galleryGridEl.firstChild);
+        // Use textContent instead of removeChild loop for faster bulk removal
+        galleryGridEl.textContent = '';
     }
     renderedPlaceholders.clear();
     placeholderPool.length = 0; // Clear pool on full rebuild
