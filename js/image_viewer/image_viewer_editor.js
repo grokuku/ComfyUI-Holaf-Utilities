@@ -297,8 +297,6 @@ export class ImageEditor {
     _addControl(typeId) {
         const def = CONTROL_TYPES.find(c => c.id === typeId);
         if (!def) return;
-        // Don't allow duplicates
-        if (this.currentState.controls.some(c => c.type === typeId)) return;
         _ctrlIdCounter++;
         this.currentState.controls.push({ id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: 'all' });
         this.isDirty = true;
@@ -387,15 +385,8 @@ export class ImageEditor {
         const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
         if (addBtn) {
             addBtn.onclick = async () => {
-                const existing = new Set(this.currentState.controls.map(c => c.type));
-                const available = CONTROL_TYPES.filter(t => !existing.has(t.id));
-                if (available.length === 0) {
-                    this._showToast("All control types already added.", 'info');
-                    return;
-                }
-
-                // Build choice buttons for each available type
-                const buttons = available.map(t => ({
+                // Build choice buttons for ALL control types (duplicates allowed)
+                const buttons = CONTROL_TYPES.map(t => ({
                     text: t.label,
                     value: t.id,
                     type: 'confirm'
