@@ -868,117 +868,179 @@ def _get_luminance_mask(image, range_type):
     return gray.point(table)
 
 
+def _migrate_edit_data(edit_data):
+    """
+    Converts old flat edit format to new controls array format.
+    Old format: { 'brightness': 1.2, 'brightnessRange': 'shadows', 'contrast': 1.1 }
+    New format: { 'controls': [{ 'id': 'c_1', 'type': 'brightness', 'value': 1.2, 'range': 'shadows' }, ...] }
+    """
+    if not isinstance(edit_data, dict):
+        return edit_data
+
+    if 'controls' in edit_data:
+        return edit_data  # Already new format
+
+    # Extract video-specific keys (keep them at top level for ffmpeg pipeline)
+    result = {}
+    for key in ['playbackRate', 'targetFps', 'interpolate']:
+        if key in edit_data:
+            result[key] = edit_data[key]
+
+    # Build controls from flat keys
+    controls = []
+    cid = 0
+    for ctype in ['brightness', 'contrast', 'saturation', 'hue']:
+        if ctype in edit_data:
+            cid += 1
+            controls.append({
+                'id': f'ctrl_{cid}',
+                'type': ctype,
+                'value': edit_data[ctype],
+                'range': edit_data.get(f'{ctype}Range', 'all')
+            })
+
+    if controls:
+        result['controls'] = controls
+        return result
+
+    return edit_data  # No known keys, return as-is
+
+
 def apply_edits_to_image(image, edit_data):
     """
     Applies adjustments (brightness, contrast, saturation, hue) to a PIL Image.
-    Each adjustment can optionally target a specific luminance range:
-      - edit_data['brightnessRange'] = 'shadows' | 'midtones' | 'highlights' | 'all'
-    When a range is specified, the adjustment is blended via a smooth luminance mask
-    so only the targeted pixels are affected.
+    Supports both old flat format and new controls array format.
     """
     if not isinstance(edit_data, dict):
         return image
 
+    # Migrate old format to new controls array if needed
+    edit_data = _migrate_edit_data(edit_data)
+
+    controls = edit_data.get('controls', [])
+    if not controls:
+        return image
+
     result = image.copy()
 
-    adjustments = [
-        ('brightness', lambda img, v: ImageEnhance.Brightness(img).enhance(float(v))),
-        ('contrast',   lambda img, v: ImageEnhance.Contrast(img).enhance(float(v))),
-        ('saturation', lambda img, v: ImageEnhance.Color(img).enhance(float(v))),
-    ]
+    for control in controls:
+        ctype = control.get('type')
+        value = control.get('value')
+        range_type = control.get('range', 'all')
 
-    for key, func in adjustments:
-        if key in edit_data:
-            value = edit_data[key]
-            range_type = edit_data.get(f'{key}Range', 'all')
-
+        if ctype == 'brightness':
             if range_type == 'all':
-                result = func(result, value)
+                result = ImageEnhance.Brightness(result).enhance(float(value))
             else:
                 mask = _get_luminance_mask(image, range_type)
                 if mask:
-                    adjusted = func(image.copy(), value)
+                    adjusted = ImageEnhance.Brightness(image.copy()).enhance(float(value))
                     result = Image.composite(adjusted, result, mask)
 
-    # Hue (separate logic, not expressible as ImageEnhance)
-    if 'hue' in edit_data and edit_data['hue'] != 0:
-        try:
-            range_type = edit_data.get('hueRange', 'all')
-            hue_deg = float(edit_data['hue'])
-
-            def _apply_hue(img):
-                img_hsv = img.convert('HSV')
-                h, s, v = img_hsv.split()
-                shift = int((hue_deg % 360) * (255 / 360))
-                h = h.point(lambda i: (i + shift) % 255)
-                return Image.merge('HSV', (h, s, v)).convert('RGB')
-
+        elif ctype == 'contrast':
             if range_type == 'all':
-                result = _apply_hue(result)
+                result = ImageEnhance.Contrast(result).enhance(float(value))
             else:
                 mask = _get_luminance_mask(image, range_type)
                 if mask:
-                    adjusted = _apply_hue(image.copy())
+                    adjusted = ImageEnhance.Contrast(image.copy()).enhance(float(value))
                     result = Image.composite(adjusted, result, mask)
-        except Exception as e:
-            print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
+
+        elif ctype == 'saturation':
+            if range_type == 'all':
+                result = ImageEnhance.Color(result).enhance(float(value))
+            else:
+                mask = _get_luminance_mask(image, range_type)
+                if mask:
+                    adjusted = ImageEnhance.Color(image.copy()).enhance(float(value))
+                    result = Image.composite(adjusted, result, mask)
+
+        elif ctype == 'hue' and value != 0:
+            try:
+                hue_deg = float(value)
+
+                def _apply_hue(img):
+                    img_hsv = img.convert('HSV')
+                    h, s, v = img_hsv.split()
+                    shift = int((hue_deg % 360) * (255 / 360))
+                    h = h.point(lambda i: (i + shift) % 255)
+                    return Image.merge('HSV', (h, s, v)).convert('RGB')
+
+                if range_type == 'all':
+                    result = _apply_hue(result)
+                else:
+                    mask = _get_luminance_mask(image, range_type)
+                    if mask:
+                        adjusted = _apply_hue(image.copy())
+                        result = Image.composite(adjusted, result, mask)
+            except Exception as e:
+                print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
 
     return result
 
 
 def build_ffmpeg_filter_string(edit_data):
     """
-    Translates edit_data dictionary into an FFmpeg filter string (-vf).
-    Matches the logic of apply_edits_to_image.
+    Translates edit_data into an FFmpeg filter string (-vf).
+    Supports both old flat format and new controls array format.
+    Ranges are ignored (FFmpeg can't do luminance masking).
     """
     if not edit_data:
         return ""
+    
+    # Normalize to new format and extract flat values
+    edit_data = _migrate_edit_data(edit_data)
+    
+    # Build a flat lookup from controls (ignoring ranges)
+    flat = {}
+    for control in edit_data.get('controls', []):
+        ctype = control.get('type')
+        value = control.get('value')
+        if ctype and value is not None:
+            flat[ctype] = value
+    # Also copy top-level video keys
+    for key in ['playbackRate', 'targetFps', 'interpolate']:
+        if key in edit_data:
+            flat[key] = edit_data[key]
 
     filters = []
-    
-    # --- [FEATURE] SPEED CONTROL (setpts) ---
-    if 'playbackRate' in edit_data:
+
+    # Speed control (setpts)
+    if 'playbackRate' in flat:
         try:
-            rate = float(edit_data['playbackRate'])
+            rate = float(flat['playbackRate'])
             if rate > 0 and abs(rate - 1.0) > 0.01:
-                # PTS = Presentation Timestamp. To speed up (2x), frames must be presented 2x faster, so timestamp / 2.
-                # setpts=PTS/RATE
                 filters.append(f"setpts=PTS/{rate}")
-        except ValueError: pass
+        except ValueError:
+            pass
 
     # eq filter handles brightness, contrast, saturation
     eq_parts = []
-    if 'contrast' in edit_data:
-        eq_parts.append(f"contrast={edit_data['contrast']}")
-    
-    if 'saturation' in edit_data:
-        eq_parts.append(f"saturation={edit_data['saturation']}")
-        
-    if 'brightness' in edit_data:
-        # Mapping Issue:
-        # CSS/Pillow brightness(N) is a multiplier (N=1 is identity).
-        # FFmpeg eq=brightness=N is an additive shift (-1.0 to 1.0).
-        # Approximating: If CSS is 1.2 (+20%), we shift FFmpeg slightly.
-        # A rough approximation for "soft" edits is (val - 1) / 2.
+    if 'contrast' in flat:
+        eq_parts.append(f"contrast={flat['contrast']}")
+    if 'saturation' in flat:
+        eq_parts.append(f"saturation={flat['saturation']}")
+    if 'brightness' in flat:
         try:
-            b_val = float(edit_data['brightness'])
-            # Only apply if significantly different from 1.0 to avoid floats weirdness
+            b_val = float(flat['brightness'])
             if abs(b_val - 1.0) > 0.001:
                 ffmpeg_b = (b_val - 1.0) / 2.0
                 eq_parts.append(f"brightness={ffmpeg_b:.3f}")
-        except ValueError: pass
-        
+        except ValueError:
+            pass
+
     if eq_parts:
         filters.append(f"eq={':'.join(eq_parts)}")
-        
+
     # hue filter
-    if 'hue' in edit_data:
+    if 'hue' in flat:
         try:
-            h_val = float(edit_data['hue'])
+            h_val = float(flat['hue'])
             if abs(h_val) > 0.01:
                 filters.append(f"hue=h={h_val}")
-        except ValueError: pass
-        
+        except ValueError:
+            pass
+
     return ",".join(filters)
 
 def _build_atempo_filter(rate):

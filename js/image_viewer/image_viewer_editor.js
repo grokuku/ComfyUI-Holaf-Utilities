@@ -2,26 +2,28 @@
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Image Viewer Editor Module
  *
- * This module manages the image editing panel, its state,
- * and interactions with the backend for saving/loading edits.
- * REFACTOR: Safe Toast usage. Non-blocking Background Process.
- * UPDATE: Auto FPS Doubling for RIFE. UI Cleanup. State Sync.
+ * REFACTOR: Stackable controls system. Users add/remove individual controls
+ * instead of a fixed set of sliders. Supports luminance range masking.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
 
+const CONTROL_TYPES = [
+    { id: 'brightness', label: 'Brightness', default: 1, min: 0, max: 200, step: 1 },
+    { id: 'contrast',   label: 'Contrast',   default: 1, min: 0, max: 200, step: 1 },
+    { id: 'saturation', label: 'Saturation', default: 1, min: 0, max: 200, step: 1 },
+    { id: 'hue',        label: 'Hue',        default: 0, min: -180, max: 180, step: 1 },
+];
+
 const DEFAULT_EDIT_STATE = {
-    brightness: 1,
-    contrast: 1,
-    saturation: 1,
-    brightnessRange: 'all',
-    contrastRange: 'all',
-    saturationRange: 'all',
+    controls: [],
     targetFps: null,
     playbackRate: 1.0,
     interpolate: false
 };
+
+let _ctrlIdCounter = 0;
 
 export class ImageEditor {
     constructor(viewer) {
@@ -31,7 +33,6 @@ export class ImageEditor {
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
         this.isDirty = false;
-
         this.nativeFps = 0;
         this.processedVideoUrl = null;
     }
@@ -41,386 +42,244 @@ export class ImageEditor {
         imageViewerState.subscribe(this._handleStateChange.bind(this));
     }
 
-    hasUnsavedChanges() {
-        return this.isDirty;
-    }
+    hasUnsavedChanges() { return this.isDirty; }
 
     _showToast(message, type = 'info', duration = 3000) {
-        if (window.holaf && window.holaf.toastManager) {
+        if (window.holaf && window.holaf.toastManager)
             return window.holaf.toastManager.show({ message, type, duration });
-        } else {
-            console.log(`[Holaf Toast] ${type}: ${message}`);
-            return null;
-        }
-    }
-
-    _dismissToast(id) {
-        if (id && window.holaf && window.holaf.toastManager) {
-            window.holaf.toastManager.dismiss(id);
-        }
+        console.log(`[Holaf Toast] ${type}: ${message}`);
+        return null;
     }
 
     _handleStateChange(state) {
-        if (!this.panelEl) {
-            this.createPanel();
-            if (!this.panelEl) return;
-        }
-
-        const shouldBeVisible = state.activeImage && state.ui.view_mode === 'zoom';
-        const isActuallyVisible = this.panelEl.style.display !== 'none';
-
-        if (state.activeImage && (state.activeImage.path_canon !== this.activeImage?.path_canon)) {
+        if (!this.panelEl) { this.createPanel(); if (!this.panelEl) return; }
+        const visible = state.activeImage && state.ui.view_mode === 'zoom';
+        const shown = this.panelEl.style.display !== 'none';
+        if (state.activeImage && state.activeImage.path_canon !== this.activeImage?.path_canon)
             this._show(state.activeImage);
-        } else if (!state.activeImage && this.activeImage) {
+        else if (!state.activeImage && this.activeImage)
             this._hide();
-        }
-
-        if (shouldBeVisible) {
-            if (!isActuallyVisible) {
-                this.panelEl.style.display = 'block';
-            }
-        } else {
-            if (isActuallyVisible) {
-                this._hide();
-            }
-        }
+        this.panelEl.style.display = visible ? 'block' : 'none';
+        if (visible && !shown) this.panelEl.style.display = 'block';
+        if (!visible && shown) this._hide();
     }
 
     createPanel() {
         if (this.panelEl) return;
-
-        let rightColumn = this.viewer?.elements?.rightColumn;
-        if (!rightColumn) {
-            rightColumn = document.getElementById('holaf-viewer-right-column');
-        }
-
-        if (rightColumn) {
-            const editorContainer = document.createElement('div');
-            editorContainer.id = 'holaf-viewer-editor-pane';
-            editorContainer.style.display = 'none';
-            editorContainer.innerHTML = this._getPanelHTML();
-
-            rightColumn.appendChild(editorContainer);
-            this.panelEl = editorContainer;
-            this._attachListeners();
-        }
+        const col = this.viewer?.elements?.rightColumn || document.getElementById('holaf-viewer-right-column');
+        if (!col) return;
+        const el = document.createElement('div');
+        el.id = 'holaf-viewer-editor-pane';
+        el.style.display = 'none';
+        el.innerHTML = `
+            <h4>Image Editor</h4>
+            <div id="holaf-editor-content">
+                <div id="holaf-editor-controls-list"></div>
+                <div style="padding: 4px 0 8px 0;">
+                    <button id="holaf-editor-add-btn" class="comfy-button" style="width:100%;font-size:12px;padding:6px;">+ Add Control</button>
+                </div>
+                <div id="holaf-editor-video-section" style="display:none;border-top:1px solid var(--holaf-border-color);padding-top:8px;margin-top:4px;">
+                    <style>
+                        #holaf-editor-fps-input::-webkit-inner-spin-button,
+                        #holaf-editor-fps-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+                        #holaf-editor-fps-input { -moz-appearance: textfield; }
+                    </style>
+                    <div class="holaf-editor-slider-container">
+                        <label for="holaf-editor-fps-slider">FPS</label>
+                        <input type="range" id="holaf-editor-fps-slider" min="1" max="144" step="1" style="flex-grow:1;margin:0 8px;">
+                        <input type="number" id="holaf-editor-fps-input" min="1" max="144" step="1"
+                               style="width:40px;background:var(--comfy-input-bg);color:var(--comfy-input-text);border:1px solid var(--border-color);border-radius:4px;padding:2px;text-align:center;">
+                    </div>
+                    <div class="holaf-editor-slider-container" style="justify-content:flex-start;margin-top:6px;">
+                        <input type="checkbox" id="holaf-editor-interpolate-check" style="margin-right:8px;">
+                        <label for="holaf-editor-interpolate-check" style="cursor:pointer;opacity:0.8;" title="AI frame interpolation (2x).">AI Interpolation (RIFE)</label>
+                    </div>
+                </div>
+                <div class="holaf-editor-footer">
+                    <button id="holaf-editor-reset-btn" class="comfy-button">Reset</button>
+                    <button id="holaf-editor-cancel-btn" class="comfy-button" disabled>Cancel</button>
+                    <button id="holaf-editor-save-btn" class="comfy-button" disabled>Save</button>
+                </div>
+            </div>`;
+        col.appendChild(el);
+        this.panelEl = el;
+        this._attachListeners();
     }
 
     async _show(image) {
         if (!this.panelEl) return;
-
         this.activeImage = image;
         this.isDirty = false;
         this.nativeFps = 0;
         this.processedVideoUrl = null;
-
-        // Clear canvas preview cache for the new image
-        if (this._previewBlobUrl) {
-            URL.revokeObjectURL(this._previewBlobUrl);
-            this._previewBlobUrl = null;
-        }
-        this._originalImgSrc = null;
-        this._originalImgData = null;
-        this._previewCanvas = null;
-
+        this._clearCanvasCache();
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
-
         this._updateUIFromState();
         this.applyPreview();
         this._updateButtonStates();
-
         await this._loadEditsForCurrentImage();
     }
 
     _hide() {
-        if (this.isDirty) {
-            this.currentState = { ...this.originalState };
-            this.applyPreview();
-            this.isDirty = false;
-        }
-
-        if (this.panelEl) {
-            this.panelEl.style.display = 'none';
-        }
-
+        if (this.isDirty) { this.currentState = { ...this.originalState }; this.applyPreview(); this.isDirty = false; }
+        if (this.panelEl) this.panelEl.style.display = 'none';
         this._dispatchVideoOverride(null);
-
-        const elements = this._getPreviewElements();
-        elements.forEach(el => {
-            if (el) {
-                el.style.filter = 'none';
-                if (el.tagName === 'VIDEO') el.playbackRate = 1.0;
-            }
-        });
-
-        // Clean up canvas preview resources
-        if (this._previewBlobUrl) {
-            URL.revokeObjectURL(this._previewBlobUrl);
-            this._previewBlobUrl = null;
-        }
-        this._originalImgSrc = null;
-        this._originalImgData = null;
-        this._previewCanvas = null;
-
+        this._getPreviewElements().forEach(el => { if (el) el.style.filter = 'none'; });
+        this._clearCanvasCache();
         this.activeImage = null;
     }
 
-    _dispatchVideoOverride(url) {
-        const event = new CustomEvent('holaf-video-override', { detail: { url: url } });
-        document.dispatchEvent(event);
+    _clearCanvasCache() {
+        if (this._previewBlobUrl) { URL.revokeObjectURL(this._previewBlobUrl); this._previewBlobUrl = null; }
+        this._originalImgSrc = null; this._originalImgData = null; this._previewCanvas = null;
     }
 
-    // [NEW] Helper to update global state without fetching full list
-    _updateGlobalImageState(pathCanon, hasEdits) {
-        const state = imageViewerState.getState();
-        const images = state.images.map(img => {
-            if (img.path_canon === pathCanon) {
-                return { ...img, has_edit_file: hasEdits };
-            }
-            return img;
-        });
+    _dispatchVideoOverride(url) {
+        document.dispatchEvent(new CustomEvent('holaf-video-override', { detail: { url } }));
+    }
 
-        // Also update selected/active if it matches
-        let activeImage = state.activeImage;
-        if (activeImage && activeImage.path_canon === pathCanon) {
-            activeImage = { ...activeImage, has_edit_file: hasEdits };
-        }
-
-        imageViewerState.setState({ images, activeImage });
+    _updateGlobalImageState(path, hasEdits) {
+        const s = imageViewerState.getState();
+        const images = s.images.map(i => i.path_canon === path ? { ...i, has_edit_file: hasEdits } : i);
+        let active = s.activeImage;
+        if (active && active.path_canon === path) active = { ...active, has_edit_file: hasEdits };
+        imageViewerState.setState({ images, activeImage: active });
     }
 
     async _loadEditsForCurrentImage() {
         if (!this.activeImage) return;
-
         try {
-            const response = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(this.activeImage.path_canon)}`);
-            if (response.ok) {
-                const data = await response.json();
-
-                if (data.native_fps) this.nativeFps = Number(data.native_fps);
-
-                if (data.processed_video_url) {
-                    this.processedVideoUrl = data.processed_video_url;
-                    this._dispatchVideoOverride(this.processedVideoUrl);
-                } else {
-                    this._dispatchVideoOverride(null);
-                }
-
-                if (data.status === 'ok') {
-                    this.currentState = { ...DEFAULT_EDIT_STATE, ...data.edits };
-                }
-
-                if (this.nativeFps > 0) {
-                    if (this.currentState.targetFps == null) {
-                        const legacyRate = this.currentState.playbackRate || 1.0;
-                        this.currentState.targetFps = Math.round(this.nativeFps * legacyRate);
-                    }
-                }
+            const r = await fetch(`/holaf/images/load-edits?path_canon=${encodeURIComponent(this.activeImage.path_canon)}`);
+            if (r.ok) {
+                const d = await r.json();
+                if (d.native_fps) this.nativeFps = Number(d.native_fps);
+                if (d.processed_video_url) { this.processedVideoUrl = d.processed_video_url; this._dispatchVideoOverride(this.processedVideoUrl); }
+                else this._dispatchVideoOverride(null);
+                if (d.status === 'ok') this.currentState = { ...DEFAULT_EDIT_STATE, ...d.edits };
+                if (this.nativeFps > 0 && this.currentState.targetFps == null)
+                    this.currentState.targetFps = Math.round(this.nativeFps * (this.currentState.playbackRate || 1.0));
             }
-        } catch (e) {
-            console.error("[Holaf Editor] Failed to load edits:", e);
-        }
-
+        } catch (e) { console.error("[Holaf Editor] load edits:", e); }
         this.originalState = { ...this.currentState };
         this.isDirty = false;
-
         this._updateUIFromState();
         this.applyPreview();
         this._updateButtonStates();
     }
 
+    // ── Preview ──
+
     applyPreview() {
-        const elements = this._getPreviewElements();
+        const els = this._getPreviewElements();
+        let rate = 1.0;
+        if (this.nativeFps > 0 && this.currentState.targetFps > 0) rate = this.currentState.targetFps / this.nativeFps;
+        else rate = this.currentState.playbackRate || 1.0;
+        if (this.processedVideoUrl) rate = 1.0;
 
-        let effectiveRate = 1.0;
-        if (this.nativeFps > 0 && this.currentState.targetFps > 0) {
-            effectiveRate = this.currentState.targetFps / this.nativeFps;
-        } else {
-            effectiveRate = this.currentState.playbackRate || 1.0;
-        }
+        if (this._hasRangedAdjustments()) this._processRangedPreviewOnCanvas(els);
+        else this._applyCssFilter(els, rate);
+    }
 
-        if (this.processedVideoUrl) {
-            effectiveRate = 1.0;
+    _applyCssFilter(els, rate) {
+        if (this._previewBlobUrl) {
+            URL.revokeObjectURL(this._previewBlobUrl); this._previewBlobUrl = null;
+            this._originalImgSrc = null; this._originalImgData = null;
+            els.forEach(el => { if (el && el.dataset.originalSrc) { el.src = el.dataset.originalSrc; delete el.dataset.originalSrc; } });
         }
+        const f = this._buildCssFilter();
+        els.forEach(el => { if (el) { el.style.filter = f; if (el.tagName === 'VIDEO') el.playbackRate = rate; } });
+    }
 
-        if (this._hasRangedAdjustments()) {
-            // Use canvas-based preview for ranged adjustments
-            // CSS filters can't do luminance masking, so we process pixels in JS
-            this._processRangedPreviewOnCanvas(elements);
-        } else {
-            // All ranges are 'all' — use fast CSS filter as before
-            // Restore original image URL if a ranged preview was applied previously
-            if (this._previewBlobUrl) {
-                URL.revokeObjectURL(this._previewBlobUrl);
-                this._previewBlobUrl = null;
-                this._originalImgSrc = null;
-                this._originalImgData = null;
-                elements.forEach(el => {
-                    if (el && el.dataset.originalSrc) {
-                        el.src = el.dataset.originalSrc;
-                        delete el.dataset.originalSrc;
-                    }
-                });
-            }
-            const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
-            elements.forEach(el => {
-                if (el) {
-                    el.style.filter = filterValue;
-                    if (el.tagName === 'VIDEO') {
-                        el.playbackRate = effectiveRate;
-                    }
-                }
-            });
+    _buildCssFilter() {
+        let b = 1, c = 1, s = 1;
+        for (const ctrl of this.currentState.controls || []) {
+            if (ctrl.range !== 'all') continue; // only 'all' ranges via CSS
+            if (ctrl.type === 'brightness') b = ctrl.value;
+            if (ctrl.type === 'contrast') c = ctrl.value;
+            if (ctrl.type === 'saturation') s = ctrl.value;
         }
+        return `brightness(${b}) contrast(${c}) saturate(${s})`;
     }
 
     _hasRangedAdjustments() {
-        if (this.nativeFps > 0) return false; // Videos don't have range selectors
-        return ['brightness', 'contrast', 'saturation'].some(
-            key => (this.currentState[`${key}Range`] || 'all') !== 'all'
-        );
+        if (this.nativeFps > 0) return false;
+        return (this.currentState.controls || []).some(c => c.range && c.range !== 'all' && c.type !== 'hue');
     }
 
-    async _processRangedPreviewOnCanvas(elements) {
-        const imgEl = elements[0]; // The zoom view img element
+    async _processRangedPreviewOnCanvas(els) {
+        const imgEl = els[0];
         if (!imgEl || imgEl.tagName !== 'IMG' || !imgEl.src) return;
-
         try {
             if (!this._originalImgData || this._originalImgSrc !== imgEl.src) {
-                // Load original image onto an offscreen canvas (cached per image)
                 this._originalImgSrc = imgEl.src;
                 const loadImg = new Image();
                 loadImg.crossOrigin = 'anonymous';
-                await new Promise((resolve, reject) => {
-                    loadImg.onload = resolve;
-                    loadImg.onerror = reject;
-                    loadImg.src = imgEl.src;
-                });
-
+                await new Promise((res, rej) => { loadImg.onload = res; loadImg.onerror = rej; loadImg.src = imgEl.src; });
                 this._previewCanvas = document.createElement('canvas');
                 this._previewCanvas.width = loadImg.naturalWidth;
                 this._previewCanvas.height = loadImg.naturalHeight;
-                const ctx = this._previewCanvas.getContext('2d');
-                ctx.drawImage(loadImg, 0, 0);
-                this._originalImgData = ctx.getImageData(0, 0, this._previewCanvas.width, this._previewCanvas.height);
+                this._previewCanvas.getContext('2d').drawImage(loadImg, 0, 0);
+                this._originalImgData = this._previewCanvas.getContext('2d').getImageData(0, 0, this._previewCanvas.width, this._previewCanvas.height);
             }
-
-            // Process pixel data
-            const src = this._originalImgData.data;
-            const w = this._previewCanvas.width;
-            const h = this._previewCanvas.height;
+            const src = this._originalImgData.data, w = this._previewCanvas.width, h = this._previewCanvas.height;
             const dst = new Uint8ClampedArray(src.length);
-
-            const bVal = this.currentState.brightness;
-            const cVal = this.currentState.contrast;
-            const sVal = this.currentState.saturation;
-            const bRange = this.currentState.brightnessRange || 'all';
-            const cRange = this.currentState.contrastRange || 'all';
-            const sRange = this.currentState.saturationRange || 'all';
+            const controls = this.currentState.controls || [];
 
             for (let i = 0; i < src.length; i += 4) {
-                let r = src[i], g = src[i + 1], b = src[i + 2];
-                const a = src[i + 3];
+                let r = src[i], g = src[i + 1], b = src[i + 2], a0 = src[i + 3];
+                const oR = r, oG = g, oB = b;
+                const origLum = 0.299 * oR + 0.587 * oG + 0.114 * oB;
 
-                // Luminance for masking
-                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                for (const ctrl of controls) {
+                    const range = ctrl.range || 'all';
+                    const val = ctrl.value;
+                    const weight = range === 'all' ? 1 : this._luminanceWeight(origLum, range);
+                    if (weight <= 0) continue;
 
-                // Apply brightness (only non 'all' — 'all' is handled by CSS filter)
-                if (bRange !== 'all') {
-                    const wB = this._luminanceWeight(lum, bRange);
-                    if (wB > 0) {
-                        const adjR = r * bVal, adjG = g * bVal, adjB = b * bVal;
-                        r += (adjR - r) * wB;
-                        g += (adjG - g) * wB;
-                        b += (adjB - b) * wB;
-                    }
-                }
-
-                // Recompute luminance after brightness for contrast mask accuracy
-                const lum2 = 0.299 * r + 0.587 * g + 0.114 * b;
-
-                // Apply contrast
-                if (cRange !== 'all') {
-                    const wC = this._luminanceWeight(lum2, cRange);
-                    if (wC > 0) {
-                        const adjR = 128 + (r - 128) * cVal;
-                        const adjG = 128 + (g - 128) * cVal;
-                        const adjB = 128 + (b - 128) * cVal;
-                        r += (adjR - r) * wC;
-                        g += (adjG - g) * wC;
-                        b += (adjB - b) * wC;
-                    }
-                }
-
-                // Apply saturation
-                if (sRange !== 'all') {
-                    const wS = this._luminanceWeight(lum2, sRange);
-                    if (wS > 0) {
+                    if (ctrl.type === 'brightness') {
+                        if (range === 'all') { r *= val; g *= val; b *= val; }
+                        else { r += (oR * val - oR) * weight; g += (oG * val - oG) * weight; b += (oB * val - oB) * weight; }
+                    } else if (ctrl.type === 'contrast') {
+                        const adj = (px, v) => 128 + (px - 128) * v;
+                        if (range === 'all') { r = adj(r, val); g = adj(g, val); b = adj(b, val); }
+                        else { r += (adj(oR, val) - oR) * weight; g += (adj(oG, val) - oG) * weight; b += (adj(oB, val) - oB) * weight; }
+                    } else if (ctrl.type === 'saturation') {
                         const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                        const adjR = gray + (r - gray) * sVal;
-                        const adjG = gray + (g - gray) * sVal;
-                        const adjB = gray + (b - gray) * sVal;
-                        r += (adjR - r) * wS;
-                        g += (adjG - g) * wS;
-                        b += (adjB - b) * wS;
+                        const sat = (px, gr) => gr + (px - gr) * val;
+                        if (range === 'all') { r = sat(r, gray); g = sat(g, gray); b = sat(b, gray); }
+                        else {
+                            const oGray = 0.299 * oR + 0.587 * oG + 0.114 * oB;
+                            r += (sat(oR, oGray) - oR) * weight;
+                            g += (sat(oG, oGray) - oG) * weight;
+                            b += (sat(oB, oGray) - oB) * weight;
+                        }
                     }
                 }
 
-                dst[i] = r;
-                dst[i + 1] = g;
-                dst[i + 2] = b;
-                dst[i + 3] = a;
+                dst[i] = Math.round(r); dst[i+1] = Math.round(g); dst[i+2] = Math.round(b); dst[i+3] = a0;
             }
 
-            const ctx = this._previewCanvas.getContext('2d');
-            ctx.putImageData(new ImageData(dst, w, h), 0, 0);
-
-            const blob = await new Promise(resolve => this._previewCanvas.toBlob(resolve, 'image/jpeg', 0.92));
+            this._previewCanvas.getContext('2d').putImageData(new ImageData(dst, w, h), 0, 0);
+            const blob = await new Promise(r => this._previewCanvas.toBlob(r, 'image/jpeg', 0.92));
             if (!blob) return;
-
-            // Revoke old blob URL
-            if (this._previewBlobUrl) {
-                URL.revokeObjectURL(this._previewBlobUrl);
-            }
+            if (this._previewBlobUrl) URL.revokeObjectURL(this._previewBlobUrl);
             this._previewBlobUrl = URL.createObjectURL(blob);
-
-            // Replace img src with processed version, remove CSS filter
-            elements.forEach(el => {
-                if (el && el.tagName === 'IMG') {
-                    // Save original src for later restoration
-                    if (!el.dataset.originalSrc) {
-                        el.dataset.originalSrc = el.src;
-                    }
-                    el.style.filter = 'none';
-                    el.src = this._previewBlobUrl;
-                }
-            });
-
+            els.forEach(el => { if (el && el.tagName === 'IMG') { if (!el.dataset.originalSrc) el.dataset.originalSrc = el.src; el.style.filter = 'none'; el.src = this._previewBlobUrl; } });
         } catch (e) {
-            console.warn('[Holaf Editor] Ranged preview failed, falling back to CSS:', e);
-            // Fallback: apply CSS filter (not range-accurate but functional)
-            const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
-            elements.forEach(el => {
-                if (el) { el.style.filter = filterValue; }
-            });
+            console.warn('[Holaf Editor] Ranged preview fallback:', e);
+            this._applyCssFilter(els, 1.0);
         }
     }
 
-    _luminanceWeight(luminance, rangeType) {
-        if (rangeType === 'all') return 1;
-        if (rangeType === 'shadows') {
-            return luminance < 128 ? 1 - luminance / 128 : 0;
+    _luminanceWeight(lum, range) {
+        if (range === 'all') return 1;
+        if (range === 'shadows') return lum < 128 ? 1 - lum / 128 : 0;
+        if (range === 'midtones') {
+            if (lum < 64) return 0; if (lum < 128) return (lum - 64) / 64;
+            if (lum < 192) return (192 - lum) / 64; return 0;
         }
-        if (rangeType === 'midtones') {
-            if (luminance < 64) return 0;
-            if (luminance < 128) return (luminance - 64) / 64;
-            if (luminance < 192) return (192 - luminance) / 64;
-            return 0;
-        }
-        if (rangeType === 'highlights') {
-            return luminance > 127 ? (luminance - 127) / 128 : 0;
-        }
+        if (range === 'highlights') return lum > 127 ? (lum - 127) / 128 : 0;
         return 1;
     }
 
@@ -433,99 +292,251 @@ export class ImageEditor {
         ];
     }
 
-    async _triggerProcessVideoBackground(pathCanon) {
-        const isInteractive = (pathCanon === this.activeImage?.path_canon);
+    // ── Controls management ──
 
-        // [UPDATED] Trigger Overlay
-        document.dispatchEvent(new Event('holaf-video-processing-start'));
+    _addControl(typeId) {
+        const def = CONTROL_TYPES.find(c => c.id === typeId);
+        if (!def) return;
+        // Don't allow duplicates
+        if (this.currentState.controls.some(c => c.type === typeId)) return;
+        _ctrlIdCounter++;
+        this.currentState.controls.push({ id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: 'all' });
+        this.isDirty = true;
+        this._updateUIFromState();
+        this.applyPreview();
+        this._updateButtonStates();
+    }
 
-        try {
-            const response = await fetch('/holaf/images/process-video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    path_canon: pathCanon,
-                    edits: this.currentState
-                })
-            });
+    _removeControl(ctrlId) {
+        this.currentState.controls = this.currentState.controls.filter(c => c.id !== ctrlId);
+        this.isDirty = true;
+        this._updateUIFromState();
+        this.applyPreview();
+        this._updateButtonStates();
+    }
 
-            const result = await response.json();
+    _renderControlsList() {
+        const container = this.panelEl?.querySelector('#holaf-editor-controls-list');
+        if (!container) return;
+        const controls = this.currentState.controls || [];
 
-            if (response.ok) {
-                if (result.stats) {
-                    const msg = `Preview Ready!<br>Time: ${result.stats.duration}s<br>FPS: ${result.stats.fps_out}`;
-                    this._showToast(msg, 'success', 5000);
-                } else {
-                    this._showToast("Preview Generated", 'success');
-                }
+        if (controls.length === 0) {
+            container.innerHTML = `<p style="opacity:0.5;font-size:12px;text-align:center;padding:12px 0;">No controls yet. Click "+ Add Control" to begin.</p>`;
+            return;
+        }
 
-                if (this.activeImage && this.activeImage.path_canon === pathCanon) {
-                    await this._loadEditsForCurrentImage();
-                }
-            } else {
-                HolafPanelManager.createDialog({ title: "Process Error", message: result.message });
-            }
-        } catch (e) {
-            this._showToast(`Process Failed: ${e.message}`, 'error');
-        } finally {
-            // [UPDATED] Remove Overlay
-            document.dispatchEvent(new Event('holaf-video-processing-end'));
+        container.innerHTML = controls.map(c => {
+            const def = CONTROL_TYPES.find(t => t.id === c.type);
+            if (!def) return '';
+            const val = c.value;
+            const displayVal = c.type === 'hue' ? val : Math.round(val * 100);
+            const sliderVal = c.type === 'hue' ? val : val * 100;
+            const isVideo = this.nativeFps > 0;
+            return `
+                <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}">
+                    <label>${def.label}</label>
+                    <select class="holaf-editor-range-select" data-range-for="${c.id}" style="${isVideo ? 'display:none;' : ''}">
+                        <option value="all" ${c.range === 'all' ? 'selected' : ''}>All</option>
+                        <option value="shadows" ${c.range === 'shadows' ? 'selected' : ''}>Shadows</option>
+                        <option value="midtones" ${c.range === 'midtones' ? 'selected' : ''}>Midtones</option>
+                        <option value="highlights" ${c.range === 'highlights' ? 'selected' : ''}>Highlights</option>
+                    </select>
+                    <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${sliderVal}">
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <span class="holaf-editor-slider-value" style="min-width:36px;">${displayVal}</span>
+                        <button class="holaf-editor-remove-ctrl" data-ctrl-id="${c.id}" title="Remove ${def.label}"
+                                style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">✕</button>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    // ── UI sync ──
+
+    _updateUIFromState() {
+        if (!this.panelEl) return;
+        this._renderControlsList();
+
+        const vs = this.panelEl.querySelector('#holaf-editor-video-section');
+        if (vs) {
+            if (this.nativeFps > 0) {
+                vs.style.display = 'block';
+                const fi = vs.querySelector('#holaf-editor-fps-input');
+                const fs = vs.querySelector('#holaf-editor-fps-slider');
+                let v = this.currentState.targetFps; if (!v || v <= 0) v = this.nativeFps;
+                if (fi) fi.value = v; if (fs) fs.value = v;
+                const ic = vs.querySelector('#holaf-editor-interpolate-check');
+                if (ic) ic.checked = !!this.currentState.interpolate;
+            } else vs.style.display = 'none';
         }
     }
+
+    _updateButtonStates() {
+        const sb = this.panelEl?.querySelector('#holaf-editor-save-btn');
+        const cb = this.panelEl?.querySelector('#holaf-editor-cancel-btn');
+        if (sb) sb.disabled = !this.isDirty;
+        if (cb) cb.disabled = !this.isDirty;
+    }
+
+    // ── Event listeners ──
+
+    _attachListeners() {
+        if (!this.panelEl) return;
+
+        // Add Control dropdown
+        const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
+        if (addBtn) {
+            addBtn.onclick = () => {
+                // Build a simple dropdown menu for available types
+                const existing = new Set(this.currentState.controls.map(c => c.type));
+                const available = CONTROL_TYPES.filter(t => !existing.has(t.id));
+                if (available.length === 0) { this._showToast("All control types already added.", 'info'); return; }
+
+                const menu = document.createElement('div');
+                menu.style.cssText = `position:absolute;z-index:999;background:var(--holaf-background-secondary);border:1px solid var(--holaf-border-color);border-radius:4px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.5);`;
+                available.forEach(t => {
+                    const item = document.createElement('button');
+                    item.textContent = t.label;
+                    item.style.cssText = `display:block;width:100%;padding:6px 16px;background:none;border:none;color:var(--holaf-text-primary);cursor:pointer;font-size:13px;text-align:left;`;
+                    item.onmouseenter = () => item.style.backgroundColor = 'var(--holaf-background-primary)';
+                    item.onmouseleave = () => item.style.backgroundColor = '';
+                    item.onclick = () => { this._addControl(t.id); menu.remove(); };
+                    menu.appendChild(item);
+                });
+                // Position below the button
+                const rect = addBtn.getBoundingClientRect();
+                menu.style.top = (rect.bottom + 2) + 'px';
+                menu.style.left = rect.left + 'px';
+                menu.style.minWidth = rect.width + 'px';
+                document.body.appendChild(menu);
+                // Close on click outside
+                const close = (e) => { if (!menu.contains(e.target) && e.target !== addBtn) { menu.remove(); document.removeEventListener('mousedown', close); } };
+                setTimeout(() => document.addEventListener('mousedown', close), 0);
+            };
+        }
+
+        // Delegated events for controls list
+        const list = this.panelEl.querySelector('#holaf-editor-controls-list');
+        if (list) {
+            // Range select change
+            list.addEventListener('change', (e) => {
+                const sel = e.target.closest('.holaf-editor-range-select');
+                if (!sel) return;
+                const ctrlId = sel.dataset.rangeFor;
+                const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
+                if (ctrl) { ctrl.range = sel.value; this.isDirty = true; this._updateButtonStates(); this.applyPreview(); }
+            });
+
+            // Slider input
+            list.addEventListener('input', (e) => {
+                const slider = e.target.closest('input[type="range"]');
+                if (!slider) return;
+                const container = slider.closest('.holaf-editor-slider-container');
+                const ctrlId = container?.dataset.ctrlId;
+                const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
+                if (!ctrl) return;
+                const def = CONTROL_TYPES.find(t => t.id === ctrl.type);
+                const rawVal = parseFloat(slider.value);
+                ctrl.value = ctrl.type === 'hue' ? rawVal : rawVal / 100;
+                const valEl = container.querySelector('.holaf-editor-slider-value');
+                if (valEl) valEl.textContent = ctrl.type === 'hue' ? rawVal : Math.round(rawVal);
+                this.isDirty = true;
+                this._updateButtonStates();
+                this.applyPreview();
+            });
+
+            // Double-click on container to reset control
+            list.addEventListener('dblclick', (e) => {
+                const container = e.target.closest('.holaf-editor-slider-container');
+                if (!container) return;
+                const ctrlId = container.dataset.ctrlId;
+                const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
+                if (!ctrl) return;
+                const def = CONTROL_TYPES.find(t => t.id === ctrl.type);
+                if (!def) return;
+                ctrl.value = def.default;
+                ctrl.range = 'all';
+                this.isDirty = true;
+                this._updateUIFromState();
+                this.applyPreview();
+                this._updateButtonStates();
+            });
+
+            // Remove button click
+            list.addEventListener('click', (e) => {
+                const btn = e.target.closest('.holaf-editor-remove-ctrl');
+                if (btn) { this._removeControl(btn.dataset.ctrlId); }
+            });
+        }
+
+        // FPS
+        const fi = this.panelEl.querySelector('#holaf-editor-fps-input');
+        const fs = this.panelEl.querySelector('#holaf-editor-fps-slider');
+        const ic = this.panelEl.querySelector('#holaf-editor-interpolate-check');
+
+        const setFps = (v) => {
+            const val = parseFloat(v);
+            if (isNaN(val) || val <= 0) return;
+            this.currentState.targetFps = val;
+            this.isDirty = true; this._updateButtonStates(); this.applyPreview();
+            if (fi && fi.value != val) fi.value = val;
+            if (fs && fs.value != val) fs.value = val;
+        };
+        const resetFps = () => { if (this.nativeFps > 0) setFps(Math.round(this.nativeFps)); };
+
+        if (fs) { fs.addEventListener('input', e => setFps(e.target.value)); fs.addEventListener('dblclick', resetFps); }
+        if (fi) fi.addEventListener('change', e => setFps(e.target.value));
+        if (this.panelEl.querySelector('#holaf-editor-video-section')) {
+            this.panelEl.querySelector('#holaf-editor-video-section').addEventListener('dblclick', e => { if (e.target.tagName !== 'INPUT') resetFps(); });
+        }
+        if (ic) ic.addEventListener('change', e => {
+            this.currentState.interpolate = e.target.checked;
+            this.isDirty = true;
+            if (e.target.checked && this.nativeFps > 0) setFps(this.nativeFps * 2);
+            else if (!e.target.checked && this.nativeFps > 0) setFps(this.nativeFps);
+            this._updateButtonStates();
+        });
+
+        const sb = this.panelEl.querySelector('#holaf-editor-save-btn');
+        const rb = this.panelEl.querySelector('#holaf-editor-reset-btn');
+        const cb = this.panelEl.querySelector('#holaf-editor-cancel-btn');
+        if (sb) sb.onclick = () => this._saveEdits();
+        if (rb) rb.onclick = () => this._resetEdits();
+        if (cb) cb.onclick = () => this._cancelEdits();
+    }
+
+    // ── Save / Reset / Cancel ──
 
     async save() { await this._saveEdits(); }
 
     async _saveEdits() {
         if (!this.activeImage) return;
-        const pathCanonToSave = this.activeImage.path_canon;
-
-        if (this.nativeFps > 0 && this.currentState.targetFps) {
+        const path = this.activeImage.path_canon;
+        if (this.nativeFps > 0 && this.currentState.targetFps)
             this.currentState.playbackRate = this.currentState.targetFps / this.nativeFps;
-        }
 
-        const btn = this.panelEl.querySelector('#holaf-editor-save-btn');
+        const btn = this.panelEl?.querySelector('#holaf-editor-save-btn');
         if (btn) btn.disabled = true;
-
-        this._showToast("Saving settings...", 'info', 1000);
-
+        this._showToast("Saving...", 'info', 1000);
         try {
-            const response = await fetch('/holaf/images/save-edits', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: pathCanonToSave, edits: this.currentState })
+            const r = await fetch('/holaf/images/save-edits', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path_canon: path, edits: this.currentState })
             });
-
-            if (response.ok) {
+            if (r.ok) {
                 this.isDirty = false;
                 this.originalState = { ...this.currentState };
                 this._updateButtonStates();
-                this._updateUIFromState();
-
-                // [UPDATED] Update global state AND refresh gallery icon
-                this._updateGlobalImageState(pathCanonToSave, true);
-                if (this.viewer && this.viewer.gallery) {
-                    this.viewer.gallery.refreshThumbnail(pathCanonToSave);
-                }
-
+                this._updateGlobalImageState(path, true);
+                if (this.viewer?.gallery) this.viewer.gallery.refreshThumbnail(path);
                 if (this.nativeFps > 0) {
-                    const needsProcessing = this.currentState.interpolate || (this.currentState.targetFps && this.currentState.targetFps !== this.nativeFps);
-
-                    if (needsProcessing) {
-                        this._triggerProcessVideoBackground(pathCanonToSave);
-                    } else {
-                        this._showToast("Edits Saved", 'success');
-                    }
-                } else {
-                    this._showToast("Edits Saved", 'success');
-                }
-
+                    const needs = this.currentState.interpolate || (this.currentState.targetFps && this.currentState.targetFps !== this.nativeFps);
+                    if (needs) this._triggerProcessVideoBackground(path);
+                    else this._showToast("Edits Saved", 'success');
+                } else this._showToast("Edits Saved", 'success');
             }
-        } catch (e) {
-            console.error(e);
-            HolafPanelManager.createDialog({ title: "Save Error", message: e.message });
-        } finally {
-            if (btn) btn.disabled = !this.isDirty;
-        }
+        } catch (e) { HolafPanelManager.createDialog({ title: "Save Error", message: e.message }); }
+        finally { if (btn) btn.disabled = !this.isDirty; }
     }
 
     _cancelEdits() {
@@ -544,230 +555,39 @@ export class ImageEditor {
             buttons: [{ text: "Cancel", value: false }, { text: "Reset", value: true, type: "danger" }]
         })) return;
 
-        const pathCanonToReset = this.activeImage.path_canon;
-
+        const path = this.activeImage.path_canon;
         try {
-            await fetch('/holaf/images/delete-edits', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: pathCanonToReset })
-            });
-
-            if (this.processedVideoUrl) {
-                await fetch('/holaf/images/rollback-video', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path_canon: pathCanonToReset })
-                });
-            }
-
+            await fetch('/holaf/images/delete-edits', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path_canon: path }) });
+            if (this.processedVideoUrl)
+                await fetch('/holaf/images/rollback-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path_canon: path }) });
             this.currentState = { ...DEFAULT_EDIT_STATE };
             if (this.nativeFps > 0) this.currentState.targetFps = this.nativeFps;
             this.originalState = { ...this.currentState };
             this.isDirty = false;
             this.processedVideoUrl = null;
             this._dispatchVideoOverride(null);
-
             this._updateUIFromState();
             this.applyPreview();
             this._updateButtonStates();
-
-            // [UPDATED] Update global state AND refresh gallery icon
-            this._updateGlobalImageState(pathCanonToReset, false);
-            if (this.viewer && this.viewer.gallery) {
-                this.viewer.gallery.refreshThumbnail(pathCanonToReset);
-            }
-
+            this._updateGlobalImageState(path, false);
+            if (this.viewer?.gallery) this.viewer.gallery.refreshThumbnail(path);
             this._showToast("Edits Reset", 'success');
-
         } catch (e) { console.error(e); }
     }
 
-    _updateUIFromState() {
-        if (!this.panelEl) return;
-
-        for (const key of ['brightness', 'contrast', 'saturation']) {
-            const slider = this.panelEl.querySelector(`#holaf-editor-${key}-slider`);
-            const valueEl = this.panelEl.querySelector(`#holaf-editor-${key}-value`);
-            if (slider) slider.value = this.currentState[key] * 100;
-            if (valueEl) valueEl.textContent = Math.round(this.currentState[key] * 100);
-
-            // Update range selector
-            const rangeSelect = this.panelEl.querySelector(`.holaf-editor-range-select[data-range-key="${key}"]`);
-            if (rangeSelect) {
-                rangeSelect.value = this.currentState[`${key}Range`] || 'all';
-                // Hide range selector for videos (FFmpeg can't do luminance masking)
-                rangeSelect.style.display = this.nativeFps > 0 ? 'none' : '';
-            }
-        }
-
-        const videoSection = this.panelEl.querySelector('#holaf-editor-video-section');
-
-        if (videoSection) {
-            if (this.nativeFps > 0) {
-                videoSection.style.display = 'block';
-
-                const fpsInput = this.panelEl.querySelector('#holaf-editor-fps-input');
-                const fpsSlider = this.panelEl.querySelector('#holaf-editor-fps-slider');
-                let val = this.currentState.targetFps;
-                if (!val || val <= 0) val = this.nativeFps;
-                if (fpsInput) fpsInput.value = val;
-                if (fpsSlider) fpsSlider.value = val;
-
-                const interpCheckbox = this.panelEl.querySelector('#holaf-editor-interpolate-check');
-                if (interpCheckbox) interpCheckbox.checked = !!this.currentState.interpolate;
-
-            } else {
-                videoSection.style.display = 'none';
-            }
-        }
-    }
-
-    _updateButtonStates() {
-        if (!this.panelEl) return;
-        const saveBtn = this.panelEl.querySelector('#holaf-editor-save-btn');
-        const cancelBtn = this.panelEl.querySelector('#holaf-editor-cancel-btn');
-        if (saveBtn) saveBtn.disabled = !this.isDirty;
-        if (cancelBtn) cancelBtn.disabled = !this.isDirty;
-    }
-
-    _attachListeners() {
-        if (!this.panelEl) return;
-
-        ['brightness', 'contrast', 'saturation'].forEach(key => {
-            const sliderEl = this.panelEl.querySelector(`#holaf-editor-${key}-slider`);
-            if (!sliderEl) return;
-            const sliderContainer = sliderEl.parentNode;
-
-            sliderContainer.addEventListener('dblclick', () => {
-                this.currentState[key] = DEFAULT_EDIT_STATE[key];
-                this.currentState[`${key}Range`] = DEFAULT_EDIT_STATE[`${key}Range`];
-                this.isDirty = true;
-                this._updateButtonStates();
-                this._updateUIFromState();
-                this.applyPreview();
+    async _triggerProcessVideoBackground(path) {
+        document.dispatchEvent(new Event('holaf-video-processing-start'));
+        try {
+            const r = await fetch('/holaf/images/process-video', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path_canon: path, edits: this.currentState })
             });
-
-            const slider = sliderContainer.querySelector('input');
-            slider.addEventListener('input', (e) => {
-                this.currentState[key] = parseFloat(e.target.value) / 100;
-                sliderContainer.querySelector('.holaf-editor-slider-value').textContent = e.target.value;
-                this.isDirty = true;
-                this._updateButtonStates();
-                this.applyPreview();
-            });
-
-            // Range selector change handler
-            const rangeSelect = sliderContainer.querySelector('.holaf-editor-range-select');
-            if (rangeSelect) {
-                rangeSelect.addEventListener('change', (e) => {
-                    this.currentState[`${key}Range`] = e.target.value;
-                    this.isDirty = true;
-                    this._updateButtonStates();
-                });
-            }
-        });
-
-        const fpsInput = this.panelEl.querySelector('#holaf-editor-fps-input');
-        const fpsSlider = this.panelEl.querySelector('#holaf-editor-fps-slider');
-        const fpsContainer = this.panelEl.querySelector('#holaf-editor-video-section');
-        const interpCheckbox = this.panelEl.querySelector('#holaf-editor-interpolate-check');
-
-        const updateFpsState = (newVal) => {
-            const val = parseFloat(newVal);
-            if (!isNaN(val) && val > 0) {
-                this.currentState.targetFps = val;
-                this.isDirty = true;
-                this._updateButtonStates();
-                this.applyPreview();
-                if (fpsInput && fpsInput.value != val) fpsInput.value = val;
-                if (fpsSlider && fpsSlider.value != val) fpsSlider.value = val;
-            }
-        };
-        const resetFps = () => { if (this.nativeFps > 0) updateFpsState(Math.round(this.nativeFps)); };
-
-        if (fpsSlider) { fpsSlider.addEventListener('input', (e) => updateFpsState(e.target.value)); fpsSlider.addEventListener('dblclick', resetFps); }
-        if (fpsInput) { fpsInput.addEventListener('change', (e) => updateFpsState(e.target.value)); }
-        if (fpsContainer) { fpsContainer.addEventListener('dblclick', (e) => { if (e.target.tagName !== 'INPUT') resetFps(); }); }
-
-        if (interpCheckbox) {
-            interpCheckbox.addEventListener('change', (e) => {
-                const isChecked = e.target.checked;
-                this.currentState.interpolate = isChecked;
-                this.isDirty = true;
-
-                if (isChecked && this.nativeFps > 0) {
-                    updateFpsState(this.nativeFps * 2);
-                } else if (!isChecked && this.nativeFps > 0) {
-                    updateFpsState(this.nativeFps);
-                }
-
-                this._updateButtonStates();
-            });
-        }
-
-        const saveBtn = this.panelEl.querySelector('#holaf-editor-save-btn');
-        const resetBtn = this.panelEl.querySelector('#holaf-editor-reset-btn');
-        const cancelBtn = this.panelEl.querySelector('#holaf-editor-cancel-btn');
-        if (saveBtn) saveBtn.onclick = () => this._saveEdits();
-        if (resetBtn) resetBtn.onclick = () => this._resetEdits();
-        if (cancelBtn) cancelBtn.onclick = () => this._cancelEdits();
-    }
-
-    _getPanelHTML() {
-        const createSlider = (name, label, min, max, step, value, displayValue) => `
-            <div class="holaf-editor-slider-container">
-                <label for="holaf-editor-${name}-slider">${label}</label>
-                <select class="holaf-editor-range-select" data-range-key="${name}">
-                    <option value="all">All</option>
-                    <option value="shadows">Shadows</option>
-                    <option value="midtones">Midtones</option>
-                    <option value="highlights">Highlights</option>
-                </select>
-                <input type="range" id="holaf-editor-${name}-slider" min="${min}" max="${max}" step="${step}" value="${value}">
-                <span id="holaf-editor-${name}-value" class="holaf-editor-slider-value">${displayValue}</span>
-            </div>
-        `;
-
-        // [MODIFIED] Removed Rollback btn, updated text
-        return `
-            <h4>Image Editor</h4>
-            <div id="holaf-editor-content">
-                <div class="holaf-editor-tabs">
-                    <button class="holaf-editor-tab active">Adjust</button>
-                    <button class="holaf-editor-tab" disabled>Crop/Ratio</button>
-                    <button class="holaf-editor-tab" disabled>Effects</button>
-                </div>
-                <div class="holaf-editor-tab-content">
-                    <div class="holaf-editor-section">
-                        ${createSlider('brightness', 'Brightness', 0, 200, 1, 100, '100')}
-                        ${createSlider('contrast', 'Contrast', 0, 200, 1, 100, '100')}
-                        ${createSlider('saturation', 'Saturation', 0, 200, 1, 100, '100')}
-                    </div>
-                    
-                    <div id="holaf-editor-video-section" class="holaf-editor-section" style="border-top: 1px solid var(--holaf-border-color); padding-top: 8px; margin-top: 4px; display:none;">
-                        <style>
-                            #holaf-editor-fps-input::-webkit-inner-spin-button, 
-                            #holaf-editor-fps-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-                            #holaf-editor-fps-input { -moz-appearance: textfield; }
-                        </style>
-                        <div class="holaf-editor-slider-container">
-                            <label for="holaf-editor-fps-slider">FPS</label>
-                            <input type="range" id="holaf-editor-fps-slider" min="1" max="144" step="1" style="flex-grow: 1; margin: 0 8px;">
-                            <input type="number" id="holaf-editor-fps-input" min="1" max="144" step="1" 
-                                   style="width: 40px; background: var(--comfy-input-bg); color: var(--comfy-input-text); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px; text-align: center;">
-                        </div>
-                        
-                        <div class="holaf-editor-slider-container" style="justify-content: flex-start; margin-top: 6px;">
-                            <input type="checkbox" id="holaf-editor-interpolate-check" style="margin-right: 8px;">
-                            <label for="holaf-editor-interpolate-check" style="cursor: pointer; opacity: 0.8;" title="Uses AI (RIFE) to generate intermediate frames (2x).">AI Interpolation (RIFE)</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="holaf-editor-footer">
-                    <button id="holaf-editor-reset-btn" class="comfy-button" title="Reset all edits">Reset</button>
-                    <button id="holaf-editor-cancel-btn" class="comfy-button" title="Discard unsaved" disabled>Cancel</button>
-                    <button id="holaf-editor-save-btn" class="comfy-button" title="Save changes and Process Video" disabled>Save</button>
-                </div>
-            </div>
-        `;
+            const d = await r.json();
+            if (r.ok) {
+                this._showToast(d.stats ? `Preview Ready! ${d.stats.duration}s` : "Preview Generated", 'success');
+                if (this.activeImage?.path_canon === path) await this._loadEditsForCurrentImage();
+            } else HolafPanelManager.createDialog({ title: "Process Error", message: d.message });
+        } catch (e) { this._showToast(`Process Failed: ${e.message}`, 'error'); }
+        finally { document.dispatchEvent(new Event('holaf-video-processing-end')); }
     }
 }
