@@ -511,6 +511,14 @@ body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
     transition: filter 0.2s ease-out;
 }
 
+/* Compare overlay: original image clipped to the left of the mouse cursor */
+#holaf-compare-overlay { contain: layout; }
+#holaf-compare-overlay img {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
 .holaf-viewer-zoom-close {
     position: absolute;
     top: 15px;

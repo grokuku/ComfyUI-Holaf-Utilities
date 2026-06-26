@@ -96,6 +96,9 @@ export class ImageEditor {
                     </div>
                 </div>
                 <div class="holaf-editor-footer">
+                    <label style="display:flex;align-items:center;gap:4px;margin-right:auto;cursor:pointer;font-size:12px;opacity:0.8;" title="Split view: left = original, right = edited">
+                        <input type="checkbox" id="holaf-editor-compare-check" style="cursor:pointer;"> Compare
+                    </label>
                     <button id="holaf-editor-reset-btn" class="comfy-button">Reset</button>
                     <button id="holaf-editor-cancel-btn" class="comfy-button" disabled>Cancel</button>
                     <button id="holaf-editor-save-btn" class="comfy-button" disabled>Save</button>
@@ -113,6 +116,7 @@ export class ImageEditor {
         this.nativeFps = 0;
         this.processedVideoUrl = null;
         this._clearCanvasCache();
+        this._removeCompareOverlay();
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
         this._updateUIFromState();
@@ -126,6 +130,7 @@ export class ImageEditor {
         if (this.panelEl) this.panelEl.style.display = 'none';
         this._dispatchVideoOverride(null);
         this._getPreviewElements().forEach(el => { if (el) el.style.filter = 'none'; });
+        this._removeCompareOverlay();
         this._clearCanvasCache();
         this.activeImage = null;
     }
@@ -493,6 +498,14 @@ export class ImageEditor {
         if (sb) sb.onclick = () => this._saveEdits();
         if (rb) rb.onclick = () => this._resetEdits();
         if (cb) cb.onclick = () => this._cancelEdits();
+
+        // Compare toggle
+        const compareCb = this.panelEl.querySelector('#holaf-editor-compare-check');
+        if (compareCb) {
+            compareCb.addEventListener('change', (e) => {
+                this._toggleCompareMode(e.target.checked);
+            });
+        }
     }
 
     // ── Save / Reset / Cancel ──
@@ -579,5 +592,80 @@ export class ImageEditor {
             } else HolafPanelManager.createDialog({ title: "Process Error", message: d.message });
         } catch (e) { this._showToast(`Process Failed: ${e.message}`, 'error'); }
         finally { document.dispatchEvent(new Event('holaf-video-processing-end')); }
+    }
+
+    // ── Compare mode (split before/after) ──
+
+    _toggleCompareMode(active) {
+        if (!this.activeImage) return;
+        this._removeCompareOverlay();
+        if (!active) return;
+
+        const zoomView = document.getElementById('holaf-viewer-zoom-view');
+        if (!zoomView) return;
+
+        const editedImg = zoomView.querySelector('img');
+        if (!editedImg || !editedImg.src) return;
+
+        // Build original image URL (same as edited but without path rewrite from canvas)
+        const originalUrl = editedImg.dataset.originalSrc || (
+            window.location.origin + '/view?' +
+            new URLSearchParams({
+                filename: this.activeImage.filename,
+                subfolder: this.activeImage.subfolder || '',
+                type: 'output'
+            }).toString()
+        );
+
+        const overlay = document.createElement('div');
+        overlay.id = 'holaf-compare-overlay';
+        overlay.style.cssText = `
+            position: absolute; top: 0; left: 0; width: 50%; height: 100%;
+            z-index: 50; overflow: hidden; pointer-events: none;
+        `;
+
+        const origImg = document.createElement('img');
+        origImg.src = originalUrl;
+        origImg.draggable = false;
+        origImg.style.cssText = `
+            width: 100%; height: 100%; object-fit: contain;
+            position: absolute; top: 0; left: 0;
+        `;
+        overlay.appendChild(origImg);
+
+        // Divider line
+        const divider = document.createElement('div');
+        divider.style.cssText = `
+            position: absolute; top: 0; left: 100%; width: 2px; height: 100%;
+            background: var(--holaf-accent-color, #4682B4);
+            z-index: 60;
+        `;
+        overlay.appendChild(divider);
+
+        zoomView.appendChild(overlay);
+
+        // Mouse move handler
+        this._compareOnMove = (e) => {
+            const rect = zoomView.getBoundingClientRect();
+            let x = e.clientX - rect.left;
+            x = Math.max(0, Math.min(rect.width, x));
+            const pct = (x / rect.width) * 100;
+            overlay.style.width = pct + '%';
+        };
+
+        zoomView.addEventListener('mousemove', this._compareOnMove);
+    }
+
+    _removeCompareOverlay() {
+        const old = document.getElementById('holaf-compare-overlay');
+        if (old) old.remove();
+        const zoomView = document.getElementById('holaf-viewer-zoom-view');
+        if (zoomView && this._compareOnMove) {
+            zoomView.removeEventListener('mousemove', this._compareOnMove);
+            this._compareOnMove = null;
+        }
+        // Reset compare checkbox state
+        const cb = this.panelEl?.querySelector('#holaf-editor-compare-check');
+        if (cb) cb.checked = false;
     }
 }
