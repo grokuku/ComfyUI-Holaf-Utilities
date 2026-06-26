@@ -15,9 +15,12 @@ const DEFAULT_EDIT_STATE = {
     brightness: 1,
     contrast: 1,
     saturation: 1,
-    targetFps: null,    // Primary source of truth for video speed now
-    playbackRate: 1.0,  // Kept for backward compatibility / internal calc
-    interpolate: false  // RIFE Interpolation flag
+    brightnessRange: 'all',
+    contrastRange: 'all',
+    saturationRange: 'all',
+    targetFps: null,
+    playbackRate: 1.0,
+    interpolate: false
 };
 
 export class ImageEditor {
@@ -111,6 +114,15 @@ export class ImageEditor {
         this.nativeFps = 0;
         this.processedVideoUrl = null;
 
+        // Clear canvas preview cache for the new image
+        if (this._previewBlobUrl) {
+            URL.revokeObjectURL(this._previewBlobUrl);
+            this._previewBlobUrl = null;
+        }
+        this._originalImgSrc = null;
+        this._originalImgData = null;
+        this._previewCanvas = null;
+
         this.currentState = { ...DEFAULT_EDIT_STATE };
         this.originalState = { ...DEFAULT_EDIT_STATE };
 
@@ -141,6 +153,15 @@ export class ImageEditor {
                 if (el.tagName === 'VIDEO') el.playbackRate = 1.0;
             }
         });
+
+        // Clean up canvas preview resources
+        if (this._previewBlobUrl) {
+            URL.revokeObjectURL(this._previewBlobUrl);
+            this._previewBlobUrl = null;
+        }
+        this._originalImgSrc = null;
+        this._originalImgData = null;
+        this._previewCanvas = null;
 
         this.activeImage = null;
     }
@@ -223,16 +244,184 @@ export class ImageEditor {
             effectiveRate = 1.0;
         }
 
-        const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
-
-        elements.forEach(el => {
-            if (el) {
-                el.style.filter = filterValue;
-                if (el.tagName === 'VIDEO') {
-                    el.playbackRate = effectiveRate;
-                }
+        if (this._hasRangedAdjustments()) {
+            // Use canvas-based preview for ranged adjustments
+            // CSS filters can't do luminance masking, so we process pixels in JS
+            this._processRangedPreviewOnCanvas(elements);
+        } else {
+            // All ranges are 'all' — use fast CSS filter as before
+            // Restore original image URL if a ranged preview was applied previously
+            if (this._previewBlobUrl) {
+                URL.revokeObjectURL(this._previewBlobUrl);
+                this._previewBlobUrl = null;
+                this._originalImgSrc = null;
+                this._originalImgData = null;
+                elements.forEach(el => {
+                    if (el && el.dataset.originalSrc) {
+                        el.src = el.dataset.originalSrc;
+                        delete el.dataset.originalSrc;
+                    }
+                });
             }
-        });
+            const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
+            elements.forEach(el => {
+                if (el) {
+                    el.style.filter = filterValue;
+                    if (el.tagName === 'VIDEO') {
+                        el.playbackRate = effectiveRate;
+                    }
+                }
+            });
+        }
+    }
+
+    _hasRangedAdjustments() {
+        if (this.nativeFps > 0) return false; // Videos don't have range selectors
+        return ['brightness', 'contrast', 'saturation'].some(
+            key => (this.currentState[`${key}Range`] || 'all') !== 'all'
+        );
+    }
+
+    async _processRangedPreviewOnCanvas(elements) {
+        const imgEl = elements[0]; // The zoom view img element
+        if (!imgEl || imgEl.tagName !== 'IMG' || !imgEl.src) return;
+
+        try {
+            if (!this._originalImgData || this._originalImgSrc !== imgEl.src) {
+                // Load original image onto an offscreen canvas (cached per image)
+                this._originalImgSrc = imgEl.src;
+                const loadImg = new Image();
+                loadImg.crossOrigin = 'anonymous';
+                await new Promise((resolve, reject) => {
+                    loadImg.onload = resolve;
+                    loadImg.onerror = reject;
+                    loadImg.src = imgEl.src;
+                });
+
+                this._previewCanvas = document.createElement('canvas');
+                this._previewCanvas.width = loadImg.naturalWidth;
+                this._previewCanvas.height = loadImg.naturalHeight;
+                const ctx = this._previewCanvas.getContext('2d');
+                ctx.drawImage(loadImg, 0, 0);
+                this._originalImgData = ctx.getImageData(0, 0, this._previewCanvas.width, this._previewCanvas.height);
+            }
+
+            // Process pixel data
+            const src = this._originalImgData.data;
+            const w = this._previewCanvas.width;
+            const h = this._previewCanvas.height;
+            const dst = new Uint8ClampedArray(src.length);
+
+            const bVal = this.currentState.brightness;
+            const cVal = this.currentState.contrast;
+            const sVal = this.currentState.saturation;
+            const bRange = this.currentState.brightnessRange || 'all';
+            const cRange = this.currentState.contrastRange || 'all';
+            const sRange = this.currentState.saturationRange || 'all';
+
+            for (let i = 0; i < src.length; i += 4) {
+                let r = src[i], g = src[i + 1], b = src[i + 2];
+                const a = src[i + 3];
+
+                // Luminance for masking
+                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                // Apply brightness (only non 'all' — 'all' is handled by CSS filter)
+                if (bRange !== 'all') {
+                    const wB = this._luminanceWeight(lum, bRange);
+                    if (wB > 0) {
+                        const adjR = r * bVal, adjG = g * bVal, adjB = b * bVal;
+                        r += (adjR - r) * wB;
+                        g += (adjG - g) * wB;
+                        b += (adjB - b) * wB;
+                    }
+                }
+
+                // Recompute luminance after brightness for contrast mask accuracy
+                const lum2 = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                // Apply contrast
+                if (cRange !== 'all') {
+                    const wC = this._luminanceWeight(lum2, cRange);
+                    if (wC > 0) {
+                        const adjR = 128 + (r - 128) * cVal;
+                        const adjG = 128 + (g - 128) * cVal;
+                        const adjB = 128 + (b - 128) * cVal;
+                        r += (adjR - r) * wC;
+                        g += (adjG - g) * wC;
+                        b += (adjB - b) * wC;
+                    }
+                }
+
+                // Apply saturation
+                if (sRange !== 'all') {
+                    const wS = this._luminanceWeight(lum2, sRange);
+                    if (wS > 0) {
+                        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                        const adjR = gray + (r - gray) * sVal;
+                        const adjG = gray + (g - gray) * sVal;
+                        const adjB = gray + (b - gray) * sVal;
+                        r += (adjR - r) * wS;
+                        g += (adjG - g) * wS;
+                        b += (adjB - b) * wS;
+                    }
+                }
+
+                dst[i] = r;
+                dst[i + 1] = g;
+                dst[i + 2] = b;
+                dst[i + 3] = a;
+            }
+
+            const ctx = this._previewCanvas.getContext('2d');
+            ctx.putImageData(new ImageData(dst, w, h), 0, 0);
+
+            const blob = await new Promise(resolve => this._previewCanvas.toBlob(resolve, 'image/jpeg', 0.92));
+            if (!blob) return;
+
+            // Revoke old blob URL
+            if (this._previewBlobUrl) {
+                URL.revokeObjectURL(this._previewBlobUrl);
+            }
+            this._previewBlobUrl = URL.createObjectURL(blob);
+
+            // Replace img src with processed version, remove CSS filter
+            elements.forEach(el => {
+                if (el && el.tagName === 'IMG') {
+                    // Save original src for later restoration
+                    if (!el.dataset.originalSrc) {
+                        el.dataset.originalSrc = el.src;
+                    }
+                    el.style.filter = 'none';
+                    el.src = this._previewBlobUrl;
+                }
+            });
+
+        } catch (e) {
+            console.warn('[Holaf Editor] Ranged preview failed, falling back to CSS:', e);
+            // Fallback: apply CSS filter (not range-accurate but functional)
+            const filterValue = `brightness(${this.currentState.brightness}) contrast(${this.currentState.contrast}) saturate(${this.currentState.saturation})`;
+            elements.forEach(el => {
+                if (el) { el.style.filter = filterValue; }
+            });
+        }
+    }
+
+    _luminanceWeight(luminance, rangeType) {
+        if (rangeType === 'all') return 1;
+        if (rangeType === 'shadows') {
+            return luminance < 128 ? 1 - luminance / 128 : 0;
+        }
+        if (rangeType === 'midtones') {
+            if (luminance < 64) return 0;
+            if (luminance < 128) return (luminance - 64) / 64;
+            if (luminance < 192) return (192 - luminance) / 64;
+            return 0;
+        }
+        if (rangeType === 'highlights') {
+            return luminance > 127 ? (luminance - 127) / 128 : 0;
+        }
+        return 1;
     }
 
     _getPreviewElements() {
@@ -400,6 +589,14 @@ export class ImageEditor {
             const valueEl = this.panelEl.querySelector(`#holaf-editor-${key}-value`);
             if (slider) slider.value = this.currentState[key] * 100;
             if (valueEl) valueEl.textContent = Math.round(this.currentState[key] * 100);
+
+            // Update range selector
+            const rangeSelect = this.panelEl.querySelector(`.holaf-editor-range-select[data-range-key="${key}"]`);
+            if (rangeSelect) {
+                rangeSelect.value = this.currentState[`${key}Range`] || 'all';
+                // Hide range selector for videos (FFmpeg can't do luminance masking)
+                rangeSelect.style.display = this.nativeFps > 0 ? 'none' : '';
+            }
         }
 
         const videoSection = this.panelEl.querySelector('#holaf-editor-video-section');
@@ -442,6 +639,7 @@ export class ImageEditor {
 
             sliderContainer.addEventListener('dblclick', () => {
                 this.currentState[key] = DEFAULT_EDIT_STATE[key];
+                this.currentState[`${key}Range`] = DEFAULT_EDIT_STATE[`${key}Range`];
                 this.isDirty = true;
                 this._updateButtonStates();
                 this._updateUIFromState();
@@ -456,6 +654,16 @@ export class ImageEditor {
                 this._updateButtonStates();
                 this.applyPreview();
             });
+
+            // Range selector change handler
+            const rangeSelect = sliderContainer.querySelector('.holaf-editor-range-select');
+            if (rangeSelect) {
+                rangeSelect.addEventListener('change', (e) => {
+                    this.currentState[`${key}Range`] = e.target.value;
+                    this.isDirty = true;
+                    this._updateButtonStates();
+                });
+            }
         });
 
         const fpsInput = this.panelEl.querySelector('#holaf-editor-fps-input');
@@ -508,6 +716,12 @@ export class ImageEditor {
         const createSlider = (name, label, min, max, step, value, displayValue) => `
             <div class="holaf-editor-slider-container">
                 <label for="holaf-editor-${name}-slider">${label}</label>
+                <select class="holaf-editor-range-select" data-range-key="${name}">
+                    <option value="all">All</option>
+                    <option value="shadows">Shadows</option>
+                    <option value="midtones">Midtones</option>
+                    <option value="highlights">Highlights</option>
+                </select>
                 <input type="range" id="holaf-editor-${name}-slider" min="${min}" max="${max}" step="${step}" value="${value}">
                 <span id="holaf-editor-${name}-value" class="holaf-editor-slider-value">${displayValue}</span>
             </div>

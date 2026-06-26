@@ -833,38 +833,98 @@ def _extract_image_metadata_blocking(image_path_abs):
 
     return result
 
+def _get_luminance_mask(image, range_type):
+    """
+    Creates a smooth luminance mask for the given range type.
+    Returns a PIL.Image in 'L' mode (0=transparent, 255=opaque).
+    Returns None if range_type is None or 'all' (no masking).
+    """
+    if not range_type or range_type == 'all':
+        return None
+    
+    gray = image.convert('L')
+    
+    if range_type == 'shadows':
+        # Dark pixels: full effect on luminance < 64, smooth falloff to 127
+        table = [min(255, max(0, int(255 * (1 - i / 127)))) if i < 128 else 0 for i in range(256)]
+    elif range_type == 'midtones':
+        # Medium pixels: smooth rise 64→127, smooth falloff 127→191
+        table = []
+        for i in range(256):
+            if i < 64:
+                table.append(0)
+            elif i < 127:
+                table.append(int(255 * (i - 64) / 63))
+            elif i < 192:
+                table.append(int(255 * (192 - i) / 65))
+            else:
+                table.append(0)
+    elif range_type == 'highlights':
+        # Bright pixels: smooth rise from 127, full effect from 192
+        table = [0 if i < 128 else min(255, max(0, int(255 * (i - 128) / 127))) for i in range(256)]
+    else:
+        return None  # Unknown range, apply to all
+    
+    return gray.point(table)
+
+
 def apply_edits_to_image(image, edit_data):
     """
     Applies adjustments (brightness, contrast, saturation, hue) to a PIL Image.
+    Each adjustment can optionally target a specific luminance range:
+      - edit_data['brightnessRange'] = 'shadows' | 'midtones' | 'highlights' | 'all'
+    When a range is specified, the adjustment is blended via a smooth luminance mask
+    so only the targeted pixels are affected.
     """
-    if not isinstance(edit_data, dict): return image
-    
-    # 1. Brightness
-    if 'brightness' in edit_data:
-        image = ImageEnhance.Brightness(image).enhance(float(edit_data['brightness']))
-        
-    # 2. Contrast
-    if 'contrast' in edit_data:
-        image = ImageEnhance.Contrast(image).enhance(float(edit_data['contrast']))
-        
-    # 3. Saturation
-    if 'saturation' in edit_data:
-        image = ImageEnhance.Color(image).enhance(float(edit_data['saturation']))
-        
-    # 4. Hue
+    if not isinstance(edit_data, dict):
+        return image
+
+    result = image.copy()
+
+    adjustments = [
+        ('brightness', lambda img, v: ImageEnhance.Brightness(img).enhance(float(v))),
+        ('contrast',   lambda img, v: ImageEnhance.Contrast(img).enhance(float(v))),
+        ('saturation', lambda img, v: ImageEnhance.Color(img).enhance(float(v))),
+    ]
+
+    for key, func in adjustments:
+        if key in edit_data:
+            value = edit_data[key]
+            range_type = edit_data.get(f'{key}Range', 'all')
+
+            if range_type == 'all':
+                result = func(result, value)
+            else:
+                mask = _get_luminance_mask(image, range_type)
+                if mask:
+                    adjusted = func(image.copy(), value)
+                    result = Image.composite(adjusted, result, mask)
+
+    # Hue (separate logic, not expressible as ImageEnhance)
     if 'hue' in edit_data and edit_data['hue'] != 0:
         try:
-            hue_deg = float(edit_data['hue']) 
-            image_hsv = image.convert('HSV')
-            h, s, v = image_hsv.split()
-            shift = int((hue_deg % 360) * (255 / 360))
-            h = h.point(lambda i: (i + shift) % 255)
-            image_hsv = Image.merge('HSV', (h, s, v))
-            image = image_hsv.convert('RGB')
+            range_type = edit_data.get('hueRange', 'all')
+            hue_deg = float(edit_data['hue'])
+
+            def _apply_hue(img):
+                img_hsv = img.convert('HSV')
+                h, s, v = img_hsv.split()
+                shift = int((hue_deg % 360) * (255 / 360))
+                h = h.point(lambda i: (i + shift) % 255)
+                return Image.merge('HSV', (h, s, v)).convert('RGB')
+
+            if range_type == 'all':
+                result = _apply_hue(result)
+            else:
+                mask = _get_luminance_mask(image, range_type)
+                if mask:
+                    adjusted = _apply_hue(image.copy())
+                    result = Image.composite(adjusted, result, mask)
         except Exception as e:
             print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
 
-    return image
+    return result
+
 
 def build_ffmpeg_filter_string(edit_data):
     """

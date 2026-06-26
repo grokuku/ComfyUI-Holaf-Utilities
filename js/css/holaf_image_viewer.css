@@ -722,9 +722,9 @@ textarea.holaf-viewer-metadata-box:focus {
 
 .holaf-editor-slider-container {
     display: grid;
-    grid-template-columns: 80px 1fr 40px;
+    grid-template-columns: 80px 65px 1fr 40px;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     font-size: 13px;
     cursor: pointer;
 }
@@ -732,6 +732,17 @@ textarea.holaf-viewer-metadata-box:focus {
 .holaf-editor-slider-container label {
     text-align: right;
     color: var(--holaf-text-secondary);
+}
+
+.holaf-editor-range-select {
+    background: var(--holaf-input-background);
+    color: var(--holaf-text-primary);
+    border: 1px solid var(--holaf-border-color);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 11px;
+    cursor: pointer;
+    outline: none;
 }
 
 .holaf-editor-slider-container input[type="range"] {
