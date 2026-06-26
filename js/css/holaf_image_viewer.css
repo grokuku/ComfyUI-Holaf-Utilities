@@ -903,7 +903,7 @@ video::-webkit-media-controls {
     box-shadow: var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7));
     min-width: 400px;
     max-width: 90%;
-    /* FIX: Constrain height and use flex column so the footer stays visible */
+    /* Constrain height so footer stays visible */
     max-height: 90%;
     display: flex;
     flex-direction: column;
@@ -916,7 +916,7 @@ video::-webkit-media-controls {
     font-size: 12px;
     font-weight: bold;
     background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
-    /* FIX: Prevent header from shrinking when content scrolls */
+    /* Prevent header from shrinking when content scrolls */
     flex-shrink: 0;
 }
 
@@ -925,9 +925,10 @@ video::-webkit-media-controls {
     display: flex;
     flex-direction: column;
     gap: 20px;
-    /* FIX: Scroll only the content area, keep header and footer fixed */
+    /* Scroll content area, keep header and footer fixed */
     overflow-y: auto;
     flex-shrink: 1;
+    min-height: 0;
 }
 
 .holaf-viewer-export-option-group {
@@ -960,7 +961,7 @@ video::-webkit-media-controls {
     gap: 10px;
     padding: 10px 15px;
     border-top: 1px solid var(--holaf-border-color);
-    /* FIX: Prevent footer from shrinking when content scrolls */
+    /* Keep footer visible when content scrolls */
     flex-shrink: 0;
 }
 
@@ -983,9 +984,7 @@ video::-webkit-media-controls {
     border-bottom: 1px solid var(--holaf-border-color);
     padding-bottom: 5px;
     margin-bottom: 10px;
-    /* FIX: Keep the header (with All/None/Invert buttons) visible when
-       the folder list below scrolls. The background must be opaque to
-       cover content scrolling underneath. */
+    /* Keep buttons visible when folder list scrolls */
     position: sticky;
     top: 0;
     z-index: 10;

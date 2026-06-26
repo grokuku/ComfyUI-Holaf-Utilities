@@ -329,7 +329,7 @@
     width: auto;
     display: flex;
     flex-direction: column;
-    /* FIX: Constrain height so content scrolls, footer stays visible */
+    /* Keep footer visible by constraining height to viewport */
     max-height: 90vh;
     overflow: hidden;
 }
@@ -343,9 +343,10 @@
     font-size: 14px;
     line-height: 1.5;
     color: var(--holaf-text-secondary, #A0A0A0);
-    /* FIX: Scroll the content if it overflows */
+    /* Scroll content area when too long */
     overflow-y: auto;
     flex-shrink: 1;
+    min-height: 0;
 }
 
 #holaf-modal-dialog .holaf-modal-footer {
@@ -354,7 +355,7 @@
     gap: 10px;
     padding: 10px 15px;
     border-top: 1px solid var(--holaf-border-color, #3F3F3F);
-    /* FIX: Prevent footer from shrinking when content scrolls */
+    /* Keep footer visible when content scrolls */
     flex-shrink: 0;
 }
 
@@ -391,7 +392,7 @@
     height: auto !important;
     top: auto !important;
     left: auto !important;
-    /* FIX: Constrain height with flex column so footer stays inside the overlay */
+    /* Keep footer visible by constraining height to viewport */
     max-height: 90vh;
     display: flex;
     flex-direction: column;
@@ -402,9 +403,10 @@
     padding: 15px 20px;
     color: var(--holaf-text-primary);
     white-space: pre-wrap;
-    /* FIX: Scroll the content if it overflows, keep header and footer fixed */
+    /* Scroll content area when too long */
     overflow-y: auto;
     flex-shrink: 1;
+    min-height: 0;
 }
 
 .holaf-dialog-footer {
@@ -415,7 +417,7 @@
     background-color: var(--holaf-background-secondary);
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
-    /* FIX: Prevent footer from shrinking when content scrolls */
+    /* Keep footer visible when content scrolls */
     flex-shrink: 0;
 }
 

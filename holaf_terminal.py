@@ -302,9 +302,17 @@ async def websocket_handler(request: web.Request, global_app_config):
         print("⚫ [Holaf-Terminal] Cleaning up PTY session.")
         # Tasks are cancelled implicitly if gather raises/finishes
         # Ensure PTY process is terminated
-        if proc_adapter and proc_adapter.is_alive():
-            proc_adapter.terminate(force=True)
-        if not ws.closed:
-            await ws.close()
+        # FIX: Wrap in try/except to handle NameError if proc_adapter or ws
+        # were never assigned (e.g., exception during WebSocket handshake)
+        try:
+            if proc_adapter and proc_adapter.is_alive():
+                proc_adapter.terminate(force=True)
+        except NameError:
+            pass
+        try:
+            if not ws.closed:
+                await ws.close()
+        except (NameError, AttributeError):
+            pass
     
     return ws

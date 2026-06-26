@@ -13,6 +13,15 @@ import errno
 
 import folder_paths # ComfyUI global
 
+# thumbnail_status values:
+#   0 = pending (not yet generated)
+#   1 = priority (visible in viewport, queued for generation)
+#   2 = complete (generated successfully)
+#   3 = permanent failure (unidentified image, file not found, decompression bomb, etc.)
+#
+# thumbnail_priority_score lower = higher priority. Used for ordering within status 0/1.
+# Score 9999 is reserved for permanent failures (status 3) to deprioritize them.
+
 # Imports from this package's modules
 from . import logic
 from .logic import SUPPORTED_IMAGE_FORMATS, TRASHCAN_DIR_NAME, EDIT_DIR_NAME
@@ -139,40 +148,48 @@ def run_event_queue_processor(stop_event):
 
 def run_filesystem_monitor(stop_event):
     """Worker that watches the filesystem for changes.
-    Tries inotify first; falls back to polling if the inotify watch limit is reached."""
+    Tries inotify first; falls back to polling if the inotify watch limit is reached.
+    Auto-restarts on fatal errors to avoid silent death of the watcher."""
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor started.")
     
-    observer = None
-    try:
-        output_dir = folder_paths.get_output_directory()
-        print(f"  -> Monitoring directory: {output_dir}")
-        event_handler = HolafFileSystemEventHandler(output_dir)
-        
-        # Try inotify first (fast, low CPU)
+    while not stop_event.is_set():
+        observer = None
         try:
-            observer = Observer()
-            observer.schedule(event_handler, output_dir, recursive=True)
-            observer.start()
-            print("  -> Using inotify backend.")
-        except OSError as e:
-            if e.errno == errno.ENOSPC:
-                print(f"  -> inotify watch limit reached ({e}). Falling back to polling observer.")
-                observer = PollingObserver(timeout=2.0)
+            output_dir = folder_paths.get_output_directory()
+            event_handler = HolafFileSystemEventHandler(output_dir)
+            
+            # Try inotify first (fast, low CPU)
+            try:
+                observer = Observer()
                 observer.schedule(event_handler, output_dir, recursive=True)
                 observer.start()
-                print("  -> Using polling backend (slower but no watch limit).")
-            else:
-                raise
-        
-        while not stop_event.is_set():
-            stop_event.wait(1)
-    except Exception as e:
-            print(f"🔴 [Holaf-ImageViewer-Worker] Filesystem monitor encountered a fatal error: {e}")
+                print("  -> Using inotify backend.")
+            except OSError as e:
+                if e.errno == errno.ENOSPC:
+                    print(f"  -> inotify watch limit reached ({e}). Falling back to polling observer.")
+                    observer = PollingObserver(timeout=2.0)
+                    observer.schedule(event_handler, output_dir, recursive=True)
+                    observer.start()
+                    print("  -> Using polling backend (slower but no watch limit).")
+                else:
+                    raise
+            
+            # Main loop: just wait until stop_event is set
+            while not stop_event.is_set():
+                stop_event.wait(1)
+                
+        except Exception as e:
+            if stop_event.is_set():
+                break
+            print(f"🔴 [Holaf-ImageViewer-Worker] Filesystem monitor error: {e}")
             traceback.print_exc()
-    finally:
-        if observer and observer.is_alive():
-            observer.stop()
-            observer.join()
+            print("🟡 [Holaf-ImageViewer-Worker] Restarting filesystem monitor in 10 seconds...")
+            if stop_event.wait(10):
+                break
+        finally:
+            if observer and observer.is_alive():
+                observer.stop()
+                observer.join()
 
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor stopped.")
 

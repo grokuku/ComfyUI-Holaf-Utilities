@@ -1055,7 +1055,7 @@ if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
 else:
     print("🟡 [Holaf-Init] Model Manager scan_and_update_db not available for scheduling.")
 
-_periodic_task_wrapper(300.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
+_periodic_task_wrapper(30.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
 
 # --- MODIFICATION START: Correctly schedule all image viewer workers ---
 thumbnail_startup_timer = threading.Timer(15.0, start_thumbnail_worker)

@@ -677,6 +677,11 @@
 
             // FIX: onclose — auto-reconnect if monitor is still visible
             this.ws.onclose = (event) => {
+                // Ignore close events from stale (previous) WebSocket instances.
+                // When connectWebSocket() closes the old socket and creates a new one,
+                // the old socket's onclose fires asynchronously and would null out
+                // this.ws, breaking the new connection's reference.
+                if (event.target !== this.ws) return;
                 this.ws = null;
                 if (this.isVisible) {
                     this._reconnectAttempts = (this._reconnectAttempts || 0) + 1;
