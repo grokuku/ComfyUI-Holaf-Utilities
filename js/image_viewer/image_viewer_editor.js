@@ -383,35 +383,34 @@ export class ImageEditor {
     _attachListeners() {
         if (!this.panelEl) return;
 
-        // Add Control dropdown
+        // Add Control — uses createDialog for reliable positioning
         const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
         if (addBtn) {
-            addBtn.onclick = () => {
-                // Build a simple dropdown menu for available types
+            addBtn.onclick = async () => {
                 const existing = new Set(this.currentState.controls.map(c => c.type));
                 const available = CONTROL_TYPES.filter(t => !existing.has(t.id));
-                if (available.length === 0) { this._showToast("All control types already added.", 'info'); return; }
+                if (available.length === 0) {
+                    this._showToast("All control types already added.", 'info');
+                    return;
+                }
 
-                const menu = document.createElement('div');
-                menu.style.cssText = `position:absolute;z-index:999;background:var(--holaf-background-secondary);border:1px solid var(--holaf-border-color);border-radius:4px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.5);`;
-                available.forEach(t => {
-                    const item = document.createElement('button');
-                    item.textContent = t.label;
-                    item.style.cssText = `display:block;width:100%;padding:6px 16px;background:none;border:none;color:var(--holaf-text-primary);cursor:pointer;font-size:13px;text-align:left;`;
-                    item.onmouseenter = () => item.style.backgroundColor = 'var(--holaf-background-primary)';
-                    item.onmouseleave = () => item.style.backgroundColor = '';
-                    item.onclick = () => { this._addControl(t.id); menu.remove(); };
-                    menu.appendChild(item);
+                // Build choice buttons for each available type
+                const buttons = available.map(t => ({
+                    text: t.label,
+                    value: t.id,
+                    type: 'confirm'
+                }));
+                buttons.push({ text: "Cancel", value: null, type: 'cancel' });
+
+                const chosen = await HolafPanelManager.createDialog({
+                    title: "Add Control",
+                    message: "Choose a control type to add:",
+                    buttons
                 });
-                // Position below the button
-                const rect = addBtn.getBoundingClientRect();
-                menu.style.top = (rect.bottom + 2) + 'px';
-                menu.style.left = rect.left + 'px';
-                menu.style.minWidth = rect.width + 'px';
-                document.body.appendChild(menu);
-                // Close on click outside
-                const close = (e) => { if (!menu.contains(e.target) && e.target !== addBtn) { menu.remove(); document.removeEventListener('mousedown', close); } };
-                setTimeout(() => document.addEventListener('mousedown', close), 0);
+
+                if (chosen) {
+                    this._addControl(chosen);
+                }
             };
         }
 
