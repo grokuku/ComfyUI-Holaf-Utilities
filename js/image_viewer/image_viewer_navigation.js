@@ -38,31 +38,23 @@ function _applyEditorPreview(viewer, mediaEl) {
 }
 
 async function _handleUnsavedChanges(viewer) {
-    if (!viewer.editor || !viewer.editor.hasUnsavedChanges()) {
-        return 'proceed';
+    if (!viewer.editor) return 'proceed';
+
+    // Flush any pending debounced save so it fires with the current image state
+    if (viewer.editor._saveTimer) {
+        clearTimeout(viewer.editor._saveTimer);
+        viewer.editor._saveTimer = null;
+        viewer.editor._doAutoSave(viewer.editor._saveToken);
     }
 
-    const choice = await HolafPanelManager.createDialog({
-        title: "Unsaved Changes",
-        message: "You have unsaved edits. What would you like to do?",
-        buttons: [
-            { text: "Cancel Navigation", value: 'cancel', type: 'cancel' },
-            { text: "Discard Changes", value: 'discard', type: 'danger' },
-            { text: "Save & Continue", value: 'save', type: 'primary' }
-        ]
-    });
-
-    switch (choice) {
-        case 'save':
-            await viewer.editor._saveEdits();
-            return 'proceed';
-        case 'discard':
-            viewer.editor._cancelEdits();
-            return 'proceed';
-        case 'cancel':
-        default:
-            return 'cancel';
+    if (viewer.editor.saveInProgress) {
+        for (let i = 0; i < 100; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            if (!viewer.editor.saveInProgress) return 'proceed';
+        }
+        console.warn('[Holaf] Save still in progress after 10s — navigating anyway.');
     }
+    return 'proceed';
 }
 
 

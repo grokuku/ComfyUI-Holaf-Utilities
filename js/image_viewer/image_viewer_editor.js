@@ -2,12 +2,14 @@
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Image Viewer Editor Module
  *
- * REFACTOR: Stackable controls system. Users add/remove individual controls
- * instead of a fixed set of sliders. Supports luminance range masking.
+ * Auto-save: every change is saved immediately (debounced 500ms). No Save/Cancel buttons.
+ * Only Reset remains. The saveInProgress flag is the "unsaved changes" guard used by
+ * navigation to wait for in-flight saves before switching images.
  */
 
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
+import { getThumbnailUrl } from './image_viewer_gallery.js';
 
 const CONTROL_TYPES = [
     { id: 'brightness', label: 'Brightness', default: 1, min: 0, max: 200, step: 1 },
@@ -16,12 +18,12 @@ const CONTROL_TYPES = [
     { id: 'hue',        label: 'Hue',        default: 0, min: -180, max: 180, step: 1 },
 ];
 
-const DEFAULT_EDIT_STATE = {
+const DEFAULT_EDIT_STATE = () => ({
     controls: [],
     targetFps: null,
     playbackRate: 1.0,
     interpolate: false
-};
+});
 
 let _ctrlIdCounter = 0;
 
@@ -30,9 +32,8 @@ export class ImageEditor {
         this.viewer = viewer;
         this.panelEl = null;
         this.activeImage = null;
-        this.currentState = { ...DEFAULT_EDIT_STATE };
-        this.originalState = { ...DEFAULT_EDIT_STATE };
-        this.isDirty = false;
+        this.currentState = DEFAULT_EDIT_STATE();
+        this.saveInProgress = false;
         this.nativeFps = 0;
         this.processedVideoUrl = null;
     }
@@ -42,7 +43,7 @@ export class ImageEditor {
         imageViewerState.subscribe(this._handleStateChange.bind(this));
     }
 
-    hasUnsavedChanges() { return this.isDirty; }
+    hasUnsavedChanges() { return this.saveInProgress; }
 
     _showToast(message, type = 'info', duration = 3000) {
         if (window.holaf && window.holaf.toastManager)
@@ -60,8 +61,7 @@ export class ImageEditor {
         else if (!state.activeImage && this.activeImage)
             this._hide();
         this.panelEl.style.display = visible ? 'block' : 'none';
-        if (visible && !shown) this.panelEl.style.display = 'block';
-        if (!visible && shown) this._hide();
+        if (!visible && shown && this.activeImage) this._hide();
     }
 
     createPanel() {
@@ -100,8 +100,6 @@ export class ImageEditor {
                         <input type="checkbox" id="holaf-editor-compare-check" style="cursor:pointer;"> Compare
                     </label>
                     <button id="holaf-editor-reset-btn" class="comfy-button">Reset</button>
-                    <button id="holaf-editor-cancel-btn" class="comfy-button" disabled>Cancel</button>
-                    <button id="holaf-editor-save-btn" class="comfy-button" disabled>Save</button>
                 </div>
             </div>`;
         col.appendChild(el);
@@ -112,22 +110,19 @@ export class ImageEditor {
     async _show(image) {
         if (!this.panelEl) return;
         this.activeImage = image;
-        this.isDirty = false;
         this.nativeFps = 0;
         this.processedVideoUrl = null;
         this._clearCanvasCache();
         this._compareCleanup();
-        this.currentState = { ...DEFAULT_EDIT_STATE };
-        this.originalState = { ...DEFAULT_EDIT_STATE };
+        // Use DEFAULT_EDIT_STATE() (function call = fresh deep copy) to prevent
+        // shared reference mutation between different images
+        this.currentState = DEFAULT_EDIT_STATE();
         this._updateUIFromState();
         this.applyPreview();
-        this._updateButtonStates();
         await this._loadEditsForCurrentImage();
     }
 
     _hide() {
-        if (this._previewTimer) { clearTimeout(this._previewTimer); this._previewTimer = null; }
-        if (this.isDirty) { this.currentState = { ...this.originalState }; this.applyPreview(); this.isDirty = false; }
         if (this.panelEl) this.panelEl.style.display = 'none';
         this._dispatchVideoOverride(null);
         this._getPreviewElements().forEach(el => { if (el) el.style.filter = 'none'; });
@@ -162,16 +157,68 @@ export class ImageEditor {
                 if (d.native_fps) this.nativeFps = Number(d.native_fps);
                 if (d.processed_video_url) { this.processedVideoUrl = d.processed_video_url; this._dispatchVideoOverride(this.processedVideoUrl); }
                 else this._dispatchVideoOverride(null);
-                if (d.status === 'ok') this.currentState = { ...DEFAULT_EDIT_STATE, ...d.edits };
+                if (d.status === 'ok') {
+                    this.currentState = { ...DEFAULT_EDIT_STATE(), ...d.edits };
+                    // Ensure controls array exists and is not shared by reference
+                    if (d.edits && Array.isArray(d.edits.controls)) {
+                        this.currentState.controls = d.edits.controls.map(c => ({ ...c }));
+                    }
+                }
                 if (this.nativeFps > 0 && this.currentState.targetFps == null)
                     this.currentState.targetFps = Math.round(this.nativeFps * (this.currentState.playbackRate || 1.0));
             }
         } catch (e) { console.error("[Holaf Editor] load edits:", e); }
-        this.originalState = { ...this.currentState };
-        this.isDirty = false;
         this._updateUIFromState();
         this.applyPreview();
-        this._updateButtonStates();
+    }
+
+    // ── Auto-save (debounced) ──
+
+    _scheduleAutoSave() {
+        if (this._saveTimer) clearTimeout(this._saveTimer);
+        this._saveToken = (this._saveToken || 0) + 1;
+        const token = this._saveToken;
+        this._saveTimer = setTimeout(() => {
+            this._saveTimer = null;
+            this._doAutoSave(token);
+        }, 500);
+    }
+
+    async _doAutoSave(token) {
+        if (!this.activeImage || token !== this._saveToken) return;
+        if (this.saveInProgress) {
+            this._scheduleAutoSave();
+            return;
+        }
+        this.saveInProgress = true;
+        const path = this.activeImage.path_canon;
+
+        if (this.nativeFps > 0 && this.currentState.targetFps)
+            this.currentState.playbackRate = this.currentState.targetFps / this.nativeFps;
+
+        try {
+            const r = await fetch('/holaf/images/save-edits', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path_canon: path, edits: this.currentState })
+            });
+            if (r.ok) {
+                this._updateGlobalImageState(path, true);
+                if (this.viewer?.gallery) this.viewer.gallery.refreshThumbnail(path);
+                if (this.nativeFps > 0) {
+                    const needs = this.currentState.interpolate || (this.currentState.targetFps && this.currentState.targetFps !== this.nativeFps);
+                    if (needs && this.activeImage?.path_canon === path) {
+                        this._triggerProcessVideoBackground(path);
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[Holaf Editor] Auto-save failed:", e);
+        } finally {
+            this.saveInProgress = false;
+            if (token !== this._saveToken) {
+                this._scheduleAutoSave();
+            }
+        }
     }
 
     // ── Preview ──
@@ -183,7 +230,6 @@ export class ImageEditor {
         else rate = this.currentState.playbackRate || 1.0;
         if (this.processedVideoUrl) rate = 1.0;
 
-        // Cancel any pending ranged preview to avoid overlapping async renders
         if (this._rangedPreviewPending) { this._rangedPreviewPending = false; }
 
         if (this._hasRangedAdjustments()) {
@@ -192,8 +238,6 @@ export class ImageEditor {
         } else {
             this._applyCssFilter(els, rate);
         }
-
-        // Refresh compare canvas if active
         this._compareRefresh();
     }
 
@@ -205,8 +249,6 @@ export class ImageEditor {
     _compareRefresh() {
         const canvas = document.getElementById('holaf-compare-canvas');
         if (!canvas) return;
-        // Signal the running render loop to re-read the filter on next frame
-        // instead of tearing down and rebuilding the entire compare setup
         this._compareFilterDirty = true;
     }
 
@@ -240,7 +282,6 @@ export class ImageEditor {
     async _processRangedPreviewOnCanvas(els) {
         const imgEl = els[0];
         if (!imgEl || imgEl.tagName !== 'IMG') return;
-        // Use the ORIGINAL image URL as cache key, not the current src (which may be a blob URL)
         const originalUrl = imgEl.dataset.originalSrc || imgEl.src;
         if (!originalUrl) return;
         try {
@@ -249,7 +290,6 @@ export class ImageEditor {
                 const loadImg = new Image();
                 loadImg.crossOrigin = 'anonymous';
                 await new Promise((res, rej) => { loadImg.onload = res; loadImg.onerror = rej; loadImg.src = originalUrl; });
-                // Downscale to max 1920px for preview — 4x fewer pixels = 4x faster pixel loop
                 const MAX_PREVIEW_DIM = 1920;
                 let pw = loadImg.naturalWidth, ph = loadImg.naturalHeight;
                 if (pw > MAX_PREVIEW_DIM || ph > MAX_PREVIEW_DIM) {
@@ -266,9 +306,6 @@ export class ImageEditor {
             const src = this._originalImgData.data, w = this._previewCanvas.width, h = this._previewCanvas.height;
             const dst = new Uint8ClampedArray(src.length);
             const controls = this.currentState.controls || [];
-
-            // Pre-sort controls: 'all' range applied unconditionally (fast path),
-            // ranged controls only where weight > 0. Avoids per-pixel branch checks.
             const allControls = controls.filter(c => (c.range || 'all') === 'all');
             const rangedControls = controls.filter(c => (c.range || 'all') !== 'all');
             const hasRanged = rangedControls.length > 0;
@@ -277,11 +314,8 @@ export class ImageEditor {
             for (let i = 0; i < len; i += 4) {
                 let r = src[i], g = src[i + 1], b = src[i + 2];
                 const a0 = src[i + 3];
-
-                // Fast path: apply 'all'-range controls (no weight check)
                 for (let ci = 0; ci < allControls.length; ci++) {
-                    const ctrl = allControls[ci];
-                    const val = ctrl.value;
+                    const ctrl = allControls[ci]; const val = ctrl.value;
                     if (ctrl.type === 'brightness') { r *= val; g *= val; b *= val; }
                     else if (ctrl.type === 'contrast') { r = 128 + (r - 128) * val; g = 128 + (g - 128) * val; b = 128 + (b - 128) * val; }
                     else if (ctrl.type === 'saturation') { const gr = 0.299 * r + 0.587 * g + 0.114 * b; r = gr + (r - gr) * val; g = gr + (g - gr) * val; b = gr + (b - gr) * val; }
@@ -297,14 +331,11 @@ export class ImageEditor {
                         r = nr2 + m; g = ng2 + m; b = nb2 + m;
                     }
                 }
-
-                // Slow path: apply ranged controls (luminance-weighted)
                 if (hasRanged) {
                     const oR = src[i], oG = src[i + 1], oB = src[i + 2];
                     const origLum = 0.299 * oR + 0.587 * oG + 0.114 * oB;
                     for (let ci = 0; ci < rangedControls.length; ci++) {
-                        const ctrl = rangedControls[ci];
-                        const val = ctrl.value;
+                        const ctrl = rangedControls[ci]; const val = ctrl.value;
                         const weight = this._luminanceWeight(origLum, ctrl.range);
                         if (weight <= 0) continue;
                         if (ctrl.type === 'brightness') { r += (oR * val - oR) * weight; g += (oG * val - oG) * weight; b += (oB * val - oB) * weight; }
@@ -323,7 +354,6 @@ export class ImageEditor {
                         }
                     }
                 }
-
                 dst[i] = Math.round(r); dst[i+1] = Math.round(g); dst[i+2] = Math.round(b); dst[i+3] = a0;
             }
 
@@ -361,25 +391,23 @@ export class ImageEditor {
         ];
     }
 
-    // ── Controls management ──
+    // ── Controls management (auto-save on every change) ──
 
     _addControl(typeId, range = 'all') {
         const def = CONTROL_TYPES.find(c => c.id === typeId);
         if (!def) return;
         _ctrlIdCounter++;
-        this.currentState.controls.push({ id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: range });
-        this.isDirty = true;
+        this.currentState.controls = [...this.currentState.controls, { id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: range }];
         this._updateUIFromState();
         this.applyPreview();
-        this._updateButtonStates();
+        this._scheduleAutoSave();
     }
 
     _removeControl(ctrlId) {
         this.currentState.controls = this.currentState.controls.filter(c => c.id !== ctrlId);
-        this.isDirty = true;
         this._updateUIFromState();
         this.applyPreview();
-        this._updateButtonStates();
+        this._scheduleAutoSave();
     }
 
     _renderControlsList() {
@@ -421,7 +449,6 @@ export class ImageEditor {
         this._renderControlsList();
 
         const vs = this.panelEl.querySelector('#holaf-editor-video-section');
-        // Hide compare checkbox for videos (compare only works on images)
         const compareLabel = this.panelEl.querySelector('label[title="Split view: left = original, right = edited"]');
         if (compareLabel) compareLabel.style.display = this.nativeFps > 0 ? 'none' : '';
         if (vs) {
@@ -437,58 +464,39 @@ export class ImageEditor {
         }
     }
 
-    _updateButtonStates() {
-        const sb = this.panelEl?.querySelector('#holaf-editor-save-btn');
-        const cb = this.panelEl?.querySelector('#holaf-editor-cancel-btn');
-        if (sb) sb.disabled = !this.isDirty;
-        if (cb) cb.disabled = !this.isDirty;
-    }
-
     // ── Event listeners ──
 
     _attachListeners() {
         if (!this.panelEl) return;
 
-        // Add Control — uses createDialog for reliable positioning
         const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
         if (addBtn) {
             addBtn.onclick = async () => {
-                // Step 1: Choose control type
                 const typeButtons = CONTROL_TYPES.map(t => ({ text: t.label, value: t.id, type: 'confirm' }));
                 typeButtons.push({ text: "Cancel", value: null, type: 'cancel' });
-
                 const chosenType = await HolafPanelManager.createDialog({
-                    title: "Add Control",
-                    message: "Choose a control type:",
-                    buttons: typeButtons
+                    title: "Add Control", message: "Choose a control type:", buttons: typeButtons
                 });
                 if (!chosenType) return;
 
-                // Step 2: Choose range
                 const rangeOptions = [
-                    { text: 'All', value: 'all' },
-                    { text: 'Shadows', value: 'shadows' },
-                    { text: 'Midtones', value: 'midtones' },
-                    { text: 'Highlights', value: 'highlights' },
+                    { text: 'All', value: 'all' }, { text: 'Shadows', value: 'shadows' },
+                    { text: 'Midtones', value: 'midtones' }, { text: 'Highlights', value: 'highlights' },
                 ];
                 const rangeButtons = rangeOptions.map(r => ({ text: r.text, value: r.value, type: 'confirm' }));
                 rangeButtons.push({ text: "Cancel", value: null, type: 'cancel' });
-
                 const chosenRange = await HolafPanelManager.createDialog({
                     title: CONTROL_TYPES.find(t => t.id === chosenType).label + " — Range",
-                    message: "Apply to which luminance range?",
-                    buttons: rangeButtons
+                    message: "Apply to which luminance range?", buttons: rangeButtons
                 });
                 if (!chosenRange) return;
-
                 this._addControl(chosenType, chosenRange);
             };
         }
 
-        // Delegated events for controls list
         const list = this.panelEl.querySelector('#holaf-editor-controls-list');
         if (list) {
-            // Slider input
+            // Slider input → auto-save after debounce
             list.addEventListener('input', (e) => {
                 const slider = e.target.closest('input[type="range"]');
                 if (!slider) return;
@@ -501,12 +509,11 @@ export class ImageEditor {
                 ctrl.value = ctrl.type === 'hue' ? rawVal : rawVal / 100;
                 const valEl = container.querySelector('.holaf-editor-slider-value');
                 if (valEl) valEl.textContent = ctrl.type === 'hue' ? rawVal : Math.round(rawVal);
-                this.isDirty = true;
-                this._updateButtonStates();
                 this._schedulePreview();
+                this._scheduleAutoSave();
             });
 
-            // Double-click on container to reset control
+            // Double-click → reset control value
             list.addEventListener('dblclick', (e) => {
                 const container = e.target.closest('.holaf-editor-slider-container');
                 if (!container) return;
@@ -516,16 +523,15 @@ export class ImageEditor {
                 const def = CONTROL_TYPES.find(t => t.id === ctrl.type);
                 if (!def) return;
                 ctrl.value = def.default;
-                this.isDirty = true;
                 this._updateUIFromState();
                 this._schedulePreview();
-                this._updateButtonStates();
+                this._scheduleAutoSave();
             });
 
-            // Remove button click
+            // Remove button → remove control
             list.addEventListener('click', (e) => {
                 const btn = e.target.closest('.holaf-editor-remove-ctrl');
-                if (btn) { this._removeControl(btn.dataset.ctrlId); }
+                if (btn) this._removeControl(btn.dataset.ctrlId);
             });
         }
 
@@ -538,7 +544,8 @@ export class ImageEditor {
             const val = parseFloat(v);
             if (isNaN(val) || val <= 0) return;
             this.currentState.targetFps = val;
-            this.isDirty = true; this._updateButtonStates(); this.applyPreview();
+            this.applyPreview();
+            this._scheduleAutoSave();
             if (fi && fi.value != val) fi.value = val;
             if (fs && fs.value != val) fs.value = val;
         };
@@ -551,18 +558,14 @@ export class ImageEditor {
         }
         if (ic) ic.addEventListener('change', e => {
             this.currentState.interpolate = e.target.checked;
-            this.isDirty = true;
             if (e.target.checked && this.nativeFps > 0) setFps(this.nativeFps * 2);
             else if (!e.target.checked && this.nativeFps > 0) setFps(this.nativeFps);
-            this._updateButtonStates();
+            this._scheduleAutoSave();
         });
 
-        const sb = this.panelEl.querySelector('#holaf-editor-save-btn');
+        // Reset button
         const rb = this.panelEl.querySelector('#holaf-editor-reset-btn');
-        const cb = this.panelEl.querySelector('#holaf-editor-cancel-btn');
-        if (sb) sb.onclick = () => this._saveEdits();
         if (rb) rb.onclick = () => this._resetEdits();
-        if (cb) cb.onclick = () => this._cancelEdits();
 
         // Compare toggle
         const compareCb = this.panelEl.querySelector('#holaf-editor-compare-check');
@@ -573,49 +576,7 @@ export class ImageEditor {
         }
     }
 
-    // ── Save / Reset / Cancel ──
-
-    async save() { await this._saveEdits(); }
-
-    async _saveEdits() {
-        if (!this.activeImage) return;
-        const path = this.activeImage.path_canon;
-        if (this.nativeFps > 0 && this.currentState.targetFps)
-            this.currentState.playbackRate = this.currentState.targetFps / this.nativeFps;
-
-        const btn = this.panelEl?.querySelector('#holaf-editor-save-btn');
-        if (btn) btn.disabled = true;
-        this._showToast("Saving...", 'info', 1000);
-        try {
-            const r = await fetch('/holaf/images/save-edits', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: path, edits: this.currentState })
-            });
-            if (r.ok) {
-                this.isDirty = false;
-                this.originalState = { ...this.currentState };
-                this._updateButtonStates();
-                this._updateGlobalImageState(path, true);
-                if (this.viewer?.gallery) this.viewer.gallery.refreshThumbnail(path);
-                if (this.nativeFps > 0) {
-                    const needs = this.currentState.interpolate || (this.currentState.targetFps && this.currentState.targetFps !== this.nativeFps);
-                    if (needs) this._triggerProcessVideoBackground(path);
-                    else this._showToast("Edits Saved", 'success');
-                } else this._showToast("Edits Saved", 'success');
-            }
-        } catch (e) { HolafPanelManager.createDialog({ title: "Save Error", message: e.message }); }
-        finally { if (btn) btn.disabled = !this.isDirty; }
-    }
-
-    _cancelEdits() {
-        if (!this.isDirty) return;
-        this._compareCleanup();
-        this.currentState = { ...this.originalState };
-        this.isDirty = false;
-        this._updateUIFromState();
-        this.applyPreview();
-        this._updateButtonStates();
-    }
+    // ── Reset ──
 
     async _resetEdits() {
         if (!this.activeImage) return;
@@ -629,20 +590,17 @@ export class ImageEditor {
             await fetch('/holaf/images/delete-edits', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path_canon: path }) });
             if (this.processedVideoUrl)
                 await fetch('/holaf/images/rollback-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path_canon: path }) });
-            this.currentState = { ...DEFAULT_EDIT_STATE };
+
+            this.currentState = DEFAULT_EDIT_STATE();
             if (this.nativeFps > 0) this.currentState.targetFps = this.nativeFps;
-            this.originalState = { ...this.currentState };
-            this.isDirty = false;
             this.processedVideoUrl = null;
             this._dispatchVideoOverride(null);
             this._clearCanvasCache();
-            // Restore original image src if it was replaced by a blob URL
             this._getPreviewElements().forEach(el => {
                 if (el && el.dataset.originalSrc) { el.src = el.dataset.originalSrc; delete el.dataset.originalSrc; }
             });
             this._updateUIFromState();
             this.applyPreview();
-            this._updateButtonStates();
             this._updateGlobalImageState(path, false);
             if (this.viewer?.gallery) this.viewer.gallery.refreshThumbnail(path);
             this._showToast("Edits Reset", 'success');
@@ -665,43 +623,34 @@ export class ImageEditor {
         finally { document.dispatchEvent(new Event('holaf-video-processing-end')); }
     }
 
-    // ── Compare mode (canvas-based split like remote comparer) ──
+    // ── Compare mode ──
 
     _toggleCompareMode(active) {
         if (!this.activeImage) { this._compareCleanup(); return; }
-
-        if (!active) {
-            this._compareCleanup();
-            return;
-        }
+        if (!active) { this._compareCleanup(); return; }
 
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const editedImg = zoomView?.querySelector('img');
         if (!zoomView || !editedImg || !editedImg.src) return;
 
-        // Clean up any previous compare state (including event listeners)
         if (this._compareCleanups) { this._compareCleanups.forEach(fn => fn()); this._compareCleanups = null; }
         if (this._compareRaf) { cancelAnimationFrame(this._compareRaf); this._compareRaf = null; }
         if (this._compareResizeObserver) { this._compareResizeObserver.disconnect(); this._compareResizeObserver = null; }
         const oldCanvas = document.getElementById('holaf-compare-canvas');
         if (oldCanvas) oldCanvas.remove();
 
-        // Create canvas overlay
         const canvas = document.createElement('canvas');
         canvas.id = 'holaf-compare-canvas';
         canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:50;pointer-events:none;';
         zoomView.appendChild(canvas);
 
-        // Resize canvas to match zoom view dimensions
         const rect = zoomView.getBoundingClientRect();
         canvas.width = rect.width;
         canvas.height = rect.height;
         const ctx = canvas.getContext('2d');
 
-        // Determine original URL and edited URL
         const originalUrl = editedImg.dataset.originalSrc || (
-            window.location.origin + '/view?' +
-            new URLSearchParams({
+            window.location.origin + '/view?' + new URLSearchParams({
                 filename: this.activeImage.filename,
                 subfolder: this.activeImage.subfolder || '',
                 type: 'output'
@@ -709,11 +658,8 @@ export class ImageEditor {
         );
         const editedUrl = editedImg.src;
 
-        // Load both images
-        const origImg = new Image();
-        origImg.crossOrigin = 'anonymous';
-        const editImg = new Image();
-        editImg.crossOrigin = 'anonymous';
+        const origImg = new Image(); origImg.crossOrigin = 'anonymous';
+        const editImg = new Image(); editImg.crossOrigin = 'anonymous';
 
         let imagesLoaded = 0;
         const onLoad = () => {
@@ -721,25 +667,19 @@ export class ImageEditor {
             if (imagesLoaded < 2) return;
             this._compareStartLoop(zoomView, canvas, ctx, origImg, editImg, editedUrl);
         };
-        origImg.onload = onLoad;
-        editImg.onload = onLoad;
-        origImg.src = originalUrl;
-        editImg.src = editedUrl;
+        origImg.onload = onLoad; editImg.onload = onLoad;
+        origImg.src = originalUrl; editImg.src = editedUrl;
 
-        // Resize observer to update canvas dimensions
         this._compareResizeObserver = new ResizeObserver(() => {
             const r = zoomView.getBoundingClientRect();
-            canvas.width = r.width;
-            canvas.height = r.height;
+            canvas.width = r.width; canvas.height = r.height;
         });
         this._compareResizeObserver.observe(zoomView);
     }
 
     _compareStartLoop(zoomView, canvas, ctx, origImg, editImg, initialEditedUrl) {
-        // Read current CSS filter from the edited element
         const editedEl = zoomView.querySelector('img');
         let filterValue = editedEl ? getComputedStyle(editedEl).filter : 'none';
-
         let mouseX = canvas.width / 2;
         let isOver = false;
 
@@ -757,20 +697,17 @@ export class ImageEditor {
             () => zoomView.removeEventListener('mouseleave', onLeave),
         ];
 
-        // Track the edited image src to detect blob URL changes
         let currentEditedSrc = initialEditedUrl;
 
         const render = () => {
             const w = canvas.width, h = canvas.height;
             if (w === 0 || h === 0) { this._compareRaf = requestAnimationFrame(render); return; }
 
-            // Re-read filter if dirty (slider changed)
             if (this._compareFilterDirty) {
                 this._compareFilterDirty = false;
                 const el = zoomView.querySelector('img');
                 if (el) {
                     filterValue = getComputedStyle(el).filter;
-                    // If the edited image src changed (new blob from ranged processing), reload
                     if (el.src !== currentEditedSrc) {
                         currentEditedSrc = el.src;
                         editImg.src = currentEditedSrc;
@@ -778,7 +715,6 @@ export class ImageEditor {
                 }
             }
 
-            // Skip rendering if edited image is still loading after a src change
             if (!editImg.complete || editImg.naturalWidth === 0) {
                 this._compareRaf = requestAnimationFrame(render);
                 return;
@@ -786,69 +722,49 @@ export class ImageEditor {
 
             ctx.clearRect(0, 0, w, h);
 
-            // Read the zoom/pan transform from the underlying img element
-            // so the compare canvas matches the zoomed view
             const editedEl2 = zoomView.querySelector('img');
             let zScale = 1, zTx = 0, zTy = 0;
             if (editedEl2) {
                 const matrix = new DOMMatrix(getComputedStyle(editedEl2).transform);
-                zScale = matrix.a; // scaleX (uniform scale assumed)
-                zTx = matrix.e;    // translateX
-                zTy = matrix.f;    // translateY
+                zScale = matrix.a; zTx = matrix.e; zTy = matrix.f;
             }
 
-            // Calculate draw rect (object-fit: contain) at base scale
             const imgAspect = origImg.naturalWidth / origImg.naturalHeight;
             const canvasAspect = w / h;
             let dw, dh, ox = 0, oy = 0;
-            if (imgAspect > canvasAspect) {
-                dw = w; dh = w / imgAspect; oy = (h - dh) / 2;
-            } else {
-                dh = h; dw = h * imgAspect; ox = (w - dw) / 2;
-            }
+            if (imgAspect > canvasAspect) { dw = w; dh = w / imgAspect; oy = (h - dh) / 2; }
+            else { dh = h; dw = h * imgAspect; ox = (w - dw) / 2; }
 
-            // Apply zoom/pan transform to match the underlying image
             ctx.save();
             ctx.translate(zTx, zTy);
             ctx.scale(zScale, zScale);
-
-            // 1. Draw ORIGINAL image (full)
             ctx.drawImage(origImg, ox, oy, dw, dh);
 
-            // 2. Draw EDITED image (clipped to left of mouse, with CSS filter)
             if (isOver && mouseX !== null) {
-                // Convert mouse X from screen space to canvas transform space
                 const localMouseX = (mouseX - zTx) / zScale;
-
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(ox, oy, Math.max(0, localMouseX - ox), dh);
                 ctx.clip();
-
                 ctx.filter = filterValue;
                 ctx.drawImage(editImg, ox, oy, dw, dh);
                 ctx.filter = 'none';
-
                 ctx.restore();
 
-                // 3. Split line (drawn in transform space, compensate lineWidth)
                 if (localMouseX >= ox && localMouseX <= ox + dw) {
                     ctx.beginPath();
                     ctx.moveTo(localMouseX, oy);
                     ctx.lineTo(localMouseX, oy + dh);
                     ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-                    ctx.lineWidth = 2 / zScale; // Compensate for scale
+                    ctx.lineWidth = 2 / zScale;
                     ctx.globalCompositeOperation = 'difference';
                     ctx.stroke();
                     ctx.globalCompositeOperation = 'source-over';
                 }
             }
-
-            ctx.restore(); // Remove zoom/pan transform
-
+            ctx.restore();
             this._compareRaf = requestAnimationFrame(render);
         };
-
         render();
     }
 
@@ -859,7 +775,6 @@ export class ImageEditor {
         if (this._compareResizeObserver) { this._compareResizeObserver.disconnect(); this._compareResizeObserver = null; }
         if (this._compareCleanups) { this._compareCleanups.forEach(fn => fn()); this._compareCleanups = null; }
         this._compareFilterDirty = false;
-        // Reset checkbox only on explicit cleanup (not during toggle setup)
         const cb = this.panelEl?.querySelector('#holaf-editor-compare-check');
         if (cb && cb.checked) cb.checked = false;
     }
