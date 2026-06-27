@@ -52,7 +52,6 @@ const holafImageViewer = {
     _showCheckTimer: null,
     _statsDeferTimer: null,
     _statsDeferralScheduled: false,
-    _autoLoadingAll: false,
 
     // --- Robust Filtering State ---
     isLoading: false,
@@ -160,31 +159,7 @@ const holafImageViewer = {
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
 
-            // Populate toolbar once
-            const toolbar = document.getElementById('holaf-viewer-toolbar');
-            if (toolbar && !toolbar.querySelector('#holaf-sort-toggle')) {
-                const sortBtn = document.createElement('button');
-                sortBtn.id = 'holaf-sort-toggle';
-                sortBtn.style.cssText = 'cursor:pointer;background:none;border:1px solid var(--holaf-border-color);color:var(--holaf-text-primary);border-radius:3px;padding:2px 8px;font-size:11px;margin:4px 8px;';
-                sortBtn.title = 'Toggle sort order';
 
-                const updateBtn = () => {
-                    const o = imageViewerState.getState().filters.sort_order || 'desc';
-                    sortBtn.textContent = o === 'desc' ? '▼ Newest' : '▲ Oldest';
-                };
-                updateBtn();
-
-                sortBtn.onclick = () => {
-                    const cur = imageViewerState.getState().filters.sort_order || 'desc';
-                    const next = cur === 'desc' ? 'asc' : 'desc';
-                    imageViewerState.setState({ filters: { sort_order: next } });
-                    this.saveSettings({ sort_order: next });
-                    updateBtn();
-                    this.triggerFilterChange(true);
-                };
-
-                toolbar.appendChild(sortBtn);
-            }
 
             // Immediate load on show, no debounce needed here
             this.triggerFilterChange(true); 
@@ -672,8 +647,6 @@ const holafImageViewer = {
         const { filters } = imageViewerState.getState();
         const payload = { ...filters };
         delete payload.locked_folders;
-        payload.page_size = 500;
-        payload.offset = offset;
 
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
@@ -722,9 +695,8 @@ const holafImageViewer = {
 
             imageViewerState.setState({ selectedImages: new Set() });
 
-            const data = await this._fetchFilteredImages(0);
+            const data = await this._fetchFilteredImages();
             const newImages = data.images || [];
-            this._hasMore = data.has_more || false;
 
             const newSelectedImages = new Set();
             if (currentSelectedPaths.size > 0) {
@@ -758,11 +730,6 @@ const holafImageViewer = {
 
             this.updateStatusBar(data.filtered_count, data.total_db_count);
 
-            // Auto-load remaining pages in the background (yields between batches)
-            if (this._hasMore && !this._loadingMore && !this._autoLoadingAll) {
-                this._autoLoadingAll = true;
-                setTimeout(() => this.loadMoreImages(), 100);
-            }
 
             const allThumbsGenerated = data.total_db_count > 0 && data.generated_thumbnails_count >= data.total_db_count;
             imageViewerState.setState({
@@ -802,35 +769,7 @@ const holafImageViewer = {
         }
     },
 
-    async loadMoreImages() {
-        if (this.isLoading || this._loadingMore || !this._hasMore) return;
-        this._loadingMore = true;
-        
-        try {
-            while (this._hasMore) {
-                const currentImages = imageViewerState.getState().images;
-                const data = await this._fetchFilteredImages(currentImages.length);
-                const moreImages = data.images || [];
-                this._hasMore = data.has_more || false;
-                
-                if (moreImages.length > 0) {
-                    const allImages = [...currentImages, ...moreImages];
-                    imageViewerState.setState({ images: allImages });
-                    this.syncGallery(allImages);
-                } else {
-                    break;
-                }
-                
-                // Yield to main thread between pages to keep UI responsive
-                await new Promise(r => setTimeout(r, 0));
-            }
-        } catch (e) {
-            console.error("[Holaf ImageViewer] Error loading more images:", e);
-        } finally {
-            this._loadingMore = false;
-            console.log(`[Holaf] All ${this._hasMore ? 'available ' : ''}images loaded.`);
-        }
-    },
+
 
     syncGallery: function (images) {
         if (this.panelElements) { 

@@ -79,7 +79,6 @@ export async function loadSettings(viewer) {
             filters: {
                 folder_filters: toArray(fetchedSettings.folder_filters, null),
                 format_filters: toArray(fetchedSettings.format_filters, null),
-                sort_order: fetchedSettings.sort_order || 'desc',
                 locked_folders: toArray(fetchedSettings.locked_folders, []),
                 search_text: toString(fetchedSettings.search_text, ''),
                 startDate: toString(fetchedSettings.startDate, ''),

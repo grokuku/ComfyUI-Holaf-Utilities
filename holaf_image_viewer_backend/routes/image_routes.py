@@ -178,20 +178,12 @@ async def list_images_route(request: web.Request):
 
         # Build the main data fetching query
         group_by = f"GROUP BY i.id HAVING COUNT(DISTINCT t.name) = {len(tags_filter)}" if tags_filter else ""
-        sort_order = filters.get('sort_order', 'desc')
-        order_dir = "ASC" if sort_order == 'asc' else "DESC"
-        order_by = f"ORDER BY i.mtime {order_dir}"
+        order_by = "ORDER BY i.mtime DESC"
         
-        # Pagination: limit results to prevent massive JSON payloads
-        page_size = min(int(filters.get('page_size', 500)), 2000)
-        offset = int(filters.get('offset', 0))
-        limit_clause = f"LIMIT {page_size} OFFSET {offset}"
-        
-        main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by} {limit_clause}"
+        main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by}"
         
         cursor.execute(main_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]
-        has_more = (offset + page_size) < filtered_count
         
         t_main_query = time.perf_counter()
         
@@ -210,8 +202,7 @@ async def list_images_route(request: web.Request):
                 "filtered_count": filtered_count,
                 "total_db_count": stats["total_db_count"],
                 "generated_thumbnails_count": stats["generated_thumbnails_count"],
-                "has_more": has_more
-            })
+                })
             serialization_method = "orjson"
         except ImportError:
             body_content = json.dumps({
@@ -219,8 +210,7 @@ async def list_images_route(request: web.Request):
                 "filtered_count": filtered_count,
                 "total_db_count": stats["total_db_count"],
                 "generated_thumbnails_count": stats["generated_thumbnails_count"],
-                "has_more": has_more
-            }).encode('utf-8')
+                }).encode('utf-8')
         
         response = web.Response(body=body_content, content_type='application/json')
         

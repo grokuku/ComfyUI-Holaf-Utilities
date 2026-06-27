@@ -18,7 +18,6 @@ class ImageViewerState {
             filters: {
                 folder_filters: [],
                 format_filters: [],
-                sort_order: 'desc',
                 startDate: '',
                 endDate: '',
                 filename_search: '',
