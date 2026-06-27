@@ -68,16 +68,62 @@ function resetTransform(state, element) {
     element.style.transformOrigin = '0 0'; // Ensure origin is consistent
 }
 
+// --- Batch preload: load N images ahead when user stops navigating ---
+const _preloadJobs = new Set();
+let _preloadDebounceTimer = null;
+const PRELOAD_BATCH_SIZE = 10;
+
+function _isMediaImage(image) {
+    return image && !['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format)
+        && !['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format);
+}
+
+function _cancelPreloads() {
+    for (const img of _preloadJobs) {
+        img.src = '';
+    }
+    _preloadJobs.clear();
+}
+
+function _preloadBatch(viewer) {
+    const state = imageViewerState.getState();
+    if (state.currentNavIndex < 0) return;
+
+    // Cancel stale batch preloads
+    _cancelPreloads();
+
+    const start = Math.max(0, state.currentNavIndex + 1);
+    const end = Math.min(state.images.length - 1, state.currentNavIndex + PRELOAD_BATCH_SIZE);
+
+    for (let i = start; i <= end; i++) {
+        const img = state.images[i];
+        if (_isMediaImage(img)) {
+            const preloader = new Image();
+            _preloadJobs.add(preloader);
+            preloader.onload = preloader.onerror = () => _preloadJobs.delete(preloader);
+            preloader.src = getFullImageUrl(img);
+        }
+    }
+}
+
 function preloadNextImage(viewer) {
     const state = imageViewerState.getState();
     if (state.currentNavIndex < 0 || (state.currentNavIndex + 1) >= state.images.length) return;
 
+    // Immediately preload just the next image (instant response on next arrow press)
     const nextImage = state.images[state.currentNavIndex + 1];
-    // Only preload images, not videos or audio
-    if (nextImage && !['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(nextImage.format) && !['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(nextImage.format)) {
+    if (_isMediaImage(nextImage)) {
         const preloader = new Image();
+        _preloadJobs.add(preloader);
+        preloader.onload = preloader.onerror = () => _preloadJobs.delete(preloader);
         preloader.src = getFullImageUrl(nextImage);
     }
+
+    // Batch preload debounced — fires after user stops navigating for 400ms
+    clearTimeout(_preloadDebounceTimer);
+    _preloadDebounceTimer = setTimeout(() => {
+        _preloadBatch(viewer);
+    }, 400);
 }
 
 export function getFullImageUrl(image) {
@@ -94,8 +140,20 @@ export function getFullImageUrl(image) {
 
 /**
  * Updates the container to show either the Image or Video element based on the file type.
+ * Uses a load serial to prevent stale callbacks from overwriting the current image
+ * when navigating rapidly.
  */
-function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformState) {
+let _loadSerial = 0;
+let _loadDelayTimer = null;
+
+function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformState, immediate) {
+    // Cancel any pending delayed load
+    if (_loadDelayTimer) {
+        clearTimeout(_loadDelayTimer);
+        _loadDelayTimer = null;
+    }
+
+    const serial = ++_loadSerial; // Each call gets a unique serial
     const isVideo = ['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format);
     const isAudio = ['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format);
     const url = getFullImageUrl(image);
@@ -193,23 +251,36 @@ function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformS
                 container.appendChild(loadingEl);
             }, 1000);
 
-            // Pre-load full image
-            const loader = new Image();
-            loader.onload = () => {
-                clearTimeout(loadingTimer);
-                if (loadingEl) loadingEl.remove();
-                resetTransform(transformState, imgEl);
-                imgEl.src = url;
-                imgEl.style.filter = '';
-                setupZoomAndPan(transformState, container, imgEl);
-                _applyEditorPreview(viewer, imgEl);
+            // Pre-load full image — guard against stale callbacks from rapid navigation
+            const doLoad = () => {
+                const loader = new Image();
+                loader.onload = () => {
+                    if (serial !== _loadSerial) return; // Stale callback — ignore
+                    clearTimeout(loadingTimer);
+                    if (loadingEl) loadingEl.remove();
+                    resetTransform(transformState, imgEl);
+                    imgEl.src = url;
+                    imgEl.style.filter = '';
+                    setupZoomAndPan(transformState, container, imgEl);
+                    _applyEditorPreview(viewer, imgEl);
+                };
+                loader.onerror = () => {
+                    if (serial !== _loadSerial) return; // Stale callback — ignore
+                    clearTimeout(loadingTimer);
+                    if (loadingEl) loadingEl.remove();
+                    imgEl.style.filter = '';
+                };
+                loader.src = url;
             };
-            loader.onerror = () => {
-                clearTimeout(loadingTimer);
-                if (loadingEl) loadingEl.remove();
-                imgEl.style.filter = '';
-            };
-            loader.src = url;
+            // Delay full-size load when navigating (arrow keys), load immediately when entering view
+            if (immediate) {
+                doLoad();
+            } else {
+                _loadDelayTimer = setTimeout(() => {
+                    _loadDelayTimer = null;
+                    if (serial === _loadSerial) doLoad();
+                }, 200);
+            }
         }
     }
 }
@@ -230,7 +301,7 @@ export function showZoomedView(viewer, image) {
     const galleryEl = document.getElementById('holaf-viewer-gallery');
     if (galleryEl) galleryEl.style.display = 'none';
 
-    _updateMediaSource(viewer, image, view, imgEl, videoEl, viewer.zoomViewState);
+    _updateMediaSource(viewer, image, view, imgEl, videoEl, viewer.zoomViewState, true);
 
     preloadNextImage(viewer);
 }
@@ -273,7 +344,7 @@ export function showFullscreenView(viewer, image) {
     const { overlay, img: imgEl, video: videoEl } = viewer.fullscreenElements;
     overlay.style.display = 'flex';
 
-    _updateMediaSource(viewer, image, overlay, imgEl, videoEl, viewer.fullscreenViewState);
+    _updateMediaSource(viewer, image, overlay, imgEl, videoEl, viewer.fullscreenViewState, true);
 
     preloadNextImage(viewer);
 }
@@ -411,12 +482,12 @@ function _restoreDeletedImage(viewer, img, allImages, originalIdx, currentMode) 
     // Re-update the media source to show the restored image
     if (currentMode === 'fullscreen') {
         const { overlay, img: fImg, video: fVid } = viewer.fullscreenElements;
-        _updateMediaSource(viewer, img, overlay, fImg, fVid, viewer.fullscreenViewState);
+        _updateMediaSource(viewer, img, overlay, fImg, fVid, viewer.fullscreenViewState, true);
     } else if (currentMode === 'zoom') {
         const zView = document.getElementById('holaf-viewer-zoom-view');
         const zImg = zView?.querySelector('img');
         const zVid = viewer.elements?.zoomVideo;
-        _updateMediaSource(viewer, img, zView, zImg, zVid, viewer.zoomViewState);
+        _updateMediaSource(viewer, img, zView, zImg, zVid, viewer.zoomViewState, true);
     }
 
     window.holaf.toastManager?.show({
