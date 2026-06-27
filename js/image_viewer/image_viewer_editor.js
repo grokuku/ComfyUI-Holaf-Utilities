@@ -249,11 +249,19 @@ export class ImageEditor {
                 const loadImg = new Image();
                 loadImg.crossOrigin = 'anonymous';
                 await new Promise((res, rej) => { loadImg.onload = res; loadImg.onerror = rej; loadImg.src = originalUrl; });
+                // Downscale to max 1920px for preview — 4x fewer pixels = 4x faster pixel loop
+                const MAX_PREVIEW_DIM = 1920;
+                let pw = loadImg.naturalWidth, ph = loadImg.naturalHeight;
+                if (pw > MAX_PREVIEW_DIM || ph > MAX_PREVIEW_DIM) {
+                    const scale = MAX_PREVIEW_DIM / Math.max(pw, ph);
+                    pw = Math.round(pw * scale);
+                    ph = Math.round(ph * scale);
+                }
                 this._previewCanvas = document.createElement('canvas');
-                this._previewCanvas.width = loadImg.naturalWidth;
-                this._previewCanvas.height = loadImg.naturalHeight;
-                this._previewCanvas.getContext('2d').drawImage(loadImg, 0, 0);
-                this._originalImgData = this._previewCanvas.getContext('2d').getImageData(0, 0, this._previewCanvas.width, this._previewCanvas.height);
+                this._previewCanvas.width = pw;
+                this._previewCanvas.height = ph;
+                this._previewCanvas.getContext('2d').drawImage(loadImg, 0, 0, pw, ph);
+                this._originalImgData = this._previewCanvas.getContext('2d').getImageData(0, 0, pw, ph);
             }
             const src = this._originalImgData.data, w = this._previewCanvas.width, h = this._previewCanvas.height;
             const dst = new Uint8ClampedArray(src.length);
