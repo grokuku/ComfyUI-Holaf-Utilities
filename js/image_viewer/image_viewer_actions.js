@@ -199,13 +199,124 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
  * @param {object} viewer - The main image viewer instance.
  */
 export async function handleDelete(viewer) {
-    if (await handleDeletion(viewer, false)) {
-        imageViewerState.setState({
-            selectedImages: new Set(),
-            activeImage: null,
-            currentNavIndex: -1
+    const imagesToProcess = _getTargets();
+    if (imagesToProcess.length === 0) return;
+
+    const isAnyFileTrashed = imagesToProcess.some(img => img.is_trashed);
+    if (isAnyFileTrashed) {
+        HolafPanelManager.createDialog({
+            title: "Action Not Allowed",
+            message: "This action cannot be performed on items already in the trash. Use 'Restore' or 'Empty Trash'.",
+            buttons: [{ text: "OK" }],
+            parentElement: document.body
         });
-        viewer.loadFilteredImages();
+        return;
+    }
+
+    const pathsToDelete = imagesToProcess.map(img => img.path_canon);
+
+    // Step 1: Confirmation dialog (before any UI change)
+    const confirmed = await HolafPanelManager.createDialog({
+        title: "Confirm Delete",
+        message: `Are you sure you want to move ${imagesToProcess.length} image(s) to the trashcan?`,
+        buttons: [
+            { text: "Cancel", value: false, type: "cancel" },
+            { text: "Delete", value: true, type: "danger" }
+        ],
+        parentElement: document.body
+    });
+    if (!confirmed) return;
+
+    // Step 2: Optimistic update — remove from UI immediately
+    const deletedPaths = new Set(pathsToDelete);
+    const savedImages = imageViewerState.getState().images;
+    const savedSelectedPaths = new Set(imageViewerState.getState().selectedPaths);
+    const wasActiveImage = imageViewerState.getState().activeImage;
+    const wasNavIndex = imageViewerState.getState().currentNavIndex;
+
+    const remainingImages = savedImages.filter(img => !deletedPaths.has(img.path_canon));
+    const remainingSelected = new Set();
+    savedSelectedPaths.forEach(p => { if (!deletedPaths.has(p)) remainingSelected.add(p); });
+    const newActiveImage = wasActiveImage && !deletedPaths.has(wasActiveImage.path_canon) ? wasActiveImage : null;
+    const newNavIndex = newActiveImage ? wasNavIndex : -1;
+
+    imageViewerState.setState({
+        images: remainingImages,
+        selectedImages: new Set(),
+        selectedPaths: remainingSelected,
+        activeImage: newActiveImage,
+        currentNavIndex: newNavIndex
+    });
+    if (viewer.syncGallery) viewer.syncGallery(remainingImages);
+    viewer._updateActionButtonsState();
+
+    // Step 3: Background deletion
+    try {
+        const response = await fetch("/holaf/images/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paths_canon: pathsToDelete })
+        });
+        const result = await response.json();
+
+        if (response.ok || response.status === 207) {
+            if (result.deleted_count > 0) {
+                window.holaf.toastManager.show({
+                    message: `${result.deleted_count} file(s) moved to trash.`,
+                    type: 'success'
+                });
+            }
+            if (result.details && result.details.length > 0) {
+                // Some files failed to delete on server — restore all
+                imageViewerState.setState({
+                    images: savedImages,
+                    selectedImages: new Set(),
+                    selectedPaths: savedSelectedPaths,
+                    activeImage: wasActiveImage,
+                    currentNavIndex: wasNavIndex
+                });
+                if (viewer.syncGallery) viewer.syncGallery(savedImages);
+                viewer._updateActionButtonsState();
+                HolafPanelManager.createDialog({
+                    title: "Deletion Error",
+                    message: result.message || 'Some files could not be deleted.',
+                    buttons: [{ text: "OK" }],
+                    parentElement: document.body
+                });
+            }
+        } else {
+            // Server error — restore
+            imageViewerState.setState({
+                images: savedImages,
+                selectedImages: new Set(),
+                selectedPaths: savedSelectedPaths,
+                activeImage: wasActiveImage,
+                currentNavIndex: wasNavIndex
+            });
+            if (viewer.syncGallery) viewer.syncGallery(savedImages);
+            viewer._updateActionButtonsState();
+            HolafPanelManager.createDialog({
+                title: "Server Error",
+                message: `Failed to delete images: ${result.message || 'Unknown server error.'}`,
+                buttons: [{ text: "OK" }],
+                parentElement: document.body
+            });
+        }
+    } catch (error) {
+        // Network error — restore
+        imageViewerState.setState({
+            images: savedImages,
+            selectedImages: new Set(),
+            selectedPaths: savedSelectedPaths,
+            activeImage: wasActiveImage,
+            currentNavIndex: wasNavIndex
+        });
+        if (viewer.syncGallery) viewer.syncGallery(savedImages);
+        viewer._updateActionButtonsState();
+        window.holaf.toastManager.show({
+            message: `Delete failed: ${error.message}. Images restored.`,
+            type: 'error'
+        });
     }
 }
 

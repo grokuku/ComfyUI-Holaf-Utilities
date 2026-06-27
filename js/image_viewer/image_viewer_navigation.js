@@ -11,6 +11,7 @@
 import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
 import { HolafPanelManager, dialogState } from '../holaf_panel_manager.js';
+import { getThumbnailUrl } from './image_viewer_gallery.js';
 
 function _applyEditorPreview(viewer, mediaEl) {
     if (!viewer.editor || !mediaEl) return;
@@ -183,13 +184,38 @@ function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformS
         if (imgEl) {
             imgEl.style.display = 'block';
 
-            // Pre-load image
+            // Show thumbnail placeholder immediately if available in cache
+            const thumbUrl = getThumbnailUrl(image.path_canon);
+            if (thumbUrl) {
+                imgEl.src = thumbUrl;
+                imgEl.style.filter = 'blur(4px)';
+                resetTransform(transformState, imgEl);
+            }
+
+            // Loading spinner (shown after 1s if full image hasn't loaded yet)
+            let loadingEl = null;
+            const loadingTimer = setTimeout(() => {
+                loadingEl = document.createElement('div');
+                loadingEl.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:100;pointer-events:none;font-size:24px;color:rgba(255,255,255,0.7);text-shadow:0 0 8px rgba(0,0,0,0.8);';
+                loadingEl.innerHTML = '\u23F3';
+                container.appendChild(loadingEl);
+            }, 1000);
+
+            // Pre-load full image
             const loader = new Image();
             loader.onload = () => {
+                clearTimeout(loadingTimer);
+                if (loadingEl) loadingEl.remove();
                 resetTransform(transformState, imgEl);
                 imgEl.src = url;
+                imgEl.style.filter = '';
                 setupZoomAndPan(transformState, container, imgEl);
                 _applyEditorPreview(viewer, imgEl);
+            };
+            loader.onerror = () => {
+                clearTimeout(loadingTimer);
+                if (loadingEl) loadingEl.remove();
+                imgEl.style.filter = '';
             };
             loader.src = url;
         }

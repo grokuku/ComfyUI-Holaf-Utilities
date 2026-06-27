@@ -1125,5 +1125,10 @@ export {
     ensureImageVisible,
     alignImageOnExit,
     refreshThumbnailInGallery,
-    forceRelayout
+    forceRelayout,
+    getThumbnailUrl
 };
+
+function getThumbnailUrl(pathCanon) {
+    return thumbnailCache.get(pathCanon);
+}
