@@ -566,6 +566,17 @@ def sync_image_database_blocking():
         if stale_canons:
             deleted_count = len(stale_canons)
             print(f"🔵 [Holaf-ImageViewer] Found {len(stale_canons)} stale image entries to remove from DB.")
+            
+            # Delete orphan thumbnail files before removing DB entries
+            thumb_dir = holaf_utils.THUMBNAIL_CACHE_DIR
+            for canon in stale_canons:
+                thumb_hash = db_images[canon].get('thumb_hash')
+                if thumb_hash:
+                    thumb_path = os.path.join(thumb_dir, f"{thumb_hash}.jpg")
+                    if os.path.exists(thumb_path):
+                        try: os.remove(thumb_path)
+                        except OSError: pass
+            
             placeholders = ','.join('?' for _ in stale_canons)
             cursor.execute(f"DELETE FROM images WHERE path_canon IN ({placeholders}) AND is_trashed = 0", tuple(stale_canons))
             conn.commit()

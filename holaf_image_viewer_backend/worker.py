@@ -199,13 +199,15 @@ def run_thumbnail_generation_worker(stop_event):
     print("🔵 [Holaf-ImageViewer-Worker] Thumbnail generation worker started.")
     output_dir = folder_paths.get_output_directory()
     batch_size_for_query = 1
+    conn_worker_db = None  # Persistent connection across idle cycles
 
     while not stop_event.is_set():
-        conn_worker_db = None
         image_to_process_path_canon = None
         worker_exception = None
         try:
-            conn_worker_db = holaf_database.get_db_connection()
+            # Reuse connection if still open, otherwise create one
+            if not conn_worker_db:
+                conn_worker_db = holaf_database.get_db_connection()
             cursor = conn_worker_db.cursor()
             image_row_to_process = None
 
@@ -227,15 +229,15 @@ def run_thumbnail_generation_worker(stop_event):
                 """
                 cursor.execute(normal_query, (batch_size_for_query,))
                 image_row_to_process = cursor.fetchone()
-            
-            conn_worker_db.commit() 
+
+            conn_worker_db.commit()
 
             if not image_row_to_process:
-                holaf_database.close_db_connection()
-                conn_worker_db = None
+                # No work: keep connection open, just sleep
                 stop_event.wait(WORKER_IDLE_SLEEP_SECONDS)
                 continue
-            
+
+            # Work found: close connection before processing (thumbnail generation is CPU-bound)
             holaf_database.close_db_connection()
             conn_worker_db = None
 
@@ -299,4 +301,7 @@ def run_thumbnail_generation_worker(stop_event):
                 holaf_database.close_db_connection(exception=worker_exception)
             image_to_process_path_canon = None
 
+    # Clean up persistent connection on exit
+    if conn_worker_db:
+        holaf_database.close_db_connection()
     print("🔵 [Holaf-ImageViewer-Worker] Thumbnail generation worker stopped.")
