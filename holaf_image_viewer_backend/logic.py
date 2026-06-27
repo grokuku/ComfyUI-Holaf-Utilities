@@ -233,6 +233,27 @@ def _update_folder_metadata_cache_blocking(cursor):
         print(f"🔴 [Holaf-Logic] CRITICAL: Failed to rebuild folder metadata cache: {e}")
         raise
 
+
+def _increment_folder_count(cursor, folder_path):
+    """Incrementally increases the image count for a folder."""
+    cursor.execute("""
+        INSERT INTO folder_metadata (path_canon, image_count, last_calculated_at)
+        VALUES (?, 1, ?)
+        ON CONFLICT(path_canon) DO UPDATE SET
+            image_count = image_count + 1,
+            last_calculated_at = ?
+    """, (folder_path, time.time(), time.time()))
+
+
+def _decrement_folder_count(cursor, folder_path):
+    """Incrementally decreases the image count for a folder."""
+    cursor.execute("""
+        UPDATE folder_metadata
+        SET image_count = MAX(0, image_count - 1), last_calculated_at = ?
+        WHERE path_canon = ?
+    """, (time.time(), folder_path))
+
+
 def _update_image_tags_in_db(cursor, image_id, tags_list):
     """
     Updates the tags for a specific image ID within a transaction.
@@ -323,11 +344,12 @@ def add_or_update_single_image(image_abs_path):
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id FROM images WHERE path_canon = ?", (path_canon,))
+        cursor.execute("SELECT id, is_trashed FROM images WHERE path_canon = ?", (path_canon,))
         existing_image = cursor.fetchone()
 
         if existing_image:
             image_id = existing_image['id']
+            was_trashed = existing_image['is_trashed']
             cursor.execute("""
                 UPDATE images SET
                     filename=?, subfolder=?, top_level_subfolder=?, format=?, mtime=?, size_bytes=?, last_synced_at=?,
@@ -359,7 +381,12 @@ def add_or_update_single_image(image_abs_path):
             stats_manager.increment_total()
         
         _update_image_tags_in_db(cursor, image_id, tags_list)
-        _update_folder_metadata_cache_blocking(cursor)
+        # Incremental folder count update (not full rebuild)
+        if existing_image:
+            if was_trashed:
+                _increment_folder_count(cursor, top_level_subfolder)
+        else:
+            _increment_folder_count(cursor, top_level_subfolder)
         conn.commit()
         print(f"✅ [Holaf-Logic-DB] Successfully added/updated in DB: {path_canon}")
         update_last_db_update_time() 
@@ -385,11 +412,12 @@ def delete_single_image_by_path(image_abs_path):
         path_canon = os.path.join(subfolder_str, filename).replace('\\', '/')
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM images WHERE path_canon = ?", (path_canon,))
-        image_exists = cursor.fetchone()
-        if image_exists:
+        cursor.execute("SELECT id, is_trashed, top_level_subfolder FROM images WHERE path_canon = ?", (path_canon,))
+        image_row = cursor.fetchone()
+        if image_row:
+            if not image_row['is_trashed']:
+                _decrement_folder_count(cursor, image_row['top_level_subfolder'])
             cursor.execute("DELETE FROM images WHERE path_canon = ?", (path_canon,))
-            _update_folder_metadata_cache_blocking(cursor)
             conn.commit()
             print(f"✅ [Holaf-Logic-DB] Successfully deleted from DB: {path_canon}")
             update_last_db_update_time()

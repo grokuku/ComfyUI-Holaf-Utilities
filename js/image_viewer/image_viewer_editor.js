@@ -363,11 +363,11 @@ export class ImageEditor {
 
     // ── Controls management ──
 
-    _addControl(typeId) {
+    _addControl(typeId, range = 'all') {
         const def = CONTROL_TYPES.find(c => c.id === typeId);
         if (!def) return;
         _ctrlIdCounter++;
-        this.currentState.controls.push({ id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: 'all' });
+        this.currentState.controls.push({ id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: range });
         this.isDirty = true;
         this._updateUIFromState();
         this.applyPreview();
@@ -398,16 +398,12 @@ export class ImageEditor {
             const val = c.value;
             const displayVal = c.type === 'hue' ? val : Math.round(val * 100);
             const sliderVal = c.type === 'hue' ? val : val * 100;
-            const isVideo = this.nativeFps > 0;
+            const rangeLabel = c.range === 'all' ? 'All' : c.range.charAt(0).toUpperCase() + c.range.slice(1);
+            const rangeStyle = c.range === 'all' ? 'opacity:0.5;' : 'color:var(--holaf-accent-color,#4682B4);font-weight:bold;';
             return `
                 <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}">
                     <label>${def.label}</label>
-                    <select class="holaf-editor-range-select" data-range-for="${c.id}" style="${isVideo ? 'display:none;' : ''}">
-                        <option value="all" ${c.range === 'all' ? 'selected' : ''}>All</option>
-                        <option value="shadows" ${c.range === 'shadows' ? 'selected' : ''}>Shadows</option>
-                        <option value="midtones" ${c.range === 'midtones' ? 'selected' : ''}>Midtones</option>
-                        <option value="highlights" ${c.range === 'highlights' ? 'selected' : ''}>Highlights</option>
-                    </select>
+                    <span class="holaf-editor-range-label" style="font-size:11px;${rangeStyle}">${rangeLabel}</span>
                     <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${sliderVal}">
                     <div style="display:flex;align-items:center;gap:4px;">
                         <span class="holaf-editor-slider-value" style="min-width:36px;">${displayVal}</span>
@@ -457,38 +453,41 @@ export class ImageEditor {
         const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
         if (addBtn) {
             addBtn.onclick = async () => {
-                // Build choice buttons for ALL control types (duplicates allowed)
-                const buttons = CONTROL_TYPES.map(t => ({
-                    text: t.label,
-                    value: t.id,
-                    type: 'confirm'
-                }));
-                buttons.push({ text: "Cancel", value: null, type: 'cancel' });
+                // Step 1: Choose control type
+                const typeButtons = CONTROL_TYPES.map(t => ({ text: t.label, value: t.id, type: 'confirm' }));
+                typeButtons.push({ text: "Cancel", value: null, type: 'cancel' });
 
-                const chosen = await HolafPanelManager.createDialog({
+                const chosenType = await HolafPanelManager.createDialog({
                     title: "Add Control",
-                    message: "Choose a control type to add:",
-                    buttons
+                    message: "Choose a control type:",
+                    buttons: typeButtons
                 });
+                if (!chosenType) return;
 
-                if (chosen) {
-                    this._addControl(chosen);
-                }
+                // Step 2: Choose range
+                const rangeOptions = [
+                    { text: 'All', value: 'all' },
+                    { text: 'Shadows', value: 'shadows' },
+                    { text: 'Midtones', value: 'midtones' },
+                    { text: 'Highlights', value: 'highlights' },
+                ];
+                const rangeButtons = rangeOptions.map(r => ({ text: r.text, value: r.value, type: 'confirm' }));
+                rangeButtons.push({ text: "Cancel", value: null, type: 'cancel' });
+
+                const chosenRange = await HolafPanelManager.createDialog({
+                    title: CONTROL_TYPES.find(t => t.id === chosenType).label + " — Range",
+                    message: "Apply to which luminance range?",
+                    buttons: rangeButtons
+                });
+                if (!chosenRange) return;
+
+                this._addControl(chosenType, chosenRange);
             };
         }
 
         // Delegated events for controls list
         const list = this.panelEl.querySelector('#holaf-editor-controls-list');
         if (list) {
-            // Range select change
-            list.addEventListener('change', (e) => {
-                const sel = e.target.closest('.holaf-editor-range-select');
-                if (!sel) return;
-                const ctrlId = sel.dataset.rangeFor;
-                const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
-                if (ctrl) { ctrl.range = sel.value; this.isDirty = true; this._updateButtonStates(); this._schedulePreview(); }
-            });
-
             // Slider input
             list.addEventListener('input', (e) => {
                 const slider = e.target.closest('input[type="range"]');
@@ -517,7 +516,6 @@ export class ImageEditor {
                 const def = CONTROL_TYPES.find(t => t.id === ctrl.type);
                 if (!def) return;
                 ctrl.value = def.default;
-                ctrl.range = 'all';
                 this.isDirty = true;
                 this._updateUIFromState();
                 this._schedulePreview();
