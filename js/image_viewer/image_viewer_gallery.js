@@ -1027,9 +1027,12 @@ function syncGallery(viewer, images) {
     const oldPaths = new Set(oldImages.map(img => img.path_canon));
     const newPaths = new Set(images.map(img => img.path_canon));
 
-    // Check if the lists differ
+    // Check if the lists differ — force rebuild when target list is empty
+    // (the DOM might have stale placeholders from a previous non-empty load)
     let needsFullRebuild = false;
-    if (oldPaths.size !== newPaths.size) {
+    if (images.length === 0) {
+        needsFullRebuild = true;
+    } else if (oldPaths.size !== newPaths.size) {
         needsFullRebuild = true;
     } else {
         for (const p of newPaths) {
