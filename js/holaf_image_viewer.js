@@ -52,6 +52,7 @@ const holafImageViewer = {
     _showCheckTimer: null,
     _statsDeferTimer: null,
     _statsDeferralScheduled: false,
+    _autoLoadingAll: false,
 
     // --- Robust Filtering State ---
     isLoading: false,
@@ -757,6 +758,12 @@ const holafImageViewer = {
 
             this.updateStatusBar(data.filtered_count, data.total_db_count);
 
+            // Auto-load remaining pages in the background (yields between batches)
+            if (this._hasMore && !this._loadingMore && !this._autoLoadingAll) {
+                this._autoLoadingAll = true;
+                setTimeout(() => this.loadMoreImages(), 100);
+            }
+
             const allThumbsGenerated = data.total_db_count > 0 && data.generated_thumbnails_count >= data.total_db_count;
             imageViewerState.setState({
                 status: {
@@ -800,20 +807,28 @@ const holafImageViewer = {
         this._loadingMore = true;
         
         try {
-            const currentImages = imageViewerState.getState().images;
-            const data = await this._fetchFilteredImages(currentImages.length);
-            const moreImages = data.images || [];
-            this._hasMore = data.has_more || false;
-            
-            if (moreImages.length > 0) {
-                const allImages = [...currentImages, ...moreImages];
-                imageViewerState.setState({ images: allImages });
-                this.syncGallery(allImages);
+            while (this._hasMore) {
+                const currentImages = imageViewerState.getState().images;
+                const data = await this._fetchFilteredImages(currentImages.length);
+                const moreImages = data.images || [];
+                this._hasMore = data.has_more || false;
+                
+                if (moreImages.length > 0) {
+                    const allImages = [...currentImages, ...moreImages];
+                    imageViewerState.setState({ images: allImages });
+                    this.syncGallery(allImages);
+                } else {
+                    break;
+                }
+                
+                // Yield to main thread between pages to keep UI responsive
+                await new Promise(r => setTimeout(r, 0));
             }
         } catch (e) {
             console.error("[Holaf ImageViewer] Error loading more images:", e);
         } finally {
             this._loadingMore = false;
+            console.log(`[Holaf] All ${this._hasMore ? 'available ' : ''}images loaded.`);
         }
     },
 

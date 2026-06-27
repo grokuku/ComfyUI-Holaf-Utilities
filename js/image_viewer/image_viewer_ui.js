@@ -380,8 +380,9 @@ class ImageViewerUI {
         };
         this.elements.leftPane.querySelector('#holaf-viewer-folders-select-none').onclick = (e) => {
             e.preventDefault();
+            // Uncheck ALL folders including trashcan to show empty gallery
             const { locked_folders } = imageViewerState.getState().filters;
-            this.elements.leftPane.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]:not(#folder-filter-trashcan)').forEach(cb => {
+            document.querySelectorAll('#holaf-viewer-folders-filter input[type="checkbox"]').forEach(cb => {
                 const folderId = cb.closest('.holaf-viewer-filter-item')?.dataset.folderId;
                 if (!cb.disabled && !locked_folders.includes(folderId)) {
                     cb.checked = false;
