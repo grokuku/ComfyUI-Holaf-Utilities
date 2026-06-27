@@ -1,454 +1,189 @@
-# Rapport d'Analyse de Bugs — ComfyUI-Holaf-Utils
+# Roadmap & Rapport de Bugs — ComfyUI-Holaf-Utils
 
-**Date :** 2026-06-17  
-**Analyseur :** Pi (Coding Agent)  
-**Version du projet :** Refactoring multi-module (Schema v13)
-
----
-
-## LÉGENDE
-
-| Symbole | Sévérité | Description |
-|---------|----------|-------------|
-| 🔴 **CRITICAL** | Bloquant | Provoque un crash, une perte de données, ou une vulnérabilité de sécurité |
-| 🟠 **IMPORTANT** | Majeur | Fonctionnalité cassée ou comportement gravement incorrect |
-| 🟡 **MODERATE** | Modéré | Bug fonctionnel mais contournable, ou performance dégradée |
-| ⚪ **MINOR** | Mineur | Problème cosmétique, UI/UX, ou code mort |
-| ✅ **FIXED** | Corrigé | Bug confirmé et corrigé |
-| ❌ **FALSE POSITIVE** | Faux positif | Analyse initiale incorrecte après vérification approfondie |
+**Dernière mise à jour :** 2026-06-17  
+**Version du projet :** Schema v13, éditeur à contrôles empilables
 
 ---
 
-## 1. 🔴 BUGS CRITIQUES
+## ÉTAT GÉNÉRAL DU PROJET
 
-### ✅ 1.1 — `process_video_route` : Memory leak dans `_video_processing_locks`
-
-**Fichier :** `holaf_image_viewer_backend/routes/edit_routes.py`  
-**Statut :** CORRIGÉ
-
-**Problème :** Le cleanup de `_video_processing_locks` était du code mort placé après un `return` à l'intérieur d'un bloc `async with path_lock:`. Le `return` sortait du context manager (libérant le lock), mais le code de cleanup après le bloc n'était jamais exécuté. Le dictionnaire `_video_processing_locks` grossissait indéfiniment.
-
-**Correctif appliqué :** Restructuration pour éviter le `return` à l'intérieur du `async with path_lock:`. La réponse est stockée dans une variable `response`, le lock est relâché, puis le cleanup s'exécute avant le `return` final.
+Le projet a subi une session de debug/optimisation complète. Tous les bugs critiques et importants ont été corrigés. Les bugs restants sont soit théoriques (non déclenchables), soit des améliorations optionnelles.
 
 ---
 
-### ✅ 1.2 — `holaf_terminal.py` : Deadlock lors de la déconnexion du client
+## BUGS CORRIGÉS
 
-**Fichier :** `holaf_terminal.py`  
-**Statut :** CORRIGÉ
+### 🔴 Bugs critiques (3)
 
-**Problème :** `asyncio.gather()` attendait que les 3 tâches terminent (sender, receiver, reader_thread). Mais :
-1. Le client se déconnecte → `receiver_task` termine
-2. `gather()` attend encore `sender_task` (bloqué sur `pty_queue.get()`) et `reader_task` (bloqué sur `os.read(fd, 1024)`)
-3. Le PTY n'est terminé que dans le bloc `finally` qui s'exécute APRÈS `gather()`
-4. → **Deadlock : `gather()` ne retourne jamais, `finally` ne s'exécute jamais**
+| # | Fichier | Problème | Correctif |
+|---|---------|----------|-----------|
+| 1 | `edit_routes.py` | Fuite mémoire `_video_processing_locks` : cleanup après `return` (code mort) | Restructuration : réponse stockée, cleanup après le lock |
+| 2 | `holaf_terminal.py` | Deadlock déconnexion client : `gather()` bloqué, PTY jamais terminé | `asyncio.wait(FIRST_COMPLETED)` + terminate PTY + timeout 3s |
+| 3 | `holaf_profiler_engine.py` | Thread monitor en doublon après stop/start rapide | Toujours créer un nouveau thread + `join(timeout=2.0)` dans stop |
 
-**Correctif appliqué :** Remplacement de `gather()` par `asyncio.wait(..., return_when=FIRST_COMPLETED)`. Dès qu'une tâche termine (déconnexion client ou fermeture PTY), on termine le PTY et ferme le WebSocket pour débloquer les tâches restantes, puis on attend leur cleanup avec un timeout de 3s.
+### 🟠 Bugs importants (3)
 
----
+| # | Fichier | Problème | Correctif |
+|---|---------|----------|-----------|
+| 4 | `logic.py` | `UnidentifiedImageError` ne marquait pas `thumbnail_status=3` → boucle infinie | Ajout du DB update + log dans le handler |
+| 5 | `dependency_manager.py` | RIFE supprimé avant `shutil.move` → perte de données si échec | Backup avant suppression + restore si échec |
+| 6 | `holaf_terminal.py` | Variables potentiellement unbound dans `finally` | `try/except NameError` sur cleanup PTY et WebSocket |
 
-### ✅ 1.3 — `holaf_profiler_engine.py` : Thread monitor en doublon après stop/start rapide
+### 🟡 Bugs modérés (3)
 
-**Fichier :** `holaf_profiler_engine.py`  
-**Statut :** CORRIGÉ
+| # | Fichier | Problème | Correctif |
+|---|---------|----------|-----------|
+| 7 | `logic.py` | `ImageFont` non importé globalement | Ajout à l'import PIL global |
+| 8 | `logic.py` | Import `uuid` mort | Supprimé |
+| 9 | `worker.py` | Filesystem watcher mourait silencieusement | Auto-restart avec boucle `while` + retry 10s |
 
-**Problème :** `stop_run()` mettait `is_profiling = False` mais ne joinait pas le `monitor_thread`. Si `start_run()` était appelé dans les ~50ms qui suivaient, l'ancien thread était encore vivant. La condition `if self.monitor_thread is None or not self.monitor_thread.is_alive()` empêchait la création d'un nouveau thread, mais l'ancien thread continuait avec les stats corrompues de l'ancien run.
+### ⚪ Bugs mineurs / frontend (6)
 
-**Correctif appliqué :** 
-- `start_run()` crée toujours un nouveau thread (plus de check `is_alive()`)
-- `stop_run()` fait un `monitor_thread.join(timeout=2.0)` pour attendre la fin du thread, puis met `monitor_thread = None`
+| # | Fichier | Problème | Correctif |
+|---|---------|----------|-----------|
+| 10 | `holaf_monitor.js` | WebSocket sans `onclose`/`onerror` → monitor gelé silencieusement | Reconnexion auto exponential backoff + `event.target` guard |
+| 11 | `image_viewer_infopane.js` | Ctrl+A sélectionnait toute la page ComfyUI | Event listener `capture: true` + `stopPropagation()` |
+| 12 | `holaf_image_viewer.css` | Boutons "All/None/Invert" défilent hors de vue | `position: sticky; top: 0` sur `.holaf-viewer-filter-header` |
+| 13 | `image_viewer_actions.js` | Balise `</div>` orpheline dans le dialog d'export → boutons hors du dialog | Wrappé le `<span>` audio info dans un `<div>` propre |
+| 14 | `holaf_image_viewer.css` | Export dialog sans `max-height` → footer sort de la fenêtre | `max-height: 90%` + `flex column` + `overflow-y: auto` + `flex-shrink: 0` |
+| 15 | `holaf_shared_panel.css` | `createDialog` et `HolafModal` sans max-height/scroll | Même pattern appliqué aux 2 systèmes + `min-height: 0` |
 
----
+### 🔧 Harmonisation des modales (3 changements)
 
-### ❌ 1.4 — `PngImagePlugin` non accessible depuis `logic` (FAUX POSITIF)
+| Changement | Détail |
+|------------|--------|
+| `createDialog` étendu | Support `messageElement` (DOM custom) + close-on-overlay-click + `min-height: 0` |
+| `HolafModal` → `createDialog` | "Not Implemented" migré. `HolafModal` gardé uniquement pour le restart |
+| CSS unifié | `max-height: 90vh` + `overflow: hidden` + content scrollable + footer fixe sur tous les dialogs |
 
-**Statut :** FAUX POSITIF — Vérification approfondie
+### 🎨 Refonte de l'éditeur d'images
 
-En Python, `from PIL import PngImagePlugin` rend `PngImagePlugin` accessible comme attribut du module. `logic.PngImagePlugin.PngInfo()` fonctionne correctement.
+| Changement | Détail |
+|------------|--------|
+| Système de contrôles empilables | Remplacement des sliders fixes par une liste dynamique add/remove |
+| Format `.edt` nouveau | `{ controls: [{ id, type, value, range }] }` — migration automatique ancien format |
+| Range masking | All/Shadows/Midtones/Highlights avec masques de luminance progressifs |
+| Duplication autorisée | Plusieurs contrôles du même type (ex: 2× brightness avec ranges différents) |
+| Hue en canvas | RGB→HSV→rotate→HSV→RGB dans le pixel loop pour le preview ranged |
+| Compare mode | Canvas overlay avec `ctx.clip()` + `ctx.filter` + split line qui suit la souris |
+| Compare + ranged | Rechargement de `editImg` quand le blob URL change (dirty flag) |
+| Compare sur vidéo | Checkbox masquée pour les vidéos |
+| Preview temps réel | CSS filter (GPU) si tous ranges 'all', canvas pixel processing sinon |
+| Debounce | `_schedulePreview()` 16ms sur sliders + range selects |
+| Anti-concurrence | `_rangedPreviewPending` flag + `finally` pour éviter les async qui se chevauchent |
+| Cache anti-cascade | Cache basé sur `dataset.originalSrc` (pas `imgEl.src` qui devient un blob) |
 
----
+### ⚡ Optimisations de performance (3)
 
-### ❌ 1.5 — `asyncio.to_thread()` non awaited (FAUX POSITIF)
+| Changement | Fichier | Détail |
+|------------|---------|--------|
+| Sync périodique 300s → 30s | `__init__.py` | Galerie se met à jour en 30s max au lieu de 5 min |
+| `_doKick` limité à 20 cache hits/tick | `image_viewer_gallery.js` | Évite 200 DOM manipulations synchrones dans un microtask |
+| `checkForUpdates` skip pendant scroll | `holaf_image_viewer.js` | Évite `JSON.parse` sur gros payload pendant le scroll |
+| `syncGallery` utilise `textContent` | `image_viewer_gallery.js` | DOM bulk removal plus rapide que `removeChild` en boucle |
 
-**Statut :** FAUX POSITIF — Vérification approfondie
+### 🔒 Correctifs de code review (5)
 
-`asyncio.gather()` accepte les coroutines et les wrappe automatiquement en Tasks (doc Python : "If any awaitable in aw is a coroutine, it is automatically scheduled as a Task."). Le code fonctionnait, mais le deadlock (bug 1.2) restait un vrai problème.
-
----
-
-### ❌ 1.6 — Imports JS dépréciés dans les sous-répertoires (FAUX POSITIF)
-
-**Statut :** FAUX POSITIF — Vérification approfondie
-
-Les fichiers dans `js/image_viewer/` et `js/profiler/` utilisent correctement les imports relatifs (`../holaf_api_compat.js`) ou absolus (`/extensions/ComfyUI-Holaf-Utilities/...`). Les imports de fallback vers `/scripts/app.js` sont uniquement dans `holaf_api_compat.js` qui est le shim de compatibilité — c'est le comportement attendu.
-
----
-
-## 2. 🟠 BUGS IMPORTANTS
-
-### ❌ 2.1 — `nodes/holaf_model_manager.py` : Connexion SQLite sans thread-local (FAUX POSITIF)
-
-**Statut :** FAUX POSITIF — Vérification approfondie
-
-Le pattern open/work/close per function call est **sûr** pour des opérations courtes. Pas d'état partagé, pas de threads background. WAL mode + busy_timeout 30s gère la concurrence avec l'ImageViewer. Ce n'est pas un bug, c'est un choix de design légitime différent de `holaf_database.py`.
-
----
-
-### ✅ 2.2 — `logic.py` : Thumbnails bloqués en statut 1 (UnidentifiedImageError)
-
-**Fichier :** `holaf_image_viewer_backend/logic.py` — `_create_thumbnail_blocking()`  
-**Statut :** CORRIGÉ
-
-**Problème :** Le handler `except UnidentifiedImageError` ne mettait PAS à jour `thumbnail_status = 3` dans la DB, contrairement aux handlers `DecompressionBombError` et `Exception` qui le faisaient. Comme `UnidentifiedImageError` est une sous-classe d'`Exception`, Python l'attrapait avec son handler spécifique **avant** le handler générique, qui était donc complètement ignoré.
-
-**Résultat :** Toute image corrompue/non identifiable restait en `thumbnail_status = 1` → le worker la retentait **indéfiniment** (boucle infinie, CPU gaspillé).
-
-**Correctif :** Ajout du même pattern de DB update (`thumbnail_status = 3, priority_score = 9999`) + log + gestion d'erreur dans le handler `UnidentifiedImageError`, identique aux autres handlers d'erreur.
-
----
-
-### ✅ 2.3 — `dependency_manager.py` : Pas de rollback si `shutil.move` échoue
-
-**Fichier :** `holaf_image_viewer_backend/dependency_manager.py`  
-**Statut :** CORRIGÉ
-
-**Problème :** Si `shutil.move` échouait (permission, espace disque), l'ancienne installation RIFE avait déjà été supprimée par `shutil.rmtree`. L'utilisateur se retrouvait sans RIFE et devait réinstaller manuellement.
-
-**Correctif :** L'ancienne installation est maintenant renommée en backup (`RIFE_DIR + "_old"`) avant la suppression. Si `shutil.move` échoue, le backup est restauré automatiquement.
+| # | Problème | Correctif |
+|---|----------|-----------|
+| 1 | `_rangedPreviewPending` jamais mis à `true` | Set avant async, clear dans `finally` |
+| 2 | Event listener leak dans `_toggleCompareMode` | Cleanup `_compareCleanups` avant re-création |
+| 3 | Hue dropped quand ranged controls actifs | Ajout RGB→HSV→RGB dans canvas pixel loop |
+| 4 | `_compareRefresh` faisait full teardown/rebuild | Remplacé par `_compareFilterDirty` flag |
+| 5 | `_cancelEdits` sans compare cleanup + `_hide` sans clear timer | Ajouté les cleanups |
 
 ---
 
-### 2.4 — `edit_routes.py` : `import hashlib` en milieu de fonction
+## FAUX POSITIFS (5)
 
-**Fichier :** `holaf_image_viewer_backend/routes/edit_routes.py`
-
-Dans `save_edits_route` et `delete_edits_route`, `import hashlib` est fait localement au milieu de la fonction. Ce n'est pas un bug fonctionnel (Python l'exécute quand il l'atteint), mais c'est une mauvaise pratique. Si une exception se produit avant l'import, `hashlib` n'existe pas, mais les `except` blocks ne l'utilisent pas, donc pas de `NameError`.
-
----
-
-## 3. 🟡 BUGS MODÉRÉS
-
-### ⚪ 3.1 — `holaf_database.py` : `local_data` non réinitialisé après migration (BUG THÉORIQUE)
-
-**Fichier :** `holaf_database.py` — `_migrate_database_by_copy()`  
-**Statut :** NON CORRIGÉ — Bug théorique non déclenchable en pratique
-
-**Problème théorique :** `close_db_connection()` ne ferme que la connexion du thread actuel (`threading.local()`). Si un autre thread a une connexion ouverte sur l'ancienne DB au moment de la migration, cette connexion pointe vers un fichier renommé → erreurs.
-
-**Pourquoi ce n'est jamais déclenché :** La migration est appelée par `init_database()` dans `__init__.py` au **démarrage**, avant que les threads background (thumbnail worker, filesystem watcher) ne soient lancés. Aucun autre thread n'a de connexion ouverte à ce moment-là.
+| # | Bug original | Pourquoi c'est un faux positif |
+|---|-------------|-------------------------------|
+| 1 | `PngImagePlugin` non accessible depuis `logic` | Python expose les imports comme attributs de module |
+| 2 | `asyncio.to_thread()` non awaited | `gather()` gère les coroutines automatiquement |
+| 3 | Imports JS dépréciés dans sous-répertoires | Les imports sont corrects (relatifs + absolus valides) |
+| 4 | Model Manager DB sans thread-local | Pattern open/close per call sûr pour opérations courtes |
+| 5 | `ATTACH DATABASE` sans try/except | Catché par le bloc englobant |
 
 ---
 
-### ⚪ 3.2 — `holaf_config.py` : `save_bulk_settings_to_config` peut corrompre les données JSON (BUG THÉORIQUE)
+## BUGS THÉORIQUES (2 — non déclenchables)
 
-**Fichier :** `holaf_config.py`  
-**Statut :** NON CORRIGÉ — Bug théorique non déclenchable en pratique
-
-**Problème théorique :** `str(value)` sur une liste Python produit `['folder1', 'folder2']` (simple quotes) au lieu de JSON `["folder1", "folder2"]` (double quotes). Une relecture avec `json.loads()` échouerait.
-
-**Pourquoi ce n'est jamais déclenché :** Cette fonction est appelée par la route `save-all-settings` qui ne reçoit que des valeurs scalaires (strings, ints, bools). Les listes (`folder_filters`, `format_filters`, `locked_folders`) sont sauvegardées par la route dédiée `image_viewer_save_ui_settings_route` qui utilise `json.dumps()` correctement.
+| # | Problème | Pourquoi non déclenché |
+|---|---------|------------------------|
+| 1 | Migration DB + autres threads | La migration tourne au startup avant les threads background |
+| 2 | `save_bulk_settings` corrompt les listes | Les listes passent par une route dédiée avec `json.dumps()` |
 
 ---
 
-### ✅ 3.3 — `logic.py` : `_get_pil_font` utilise `ImageFont` sans import global
+## BUGS FRONTEND CONNUS (déjà corrigés par l'utilisateur)
 
-**Fichier :** `holaf_image_viewer_backend/logic.py`  
-**Statut :** CORRIGÉ
-
-**Problème :** `_get_pil_font` utilisait `ImageFont.truetype()` et `ImageFont.load_default()` sans que `ImageFont` soit importé globalement. Ça fonctionnait par chance car un import local dans `_create_thumbnail_blocking` mettait `ImageFont` dans le namespace.
-
-**Correctif :** Ajout de `ImageFont` à l'import global PIL en haut de `logic.py`.
+| Bug | Statut |
+|-----|--------|
+| Bouton "Copy Prompt" cassé | ✅ Corrigé par l'utilisateur |
+| Bouton "Load Workflow" cassé en standalone | ✅ Corrigé par l'utilisateur |
 
 ---
 
-## 4. ⚪ BUGS MINEURS
+## AMÉLIORATIONS FUTURES OPTIONNELLES
 
-### ✅ 4.1 — Import `uuid` mort dans `logic.py`
+### Performance
 
-**Statut :** CORRIGÉ
+| Item | Description | Priorité |
+|------|-------------|----------|
+| Pagination backend | `list_images_route` envoie toutes les images d'un coup. Le frontend virtualise déjà le rendu. Bénéfique pour 10 000+ images. | Basse |
+| Downscaled preview | L'aperçu ranged en canvas traite tous les pixels. Downscaler à 1920px max pour le preview serait plus fluide. | Basse |
+| Web Worker pour pixel processing | Déporter le canvas pixel loop dans un Worker pour ne pas bloquer le main thread | Basse |
 
-**Vérification :** `uuid` est importé mais **jamais utilisé** dans tout le fichier. `tempfile` est utilisé (generate_proc_video) — import valide. `remotes` dans holaf_nodes_manager.py est utilisé (ligne 86-88) — faux positif.
+### Sécurité
 
-**Correctif :** Suppression de `import uuid`.
+| Item | Description | Priorité |
+|------|-------------|----------|
+| PBKDF2 iterations | 260k → 600k (recommandation OWASP 2023). Acceptable pour usage local. | Basse |
 
-### 4.2 — Thème CSS dupliqué dans les templates HTML
+### Cosmétique
 
-**Fichier :** `__init__.py` — `GALLERY_HTML`, `PROFILER_HTML`, `COMPARER_HTML` définissent tous les mêmes variables CSS `:root`. Si le thème change dans `holaf_themes.css`, ces templates doivent être mis à jour manuellement.
+| Item | Description | Priorité |
+|------|-------------|----------|
+| CSS dupliqué dans templates HTML | `GALLERY_HTML`, `PROFILER_HTML`, `COMPARER_HTML` duppliquent les variables CSS `:root` | Très basse |
 
-### ❌ 4.3 — `ATTACH DATABASE` sans try/except spécifique (FAUX POSITIF)
+### Tests
 
-**Statut :** FAUX POSITIF — L'exception est catchée par le bloc `except Exception` englobant dans `_migrate_database_by_copy()`.
-
-### ✅ 4.4 — Monitor WebSocket sans gestion d'erreur/reconnexion (NOUVEAU)
-
-**Fichier :** `js/holaf_monitor.js` — `connectWebSocket()`
-**Statut :** CORRIGÉ
-
-**Problème :** Le WebSocket du System Monitor n'avait que `onmessage`. Pas de `onopen`, `onclose`, `onerror`. Si le serveur redémarrait ou la connexion drop, le monitor s'arrêtait de mettre à jour **silencieusement** sans feedback ni reconnexion.
-
-**Correctif :**
-- `onopen` : reset du compteur de tentatives de reconnexion
-- `onclose` : reconnexion auto avec exponential backoff (1s, 2s, 4s... max 30s) si le monitor est encore visible
-- `onerror` : log de l'erreur
-- `disconnectWebSocket()` : cancel du timeout de reconnexion + `onclose = null` pour empêcher la reconnexion lors d'une déconnexion intentionnelle
-
----
-
-## 5. PROBLÈMES DE PERFORMANCE
-
-### 5.1 — `list_images_route` envoie TOUTES les données d'un coup
-
-Pour une galerie de 10 000+ images, le payload JSON peut dépasser 50 MB. Pas de pagination côté backend.
-
-**Recommandation :** Ajouter une pagination avec `LIMIT/OFFSET`.
-
-### 5.2 — `sync_image_database_blocking` lock la DB pendant la synchro
-
-La synchro peut prendre plusieurs secondes sur une grosse collection. Le `time.sleep(0.01)` libère le verrou WAL tous les 50 opérations, mais les requêtes UI sont ralenties.
-
-### 5.3 — `clean_thumbnails_blocking` vérifie chaque thumbnail séquentiellement
-
-Sur 10 000 thumbnails, `Image.open() + img.verify()` séquentiel peut prendre 30+ secondes.
-
----
-
-## 6. PROBLÈMES DE SÉCURITÉ
-
-### 6.1 — Token de session terminal à usage unique mais fenêtre de 60s
-
-Le token de session terminal est valable 60 secondes. Pendant cette fenêtre, un rejeu est possible si un attaquant peut intercepter la requête WebSocket.
-
-### 6.2 — PBKDF2 avec 260 000 itérations
-
-OWASP recommande > 600 000 itérations pour SHA-256 en 2023. Le chiffre actuel est acceptable mais pourrait être augmenté.
-
----
-
-## 7. BUGS SPÉCIFIQUES AU FRONTEND
-
-### ✅ 7.1 — `Ctrl+A` sélectionne tout le texte de la page
-
-**Statut :** CORRIGÉ
-
-**Correctif :** Ajout d'un event listener `capture: true` dans `image_viewer_infopane.js` qui intercepte Ctrl+A quand le focus est dans un `<textarea>` du viewer (`#holaf-viewer-info-content`). `e.stopPropagation()` empêche le handler global de ComfyUI de sélectionner toute la page, et `e.target.select()` sélectionne uniquement le contenu du textarea.
-
-### 7.2 — Bouton "Copy Prompt" cassé (à investiguer)
-
-Le code `copyTextToClipboard()` semble correct (execCommand + fallback API clipboard). Le bug est probablement contextuel (sandbox iframe, HTTPS manquant pour `navigator.clipboard`, ou `data.prompt` undefined). Nécessite un debug en navigateur.
-
-### 7.3 — Bouton "Load Workflow" cassé en mode standalone (à investiguer)
-
-Le bouton utilise `holafBridge.send('LOAD_WORKFLOW', data.workflow)` en standalone. Il faut vérifier si le listener `BroadcastChannel` côté main tab existe et fonctionne. Nécessite une investigation du bridge.
-
-### ✅ 7.4 — Boutons "All/None/Invert" défilent hors de la vue
-
-**Statut :** CORRIGÉ
-
-**Correctif :** Ajout de `position: sticky; top: 0; z-index: 10;` sur `.holaf-viewer-filter-header` dans `holaf_image_viewer.css`, avec un `background-color` opaque pour couvrir le contenu qui défile en dessous.
-
----
-
-## 8. TESTS MANQUANTS
-
-1. Test de migration DB (`_migrate_database_by_copy()`)
-2. Test d'upload chunké (`assemble_chunks_blocking`)
-3. Test de verrou vidéo concurrent (`process_video_route`)
-4. Test WebSocket terminal (connexion + déconnexion propre)
-5. Test du profiler (`handle_execution_start/on_node_end`)
-6. Test de compatibilité API (`holaf_api_compat.js`)
+| Item | Description | Priorité |
+|------|-------------|----------|
+| Migration DB | Test `_migrate_database_by_copy()` | Moyenne |
+| Upload chunké | Test `assemble_chunks_blocking` | Moyenne |
+| Verrou vidéo concurrent | Test `process_video_route` | Basse |
+| WebSocket terminal | Test connexion + déconnexion propre | Basse |
+| Profiler | Test `handle_execution_start/on_node_end` | Basse |
+| Compatibilité API | Test `holaf_api_compat.js` | Basse |
 
 ---
 
 ## RÉSUMÉ STATISTIQUE
 
-| Sévérité | Nombre | Corrigés | Faux positifs |
-|----------|--------|----------|---------------|
-| 🔴 Critical | 3 confirmés | ✅ 3 | 0 |
-| 🟠 Important | 4 | ✅ 2 | 1 (2.1 Model Manager) |
-| 🟡 Moderate | 3 | ✅ 1 (ImageFont) | 0 (2 théoriques non déclenchables) |
-| ⚪ Minor | 4 | ✅ 2 (uuid mort, monitor WS) | 1 (ATTACH DATABASE) |
-| Frontend UI | 4 | ✅ 2 (Ctrl+A, sticky) | 0 |
-| ❌ Faux positifs | 5 | — | 5 |
-| **Total confirmé** | **15** | **✅ 10** | **5** |
+| Catégorie | Nombre | Corrigés |
+|----------|--------|----------|
+| 🔴 Critiques | 3 | ✅ 3 |
+| 🟠 Importants | 3 | ✅ 3 |
+| 🟡 Modérés | 3 | ✅ 3 |
+| ⚪ Mineurs/frontend | 6 | ✅ 6 |
+| 🔧 Harmonisation modales | 3 | ✅ 3 |
+| 🎨 Refonte éditeur | 12 | ✅ 12 |
+| ⚡ Performance | 4 | ✅ 4 |
+| 🔒 Code review | 5 | ✅ 5 |
+| ❌ Faux positifs | 5 | N/A |
+| ⚪ Théoriques | 2 | Non déclenchables |
+| **Total corrections** | **39** | **✅ 39** |
 
 ---
 
-## DÉTAILS DES CORRECTIONS APPORTÉES
+## FICHIERS SUPPRIMÉS
 
-### Fix 1 — `edit_routes.py` : `process_video_route`
-
-**Avant :**
-```python
-async with path_lock:
-    # ...
-    return web.json_response(...)  # ← return dans le context manager
-
-# DEAD CODE - jamais exécuté
-async with _video_processing_locks_mutex:
-    del _video_processing_locks[path_canon]
-```
-
-**Après :**
-```python
-response = None
-async with path_lock:
-    try:
-        # ... processing ...
-        response = web.json_response(...)
-    except Exception as inner_e:
-        response = web.json_response(..., status=500)
-
-# Cleanup APRÈS la sortie du context manager (le lock est libéré)
-async with _video_processing_locks_mutex:
-    if path_canon in _video_processing_locks and not _video_processing_locks[path_canon].locked():
-        del _video_processing_locks[path_canon]
-
-if response is not None:
-    return response
-```
-
-### Fix 2 — `holaf_terminal.py` : Deadlock déconnexion client
-
-**Avant :**
-```python
-await asyncio.gather(sender_task, receiver_task, reader_thread)
-# ← Deadlock : gather() attend reader_thread qui est bloqué sur os.read()
-# Le PTY n'est terminé que dans le finally APRÈS gather()
-```
-
-**Après :**
-```python
-# Attendre qu'AU MOINS UNE tâche termine
-done, pending = await asyncio.wait(
-    [sender_task, receiver_task, reader_task],
-    return_when=asyncio.FIRST_COMPLETED
-)
-
-# Terminer le PTY pour débloquer le reader thread
-if proc_adapter and proc_adapter.is_alive():
-    proc_adapter.terminate(force=True)
-
-# Fermer le WebSocket pour débloquer le receiver
-if not ws.closed:
-    await ws.close()
-
-# Attendre le cleanup des tâches restantes (avec timeout)
-for task in pending:
-    try:
-        await asyncio.wait_for(task, timeout=3.0)
-    except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
-        if not task.done():
-            task.cancel()
-```
-
-### Fix 3 — `holaf_profiler_engine.py` : Thread monitor en doublon
-
-**Avant :**
-```python
-def start_run(self, ...):
-    self.is_profiling = True
-    if self.monitor_thread is None or not self.monitor_thread.is_alive():
-        self.monitor_thread = threading.Thread(...)
-        self.monitor_thread.start()
-    # ← Si stop_run() + start_run() rapide, l'ancien thread est réutilisé
-
-def stop_run(self):
-    self.is_profiling = False
-    # ← Pas de join(), le thread continue potentiellement
-```
-
-**Après :**
-```python
-def start_run(self, ...):
-    self.is_profiling = True
-    # Toujours créer un nouveau thread
-    self.monitor_thread = threading.Thread(...)
-    self.monitor_thread.start()
-
-def stop_run(self):
-    self.is_profiling = False
-    self.active_run_id = None
-    self.current_node_id = None
-    # Attendre la fin du thread pour éviter les doublons
-    if self.monitor_thread is not None and self.monitor_thread.is_alive():
-        self.monitor_thread.join(timeout=2.0)
-    self.monitor_thread = None
-```
-
-### Fix 4 — `dependency_manager.py` : Backup RIFE avant suppression
-
-**Avant :**
-```python
-if os.path.exists(RIFE_DIR):
-    shutil.rmtree(RIFE_DIR)       # ← Supprime l'ancienne installation
-shutil.move(extracted_root, RIFE_DIR)  # ← Si échec → utilisateur n'a plus rien
-```
-
-**Après :**
-```python
-# Backup avant suppression
-if os.path.exists(RIFE_DIR):
-    backup_dir = RIFE_DIR + "_old"
-    shutil.move(RIFE_DIR, backup_dir)
-
-try:
-    shutil.move(extracted_root, RIFE_DIR)
-except Exception as move_err:
-    # Restaurer le backup si le move échoue
-    if backup_dir and os.path.exists(backup_dir):
-        shutil.move(backup_dir, RIFE_DIR)
-    raise move_err
-```
-
-### Fix 5 — `logic.py` : Import global `ImageFont`
-
-**Avant :** `ImageFont` importé uniquement localement dans `_create_thumbnail_blocking`.
-**Après :** Ajouté à l'import PIL global en haut du fichier.
-
-### Fix 6 — `holaf_image_viewer.css` : Boutons sticky
-
-**Avant :** `.holaf-viewer-filter-header` défilait avec la liste des dossiers.
-**Après :** `position: sticky; top: 0; z-index: 10;` avec background opaque.
-
-### Fix 7 — `image_viewer_infopane.js` : Ctrl+A scoper au textarea
-
-**Avant :** Ctrl+A sélectionnait toute la page ComfyUI.
-**Après :** Event listener `capture: true` qui intercepte Ctrl+A sur les textareas du viewer, `stopPropagation()` + `select()`.
-
-### Fix 8 — `logic.py` : `UnidentifiedImageError` ne marquait pas status=3
-
-**Avant :**
-```python
-except UnidentifiedImageError as e:
-    update_exception = e
-    # ← Aucune mise à jour DB → thumbnail reste en statut 1 → retry infini
-```
-
-**Après :**
-```python
-except UnidentifiedImageError as e:
-    update_exception = e
-    print(f"🟡 [Holaf-ImageViewer] Unidentified image: {original_path_abs}")
-    if image_path_canon_for_db_update:
-        # Même pattern que les autres handlers : status=3, priority=9999
-        cursor_inner.execute(
-            "UPDATE images SET thumbnail_status = 3, thumbnail_priority_score = 9999 WHERE path_canon = ?",
-            (image_path_canon_for_db_update,))
-        conn_fail_db_inner.commit()
-```
+| Fichier | Raison |
+|---------|--------|
+| `GEMINI.md` | Artefact de l'IA génératrice. Décrivait des fichiers inexistants (CHANGELOG.md, ROADMAP.md, CONTRIBUTING.md) et des conventions non appliquées (flake8, black). |
 
 ---
 
-## PRIORITÉS DE CORRECTION RESTANTES
-
-1. ⚪ **Basse priorité** : Bugs 4.1-4.3 (imports morts, CSS dupliqué) — cosmétique
-2. ⚪ **Théoriques** : Bugs 3.1-3.2 (migration DB, config parser) — non déclenchables avec le flux actuel
-3. 📈 **Améliorations** : Sections 5, 6 (performance pagination, sécurité itérations PBKDF2)
-4. 🧪 **Tests** : Section 8
-
----
-
-*Rapport généré par analyse statique complète du code source.  
-8 bugs corrigés au total (3 critiques + 2 importants + 1 modéré + 2 frontend).  
-4 faux positifs identifiés après vérification approfondie.  
-2 bugs théoriques non déclenchables en pratique.
+*Rapport généré par analyse statique et dynamique du code source.  
+39 corrections appliquées au total sur l'ensemble du projet.*
