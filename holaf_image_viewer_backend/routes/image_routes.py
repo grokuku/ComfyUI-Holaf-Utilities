@@ -178,7 +178,9 @@ async def list_images_route(request: web.Request):
 
         # Build the main data fetching query
         group_by = f"GROUP BY i.id HAVING COUNT(DISTINCT t.name) = {len(tags_filter)}" if tags_filter else ""
-        order_by = "ORDER BY i.mtime DESC"
+        sort_order = filters.get('sort_order', 'desc')
+        order_dir = "ASC" if sort_order == 'asc' else "DESC"
+        order_by = f"ORDER BY i.mtime {order_dir}"
         
         main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by}"
         

@@ -155,7 +155,33 @@ const holafImageViewer = {
             this.applyPanelSettings();
             this.panelElements.panelEl.style.display = "flex";
             HolafPanelManager.bringToFront(this.panelElements.panelEl);
-            
+
+            // Populate toolbar once
+            const toolbar = document.getElementById('holaf-viewer-toolbar');
+            if (toolbar && !toolbar.querySelector('#holaf-sort-toggle')) {
+                const sortBtn = document.createElement('button');
+                sortBtn.id = 'holaf-sort-toggle';
+                sortBtn.style.cssText = 'cursor:pointer;background:none;border:1px solid var(--holaf-border-color);color:var(--holaf-text-primary);border-radius:3px;padding:2px 8px;font-size:11px;margin:4px 8px;';
+                sortBtn.title = 'Toggle sort order';
+
+                const updateBtn = () => {
+                    const o = imageViewerState.getState().filters.sort_order || 'desc';
+                    sortBtn.textContent = o === 'desc' ? '▼ Newest' : '▲ Oldest';
+                };
+                updateBtn();
+
+                sortBtn.onclick = () => {
+                    const cur = imageViewerState.getState().filters.sort_order || 'desc';
+                    const next = cur === 'desc' ? 'asc' : 'desc';
+                    imageViewerState.setState({ filters: { sort_order: next } });
+                    this.saveSettings({ sort_order: next });
+                    updateBtn();
+                    this.triggerFilterChange(true);
+                };
+
+                toolbar.appendChild(sortBtn);
+            }
+
             // Immediate load on show, no debounce needed here
             this.triggerFilterChange(true); 
 
@@ -315,7 +341,7 @@ const holafImageViewer = {
         const contentEl = this.panelElements.contentEl;
         UI.init(contentEl, {
             getViewer: () => this,
-            onFilterChange: () => this.triggerFilterChange(),
+            onFilterChange: (immediate) => this.triggerFilterChange(immediate),
             onResetFilters: () => this._resetFilters(),
         });
         this.elements = UI.elements;

@@ -387,7 +387,7 @@ class ImageViewerUI {
                     cb.checked = false;
                 }
             });
-            this.callbacks.onFilterChange();
+            this.callbacks.onFilterChange(true);
         };
         this.elements.leftPane.querySelector('#holaf-viewer-folders-select-invert').onclick = (e) => {
             e.preventDefault();

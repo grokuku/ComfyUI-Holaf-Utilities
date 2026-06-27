@@ -397,6 +397,34 @@ export async function handleEscape(viewer) {
     }
 }
 
+function _restoreDeletedImage(viewer, img, allImages, originalIdx, currentMode) {
+    // Restore the image back into the state at its original position
+    const restored = [...allImages];
+    restored.splice(originalIdx, 0, img);
+    imageViewerState.setState({
+        images: restored,
+        activeImage: img,
+        currentNavIndex: originalIdx
+    });
+    if (viewer.syncGallery) viewer.syncGallery(restored);
+
+    // Re-update the media source to show the restored image
+    if (currentMode === 'fullscreen') {
+        const { overlay, img: fImg, video: fVid } = viewer.fullscreenElements;
+        _updateMediaSource(viewer, img, overlay, fImg, fVid, viewer.fullscreenViewState);
+    } else if (currentMode === 'zoom') {
+        const zView = document.getElementById('holaf-viewer-zoom-view');
+        const zImg = zView?.querySelector('img');
+        const zVid = viewer.elements?.zoomVideo;
+        _updateMediaSource(viewer, img, zView, zImg, zVid, viewer.zoomViewState);
+    }
+
+    window.holaf.toastManager?.show({
+        message: 'Delete failed — image restored.',
+        type: 'error'
+    });
+}
+
 export async function handleKeyDown(viewer, e) {
     if (dialogState.isOpen) return;
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
@@ -433,23 +461,60 @@ export async function handleKeyDown(viewer, e) {
             const isPermanent = e.shiftKey;
 
             if (currentMode !== 'gallery' && state.activeImage) {
-                const originalIndex = state.currentNavIndex;
-                const success = await handleDeletion(viewer, isPermanent, [state.activeImage]);
+                // Delete from edit/fullscreen — no confirmation, navigate to next
+                const img = state.activeImage;
+                const allImages = state.images;
+                const currentIdx = allImages.findIndex(i => i.path_canon === img.path_canon);
 
-                if (success) {
-                    await viewer.loadFilteredImages();
-                    const newState = imageViewerState.getState();
+                // Optimistic remove
+                const remaining = allImages.filter(i => i.path_canon !== img.path_canon);
+                const nextIdx = currentIdx >= remaining.length ? remaining.length - 1 : currentIdx;
+                const nextImage = remaining[nextIdx] || null;
 
-                    if (newState.images.length === 0) {
-                        if (currentMode === 'fullscreen') hideFullscreenView(viewer);
-                        hideZoomedView(viewer);
-                        imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
+                imageViewerState.setState({
+                    images: remaining,
+                    activeImage: nextImage,
+                    currentNavIndex: nextImage ? nextIdx : -1
+                });
+                if (viewer.syncGallery) viewer.syncGallery(remaining);
+
+                if (!nextImage) {
+                    if (currentMode === 'fullscreen') hideFullscreenView(viewer);
+                    hideZoomedView(viewer);
+                    imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
+                } else {
+                    // Update the current view with next image via _updateMediaSource (handles img + video)
+                    if (currentMode === 'fullscreen') {
+                        const { overlay, img: fImg, video: fVid } = viewer.fullscreenElements;
+                        _updateMediaSource(viewer, nextImage, overlay, fImg, fVid, viewer.fullscreenViewState);
                     } else {
-                        const newIndex = Math.min(originalIndex, newState.images.length - 1);
-                        imageViewerState.setState({ currentNavIndex: newIndex + 1 });
-                        await navigate(viewer, -1);
+                        const zView = document.getElementById('holaf-viewer-zoom-view');
+                        const zImg = zView?.querySelector('img');
+                        const zVid = viewer.elements?.zoomVideo;
+                        _updateMediaSource(viewer, nextImage, zView, zImg, zVid, viewer.zoomViewState);
                     }
                 }
+
+                // Background delete with rollback on failure
+                const apiUrl = isPermanent ? '/holaf/images/delete-permanently' : '/holaf/images/delete';
+                fetch(apiUrl, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paths_canon: [img.path_canon] })
+                }).then(r => r.json()).then(result => {
+                    if (result.deleted_count > 0) {
+                        window.holaf.toastManager?.show({
+                            message: isPermanent ? 'Permanently deleted' : 'Moved to trash',
+                            type: 'success'
+                        });
+                    } else {
+                        // Server didn't delete — restore UI
+                        _restoreDeletedImage(viewer, img, allImages, currentIdx, currentMode);
+                    }
+                }).catch(() => {
+                    // Network error — restore UI
+                    _restoreDeletedImage(viewer, img, allImages, currentIdx, currentMode);
+                });
+
             } else if (state.selectedPaths.size > 0) {
                 const success = await handleDeletion(viewer, isPermanent, null);
                 if (success) {
