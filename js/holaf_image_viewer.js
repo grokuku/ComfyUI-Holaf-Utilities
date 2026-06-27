@@ -408,7 +408,11 @@ const holafImageViewer = {
         }
 
         if (immediate) {
-            this._executeLoad();
+            if (this.isLoading) {
+                this.isDirty = true;
+            } else {
+                this._executeLoad();
+            }
             return;
         }
 
@@ -646,11 +650,13 @@ const holafImageViewer = {
         }
     },
 
-    async _fetchFilteredImages() {
+    async _fetchFilteredImages(offset = 0) {
         console.time('BE Fetch & Parse');
         const { filters } = imageViewerState.getState();
         const payload = { ...filters };
         delete payload.locked_folders;
+        payload.page_size = 500;
+        payload.offset = offset;
 
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
@@ -668,11 +674,10 @@ const holafImageViewer = {
     },
 
     async loadFilteredImages(isInitialLoad = false) {
-        // Double safety: If already loading, abort. 
-        // Note: isDirty mechanism handles queuing, but we shouldn't have parallel execution here.
         if (this.isLoading) return; 
         
         this.isLoading = true;
+        this._loadingMore = false;
         
         console.log("%c[Holaf Perf] Starting filter process...", "color: lightblue; font-weight: bold;");
         console.time('Total Filter to Render Time');
@@ -688,7 +693,6 @@ const holafImageViewer = {
                     this._updateActionButtonsState();
                     this.isLoading = false;
                     console.timeEnd('Total Filter to Render Time');
-                    // Check if dirty during early exit
                     if (this.isDirty) { this._executeLoad(); }
                     return;
                 }
@@ -699,13 +703,14 @@ const holafImageViewer = {
             }
 
             const currentState = imageViewerState.getState();
-            const currentSelectedPaths = new Set(currentState.selectedPaths); // Copy for mutation
+            const currentSelectedPaths = new Set(currentState.selectedPaths);
             const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
 
             imageViewerState.setState({ selectedImages: new Set() });
 
-            const data = await this._fetchFilteredImages();
+            const data = await this._fetchFilteredImages(0);
             const newImages = data.images || [];
+            this._hasMore = data.has_more || false;
 
             const newSelectedImages = new Set();
             if (currentSelectedPaths.size > 0) {
@@ -759,12 +764,33 @@ const holafImageViewer = {
             imageViewerState.setState({ images: [], activeImage: null, currentNavIndex: -1, status: { error: e.message } });
         } finally {
             this.isLoading = false;
-            // If the filter changed while we were loading, reload immediately with new filter
             if (this.isDirty) {
                 setTimeout(() => this._executeLoad(), 0);
             }
             this._updateActionButtonsState();
             console.timeEnd('Total Filter to Render Time');
+        }
+    },
+
+    async loadMoreImages() {
+        if (this.isLoading || this._loadingMore || !this._hasMore) return;
+        this._loadingMore = true;
+        
+        try {
+            const currentImages = imageViewerState.getState().images;
+            const data = await this._fetchFilteredImages(currentImages.length);
+            const moreImages = data.images || [];
+            this._hasMore = data.has_more || false;
+            
+            if (moreImages.length > 0) {
+                const allImages = [...currentImages, ...moreImages];
+                imageViewerState.setState({ images: allImages });
+                this.syncGallery(allImages);
+            }
+        } catch (e) {
+            console.error("[Holaf ImageViewer] Error loading more images:", e);
+        } finally {
+            this._loadingMore = false;
         }
     },
 

@@ -995,6 +995,16 @@ function initGallery(viewer) {
         } else {
             debouncedKickLoadQueue();
         }
+
+        // Infinite scroll: load more images when near bottom
+        if (viewerInstance && viewerInstance.loadMoreImages) {
+            const scrollThreshold = 200; // px from bottom
+            const scrollPosition = galleryEl.scrollTop + galleryEl.clientHeight;
+            const scrollHeight = galleryEl.scrollHeight;
+            if (scrollHeight - scrollPosition < scrollThreshold) {
+                viewerInstance.loadMoreImages();
+            }
+        }
     }, { passive: true });
 
     viewer.gallery = {

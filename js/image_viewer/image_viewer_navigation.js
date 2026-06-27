@@ -303,7 +303,18 @@ export async function navigate(viewer, direction) {
     if (newIndex < 0) {
         newIndex = state.images.length - 1;
     } else if (newIndex >= state.images.length) {
-        newIndex = 0;
+        // If there are more images to load, load them instead of wrapping
+        if (viewer._hasMore && viewer.loadMoreImages) {
+            await viewer.loadMoreImages();
+            const updatedState = imageViewerState.getState();
+            if (updatedState.images.length > state.images.length) {
+                newIndex = state.images.length; // First new image
+            } else {
+                newIndex = 0; // No more loaded, wrap around
+            }
+        } else {
+            newIndex = 0;
+        }
     }
 
     const newActiveImage = state.images[newIndex];

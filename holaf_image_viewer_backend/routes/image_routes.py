@@ -182,10 +182,16 @@ async def list_images_route(request: web.Request):
         order_dir = "ASC" if sort_order == 'asc' else "DESC"
         order_by = f"ORDER BY i.mtime {order_dir}"
         
-        main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by}"
+        # Pagination: limit results to prevent massive JSON payloads
+        page_size = min(int(filters.get('page_size', 500)), 2000)
+        offset = int(filters.get('offset', 0))
+        limit_clause = f"LIMIT {page_size} OFFSET {offset}"
+        
+        main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by} {limit_clause}"
         
         cursor.execute(main_query, params)
         images_data = [dict(row) for row in cursor.fetchall()]
+        has_more = (offset + page_size) < filtered_count
         
         t_main_query = time.perf_counter()
         
@@ -203,7 +209,8 @@ async def list_images_route(request: web.Request):
                 "images": images_data,
                 "filtered_count": filtered_count,
                 "total_db_count": stats["total_db_count"],
-                "generated_thumbnails_count": stats["generated_thumbnails_count"]
+                "generated_thumbnails_count": stats["generated_thumbnails_count"],
+                "has_more": has_more
             })
             serialization_method = "orjson"
         except ImportError:
@@ -211,7 +218,8 @@ async def list_images_route(request: web.Request):
                 "images": images_data,
                 "filtered_count": filtered_count,
                 "total_db_count": stats["total_db_count"],
-                "generated_thumbnails_count": stats["generated_thumbnails_count"]
+                "generated_thumbnails_count": stats["generated_thumbnails_count"],
+                "has_more": has_more
             }).encode('utf-8')
         
         response = web.Response(body=body_content, content_type='application/json')
