@@ -49,6 +49,9 @@ const holafImageViewer = {
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
     statsRefreshIntervalId: null,
     exportStatusRaf: null,
+    _showCheckTimer: null,
+    _statsDeferTimer: null,
+    _statsDeferralScheduled: false,
 
     // --- Robust Filtering State ---
     isLoading: false,
@@ -202,7 +205,12 @@ const holafImageViewer = {
             }
 
             this._updateViewerActivity(true);
-            this.checkForUpdates();
+            // Defer initial checkForUpdates to let the UI breathe (offset from 5s interval)
+            if (this._showCheckTimer) clearTimeout(this._showCheckTimer);
+            this._showCheckTimer = setTimeout(() => {
+                this._showCheckTimer = null;
+                this.checkForUpdates();
+            }, FILTER_REFRESH_INTERVAL_MS + 3000);
         }
     },
 
@@ -216,6 +224,14 @@ const holafImageViewer = {
             if (this.filterRefreshIntervalId) {
                 clearInterval(this.filterRefreshIntervalId);
                 this.filterRefreshIntervalId = null;
+            }
+            if (this._showCheckTimer) {
+                clearTimeout(this._showCheckTimer);
+                this._showCheckTimer = null;
+            }
+            if (this._statsDeferTimer) {
+                clearTimeout(this._statsDeferTimer);
+                this._statsDeferTimer = null;
             }
             this._updateViewerActivity(false);
             Navigation.stopPlayback(this);
@@ -685,17 +701,14 @@ const holafImageViewer = {
         try {
             const { filters } = imageViewerState.getState();
             if (!filters.folder_filters || filters.folder_filters.length === 0) {
-                if (isInitialLoad) {
-                } else {
-                    imageViewerState.setState({ images: [], selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });
-                    this.syncGallery([]);
-                    this.updateStatusBar(0, imageViewerState.getState().status.totalImageCount);
-                    this._updateActionButtonsState();
-                    this.isLoading = false;
-                    console.timeEnd('Total Filter to Render Time');
-                    if (this.isDirty) { this._executeLoad(); }
-                    return;
-                }
+                imageViewerState.setState({ images: [], selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });
+                this.syncGallery([]);
+                this.updateStatusBar(0, imageViewerState.getState().status.totalImageCount);
+                this._updateActionButtonsState();
+                this.isLoading = false;
+                console.timeEnd('Total Filter to Render Time');
+                if (this.isDirty) { this._executeLoad(); }
+                return;
             }
 
             if (isInitialLoad && this.panelElements) {
@@ -753,7 +766,17 @@ const holafImageViewer = {
             });
 
             if (!allThumbsGenerated && !this.statsRefreshIntervalId) {
-                this.statsRefreshIntervalId = setInterval(() => this.fetchAndUpdateThumbnailStats(), STATS_REFRESH_INTERVAL_MS);
+                // Defer stats refresh only once to avoid starvation on rapid filter changes
+                if (!this._statsDeferralScheduled) {
+                    this._statsDeferralScheduled = true;
+                    if (this._statsDeferTimer) clearTimeout(this._statsDeferTimer);
+                    this._statsDeferTimer = setTimeout(() => {
+                        this._statsDeferTimer = null;
+                        if (!this.statsRefreshIntervalId) {
+                            this.statsRefreshIntervalId = setInterval(() => this.fetchAndUpdateThumbnailStats(), STATS_REFRESH_INTERVAL_MS);
+                        }
+                    }, 3000);
+                }
             } else if (allThumbsGenerated && this.statsRefreshIntervalId) {
                 clearInterval(this.statsRefreshIntervalId); this.statsRefreshIntervalId = null;
             }
