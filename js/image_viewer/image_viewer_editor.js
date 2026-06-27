@@ -267,65 +267,59 @@ export class ImageEditor {
             const dst = new Uint8ClampedArray(src.length);
             const controls = this.currentState.controls || [];
 
-            for (let i = 0; i < src.length; i += 4) {
-                let r = src[i], g = src[i + 1], b = src[i + 2], a0 = src[i + 3];
-                const oR = r, oG = g, oB = b;
-                const origLum = 0.299 * oR + 0.587 * oG + 0.114 * oB;
+            // Pre-sort controls: 'all' range applied unconditionally (fast path),
+            // ranged controls only where weight > 0. Avoids per-pixel branch checks.
+            const allControls = controls.filter(c => (c.range || 'all') === 'all');
+            const rangedControls = controls.filter(c => (c.range || 'all') !== 'all');
+            const hasRanged = rangedControls.length > 0;
+            const len = src.length;
 
-                for (const ctrl of controls) {
-                    const range = ctrl.range || 'all';
+            for (let i = 0; i < len; i += 4) {
+                let r = src[i], g = src[i + 1], b = src[i + 2];
+                const a0 = src[i + 3];
+
+                // Fast path: apply 'all'-range controls (no weight check)
+                for (let ci = 0; ci < allControls.length; ci++) {
+                    const ctrl = allControls[ci];
                     const val = ctrl.value;
-                    const weight = range === 'all' ? 1 : this._luminanceWeight(origLum, range);
-                    if (weight <= 0) continue;
+                    if (ctrl.type === 'brightness') { r *= val; g *= val; b *= val; }
+                    else if (ctrl.type === 'contrast') { r = 128 + (r - 128) * val; g = 128 + (g - 128) * val; b = 128 + (b - 128) * val; }
+                    else if (ctrl.type === 'saturation') { const gr = 0.299 * r + 0.587 * g + 0.114 * b; r = gr + (r - gr) * val; g = gr + (g - gr) * val; b = gr + (b - gr) * val; }
+                    else if (ctrl.type === 'hue') {
+                        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+                        let hh; if (d === 0) hh = 0; else if (mx === r) hh = ((g - b) / d) % 6; else if (mx === g) hh = (b - r) / d + 2; else hh = (r - g) / d + 4;
+                        hh = hh * 60; if (hh < 0) hh += 360;
+                        const ss = mx === 0 ? 0 : d / mx, vv = mx;
+                        let nH = (hh + val) % 360; if (nH < 0) nH += 360;
+                        const c = vv * ss, x = c * (1 - Math.abs((nH / 60) % 2 - 1)), m = vv - c;
+                        let nr2, ng2, nb2;
+                        if (nH < 60) { nr2 = c; ng2 = x; nb2 = 0; } else if (nH < 120) { nr2 = x; ng2 = c; nb2 = 0; } else if (nH < 180) { nr2 = 0; ng2 = c; nb2 = x; } else if (nH < 240) { nr2 = 0; ng2 = x; nb2 = c; } else if (nH < 300) { nr2 = x; ng2 = 0; nb2 = c; } else { nr2 = c; ng2 = 0; nb2 = x; }
+                        r = nr2 + m; g = ng2 + m; b = nb2 + m;
+                    }
+                }
 
-                    if (ctrl.type === 'brightness') {
-                        if (range === 'all') { r *= val; g *= val; b *= val; }
-                        else { r += (oR * val - oR) * weight; g += (oG * val - oG) * weight; b += (oB * val - oB) * weight; }
-                    } else if (ctrl.type === 'contrast') {
-                        const adj = (px, v) => 128 + (px - 128) * v;
-                        if (range === 'all') { r = adj(r, val); g = adj(g, val); b = adj(b, val); }
-                        else { r += (adj(oR, val) - oR) * weight; g += (adj(oG, val) - oG) * weight; b += (adj(oB, val) - oB) * weight; }
-                    } else if (ctrl.type === 'saturation') {
-                        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                        const sat = (px, gr) => gr + (px - gr) * val;
-                        if (range === 'all') { r = sat(r, gray); g = sat(g, gray); b = sat(b, gray); }
-                        else {
-                            const oGray = 0.299 * oR + 0.587 * oG + 0.114 * oB;
-                            r += (sat(oR, oGray) - oR) * weight;
-                            g += (sat(oG, oGray) - oG) * weight;
-                            b += (sat(oB, oGray) - oB) * weight;
-                        }
-                    } else if (ctrl.type === 'hue') {
-                        // RGB -> HSV -> rotate H -> HSV -> RGB
-                        const max = Math.max(r, g, b), min = Math.min(r, g, b);
-                        const d = max - min;
-                        let h;
-                        if (d === 0) h = 0;
-                        else if (max === r) h = ((g - b) / d) % 6;
-                        else if (max === g) h = (b - r) / d + 2;
-                        else h = (r - g) / d + 4;
-                        h = h * 60; if (h < 0) h += 360;
-                        const s = max === 0 ? 0 : d / max;
-                        const v = max;
-                        // Rotate hue
-                        let nH = (h + val) % 360; if (nH < 0) nH += 360;
-                        // HSV -> RGB
-                        const c = v * s;
-                        const x = c * (1 - Math.abs((nH / 60) % 2 - 1));
-                        const m = v - c;
-                        let nr, ng, nb;
-                        if (nH < 60) { nr = c; ng = x; nb = 0; }
-                        else if (nH < 120) { nr = x; ng = c; nb = 0; }
-                        else if (nH < 180) { nr = 0; ng = c; nb = x; }
-                        else if (nH < 240) { nr = 0; ng = x; nb = c; }
-                        else if (nH < 300) { nr = x; ng = 0; nb = c; }
-                        else { nr = c; ng = 0; nb = x; }
-                        const adjR = nr + m, adjG = ng + m, adjB = nb + m;
-                        if (range === 'all') { r = adjR; g = adjG; b = adjB; }
-                        else {
-                            r += (adjR - oR) * weight;
-                            g += (adjG - oG) * weight;
-                            b += (adjB - oB) * weight;
+                // Slow path: apply ranged controls (luminance-weighted)
+                if (hasRanged) {
+                    const oR = src[i], oG = src[i + 1], oB = src[i + 2];
+                    const origLum = 0.299 * oR + 0.587 * oG + 0.114 * oB;
+                    for (let ci = 0; ci < rangedControls.length; ci++) {
+                        const ctrl = rangedControls[ci];
+                        const val = ctrl.value;
+                        const weight = this._luminanceWeight(origLum, ctrl.range);
+                        if (weight <= 0) continue;
+                        if (ctrl.type === 'brightness') { r += (oR * val - oR) * weight; g += (oG * val - oG) * weight; b += (oB * val - oB) * weight; }
+                        else if (ctrl.type === 'contrast') { r += (128 + (oR - 128) * val - oR) * weight; g += (128 + (oG - 128) * val - oG) * weight; b += (128 + (oB - 128) * val - oB) * weight; }
+                        else if (ctrl.type === 'saturation') { const oGr = 0.299 * oR + 0.587 * oG + 0.114 * oB; r += (oGr + (oR - oGr) * val - oR) * weight; g += (oGr + (oG - oGr) * val - oG) * weight; b += (oGr + (oB - oGr) * val - oB) * weight; }
+                        else if (ctrl.type === 'hue') {
+                            const mx = Math.max(oR, oG, oB), mn = Math.min(oR, oG, oB), d = mx - mn;
+                            let hh; if (d === 0) hh = 0; else if (mx === oR) hh = ((oG - oB) / d) % 6; else if (mx === oG) hh = (oB - oR) / d + 2; else hh = (oR - oG) / d + 4;
+                            hh = hh * 60; if (hh < 0) hh += 360;
+                            const ss = mx === 0 ? 0 : d / mx, vv = mx;
+                            let nH = (hh + val) % 360; if (nH < 0) nH += 360;
+                            const c = vv * ss, x = c * (1 - Math.abs((nH / 60) % 2 - 1)), m = vv - c;
+                            let nr2, ng2, nb2;
+                            if (nH < 60) { nr2 = c; ng2 = x; nb2 = 0; } else if (nH < 120) { nr2 = x; ng2 = c; nb2 = 0; } else if (nH < 180) { nr2 = 0; ng2 = c; nb2 = x; } else if (nH < 240) { nr2 = 0; ng2 = x; nb2 = c; } else if (nH < 300) { nr2 = x; ng2 = 0; nb2 = c; } else { nr2 = c; ng2 = 0; nb2 = x; }
+                            r += (nr2 + m - oR) * weight; g += (ng2 + m - oG) * weight; b += (nb2 + m - oB) * weight;
                         }
                     }
                 }
@@ -794,7 +788,18 @@ export class ImageEditor {
 
             ctx.clearRect(0, 0, w, h);
 
-            // Calculate draw rect (object-fit: contain)
+            // Read the zoom/pan transform from the underlying img element
+            // so the compare canvas matches the zoomed view
+            const editedEl2 = zoomView.querySelector('img');
+            let zScale = 1, zTx = 0, zTy = 0;
+            if (editedEl2) {
+                const matrix = new DOMMatrix(getComputedStyle(editedEl2).transform);
+                zScale = matrix.a; // scaleX (uniform scale assumed)
+                zTx = matrix.e;    // translateX
+                zTy = matrix.f;    // translateY
+            }
+
+            // Calculate draw rect (object-fit: contain) at base scale
             const imgAspect = origImg.naturalWidth / origImg.naturalHeight;
             const canvasAspect = w / h;
             let dw, dh, ox = 0, oy = 0;
@@ -804,35 +809,44 @@ export class ImageEditor {
                 dh = h; dw = h * imgAspect; ox = (w - dw) / 2;
             }
 
+            // Apply zoom/pan transform to match the underlying image
+            ctx.save();
+            ctx.translate(zTx, zTy);
+            ctx.scale(zScale, zScale);
+
             // 1. Draw ORIGINAL image (full)
             ctx.drawImage(origImg, ox, oy, dw, dh);
 
             // 2. Draw EDITED image (clipped to left of mouse, with CSS filter)
             if (isOver && mouseX !== null) {
+                // Convert mouse X from screen space to canvas transform space
+                const localMouseX = (mouseX - zTx) / zScale;
+
                 ctx.save();
                 ctx.beginPath();
-                ctx.rect(ox, oy, Math.max(0, mouseX - ox), dh);
+                ctx.rect(ox, oy, Math.max(0, localMouseX - ox), dh);
                 ctx.clip();
 
-                // Apply the same CSS filter as the edited image
                 ctx.filter = filterValue;
                 ctx.drawImage(editImg, ox, oy, dw, dh);
                 ctx.filter = 'none';
 
                 ctx.restore();
 
-                // 3. Split line
-                if (mouseX >= ox && mouseX <= ox + dw) {
+                // 3. Split line (drawn in transform space, compensate lineWidth)
+                if (localMouseX >= ox && localMouseX <= ox + dw) {
                     ctx.beginPath();
-                    ctx.moveTo(mouseX, oy);
-                    ctx.lineTo(mouseX, oy + dh);
+                    ctx.moveTo(localMouseX, oy);
+                    ctx.lineTo(localMouseX, oy + dh);
                     ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = 2 / zScale; // Compensate for scale
                     ctx.globalCompositeOperation = 'difference';
                     ctx.stroke();
                     ctx.globalCompositeOperation = 'source-over';
                 }
             }
+
+            ctx.restore(); // Remove zoom/pan transform
 
             this._compareRaf = requestAnimationFrame(render);
         };
