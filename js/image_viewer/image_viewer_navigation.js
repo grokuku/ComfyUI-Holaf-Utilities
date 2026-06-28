@@ -145,13 +145,36 @@ export function getFullImageUrl(image) {
  */
 let _loadSerial = 0;
 let _loadDelayTimer = null;
+let _loadingTimer = null;     // Single global loading timer (not one per call)
+let _spinnerEl = null;       // Single global spinner element
+
+function _clearLoadingUI() {
+    if (_loadingTimer) {
+        clearTimeout(_loadingTimer);
+        _loadingTimer = null;
+    }
+    if (_spinnerEl) {
+        _spinnerEl.remove();
+        _spinnerEl = null;
+    }
+}
+
+function _showSpinner(container) {
+    _spinnerEl = document.createElement('div');
+    _spinnerEl.className = 'holaf-viewer-loading-spinner';
+    _spinnerEl.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:100;pointer-events:none;font-size:24px;color:rgba(255,255,255,0.7);text-shadow:0 0 8px rgba(0,0,0,0.8);';
+    _spinnerEl.innerHTML = '\u23F3';
+    container.appendChild(_spinnerEl);
+}
 
 function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformState, immediate) {
-    // Cancel any pending delayed load
+    // Cancel any pending delayed full-size load
     if (_loadDelayTimer) {
         clearTimeout(_loadDelayTimer);
         _loadDelayTimer = null;
     }
+    // Cancel any pending loading spinner (single global instance)
+    _clearLoadingUI();
 
     const serial = ++_loadSerial; // Each call gets a unique serial
     const isVideo = ['MP4', 'WEBM', 'MKV', 'AVI', 'MOV', 'M4V'].includes(image.format);
@@ -256,8 +279,7 @@ function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformS
                 const loader = new Image();
                 loader.onload = () => {
                     if (serial !== _loadSerial) return; // Stale callback — ignore
-                    clearTimeout(loadingTimer);
-                    if (loadingEl) loadingEl.remove();
+                    _clearLoadingUI();
                     resetTransform(transformState, imgEl);
                     imgEl.src = url;
                     imgEl.style.filter = '';
@@ -266,10 +288,11 @@ function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformS
                 };
                 loader.onerror = () => {
                     if (serial !== _loadSerial) return; // Stale callback — ignore
-                    clearTimeout(loadingTimer);
-                    if (loadingEl) loadingEl.remove();
+                    _clearLoadingUI();
                     imgEl.style.filter = '';
                 };
+                // Start spinner 1s after load begins
+                _loadingTimer = setTimeout(() => _showSpinner(container), 1000);
                 loader.src = url;
             };
             // Delay full-size load when navigating (arrow keys), load immediately when entering view
