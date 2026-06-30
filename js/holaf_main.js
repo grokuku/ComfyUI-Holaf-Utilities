@@ -103,6 +103,7 @@ const HolafUtilitiesMenu = {
     isCompactMode: false,
     styleEl: null,
     startupEnforcerInterval: null,
+    _compactObserver: null,
 
     init() {
         this.loadSharedCss();
@@ -587,19 +588,44 @@ const HolafUtilitiesMenu = {
             document.body.classList.add("holaf-compact-active");
             this.maintainCompactParent();
 
-            let ticks = 0;
+            // Clean up any previous enforcer
             if (this.startupEnforcerInterval) clearInterval(this.startupEnforcerInterval);
+            if (this._compactObserver) this._compactObserver.disconnect();
+
+            // Short burst enforcer for initial setup (handles late DOM insertions)
+            let ticks = 0;
             this.startupEnforcerInterval = setInterval(() => {
                 this.maintainCompactParent();
                 ticks++;
-                if (ticks > 10) { 
+                // Increased to 10s (was 5s) because some ComfyUI extensions inject the action bar
+            // asynchronously well after initial page load, causing compact mode to miss it.
+            if (ticks > 20) {
                     clearInterval(this.startupEnforcerInterval);
+                    this.startupEnforcerInterval = null;
                 }
             }, 500);
 
+            // Long-term observer: re-apply when ComfyUI moves/replaces the action bar.
+            // Debounced to avoid excessive calls on busy pages with frequent DOM mutations.
+            let _compactDebounce = null;
+            this._compactObserver = new MutationObserver(() => {
+                clearTimeout(_compactDebounce);
+                _compactDebounce = setTimeout(() => {
+                    if (this.isCompactMode) this.maintainCompactParent();
+                }, 50);
+            });
+            this._compactObserver.observe(document.body, { childList: true, subtree: true });
+
         } else {
             document.body.classList.remove("holaf-compact-active");
-            if (this.startupEnforcerInterval) clearInterval(this.startupEnforcerInterval);
+            if (this.startupEnforcerInterval) {
+                clearInterval(this.startupEnforcerInterval);
+                this.startupEnforcerInterval = null;
+            }
+            if (this._compactObserver) {
+                this._compactObserver.disconnect();
+                this._compactObserver = null;
+            }
             
             document.querySelectorAll('.holaf-compact-parent').forEach(el => {
                 el.classList.remove('holaf-compact-parent');
