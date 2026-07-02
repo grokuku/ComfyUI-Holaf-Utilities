@@ -209,6 +209,7 @@ const holafImageViewer = {
                 clearTimeout(this._statsDeferTimer);
                 this._statsDeferTimer = null;
             }
+            this._statsDeferralScheduled = false;
             this._updateViewerActivity(false);
             Navigation.stopPlayback(this);
         }
@@ -642,7 +643,7 @@ const holafImageViewer = {
         }
     },
 
-    async _fetchFilteredImages(offset = 0) {
+    async _fetchFilteredImages() {
         console.time('BE Fetch & Parse');
         const { filters } = imageViewerState.getState();
         const payload = { ...filters };

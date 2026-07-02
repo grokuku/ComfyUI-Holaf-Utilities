@@ -299,6 +299,7 @@ def run_thumbnail_generation_worker(stop_event):
         finally:
             if conn_worker_db:
                 holaf_database.close_db_connection(exception=worker_exception)
+                conn_worker_db = None  # Must nullify so next iteration reconnects
             image_to_process_path_canon = None
 
     # Clean up persistent connection on exit

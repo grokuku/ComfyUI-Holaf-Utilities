@@ -79,7 +79,7 @@ function _isMediaImage(image) {
 }
 
 function _cancelPreloads() {
-    for (const img of _preloadJobs) {
+    for (const img of [..._preloadJobs]) {
         img.src = '';
     }
     _preloadJobs.clear();
@@ -264,15 +264,6 @@ function _updateMediaSource(viewer, image, container, imgEl, videoEl, transformS
                 imgEl.style.filter = 'blur(4px)';
                 resetTransform(transformState, imgEl);
             }
-
-            // Loading spinner (shown after 1s if full image hasn't loaded yet)
-            let loadingEl = null;
-            const loadingTimer = setTimeout(() => {
-                loadingEl = document.createElement('div');
-                loadingEl.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:100;pointer-events:none;font-size:24px;color:rgba(255,255,255,0.7);text-shadow:0 0 8px rgba(0,0,0,0.8);';
-                loadingEl.innerHTML = '\u23F3';
-                container.appendChild(loadingEl);
-            }, 1000);
 
             // Pre-load full image — guard against stale callbacks from rapid navigation
             const doLoad = () => {

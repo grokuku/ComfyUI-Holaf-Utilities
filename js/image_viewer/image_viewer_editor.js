@@ -109,6 +109,12 @@ export class ImageEditor {
 
     async _show(image) {
         if (!this.panelEl) return;
+        // Cancel any pending auto-save and invalidate stale save tokens
+        if (this._saveTimer) {
+            clearTimeout(this._saveTimer);
+            this._saveTimer = null;
+        }
+        this._saveToken = (this._saveToken || 0) + 1; // Invalidate stale saves
         this.activeImage = image;
         this.nativeFps = 0;
         this.processedVideoUrl = null;
@@ -215,9 +221,10 @@ export class ImageEditor {
             console.warn("[Holaf Editor] Auto-save failed:", e);
         } finally {
             this.saveInProgress = false;
-            if (token !== this._saveToken) {
-                this._scheduleAutoSave();
-            }
+            // Do NOT reschedule here — the slider/control handlers already call
+            // _scheduleAutoSave() on new input events. Rescheduling here can fire
+            // after the active image has changed, overwriting the new image with
+            // the previous image's edits.
         }
     }
 
