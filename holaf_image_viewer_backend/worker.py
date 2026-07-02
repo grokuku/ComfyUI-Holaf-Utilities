@@ -148,9 +148,10 @@ def run_event_queue_processor(stop_event):
 
 def run_filesystem_monitor(stop_event):
     """Worker that watches the filesystem for changes.
-    Tries inotify first; falls back to polling if the inotify watch limit is reached.
+    Tries inotify first; falls back to polling if the inotify watch/instance limit is reached.
     Auto-restarts on fatal errors to avoid silent death of the watcher."""
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor started.")
+    inotify_failed = False  # Remember inotify failure across restarts
     
     while not stop_event.is_set():
         observer = None
@@ -158,21 +159,29 @@ def run_filesystem_monitor(stop_event):
             output_dir = folder_paths.get_output_directory()
             event_handler = HolafFileSystemEventHandler(output_dir)
             
-            # Try inotify first (fast, low CPU)
-            try:
-                observer = Observer()
-                observer.schedule(event_handler, output_dir, recursive=True)
-                observer.start()
-                print("  -> Using inotify backend.")
-            except OSError as e:
-                if e.errno == errno.ENOSPC:
-                    print(f"  -> inotify watch limit reached ({e}). Falling back to polling observer.")
-                    observer = PollingObserver(timeout=2.0)
+            # Try inotify first (fast, low CPU), unless it previously failed
+            if not inotify_failed:
+                try:
+                    observer = Observer()
                     observer.schedule(event_handler, output_dir, recursive=True)
                     observer.start()
-                    print("  -> Using polling backend (slower but no watch limit).")
-                else:
-                    raise
+                    print("  -> Using inotify backend.")
+                except OSError as e:
+                    if e.errno in (errno.ENOSPC, errno.EMFILE):
+                        inotify_failed = True
+                        print(f"  -> inotify limit reached ({e}). Falling back to polling observer.")
+                        observer = PollingObserver(timeout=2.0)
+                        observer.schedule(event_handler, output_dir, recursive=True)
+                        observer.start()
+                        print("  -> Using polling backend (slower but no watch limit).")
+                    else:
+                        raise
+            else:
+                # Skip inotify entirely on restarts after a known failure
+                observer = PollingObserver(timeout=2.0)
+                observer.schedule(event_handler, output_dir, recursive=True)
+                observer.start()
+                print("  -> Using polling backend (inotify previously failed).")
             
             # Main loop: just wait until stop_event is set
             while not stop_event.is_set():
