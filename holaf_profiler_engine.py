@@ -31,7 +31,10 @@ class ProfilerEngine:
         self._last_workflow_json = None
         
         # Context Mapping (ID -> Node Data)
-        self.node_lookup_map = {} 
+        self.node_lookup_map = {}
+
+        # Subgraph Definitions Map (subgraph id -> definition dict)
+        self._subgraph_defs = {} 
         
         # Current Step Context
         self.current_node_id = None
@@ -113,7 +116,18 @@ class ProfilerEngine:
         self.monitor_thread = None
 
     def load_workflow_context(self, workflow_data):
+        # Reset both the node map and the subgraph definitions map
         self.node_lookup_map = {}
+        self._subgraph_defs = {}
+
+        # Build a flat map of ALL subgraph definitions (id -> definition dict)
+        if isinstance(workflow_data, dict):
+            definitions = workflow_data.get("definitions", {}) or {}
+            subgraphs = definitions.get("subgraphs", []) or []
+            for subgraph in subgraphs:
+                if isinstance(subgraph, dict) and subgraph.get("id"):
+                    self._subgraph_defs[str(subgraph["id"])] = subgraph
+
         # Store the raw workflow JSON for later persistence with the run
         try:
             self._last_workflow_json = json.dumps(workflow_data)
@@ -123,23 +137,44 @@ class ProfilerEngine:
 
         nodes = workflow_data.get("nodes", []) if isinstance(workflow_data, dict) else []
         for n in nodes:
-            self._register_node(n)
+            self._register_node(n, parent_id_prefix="")
 
     def _register_node(self, node, parent_id_prefix=""):
-        """Register a node (and any nested subgraph nodes) into node_lookup_map."""
-        nid = str(node.get("id"))
-        full_id = f"{parent_id_prefix}{nid}" if parent_id_prefix else nid
+        """Recursively register a node and its subgraph children."""
+        raw_id = str(node.get("id"))
+        full_id = f"{parent_id_prefix}{raw_id}" if parent_id_prefix else raw_id
+        node_type = node.get("type", "Unknown")
+
+        # Determine a friendly title: use the subgraph definition's name for
+        # subgraph instance nodes (their type is the definition's UUID), else
+        # fall back to the node's own title or type.
+        subgraph_def = self._subgraph_defs.get(node_type) if node_type else None
+        if subgraph_def is not None:
+            title = subgraph_def.get("name") or node.get("title") or node_type
+        else:
+            title = node.get("title", node_type)
+
         self.node_lookup_map[full_id] = {
             "id": full_id,
-            "title": node.get("title", node.get("type", "Unknown")),
-            "type": node.get("type", "Unknown"),
-            "inputs": node.get("widgets_values", [])
+            "title": title,
+            "type": node_type,
+            "inputs": node.get("widgets_values", []),
+            "is_subgraph_node": bool(parent_id_prefix),
         }
 
-        # Check for nested subgraph nodes and recurse
+        # Recurse into subgraph children if the node type is a subgraph
+        # definition ID (ComfyUI latest format). Nested subgraphs are handled
+        # naturally: internal nodes can themselves be subgraph instances.
+        if subgraph_def is not None:
+            child_nodes = subgraph_def.get("nodes", []) or []
+            for child in child_nodes:
+                self._register_node(child, parent_id_prefix=f"{full_id}:")
+
+        # Backward compatibility: older ComfyUI formats may embed the subgraph
+        # directly on the node via a "subgraph" or "subgraph_data" key.
         subgraph = node.get("subgraph") or node.get("subgraph_data")
         if subgraph and isinstance(subgraph, dict):
-            sub_nodes = subgraph.get("nodes", [])
+            sub_nodes = subgraph.get("nodes", []) or []
             for sn in sub_nodes:
                 self._register_node(sn, parent_id_prefix=f"{full_id}:")
 
