@@ -388,6 +388,10 @@ if profiler_engine:
                 elif event == 'execution_error':
                     if profiler_engine.current_node_id is not None:
                         profiler_engine.on_node_end()
+                elif event == 'execution_finished':
+                    if profiler_engine.current_node_id is not None:
+                        profiler_engine.on_node_end()
+                    profiler_engine.stop_run()
         except Exception as e:
             print(f"🔴 [Holaf-Profiler-Hook] Error: {e}")
             traceback.print_exc()
@@ -395,6 +399,105 @@ if profiler_engine:
 
     server.PromptServer.instance.send_sync = holaf_profiler_hook_send_sync
     print("🔵 [Holaf-Init] Profiler hooks registered (send_sync patched).")
+
+    # --- NEW: Profiler Run Management Routes ---
+    @routes.get("/holaf/profiler/runs")
+    async def profiler_list_runs(request: web.Request):
+        try:
+            limit = int(request.query.get('limit', 50))
+            offset = int(request.query.get('offset', 0))
+            runs = profiler_engine.db.list_runs(limit=limit, offset=offset)
+            return web.json_response({"runs": runs})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error listing runs: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.get("/holaf/profiler/run/{run_id}/meta")
+    async def profiler_get_run_meta(request: web.Request):
+        try:
+            run_id = request.match_info['run_id']
+            run = profiler_engine.db.get_run(run_id)
+            if run is None:
+                return web.json_response({"error": "Run not found"}, status=404)
+            return web.json_response({"run": run})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error fetching run meta: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.patch("/holaf/profiler/run/{run_id}/comment")
+    async def profiler_update_run_comment(request: web.Request):
+        try:
+            run_id = request.match_info['run_id']
+            data = await request.json()
+            comment = data.get('comment', '')
+            profiler_engine.db.update_run_comment(run_id, comment)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error updating comment: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.patch("/holaf/profiler/run/{run_id}/output")
+    async def profiler_update_run_output(request: web.Request):
+        try:
+            run_id = request.match_info['run_id']
+            data = await request.json()
+            path = data.get('path', '')
+            profiler_engine.db.update_run_output(run_id, path)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error updating output: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.get("/holaf/profiler/run/{run_id}/workflow")
+    async def profiler_get_run_workflow(request: web.Request):
+        try:
+            run_id = request.match_info['run_id']
+            workflow_json = profiler_engine.db.get_workflow_json(run_id)
+            if workflow_json is None:
+                return web.json_response({"error": "No workflow found"}, status=404)
+            # workflow_json is a JSON string; return it parsed as a JSON object
+            try:
+                parsed = json.loads(workflow_json)
+                return web.json_response({"workflow": parsed})
+            except (ValueError, TypeError):
+                return web.json_response({"workflow": workflow_json})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error fetching workflow: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.delete("/holaf/profiler/run/{run_id}")
+    async def profiler_delete_run(request: web.Request):
+        try:
+            run_id = request.match_info['run_id']
+            profiler_engine.db.delete_run(run_id)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error deleting run: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @routes.post("/holaf/profiler/compare")
+    async def profiler_compare_runs(request: web.Request):
+        try:
+            data = await request.json()
+            run_ids = data.get('run_ids', [])
+            if not run_ids:
+                return web.json_response({"error": "No run_ids provided"}, status=400)
+
+            result = []
+            for run_id in run_ids:
+                meta = profiler_engine.db.get_run(run_id)
+                summary = profiler_engine.db.get_run_summary(run_id)
+                result.append({
+                    "run_id": run_id,
+                    "meta": meta,
+                    "summary": summary,
+                })
+
+            steps = profiler_engine.db.get_steps_for_comparison(run_ids)
+            return web.json_response({"runs": result, "steps": steps})
+        except Exception as e:
+            print(f"🔴 [Profiler] Error comparing runs: {e}")
+            return web.json_response({"error": str(e)}, status=500)
 
 # --- NEW ROUTE: Standalone Gallery View ---
 @routes.get("/holaf/view")

@@ -27,6 +27,8 @@ class ProfilerEngine:
         self.db = ProfilerDatabase()
         self.active_run_id = None
         self.is_profiling = False
+        self.run_start_time = 0
+        self._last_workflow_json = None
         
         # Context Mapping (ID -> Node Data)
         self.node_lookup_map = {} 
@@ -112,25 +114,59 @@ class ProfilerEngine:
 
     def load_workflow_context(self, workflow_data):
         self.node_lookup_map = {}
+        # Store the raw workflow JSON for later persistence with the run
+        try:
+            self._last_workflow_json = json.dumps(workflow_data)
+        except Exception as e:
+            print(f"[Holaf Profiler] Failed to serialize workflow_data: {e}")
+            self._last_workflow_json = None
+
         nodes = workflow_data.get("nodes", []) if isinstance(workflow_data, dict) else []
         for n in nodes:
-            nid = str(n.get("id"))
-            self.node_lookup_map[nid] = {
-                "id": nid,
-                "title": n.get("title", n.get("type", "Unknown")),
-                "type": n.get("type", "Unknown"),
-                "inputs": n.get("widgets_values", [])
-            }
+            self._register_node(n)
+
+    def _register_node(self, node, parent_id_prefix=""):
+        """Register a node (and any nested subgraph nodes) into node_lookup_map."""
+        nid = str(node.get("id"))
+        full_id = f"{parent_id_prefix}{nid}" if parent_id_prefix else nid
+        self.node_lookup_map[full_id] = {
+            "id": full_id,
+            "title": node.get("title", node.get("type", "Unknown")),
+            "type": node.get("type", "Unknown"),
+            "inputs": node.get("widgets_values", [])
+        }
+
+        # Check for nested subgraph nodes and recurse
+        subgraph = node.get("subgraph") or node.get("subgraph_data")
+        if subgraph and isinstance(subgraph, dict):
+            sub_nodes = subgraph.get("nodes", [])
+            for sn in sub_nodes:
+                self._register_node(sn, parent_id_prefix=f"{full_id}:")
 
     def get_context_for_frontend(self):
         nodes = list(self.node_lookup_map.values())
-        nodes.sort(key=lambda x: int(x['id']) if x['id'].isdigit() else x['id'])
+        def _sort_key(x):
+            # Handle ':'-containing IDs by using the leaf ID for sorting
+            leaf = x['id'].split(':')[-1]
+            try:
+                return (0, int(leaf))
+            except (ValueError, TypeError):
+                return (1, str(leaf))
+        nodes.sort(key=_sort_key)
         return nodes
 
     def start_run(self, name=None, workflow_hash=None, global_comment=""):
         try:
+            self.run_start_time = time.perf_counter()
             self.active_run_id = self.db.create_run(name, workflow_hash, global_comment)
             self.is_profiling = True
+
+            # Persist the last loaded workflow JSON if available
+            if self._last_workflow_json is not None:
+                try:
+                    self.db.save_workflow_json(self.active_run_id, self._last_workflow_json)
+                except Exception as e:
+                    print(f"[Holaf Profiler] Error saving workflow_json: {e}")
 
             # FIX: Always create a fresh monitor thread for each run.
             # The old code checked `self.monitor_thread.is_alive()`, which meant a
@@ -145,10 +181,27 @@ class ProfilerEngine:
             return None
 
     def stop_run(self):
+        # Finalize the current node if still active
+        if self.is_profiling and self.current_node_id is not None:
+            try:
+                self.on_node_end()
+            except Exception as e:
+                print(f"[Holaf Profiler] Error finalizing node on stop: {e}")
+
+        # Persist run total time and node count
+        if self.active_run_id is not None:
+            try:
+                total_time = time.perf_counter() - self.run_start_time if self.run_start_time else 0.0
+                node_count = len(self.node_lookup_map)
+                self.db.finalize_run(self.active_run_id, total_time, node_count)
+            except Exception as e:
+                print(f"[Holaf Profiler] Error finalizing run: {e}")
+
         # FIX: Set is_profiling = False first so the monitor loop exits cleanly.
         self.is_profiling = False
         self.active_run_id = None
         self.current_node_id = None
+        self.run_start_time = 0
 
         # FIX: Wait briefly for the monitor thread to exit to avoid a
         # race condition where a rapid start_run() creates a duplicate thread.

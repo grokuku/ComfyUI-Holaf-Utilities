@@ -10,6 +10,13 @@ export function initProfiler() {
     let pollInterval = null;
     let nodesMap = new Map();
     let executionCounter = 0;
+    let runFinished = false;
+    let currentTotalTime = null;
+    
+    // Polling / auto-stop detection
+    let lastStepCount = null;   // step count from previous poll
+    let sameStepCount = 0;      // consecutive polls with an identical step count
+    let idlePollCount = 0;      // consecutive polls with no new node added
     
     // Group Mapping
     let groupMapping = {}; 
@@ -21,6 +28,16 @@ export function initProfiler() {
         sortBy: 'exec_order',
         sortDir: 'asc'
     };
+
+    // Run History state
+    let historyRuns = [];
+    let selectedRunIds = new Set();
+    let comparisonRunIds = [];
+
+    // Compare state
+    let compareData = null;
+    let compareMetric = 'exec_time';
+    let compareNodesMap = new Map();
 
     const root = document.getElementById('holaf-profiler-root');
     
@@ -40,6 +57,142 @@ export function initProfiler() {
 
     // --- UI STRUCTURE ---
     root.innerHTML = `
+        <style>
+            #holaf-profiler-root { display:flex; flex-direction:column; height:100%; box-sizing:border-box; }
+
+            /* --- Tab Bar --- */
+            .profiler-tabs {
+                display: flex;
+                gap: 6px;
+                padding: 10px 20px 0;
+                background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 60%, black);
+                border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
+            }
+            .profiler-tab {
+                padding: 8px 18px;
+                background: transparent;
+                color: var(--holaf-text-secondary, #A0A0A0);
+                border: 1px solid transparent;
+                border-bottom: none;
+                border-radius: 6px 6px 0 0;
+                cursor: pointer;
+                font-size: 0.9rem;
+                font-family: inherit;
+                transition: color .15s, background-color .15s, border-color .15s;
+            }
+            .profiler-tab:hover { color: var(--holaf-text-primary, #E0E0E0); }
+            .profiler-tab.active {
+                background-color: color-mix(in srgb, var(--holaf-text-primary, #E0E0E0) 6%, transparent);
+                color: var(--holaf-text-primary, #E0E0E0);
+                border-color: var(--holaf-border-color, #3F3F3F);
+                font-weight: 600;
+            }
+            .profiler-tab-content {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+
+            /* --- Summary Bar --- */
+            .profiler-summary-bar {
+                display: none;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 20px;
+                background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 50%, black);
+                border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
+                font-family: monospace;
+                font-size: 0.9rem;
+                color: var(--holaf-text-secondary, #A0A0A0);
+            }
+            .profiler-summary-bar .summary-label { color: var(--holaf-text-secondary, #A0A0A0); }
+            .profiler-summary-bar .summary-value { color: var(--holaf-success-color, #4CAF50); font-weight: bold; }
+            .profiler-summary-bar.finished .summary-value { color: var(--holaf-accent-color, #D8700D); }
+            .profiler-summary-bar .summary-status { font-family: inherit; font-size: 0.8rem; opacity: 0.7; }
+
+            /* --- History --- */
+            .history-toolbar {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 20px;
+                background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 50%, black);
+                border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
+                flex-wrap: wrap;
+            }
+            .history-table-wrap, .compare-table-wrap {
+                flex: 1;
+                overflow: auto;
+                padding: 20px;
+                min-height: 0;
+            }
+            .empty-state {
+                padding: 40px 20px;
+                text-align: center;
+                color: var(--holaf-text-secondary, #A0A0A0);
+            }
+            .history-checkbox { cursor: pointer; }
+            .history-comment {
+                min-width: 140px;
+                cursor: text;
+                color: var(--holaf-text-secondary, #A0A0A0);
+                border-radius: 3px;
+            }
+            .history-comment:empty::before { content: 'Add comment...'; opacity: .5; }
+            .history-comment:focus {
+                outline: 1px solid var(--holaf-accent-color, #D8700D);
+                color: var(--holaf-text-primary, #E0E0E0);
+                background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 40%, black);
+            }
+
+            /* --- Compare --- */
+            .compare-toolbar {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 20px;
+                background-color: color-mix(in srgb, var(--holaf-background-primary, #1E1E1E) 50%, black);
+                border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
+                flex-wrap: wrap;
+            }
+            .compare-metric-select {
+                background-color: var(--holaf-input-background, #1A1A1A);
+                border: 1px solid var(--holaf-border-color, #3F3F3F);
+                color: var(--holaf-text-primary, #E0E0E0);
+                padding: 4px 8px;
+                border-radius: 3px;
+                outline: none;
+            }
+            .compare-metric-select:focus { border-color: var(--holaf-accent-color, #D8700D); }
+            .compare-cell {
+                font-family: monospace;
+                text-align: right;
+                color: var(--holaf-text-secondary, #A0A0A0);
+                white-space: nowrap;
+            }
+            .compare-cell.best  { color: var(--holaf-success-color, #4CAF50); font-weight: bold; }
+            .compare-cell.worst { color: var(--holaf-error-color, #F44336); font-weight: bold; }
+            .compare-delta.good    { color: var(--holaf-success-color, #4CAF50); }
+            .compare-delta.bad     { color: var(--holaf-error-color, #F44336); }
+            .compare-delta.neutral { color: var(--holaf-text-secondary, #A0A0A0); }
+            .compare-footer-row td {
+                font-weight: bold;
+                border-top: 2px solid var(--holaf-border-color, #3F3F3F);
+                background-color: color-mix(in srgb, var(--holaf-text-primary, #E0E0E0) 3%, transparent);
+            }
+            .compare-node-name { font-size: 0.85em; }
+
+            /* --- Misc buttons --- */
+            .btn-danger { background-color: var(--holaf-error-color, #F44336); }
+            .btn-outline {
+                background-color: transparent;
+                color: var(--holaf-text-secondary, #A0A0A0);
+                border: 1px solid var(--holaf-border-color, #3F3F3F);
+            }
+            .btn-outline:hover { color: var(--holaf-text-primary, #E0E0E0); }
+        </style>
+
         <header class="profiler-header">
             <div class="header-title">
                 <h1>Holaf Workflow Profiler</h1>
@@ -50,48 +203,137 @@ export function initProfiler() {
             </div>
         </header>
 
-        <div class="profiler-toolbar">
-            <div class="filter-group">
-                <label title="Only active if at least one node has finished execution">
-                    <input type="checkbox" id="chk-hide-non-executed"> Hide Non-Executed
-                </label>
+        <!-- TAB BAR -->
+        <div class="profiler-tabs">
+            <button class="profiler-tab active" data-tab="live">Live Profile</button>
+            <button class="profiler-tab" data-tab="history">Run History</button>
+            <button class="profiler-tab" data-tab="compare">Compare</button>
+        </div>
+
+        <!-- ============ TAB 1: LIVE PROFILE ============ -->
+        <div class="profiler-tab-content" data-tab="live">
+            <div class="profiler-summary-bar" id="profiler-summary-bar" style="display:none;">
+                <span class="summary-label">Total:</span>
+                <span class="summary-value" id="summary-total">0.00s</span>
+                <span class="summary-status" id="summary-status"></span>
             </div>
-            <div class="filter-group">
-                <label>Min Time: <span id="lbl-min-time" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
-                <input type="range" id="rng-min-time" min="0" max="5" step="0.1" value="0">
+
+            <div class="profiler-toolbar">
+                <div class="filter-group">
+                    <label title="Only active if at least one node has finished execution">
+                        <input type="checkbox" id="chk-hide-non-executed"> Hide Non-Executed
+                    </label>
+                </div>
+                <div class="filter-group">
+                    <label>Min Time: <span id="lbl-min-time" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
+                    <input type="range" id="rng-min-time" min="0" max="5" step="0.1" value="0">
+                </div>
+                <div class="filter-group">
+                    <label>Exclude Type:</label>
+                    <input type="text" id="inp-filter-type" placeholder="Type..." style="width: 100px;">
+                </div>
+                <div class="filter-group" style="flex-grow:1; text-align:right;">
+                    <span style="font-size:0.8rem; color:var(--holaf-text-secondary);">Click headers to sort</span>
+                </div>
             </div>
-            <div class="filter-group">
-                <label>Exclude Type:</label>
-                <input type="text" id="inp-filter-type" placeholder="Type..." style="width: 100px;">
-            </div>
-            <div class="filter-group" style="flex-grow:1; text-align:right;">
-                <span style="font-size:0.8rem; color:var(--holaf-text-secondary);">Click headers to sort</span>
+
+            <div class="profiler-content">
+                <table class="data-table">
+                    <thead>
+                        <tr id="table-header-row">
+                            <th data-sort="exec_order" class="sortable" style="width:60px;">Order <span class="sort-icon"></span></th>
+                            <th data-sort="id" class="sortable">ID <span class="sort-icon"></span></th>
+                            <th data-sort="title" class="sortable">Node Name <span class="sort-icon"></span></th>
+                            <th data-sort="holaf_group" class="sortable">Group <span class="sort-icon"></span></th>
+                            <th data-sort="type" class="sortable">Type <span class="sort-icon"></span></th>
+                            <th data-sort="vram" class="sortable col-vram">VRAM Max <span class="sort-icon"></span></th>
+                            <th data-sort="exec_time" class="sortable col-time">Time <span class="sort-icon"></span></th>
+                            <th data-sort="gpu" class="sortable col-gpu">GPU Load <span class="sort-icon"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="profiler-table-body">
+                        <tr><td colspan="8" style="text-align:center; color:var(--holaf-text-secondary);">Ready. Click "Update Nodes".</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <div class="profiler-content">
-            <table class="data-table">
-                <thead>
-                    <tr id="table-header-row">
-                        <th data-sort="exec_order" class="sortable" style="width:60px;">Order <span class="sort-icon"></span></th>
-                        <th data-sort="id" class="sortable">ID <span class="sort-icon"></span></th>
-                        <th data-sort="title" class="sortable">Node Name <span class="sort-icon"></span></th>
-                        <!-- CORRECTION: data-sort must match the property name 'holaf_group' -->
-                        <th data-sort="holaf_group" class="sortable">Group <span class="sort-icon"></span></th>
-                        <th data-sort="type" class="sortable">Type <span class="sort-icon"></span></th>
-                        <th data-sort="vram" class="sortable col-vram">VRAM Max <span class="sort-icon"></span></th>
-                        <th data-sort="exec_time" class="sortable col-time">Time <span class="sort-icon"></span></th>
-                        <th data-sort="gpu" class="sortable col-gpu">GPU Load <span class="sort-icon"></span></th>
-                    </tr>
-                </thead>
-                <tbody id="profiler-table-body">
-                    <tr><td colspan="8" style="text-align:center; color:var(--holaf-text-secondary);">Ready. Click "Update Nodes".</td></tr>
-                </tbody>
-            </table>
+        <!-- ============ TAB 2: RUN HISTORY ============ -->
+        <div class="profiler-tab-content" data-tab="history" style="display:none;">
+            <div class="history-toolbar">
+                <h2 style="margin:0; font-size:1rem; flex-grow:1; color:var(--holaf-text-primary, #E0E0E0);">Run History</h2>
+                <button id="btn-refresh-history" class="btn btn-secondary">Refresh</button>
+            </div>
+            <div class="history-table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36px; text-align:center;"></th>
+                            <th>Name</th>
+                            <th>Time</th>
+                            <th>Date</th>
+                            <th>Nodes</th>
+                            <th>Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                        <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="history-toolbar" style="border-top:1px solid var(--holaf-border-color, #3F3F3F); border-bottom:none;">
+                <button id="btn-compare-selected" class="btn" disabled>Compare Selected</button>
+                <button id="btn-delete-selected" class="btn btn-danger" disabled>Delete Selected</button>
+                <span style="flex-grow:1; font-size:0.8rem; color:var(--holaf-text-secondary, #A0A0A0);" id="history-selection-info">Select 2+ runs to compare</span>
+            </div>
+        </div>
+
+        <!-- ============ TAB 3: RUN COMPARISON ============ -->
+        <div class="profiler-tab-content" data-tab="compare" style="display:none;">
+            <div class="compare-toolbar">
+                <h2 id="compare-title" style="margin:0; font-size:1rem; flex-grow:1; color:var(--holaf-text-primary, #E0E0E0);">Comparison</h2>
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--holaf-text-secondary, #A0A0A0);">
+                    Metric:
+                    <select id="compare-metric-select" class="compare-metric-select">
+                        <option value="exec_time">Time</option>
+                        <option value="vram_max">VRAM Max</option>
+                        <option value="gpu_load_max">GPU Load Max</option>
+                        <option value="gpu_load_avg">GPU Load Avg</option>
+                    </select>
+                </label>
+                <button id="btn-compare-back" class="btn btn-outline">Back</button>
+            </div>
+            <div class="compare-table-wrap" id="compare-content">
+                <div class="empty-state">Select runs in Run History to compare.</div>
+            </div>
         </div>
     `;
 
-    // --- EVENT LISTENERS ---
+    // --- TAB SYSTEM ---
+    function switchTab(name) {
+        document.querySelectorAll('.profiler-tab-content').forEach(div => {
+            div.style.display = div.dataset.tab === name ? 'flex' : 'none';
+        });
+        document.querySelectorAll('.profiler-tab').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === name);
+        });
+        if (name === 'history') {
+            loadHistory();
+        } else if (name === 'compare') {
+            if (comparisonRunIds.length > 0) {
+                loadComparison();
+            } else {
+                const content = document.getElementById('compare-content');
+                if (content) content.innerHTML = '<div class="empty-state">Select runs in Run History to compare.</div>';
+            }
+        }
+    }
+
+    document.querySelectorAll('.profiler-tab').forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
+    // --- LIVE PROFILE EVENT LISTENERS ---
     
     const chkNonExec = document.getElementById('chk-hide-non-executed');
     if (chkNonExec) chkNonExec.addEventListener('change', (e) => {
@@ -127,7 +369,109 @@ export function initProfiler() {
         });
     });
 
+    // --- HISTORY EVENT LISTENERS ---
+    const btnRefresh = document.getElementById('btn-refresh-history');
+    if (btnRefresh) btnRefresh.addEventListener('click', loadHistory);
+
+    const btnCompareSelected = document.getElementById('btn-compare-selected');
+    if (btnCompareSelected) {
+        btnCompareSelected.addEventListener('click', () => {
+            if (selectedRunIds.size < 2) return;
+            comparisonRunIds = [...selectedRunIds];
+            switchTab('compare');
+        });
+    }
+
+    const btnDeleteSelected = document.getElementById('btn-delete-selected');
+    if (btnDeleteSelected) {
+        btnDeleteSelected.addEventListener('click', async () => {
+            if (!selectedRunIds.size) return;
+            const ids = [...selectedRunIds];
+            if (!confirm(`Delete ${ids.length} run(s)? This cannot be undone.`)) return;
+            for (const id of ids) {
+                try {
+                    await fetch(`/holaf/profiler/run/${id}`, { method: 'DELETE' });
+                } catch (e) {
+                    console.error(`Failed to delete run ${id}:`, e);
+                }
+            }
+            ids.forEach(id => selectedRunIds.delete(id));
+            comparisonRunIds = comparisonRunIds.filter(id => !ids.includes(id));
+            await loadHistory();
+        });
+    }
+
+    const historyBody = document.getElementById('history-table-body');
+    if (historyBody) {
+        // Checkbox selection
+        historyBody.addEventListener('change', (e) => {
+            const cb = e.target.closest('.history-checkbox');
+            if (!cb) return;
+            const runId = Number(cb.dataset.runId);
+            if (cb.checked) selectedRunIds.add(runId);
+            else selectedRunIds.delete(runId);
+            updateHistoryActions();
+        });
+
+        // Double-click to edit comment inline
+        historyBody.addEventListener('dblclick', (e) => {
+            const cell = e.target.closest('.history-comment');
+            if (!cell) return;
+            cell.contentEditable = 'true';
+            cell.focus();
+            const range = document.createRange();
+            range.selectNodeContents(cell);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        });
+
+        // Save comment on blur
+        historyBody.addEventListener('focusout', (e) => {
+            const cell = e.target.closest('.history-comment');
+            if (!cell || !cell.isContentEditable) return;
+            const runId = Number(cell.dataset.runId);
+            const comment = cell.textContent.trim();
+            cell.contentEditable = 'false';
+            fetch(`/holaf/profiler/run/${runId}/comment`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment })
+            }).catch(err => console.error('Comment update failed:', err));
+        });
+
+        // Enter to save, Escape to cancel editing
+        historyBody.addEventListener('keydown', (e) => {
+            const cell = e.target.closest('.history-comment');
+            if (!cell || !cell.isContentEditable) return;
+            if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                cell.blur();
+            }
+        });
+    }
+
+    // --- COMPARE EVENT LISTENERS ---
+    const metricSelect = document.getElementById('compare-metric-select');
+    if (metricSelect) {
+        metricSelect.addEventListener('change', (e) => {
+            compareMetric = e.target.value;
+            if (compareData) renderComparison();
+        });
+    }
+
+    const btnCompareBack = document.getElementById('btn-compare-back');
+    if (btnCompareBack) {
+        btnCompareBack.addEventListener('click', () => switchTab('history'));
+    }
+
     // --- HELPERS ---
+
+    function esc(str) {
+        return String(str ?? '').replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
 
     function formatBytes(bytes) {
         if (!+bytes) return '-';
@@ -148,15 +492,69 @@ export function initProfiler() {
         return num.toString().padStart(3, '0');
     }
 
+    function formatTimestamp(ts) {
+        if (ts === null || ts === undefined || isNaN(ts)) return '-';
+        const d = new Date(Number(ts) * 1000);
+        if (isNaN(d.getTime())) return '-';
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function formatMetric(value, metric) {
+        if (value === null || value === undefined || isNaN(value)) return '-';
+        if (metric === 'exec_time') return formatTime(value);
+        if (metric === 'vram_max') return formatBytes(value);
+        return Number(value).toFixed(1) + '%';
+    }
+
+    function formatDelta(delta, metric) {
+        if (delta === null || delta === undefined || isNaN(delta)) return '-';
+        const sign = delta > 0 ? '+' : '';
+        if (metric === 'exec_time') {
+            if (Math.abs(delta) < 1) return `${sign}${delta.toFixed(1)} ms`;
+            return `${sign}${delta.toFixed(2)} s`;
+        }
+        if (metric === 'vram_max') {
+            const abs = Math.abs(delta);
+            return `${delta > 0 ? '+' : (delta < 0 ? '-' : '±')}${formatBytes(abs)}`;
+        }
+        return `${delta > 0 ? '+' : (delta < 0 ? '-' : '±')}${Math.abs(delta).toFixed(1)}%`;
+    }
+
+    // Multi-level subgraph name resolution (uses the live nodesMap)
     function resolveNodeName(nodeId, nodeData) {
         const idStr = String(nodeId);
-        if (idStr.includes(':')) {
-            const [parentId, internalId] = idStr.split(':');
-            const parent = nodesMap.get(parentId);
-            const parentName = parent ? (parent.title || parent.type) : 'Unknown';
-            return `<span style="opacity:0.6">${parentName} &gt;</span> SubNode ${internalId}`;
+        if (!idStr.includes(':')) {
+            return nodeData.title || nodeData.type || "Unknown";
         }
-        return nodeData.title || nodeData.type || "Unknown";
+        const parts = idStr.split(':');
+        const breadcrumb = [];
+        let prefix = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+            prefix = prefix ? `${prefix}:${parts[i]}` : parts[i];
+            const parent = nodesMap.get(prefix);
+            breadcrumb.push(parent ? (parent.title || parent.type) : `?${parts[i]}`);
+        }
+        const leafName = nodeData.title || nodeData.type || `Node ${parts[parts.length - 1]}`;
+        return `<span style="opacity:0.5">${breadcrumb.join(' › ')} ›</span> ${leafName}`;
+    }
+
+    // Same logic but against an arbitrary map (used by the Compare tab)
+    function resolveNodeNameFromMap(nodeId, nodeData, map) {
+        const idStr = String(nodeId);
+        if (!idStr.includes(':')) {
+            return nodeData.title || nodeData.type || "Unknown";
+        }
+        const parts = idStr.split(':');
+        const breadcrumb = [];
+        let prefix = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+            prefix = prefix ? `${prefix}:${parts[i]}` : parts[i];
+            const parent = map.get(prefix);
+            breadcrumb.push(parent ? (parent.title || parent.type) : `?${parts[i]}`);
+        }
+        const leafName = nodeData.title || nodeData.type || `Node ${parts[parts.length - 1]}`;
+        return `<span style="opacity:0.5">${breadcrumb.join(' › ')} ›</span> ${leafName}`;
     }
 
     function applyGroupsAndRender() {
@@ -168,6 +566,20 @@ export function initProfiler() {
             });
             renderTable();
         }
+    }
+
+    // --- SUMMARY BAR ---
+    function updateSummaryBar(totalTime) {
+        const bar = document.getElementById('profiler-summary-bar');
+        const value = document.getElementById('summary-total');
+        const status = document.getElementById('summary-status');
+        if (!bar || !value) return;
+
+        const hasTotal = totalTime !== null && totalTime !== undefined && totalTime > 0;
+        value.textContent = hasTotal ? formatTime(totalTime) : '0.00s';
+        bar.classList.toggle('finished', hasTotal);
+        bar.style.display = 'flex';
+        if (status) status.textContent = hasTotal ? 'Run completed' : 'Profiling...';
     }
 
     // --- RENDER LOGIC ---
@@ -237,7 +649,6 @@ export function initProfiler() {
                 if (valB === undefined) valB = 0;
             }
             
-            // CORRECTION: Added 'holaf_group' to the text sort list
             if (['title', 'type', 'holaf_group'].includes(config.sortBy)) {
                 valA = (valA || "").toString().toLowerCase();
                 valB = (valB || "").toString().toLowerCase();
@@ -324,8 +735,9 @@ export function initProfiler() {
             if (!resp.ok) return;
 
             const data = await resp.json();
+            let newNodesAdded = 0;
+
             if (data.steps && Array.isArray(data.steps)) {
-                let hasUpdates = false;
                 data.steps.forEach(step => {
                     const idStr = String(step.node_id);
                     let nodeData = nodesMap.get(idStr);
@@ -346,21 +758,71 @@ export function initProfiler() {
                             if (parent && parent.holaf_group) nodeData.holaf_group = parent.holaf_group;
                         }
                         nodesMap.set(idStr, nodeData);
+                        newNodesAdded++;
                     }
 
                     nodeData.vram_max = step.vram_max;
                     nodeData.exec_time = step.exec_time;
                     nodeData.gpu_load_max = step.gpu_load_max;
+                    if (step.gpu_load_avg !== undefined) nodeData.gpu_load_avg = step.gpu_load_avg;
                     
                     if (step.exec_time > 0 && !nodeData.exec_order) {
                         executionCounter++;
                         nodeData.exec_order = executionCounter;
                     }
-                    hasUpdates = true;
                 });
-                if (hasUpdates) renderTable();
+                renderTable();
+            }
+
+            // --- AUTO-STOP DETECTION ---
+            const stepCount = (data.steps && data.steps.length) || 0;
+
+            // 1) Same step count twice in a row => run finished
+            if (lastStepCount !== null && stepCount === lastStepCount) {
+                sameStepCount++;
+            } else {
+                sameStepCount = 0;
+            }
+            lastStepCount = stepCount;
+
+            // 2) No new node added for 3 consecutive polls => idle/stalled
+            if (newNodesAdded === 0) idlePollCount++;
+            else idlePollCount = 0;
+
+            // Fetch run metadata for total_time (authoritative finish signal)
+            let totalTime = null;
+            try {
+                const metaResp = await fetch(`/holaf/profiler/run/${currentRunId}/meta`);
+                if (metaResp.ok) {
+                    const metaData = await metaResp.json();
+                    if (metaData.run) totalTime = metaData.run.total_time;
+                }
+            } catch (e) {}
+
+            updateSummaryBar(totalTime);
+
+            const finished = (totalTime !== null && totalTime !== undefined && totalTime > 0)
+                || sameStepCount >= 2
+                || idlePollCount >= 3;
+
+            if (finished) {
+                stopPolling(totalTime);
             }
         } catch (e) { console.error("Polling error:", e); }
+    }
+
+    function stopPolling(finalTotal) {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+        runFinished = true;
+        if (finalTotal !== null && finalTotal !== undefined && finalTotal > 0) {
+            currentTotalTime = finalTotal;
+        }
+        updateSummaryBar(currentTotalTime);
+        // Refresh history so the completed run shows up in the list
+        loadHistory();
     }
 
     const btnUpdate = document.getElementById('btn-update-nodes');
@@ -393,6 +855,14 @@ export function initProfiler() {
             });
             renderTable();
 
+            // Reset polling / auto-stop state
+            lastStepCount = null;
+            sameStepCount = 0;
+            idlePollCount = 0;
+            runFinished = false;
+            currentTotalTime = null;
+            updateSummaryBar(null);
+
             try {
                 const resp = await fetch('/holaf/profiler/run-start', {
                     method: 'POST',
@@ -408,4 +878,257 @@ export function initProfiler() {
             } catch (e) { console.error("Run start failed:", e); }
         });
     }
+
+    // ============ TAB 2: RUN HISTORY ============
+
+    function updateHistoryActions() {
+        const btnCompare = document.getElementById('btn-compare-selected');
+        const btnDelete = document.getElementById('btn-delete-selected');
+        const info = document.getElementById('history-selection-info');
+        if (btnCompare) btnCompare.disabled = selectedRunIds.size < 2;
+        if (btnDelete) btnDelete.disabled = selectedRunIds.size === 0;
+        if (info) {
+            if (selectedRunIds.size === 0) info.textContent = 'Select 2+ runs to compare';
+            else if (selectedRunIds.size === 1) info.textContent = '1 run selected (need 2+)';
+            else info.textContent = `${selectedRunIds.size} runs selected`;
+        }
+    }
+
+    async function loadHistory() {
+        const tbody = document.getElementById('history-table-body');
+        const btnRefresh = document.getElementById('btn-refresh-history');
+        if (!tbody) return;
+        if (btnRefresh) btnRefresh.disabled = true;
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+        try {
+            const resp = await fetch('/holaf/profiler/runs?limit=50&offset=0');
+            if (!resp.ok) throw new Error('Failed to load runs');
+            const data = await resp.json();
+            historyRuns = data.runs || [];
+            renderHistory();
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load runs: ${esc(e.message)}</td></tr>`;
+        } finally {
+            if (btnRefresh) btnRefresh.disabled = false;
+        }
+    }
+
+    function renderHistory() {
+        const tbody = document.getElementById('history-table-body');
+        if (!tbody) return;
+
+        if (!historyRuns.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No runs recorded yet. Start a profile in the Live Profile tab.</td></tr>';
+            updateHistoryActions();
+            return;
+        }
+
+        tbody.innerHTML = historyRuns.map(run => {
+            const id = run.id;
+            const checked = selectedRunIds.has(id) ? 'checked' : '';
+            const comment = run.global_comment || '';
+            return `
+                <tr>
+                    <td style="text-align:center;"><input type="checkbox" class="history-checkbox" data-run-id="${id}" ${checked}></td>
+                    <td>${esc(run.name || `Run ${id}`)}</td>
+                    <td class="metric-cell">${formatTime(run.total_time)}</td>
+                    <td class="metric-cell" style="font-size:0.85em;">${formatTimestamp(run.timestamp)}</td>
+                    <td class="metric-cell">${run.node_count ?? '-'}</td>
+                    <td class="history-comment" data-run-id="${id}" contenteditable="false">${esc(comment)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        updateHistoryActions();
+    }
+
+    // ============ TAB 3: RUN COMPARISON ============
+
+    async function loadComparison() {
+        const container = document.getElementById('compare-content');
+        if (!container) return;
+
+        if (!comparisonRunIds.length) {
+            container.innerHTML = '<div class="empty-state">Select runs in Run History to compare.</div>';
+            return;
+        }
+
+        container.innerHTML = '<div class="empty-state">Loading comparison...</div>';
+
+        try {
+            const resp = await fetch('/holaf/profiler/compare', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ run_ids: comparisonRunIds })
+            });
+            if (!resp.ok) throw new Error('Compare request failed');
+            const data = await resp.json();
+            compareData = data;
+            renderComparison();
+        } catch (e) {
+            container.innerHTML = `<div class="empty-state">Failed to load comparison: ${esc(e.message)}</div>`;
+        }
+    }
+
+    function renderComparison() {
+        const container = document.getElementById('compare-content');
+        if (!container) return;
+
+        if (!compareData || !compareData.runs || !compareData.runs.length) {
+            container.innerHTML = '<div class="empty-state">No comparison data. Select runs in Run History to compare.</div>';
+            return;
+        }
+
+        const runs = compareData.runs;
+        const steps = compareData.steps || [];
+        const runOrder = runs.map(r => String(r.run_id));
+        const metric = compareMetric;
+
+        // Rebuild the name map from step titles
+        compareNodesMap.clear();
+
+        // Unified map: node_id -> { title, type, values: { runId: {exec_time, vram_max, gpu_load_max, gpu_load_avg} } }
+        const unified = new Map();
+        steps.forEach(step => {
+            const idStr = String(step.node_id);
+            compareNodesMap.set(idStr, { title: step.node_title, type: step.node_type });
+            if (!unified.has(idStr)) {
+                unified.set(idStr, { title: step.node_title, type: step.node_type, values: {} });
+            }
+            unified.get(idStr).values[step.run_id] = {
+                exec_time: step.exec_time,
+                vram_max: step.vram_max,
+                gpu_load_max: step.gpu_load_max,
+                gpu_load_avg: step.gpu_load_avg
+            };
+        });
+
+        // Title
+        const title = document.getElementById('compare-title');
+        if (title) {
+            title.textContent = 'Comparison: ' + runs.map(r => (
+                (r.meta && r.meta.name) ? r.meta.name : `Run ${r.run_id}`
+            )).join(' vs ');
+        }
+
+        // Rows
+        const rowsHtml = [];
+        unified.forEach((entry, nodeId) => {
+            rowsHtml.push(renderCompareRow(nodeId, entry, runOrder, metric));
+        });
+        if (rowsHtml.length === 0) {
+            rowsHtml.push(`<tr><td colspan="${runOrder.length + 2}" class="empty-state">No nodes found in the selected runs.</td></tr>`);
+        }
+
+        // Footer (summary)
+        const footerHtml = renderCompareFooter(runs, runOrder);
+
+        container.innerHTML = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Node</th>
+                        ${runs.map(r => `<th>${esc((r.meta && r.meta.name) ? r.meta.name : 'Run ' + r.run_id)}</th>`).join('')}
+                        <th>Δ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml.join('')}
+                </tbody>
+                <tfoot>
+                    ${footerHtml}
+                </tfoot>
+            </table>
+        `;
+    }
+
+    function renderCompareRow(nodeId, entry, runOrder, metric) {
+        const values = runOrder.map(rid => {
+            const v = entry.values[rid];
+            return v ? v[metric] : null;
+        });
+
+        // Best / worst coloring across the runs that have a value
+        let best = null, worst = null;
+        values.forEach(v => {
+            if (v === null || v === undefined) return;
+            if (best === null || v < best) best = v;
+            if (worst === null || v > worst) worst = v;
+        });
+
+        const name = resolveNodeNameFromMap(nodeId, entry, compareNodesMap);
+
+        const cells = values.map((v, i) => {
+            let cls = 'compare-cell';
+            if (v !== null && v !== undefined) {
+                if (best !== null && v === best) cls += ' best';
+                if (worst !== null && v === worst && worst !== best) cls += ' worst';
+            }
+            return `<td class="${cls}">${formatMetric(v, metric)}</td>`;
+        }).join('');
+
+        // Delta between the first two selected runs (later run minus earlier run)
+        const first = values[0];
+        const second = values[1];
+        let deltaHtml = '<td class="compare-cell compare-delta neutral">-</td>';
+        if (first !== null && first !== undefined && second !== null && second !== undefined) {
+            const delta = second - first;
+            const cls = delta < 0 ? 'good' : (delta > 0 ? 'bad' : 'neutral');
+            deltaHtml = `<td class="compare-cell compare-delta ${cls}">${formatDelta(delta, metric)}</td>`;
+        }
+
+        return `<tr><td class="compare-node-name">${name}</td>${cells}${deltaHtml}</tr>`;
+    }
+
+    function renderCompareFooter(runs, runOrder) {
+        const rows = [];
+
+        // TOTAL TIME (sum exec_time)
+        rows.push(buildCompareFooterRow(
+            'TOTAL TIME',
+            runs,
+            r => (r.summary && r.summary.total_exec_time !== null && r.summary.total_exec_time !== undefined) ? r.summary.total_exec_time : null,
+            'exec_time'
+        ));
+
+        // VRAM MAX
+        rows.push(buildCompareFooterRow(
+            'VRAM MAX',
+            runs,
+            r => (r.summary && r.summary.max_vram) ? r.summary.max_vram : null,
+            'vram_max'
+        ));
+
+        // GPU AVG
+        rows.push(buildCompareFooterRow(
+            'GPU AVG',
+            runs,
+            r => (r.summary && r.summary.avg_gpu !== null && r.summary.avg_gpu !== undefined) ? r.summary.avg_gpu : null,
+            'gpu_load_avg'
+        ));
+
+        return rows.join('');
+    }
+
+    function buildCompareFooterRow(label, runs, getter, metric) {
+        const values = runs.map(r => {
+            const v = getter(r);
+            return (v === null || v === undefined) ? null : v;
+        });
+
+        const first = values[0];
+        const second = values[1];
+        let deltaHtml = '<td class="compare-cell compare-delta neutral">-</td>';
+        if (first !== null && second !== null) {
+            const delta = second - first;
+            const cls = delta < 0 ? 'good' : (delta > 0 ? 'bad' : 'neutral');
+            deltaHtml = `<td class="compare-cell compare-delta ${cls}">${formatDelta(delta, metric)}</td>`;
+        }
+
+        const cells = values.map(v => `<td class="compare-cell">${formatMetric(v, metric)}</td>`).join('');
+        return `<tr class="compare-footer-row"><td>${label}</td>${cells}${deltaHtml}</tr>`;
+    }
+
+    // --- INITIAL LOAD ---
+    switchTab('live');
 }

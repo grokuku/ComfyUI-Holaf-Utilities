@@ -15,6 +15,7 @@ class ProfilerDatabase:
         if not hasattr(self._local, 'connection') or self._local.connection is None:
             conn = sqlite3.connect(self.db_path, timeout=30)
             conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON;")
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA busy_timeout = 30000;")
             self._local.connection = conn
@@ -85,6 +86,32 @@ class ProfilerDatabase:
 
         conn.commit()
         self._close_connection()
+        self._migrate_db()
+
+    def _migrate_db(self):
+        """Add new columns to profiler_runs if they don't exist yet."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Get existing columns in profiler_runs
+        cursor.execute("PRAGMA table_info(profiler_runs)")
+        existing_columns = {row['name'] for row in cursor.fetchall()}
+
+        new_columns = {
+            'linked_output_path': 'TEXT',
+            'workflow_json': 'TEXT',
+            'node_count': 'INTEGER DEFAULT 0',
+        }
+
+        for col_name, col_type in new_columns.items():
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE profiler_runs ADD COLUMN {col_name} {col_type}")
+                except Exception as e:
+                    print(f"[Holaf Profiler DB] Migration error adding column {col_name}: {e}")
+
+        conn.commit()
+        self._close_connection()
 
     def create_run(self, name, workflow_hash, comment=""):
         conn = self._get_connection()
@@ -121,6 +148,134 @@ class ProfilerDatabase:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM profiler_steps WHERE run_id = ? ORDER BY id ASC", (run_id,))
+        rows = cursor.fetchall()
+        self._close_connection()
+        return [dict(row) for row in rows]
+
+    def finalize_run(self, run_id, total_time, node_count):
+        """Set the total time and node count for a finished run."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE profiler_runs SET total_time=?, node_count=? WHERE id=",
+            (total_time, node_count, run_id)
+        )
+        conn.commit()
+        self._close_connection()
+
+    def list_runs(self, limit=50, offset=0):
+        """List runs ordered by most recent first (without workflow_json which is too large)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, name, timestamp, total_time, node_count, global_comment, linked_output_path
+            FROM profiler_runs
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset)
+        )
+        rows = cursor.fetchall()
+        self._close_connection()
+        return [dict(row) for row in rows]
+
+    def get_run(self, run_id):
+        """Get all columns of a single run (including workflow_json)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM profiler_runs WHERE id=?", (run_id,))
+        row = cursor.fetchone()
+        self._close_connection()
+        return dict(row) if row else None
+
+    def update_run_comment(self, run_id, comment):
+        """Update the global comment for a run."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE profiler_runs SET global_comment=? WHERE id=",
+            (comment, run_id)
+        )
+        conn.commit()
+        self._close_connection()
+
+    def update_run_output(self, run_id, path):
+        """Update the linked output path for a run."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE profiler_runs SET linked_output_path=? WHERE id=",
+            (path, run_id)
+        )
+        conn.commit()
+        self._close_connection()
+
+    def save_workflow_json(self, run_id, workflow_json):
+        """Store the raw workflow JSON for a run."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE profiler_runs SET workflow_json=? WHERE id=",
+            (workflow_json, run_id)
+        )
+        conn.commit()
+        self._close_connection()
+
+    def get_workflow_json(self, run_id):
+        """Retrieve the raw workflow JSON for a run."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT workflow_json FROM profiler_runs WHERE id=?", (run_id,))
+        row = cursor.fetchone()
+        self._close_connection()
+        return row['workflow_json'] if row else None
+
+    def delete_run(self, run_id):
+        """Delete a run (and cascade-delete its steps via foreign key)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM profiler_runs WHERE id=?", (run_id,))
+        conn.commit()
+        self._close_connection()
+
+    def get_run_summary(self, run_id):
+        """Get aggregated stats for a run's steps."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) as step_count,
+                SUM(exec_time) as total_exec_time,
+                MAX(vram_max) as max_vram,
+                AVG(gpu_load_avg) as avg_gpu,
+                MAX(gpu_load_max) as max_gpu
+            FROM profiler_steps
+            WHERE run_id=?
+            """,
+            (run_id,)
+        )
+        row = cursor.fetchone()
+        self._close_connection()
+        return dict(row) if row else None
+
+    def get_steps_for_comparison(self, run_ids):
+        """Get steps for multiple runs, ordered by run then node_id."""
+        if not run_ids:
+            return []
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        placeholders = ','.join('?' for _ in run_ids)
+        cursor.execute(
+            f"""
+            SELECT run_id, node_id, node_title, node_type, exec_time, vram_max, gpu_load_max, gpu_load_avg
+            FROM profiler_steps
+            WHERE run_id IN ({placeholders})
+            ORDER BY run_id, node_id
+            """,
+            tuple(run_ids)
+        )
         rows = cursor.fetchall()
         self._close_connection()
         return [dict(row) for row in rows]
