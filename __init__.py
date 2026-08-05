@@ -793,6 +793,9 @@ async def iv_list_images_route(r): return await holaf_image_viewer_backend.list_
 @routes.get("/holaf/images/thumbnail")
 async def iv_get_thumbnail_route(r): return await holaf_image_viewer_backend.get_thumbnail_route(r)
 
+@routes.get("/holaf/images/full")
+async def iv_get_full_image_route(r): return await holaf_image_viewer_backend.get_full_image_route(r)
+
 @routes.get("/holaf/images/metadata")
 async def iv_get_metadata_route(r): return await holaf_image_viewer_backend.get_metadata_route(r)
 
@@ -1158,7 +1161,9 @@ if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
 else:
     print("🟡 [Holaf-Init] Model Manager scan_and_update_db not available for scheduling.")
 
-_periodic_task_wrapper(30.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
+# Sync is a safety net: the inotify/polling watcher already handles real-time
+# events, so a 120s interval is plenty and lightens the 30k-file scan load.
+_periodic_task_wrapper(120.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
 
 # --- MODIFICATION START: Correctly schedule all image viewer workers ---
 thumbnail_startup_timer = threading.Timer(15.0, start_thumbnail_worker)

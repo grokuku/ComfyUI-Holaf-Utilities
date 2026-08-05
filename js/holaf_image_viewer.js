@@ -14,7 +14,7 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
-import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';
+import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout, insertImagesAtTop } from './image_viewer/image_viewer_gallery.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
@@ -44,6 +44,7 @@ const holafImageViewer = {
     fullscreenElements: null,
     _fullscreenSourceView: null,
     _lastFolderFilterState: null,
+    _lastFilterSignature: null,
     filterRefreshIntervalId: null,
     zoomViewState: { scale: 1, tx: 0, ty: 0 },
     fullscreenViewState: { scale: 1, tx: 0, ty: 0 },
@@ -440,12 +441,68 @@ const holafImageViewer = {
             const data = await response.json();
 
             const state = imageViewerState.getState();
-            if (data.last_update > state.status.lastDbUpdateTime) {
-                console.log("[Holaf ImageViewer] New data detected on server, refreshing filters and image list.");
-                imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update } });
+            if (data.last_update <= state.status.lastDbUpdateTime) return;
 
+            console.log("[Holaf ImageViewer] New data detected on server.");
+            imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update } });
+
+            // Keep the existing empty-folder_filters early-return behavior exactly as-is:
+            // nothing to display → just refresh the filter options (and loadFilteredImages'
+            // own early-return clears the gallery, matching the pre-existing flow).
+            const { folder_filters } = imageViewerState.getState().filters;
+            if (!folder_filters || folder_filters.length === 0) {
                 await this.loadAndPopulateFilters(false, true);
                 await this.loadFilteredImages();
+                return;
+            }
+
+            // If the folder/format signature changed (new folder, new format, ...), fall
+            // back to the original full refresh so the new folders/images are picked up.
+            // Identical signatures skip the filter DOM rebuild entirely.
+            const filterResponse = await fetch('/holaf/images/filter-options', { cache: 'no-store' });
+            if (filterResponse.ok) {
+                const filterData = await filterResponse.json();
+                if (this._filterSignatureChanged(filterData)) {
+                    console.log("[Holaf ImageViewer] Folder/format signature changed — full refresh.");
+                    await this.loadAndPopulateFilters(false, true);
+                    await this.loadFilteredImages();
+                    return;
+                }
+            }
+
+            // Incremental refresh: only fetch images newer than the current top mtime.
+            const currentImages = imageViewerState.getState().images;
+            if (!currentImages || currentImages.length === 0) {
+                // First load / no top mtime → full fetch as today.
+                await this.loadFilteredImages();
+                return;
+            }
+
+            let topMtime = 0;
+            for (const img of currentImages) {
+                if (img.mtime && img.mtime > topMtime) topMtime = img.mtime;
+            }
+            if (topMtime <= 0) {
+                // No usable mtime — fall back to a full fetch.
+                await this.loadFilteredImages();
+                return;
+            }
+
+            const delta = await this._fetchIncrementalImages(topMtime);
+            if (delta && delta.generated_thumbnails_count !== undefined) {
+                imageViewerState.setState({ status: { generatedThumbnailsCount: delta.generated_thumbnails_count } });
+            }
+
+            const newImages = (delta && delta.images) || [];
+            if (newImages.length > 0) {
+                // They are mtime DESC and newer than everything we have: merge at the top.
+                this._mergeNewImagesAtTop(newImages);
+                // Insert ONLY the delta thumbnails at the top of the grid (no full rebuild).
+                insertImagesAtTop(newImages, delta.total_db_count);
+                this._updateActionButtonsState();
+            } else if (delta && delta.total_db_count !== undefined) {
+                // Nothing changed for the current filter — just keep the counter fresh.
+                this.updateStatusBar(currentImages.length, delta.total_db_count);
             }
         } catch (e) {
             console.error("[Holaf ImageViewer] Error checking for updates:", e);
@@ -547,6 +604,14 @@ const holafImageViewer = {
 
             const state = imageViewerState.getState();
             imageViewerState.setState({ status: { lastDbUpdateTime: data.last_update_time || state.status.lastDbUpdateTime } });
+
+            // Remember the current folder/format signature so checkForUpdates can detect
+            // structural changes (new folder/format) without rebuilding the filter DOM
+            // on every detection pass.
+            this._lastFilterSignature = {
+                subfolders: (data.subfolders || []).map(f => f.path).sort().join('\u0000'),
+                formats: (data.formats || []).slice().sort().join('\u0000')
+            };
 
             if (this.panelElements) {
                 const tagSuggestionsEl = document.getElementById('holaf-viewer-tag-suggestions');
@@ -662,6 +727,72 @@ const holafImageViewer = {
         console.timeEnd('JSON Parsing');
         console.timeEnd('BE Fetch & Parse');
         return data;
+    },
+
+    /**
+     * Fetch ONLY images with mtime > minMtime (same filters as the current view).
+     * The backend returns them already ordered by mtime DESC, so they are newer
+     * than everything currently in state.images.
+     */
+    async _fetchIncrementalImages(minMtime) {
+        const { filters } = imageViewerState.getState();
+        const payload = { ...filters };
+        delete payload.locked_folders;
+        payload.min_mtime = minMtime;
+        const response = await fetch('/holaf/images/list', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        return response.json();
+    },
+
+    /**
+     * Compares the folder/format signature of a fresh filter-options payload with the
+     * last one we rendered. Returns true when the list of folders or formats changed.
+     * The cached signature is always refreshed so the next comparison uses the latest.
+     */
+    _filterSignatureChanged(filterData) {
+        const next = {
+            subfolders: (filterData.subfolders || []).map(f => f.path).sort().join('\u0000'),
+            formats: (filterData.formats || []).slice().sort().join('\u0000')
+        };
+        const previous = this._lastFilterSignature;
+        const changed = !previous || previous.subfolders !== next.subfolders || previous.formats !== next.formats;
+        this._lastFilterSignature = next;
+        return changed;
+    },
+
+    /**
+     * Merges an incremental delta (newest-first, mtime DESC) at the TOP of state.images.
+     * Dedupes by path_canon: a modified file re-appears with a newer mtime, so its old
+     * occurrence is dropped and its newest version is unshifted to the top. Selection and
+     * navigation indices are reconciled afterwards.
+     */
+    _mergeNewImagesAtTop(newImages) {
+        const state = imageViewerState.getState();
+        const current = state.images || [];
+        const deltaPaths = new Set(newImages.map(img => img.path_canon));
+        const deduped = current.filter(img => !deltaPaths.has(img.path_canon));
+        // newImages are mtime DESC and newer than everything already present.
+        const merged = newImages.concat(deduped);
+
+        const selectedPaths = state.selectedPaths;
+        const newSelectedImages = new Set();
+        for (const img of merged) {
+            if (selectedPaths.has(img.path_canon)) newSelectedImages.add(img);
+        }
+        let newNavIndex = -1;
+        if (state.activeImage) {
+            newNavIndex = merged.findIndex(img => img.path_canon === state.activeImage.path_canon);
+        }
+        imageViewerState.setState({
+            images: merged,
+            selectedImages: newSelectedImages,
+            activeImage: state.activeImage,
+            currentNavIndex: newNavIndex
+        });
     },
 
     async loadFilteredImages(isInitialLoad = false) {

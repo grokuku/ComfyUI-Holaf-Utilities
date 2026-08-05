@@ -447,6 +447,7 @@ def sync_image_database_blocking():
     ops_counter = 0
     added_count = 0
     deleted_count = 0
+    changed_count = 0
 
     try:
         conn = holaf_database.get_db_connection()
@@ -528,6 +529,7 @@ def sync_image_database_blocking():
                                       meta.get('prompt'), json.dumps(meta.get('workflow')) if meta.get('workflow') else None, meta.get('prompt_source'),
                                       meta.get('workflow_source'), meta.get('width'), meta.get('height'), meta.get('ratio'), has_edit_file, thumb_hash,
                                       has_prompt_flag, has_workflow_flag, has_edits_flag, has_tags_flag, image_id))
+                                changed_count += 1
                             else:
                                 cursor.execute("""
                                     INSERT INTO images (filename, subfolder, top_level_subfolder, path_canon, format, mtime, 
@@ -581,16 +583,24 @@ def sync_image_database_blocking():
             cursor.execute(f"DELETE FROM images WHERE path_canon IN ({placeholders}) AND is_trashed = 0", tuple(stale_canons))
             conn.commit()
         
-        _update_folder_metadata_cache_blocking(cursor)
-        conn.commit()
+        # Only rebuild the folder metadata cache and bump the DB update timestamp
+        # when this pass actually detected changes. Otherwise (the common case,
+        # e.g. no new/removed/modified files) we leave both untouched so the
+        # frontend's polling does NOT trigger a full 30k-image re-fetch every pass.
+        detected_changes = (added_count > 0) or (deleted_count > 0) or (changed_count > 0)
+
+        if detected_changes:
+            _update_folder_metadata_cache_blocking(cursor)
+            conn.commit()
 
         # --- REFRESH GLOBAL STATS ---
-        # Since sync is massive, we just force a refresh at the end
-        if added_count > 0 or deleted_count > 0:
+        # Since sync is massive, we just force a refresh at the end (only when changed)
+        if detected_changes:
             stats_manager.force_refresh()
 
         print("✅ [Holaf-ImageViewer] Periodic image database synchronization complete.")
-        update_last_db_update_time()
+        if detected_changes:
+            update_last_db_update_time()
     except Exception as e:
         sync_exception = e
         print(f"🔴 [Holaf-ImageViewer] Error during sync: {e}")
@@ -1353,7 +1363,8 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             
             img_copy = img_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
             img_to_save = img_copy.convert("RGB")
-            img_to_save.save(thumb_path_abs, "JPEG", quality=85, optimize=True)
+            # optimize=False: ~30-50% faster generation, negligible quality loss at thumbnail size.
+            img_to_save.save(thumb_path_abs, "JPEG", quality=85, optimize=False)
             
         if image_path_canon_for_db_update:
             conn_update_db = holaf_database.get_db_connection()

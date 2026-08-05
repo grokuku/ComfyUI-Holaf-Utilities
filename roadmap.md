@@ -37,12 +37,26 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 ### 🖥️ Performance
 - **Thumbnail worker** — File d'attente prioritaire (visible > pending), 6 concurrents, retry avec backoff
 - **Watcher filesystem** — Auto-restart en cas de crash, polling fallback si inotify saturé
-- **Sync périodique** — Toutes les 30s (était 300s). Supprime les thumbnails orphelins
+- **Sync périodique** — Toutes les 120s (était 30s). Supprime les thumbnails orphelins
 - **Folder metadata** — Incrémental (était full rebuild par image)
 - **Worker DB connection** — Persistante pendant l'idle (pas de connect/déconnect toutes les 5s)
 - **Thumbnail cleanup** — Orphelins supprimés pendant le sync (pas seulement manuellement)
 - **Galerie** — `_doKick` limité à 20 cache hits/tick, `textContent` pour bulk DOM removal
 - **Éditeur** — Downscale à 1920px max pour le canvas preview, contrôles 'all' séparés des ranged, pas de closures dans la boucle pixel
+
+### ⚡ Performance galerie — working tree (10 fixes, non commité)
+
+- **Backend — arrêt du refresh perpétuel** (`holaf_image_viewer_backend/logic.py`) — `sync_image_database_blocking()` ne bump `LAST_DB_UPDATE_TIME` que si un pass détecte des changements (compteurs added/deleted/changed). Avant : bump inconditionnel toutes les 30s → le frontend re-fetchait les 30k images toutes les 30s en boucle. Cause racine du refresh lent après une nouvelle image, des freezes d'onglet et des placeholders gris
+- **Backend — sync allégé** (`logic.py` + `__init__.py`) — Intervalle de sync 30s → 120s ; `_update_folder_metadata_cache_blocking` (DELETE + rebuild complet) ne tourne que si des changements sont détectés
+- **Backend — génération de thumbnails bornée** (`routes/thumbnail_routes.py` + `logic.py`) — Génération inline capée via `threading.Semaphore(2)` ; si occupée, la route renvoie 202 + `Retry-After: 2` + no-store au lieu d'une génération PIL illimitée (jusqu'à ~20 threads concurrents saturant le CPU) ; `optimize=False` dans `_create_thumbnail_blocking` (~30-50% plus rapide) ; thumbnails servis via `web.FileResponse` avec `Cache-Control: max-age=31536000, immutable`
+- **Backend — nouvelle route image pleine taille** (`routes/image_routes.py`, enregistrée dans `__init__.py`) — `GET /holaf/images/full?path_canon=...&mtime=...` streame le fichier ORIGINAL avec `Cache-Control: max-age=31536000, immutable` (ETag depuis mtime/thumb_hash), même whitelist de chemins que les thumbnails. Le plein écran ne dépend plus de la route ComfyUI `/view`
+- **Backend — liste incrémentale** (`routes/image_routes.py`) — `POST /holaf/images/list` accepte un `min_mtime` optionnel → ne retourne que les images avec `mtime > min_mtime` (mêmes champs, `mtime DESC`) ; sans lui, liste complète comme avant
+- **Frontend — refresh incrémental** (`js/holaf_image_viewer.js`) — `checkForUpdates` calcule le top mtime depuis le state et ne fetch que le delta via `min_mtime` ; 0 item → rien à faire ; N items → fusionnés en haut du state (dédupe par `path_canon`) ; DOM des filtres reconstruit seulement si la signature dossier/formats change (`_filterSignatureChanged`) ; premier load = fetch complet ; early-return sur `folder_filters` vide préservé
+- **Frontend — insertion de delta** (`js/image_viewer/image_viewer_gallery.js`) — `insertImagesAtTop()` ajoute les nouvelles thumbnails en haut via le `renderVisibleItems` virtualisé existant (réutilise les placeholders, ne crée du DOM que pour le delta) — chemin du load initial 30k (syncGallery rebuild complet + force rebuild liste vide) intact. Pas de pagination, pas de création différée — contraintes utilisateur respectées
+- **Frontend — priorisation des thumbnails visibles** (`image_viewer_gallery.js`) — `renderVisibleItems` collecte les chemins visibles non cachés → `POST /holaf/images/prioritize-thumbnails` (debounce 300ms, flush 1000, fire-and-forget). Active la file de priorité backend jusque-là morte (`thumbnail_status=1`)
+- **Frontend — route cache image pleine taille** (`js/image_viewer/image_viewer_navigation.js`) — `getFullImageUrl` pointe vers `/holaf/images/full` avec cache-buster mtime au lieu de ComfyUI `/view`
+- **Frontend — gestion du 202 en attente** (`image_viewer_gallery.js`) — fetch thumbnail 202 → placeholder gris conservé, retry programmé après `Retry-After` (2s par défaut) via la map dédiée `pendingThumbnailRetries` (aucune collision avec `idleRestartTimer`) ; prefetch early-return aussi sur 202
+- **Code mort activé** — le flag `viewer_is_active` (`worker.py:40`, set par `utility_routes.py:28`) et l'endpoint `/holaf/images/prioritize-thumbnails` existaient mais n'étaient jamais utilisés par le frontend — désormais câblés
 
 ---
 
@@ -129,7 +143,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 | Bug | Sévérité | Statut |
 |-----|----------|--------|
-| Freeze onglet au lancement (jaune = JS) | 🔴 | Non identifié. Probablement backend ou JSON.parse des 30k images. À investiguer avec DevTools. |
+| Freeze onglet au lancement (jaune = JS) | 🟠 | Grandement réduit — cause racine identifiée et supprimée (boucle de refresh perpétuelle). Risques restants : décodage fullscreen, build initial des 30k éléments DOM. |
 | Bouton "Copy Prompt" cassé | 🟡 | Déjà corrigé par l'utilisateur |
 | Bouton "Load Workflow" standalone | 🟡 | Déjà corrigé par l'utilisateur |
 | CSS dupliqué dans templates HTML | ⚪ | Cosmétique |

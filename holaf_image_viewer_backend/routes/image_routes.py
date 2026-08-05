@@ -3,14 +3,21 @@ import json
 import time
 import datetime
 import traceback
+import os
 from collections import defaultdict
 import math
 
 from aiohttp import web
+import folder_paths  # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
 from ... import holaf_database
+from ... import holaf_utils
+
+# Immutable cache header for the full-image route. Safe because the frontend
+# includes a cache-buster (mtime / thumb_hash) in the query string.
+_IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "max-age=31536000, immutable"}
 
 # --- API Route Handlers ---
 async def get_filter_options_route(request: web.Request):
@@ -63,6 +70,66 @@ async def get_filter_options_route(request: web.Request):
     finally:
         if conn:
             holaf_database.close_db_connection(exception=current_exception)
+
+
+async def get_full_image_route(request: web.Request):
+    """
+    GET /holaf/images/full
+
+    Streams the ORIGINAL full-size file with immutable cache headers.
+    Accepts: path_canon (preferred) OR filename + subfolder (+ optional type),
+    plus an optional cache-buster (mtime or thumb_hash) which is validated but
+    not used for path resolution (it only busts browser/proxy caches).
+
+    Uses the same path whitelist/security checks as get_thumbnail_route:
+    rejects '..' / absolute paths and verifies the resolved path stays inside
+    the ComfyUI output directory.
+    """
+    try:
+        output_dir = folder_paths.get_output_directory()
+
+        path_canon_param = request.query.get("path_canon")
+        filename = request.query.get("filename")
+        subfolder = request.query.get("subfolder", "")
+        # 'type' is accepted for parity with ComfyUI's /view route and future use.
+        # It is not used for path resolution.
+        file_type = request.query.get("type", "")
+
+        # Cache-buster params: validated to exist for format sanity, but never
+        # used to build the path.
+        cache_buster = request.query.get("mtime") or request.query.get("thumb_hash")
+
+        # --- Resolve path_canon (matches DB key exactly) ---
+        if path_canon_param:
+            if ".." in path_canon_param or path_canon_param.startswith("/"):
+                return web.Response(status=403, text="ERR: Invalid path_canon.")
+            original_rel_path = path_canon_param
+        # --- Fallback to legacy reconstruction ---
+        elif filename:
+            safe_filename = holaf_utils.sanitize_filename(filename)
+            original_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
+        else:
+            return web.Response(status=400, text="ERR: Filename or path_canon is required.")
+
+        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+        # Whitelist: resolved path must stay inside the output directory.
+        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+            return web.Response(status=403, text="ERR: Forbidden path.")
+
+        if not os.path.isfile(original_abs_path):
+            return web.Response(status=404, text="ERR: Original image not found.")
+
+        headers = dict(_IMMUTABLE_CACHE_HEADERS)
+        if cache_buster is not None:
+            headers["ETag"] = f'"{str(cache_buster)[:64]}"'
+
+        # Stream the file directly from disk (no full read into memory).
+        return web.FileResponse(original_abs_path, headers=headers)
+
+    except Exception as e:
+        traceback.print_exc()
+        return web.Response(status=500, text=f"ERR: Server error serving full image: {e}")
+
 
 async def list_images_route(request: web.Request):
     # --- BENCHMARK START ---
@@ -128,6 +195,17 @@ async def list_images_route(request: web.Request):
                 dt_end = datetime.datetime.strptime(filters['endDate'], '%Y-%m-%d') + datetime.timedelta(days=1)
                 where_clauses.append("i.mtime < ?"); params.append(time.mktime(dt_end.timetuple()))
             except (ValueError, TypeError): pass
+
+        # --- MODIFICATION: Incremental delta fetch ---
+        # When min_mtime is provided, return ONLY images with mtime > min_mtime
+        # (ordered by mtime DESC, same field set). The frontend can use this to
+        # fetch just the delta (e.g. 1 new image) instead of all ~30k rows.
+        if filters.get('min_mtime') is not None:
+            try:
+                min_mtime = float(filters['min_mtime'])
+                where_clauses.append("i.mtime > ?"); params.append(min_mtime)
+            except (ValueError, TypeError):
+                pass
 
         # Text Field Searches
         if filters.get('filename_search'):

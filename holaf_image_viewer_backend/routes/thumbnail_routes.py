@@ -6,6 +6,7 @@ import json
 import traceback
 import logging
 import time # Ensure time is imported
+import threading
 
 import aiofiles
 from aiohttp import web
@@ -19,6 +20,18 @@ from ... import holaf_utils
 logger = logging.getLogger('holaf.images.routes')
 
 EDIT_DIR_NAME = "edit"
+
+# Bounds the number of concurrent PIL thumbnail generations started INLINE from
+# the thumbnail route (the asyncio default executor would otherwise allow up to
+# 20 concurrent CPU-heavy PIL jobs and saturate the CPU). If the semaphore is
+# unavailable we respond immediately with 202 + a retry hint instead of queueing
+# unbounded work. The background thumbnail worker is NOT gated by this semaphore.
+_THUMBNAIL_GENERATION_SEMAPHORE = threading.Semaphore(2)
+
+# Immutable cache header for generated thumbnails. Safe because the URL includes
+# thumb_hash (or path hash) as a cache-buster.
+_IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "max-age=31536000, immutable"}
+
 
 # --- API Route Handlers ---
 async def get_thumbnail_route(request: web.Request):
@@ -119,8 +132,11 @@ async def get_thumbnail_route(request: web.Request):
         # Serve existing if no regen needed
         if not needs_generation and os.path.exists(thumb_path_abs):
             try:
-                async with aiofiles.open(thumb_path_abs, 'rb') as f: content = await f.read()
-                return web.Response(body=content, content_type='image/jpeg')
+                return web.FileResponse(
+                    thumb_path_abs,
+                    headers=_IMMUTABLE_CACHE_HEADERS,
+                    content_type='image/jpeg',
+                )
             except Exception as e: needs_generation = True; error_message_for_client = "ERR: Failed to read existing thumb."
 
         # Generate if needed
@@ -128,44 +144,59 @@ async def get_thumbnail_route(request: web.Request):
             if not os.path.isfile(original_abs_path):
                  return web.Response(status=404, text="ERR: Source file missing for generation.")
 
-            # --- NEW: Check for edits to apply to thumbnail ---
-            edit_data = None
+            # Bound inline generation: at most 2 PIL generations run at once. If the
+            # semaphore is unavailable, respond immediately (202 + retry hint) instead
+            # of waiting/queueing unbounded work.
+            if not _THUMBNAIL_GENERATION_SEMAPHORE.acquire(blocking=False):
+                return web.Response(
+                    status=202,
+                    text="ERR: Thumbnail generation busy, please retry shortly.",
+                    headers={"Retry-After": "2", "Cache-Control": "no-store"},
+                )
             try:
-                original_dir = os.path.dirname(original_abs_path)
-                base_filename = os.path.splitext(os.path.basename(original_abs_path))[0]
-                
-                edit_file_new = os.path.join(original_dir, EDIT_DIR_NAME, base_filename + ".edt")
-                edit_file_legacy = os.path.join(original_dir, base_filename + ".edt")
-                
-                target_edit_file = None
-                if os.path.isfile(edit_file_new): target_edit_file = edit_file_new
-                elif os.path.isfile(edit_file_legacy): target_edit_file = edit_file_legacy
-                
-                if target_edit_file:
-                    async with aiofiles.open(target_edit_file, 'r', encoding='utf-8') as f:
-                        content = await f.read()
-                        edit_data = json.loads(content)
-            except Exception as e:
-                logger.warning(f"Failed to load edit data for thumbnail generation {original_rel_path}: {e}")
-            # --------------------------------------------------
+                # --- NEW: Check for edits to apply to thumbnail ---
+                edit_data = None
+                try:
+                    original_dir = os.path.dirname(original_abs_path)
+                    base_filename = os.path.splitext(os.path.basename(original_abs_path))[0]
+                    
+                    edit_file_new = os.path.join(original_dir, EDIT_DIR_NAME, base_filename + ".edt")
+                    edit_file_legacy = os.path.join(original_dir, base_filename + ".edt")
+                    
+                    target_edit_file = None
+                    if os.path.isfile(edit_file_new): target_edit_file = edit_file_new
+                    elif os.path.isfile(edit_file_legacy): target_edit_file = edit_file_legacy
+                    
+                    if target_edit_file:
+                        async with aiofiles.open(target_edit_file, 'r', encoding='utf-8') as f:
+                            content = await f.read()
+                            edit_data = json.loads(content)
+                except Exception as e:
+                    logger.warning(f"Failed to load edit data for thumbnail generation {original_rel_path}: {e}")
+                # --------------------------------------------------
 
-            loop = asyncio.get_running_loop()
-            # Pass explicit args to blocking logic, including edit_data
-            gen_success = await loop.run_in_executor(
-                None, 
-                logic._create_thumbnail_blocking, 
-                original_abs_path, 
-                thumb_path_abs, 
-                original_rel_path, # path_canon for DB update
-                edit_data
-            )
-            if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
+                loop = asyncio.get_running_loop()
+                # Pass explicit args to blocking logic, including edit_data
+                gen_success = await loop.run_in_executor(
+                    None, 
+                    logic._create_thumbnail_blocking, 
+                    original_abs_path, 
+                    thumb_path_abs, 
+                    original_rel_path, # path_canon for DB update
+                    edit_data
+                )
+                if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
+            finally:
+                _THUMBNAIL_GENERATION_SEMAPHORE.release()
         
         # Serve generated file
         if os.path.exists(thumb_path_abs):
             try:
-                async with aiofiles.open(thumb_path_abs, 'rb') as f: content = await f.read()
-                return web.Response(body=content, content_type='image/jpeg')
+                return web.FileResponse(
+                    thumb_path_abs,
+                    headers=_IMMUTABLE_CACHE_HEADERS,
+                    content_type='image/jpeg',
+                )
             except Exception as e: current_exception = e; error_message_for_client = "ERR: Failed to read generated thumb at final stage."
         
         logger.warning(f"Final fallback for {original_rel_path}: Thumbnail not served. Reason: {error_message_for_client}")

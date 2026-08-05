@@ -10,7 +10,8 @@ from .logic import (
 # Import route handlers from the new refactored structure
 from .routes.image_routes import (
     get_filter_options_route,
-    list_images_route
+    list_images_route,
+    get_full_image_route
 )
 from .routes.file_ops_routes import (
     delete_images_route,
@@ -62,6 +63,7 @@ __all__ = [
     # Image Listing
     'get_filter_options_route',
     'list_images_route',
+    'get_full_image_route',
     
     # File Operations
     'delete_images_route',

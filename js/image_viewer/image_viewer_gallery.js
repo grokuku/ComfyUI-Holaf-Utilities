@@ -26,6 +26,11 @@ const SCROLLBAR_DEBOUNCE_MS = 50;
 const FETCH_TIMEOUT_MS = 30000; // 30 seconds timeout per image
 const HOVER_DELAY_MS = 100; // Slight delay before playing video to prevent crazy flashing when moving mouse fast
 
+// Debounce for backend thumbnail prioritization (rapid scrolling must not spam it)
+const PRIORITIZE_DEBOUNCE_MS = 300;
+// Flush early when the pending path set grows too large during a long scroll
+const PRIORITIZE_FLUSH_THRESHOLD = 1000;
+
 // Standard browser limit is 6. With the new backend architecture (In-Memory Stats),
 // we can safely use the full pipe without fearing DB locks.
 let currentConcurrencyLimit = 6;
@@ -49,6 +54,11 @@ class ThumbnailLRUCache {
         this.cache.delete(key);
         this.cache.set(key, val);
         return val;
+    }
+
+    has(key) {
+        // Non-mutating existence check (unlike get(), which refreshes recency).
+        return this.cache.has(key);
     }
 
     put(key, val) {
@@ -103,6 +113,9 @@ const unloadedVisiblePaths = new Set(); // path_canon of visible items not yet l
 // 
 let kickQueued = false;
 let idleRestartTimer = null;
+let prioritizeDebounceTimer = null;
+const pendingPrioritizePaths = new Set();
+const pendingThumbnailRetries = new Map(); // path_canon -> timeoutId
 
 let columnCount = 0;
 let itemWidth = 0;
@@ -338,6 +351,26 @@ function renderVisibleItems() {
 
         renderedPlaceholders = newPlaceholdersToRender;
 
+        // --- Backend priority queue: collect currently VISIBLE thumbnails ---
+        // (debounced ~300ms, fire-and-forget). This tells the backend to generate
+        // these thumbnails first (thumbnail_status=1). Only uncached, not-in-flight
+        // items are queued so we don't waste the request.
+        {
+            const viewportStartRow = Math.max(0, Math.floor(scrollTop / itemHeightWithGap));
+            const viewportEndRow = Math.ceil((scrollTop + viewportHeight) / itemHeightWithGap);
+            const priorityStart = viewportStartRow * columnCount;
+            const priorityEnd = Math.min(images.length - 1, (viewportEndRow * columnCount) + columnCount - 1);
+            for (let i = priorityStart; i <= priorityEnd; i++) {
+                const img = images[i];
+                if (!img) continue;
+                const pathCanon = img.path_canon;
+                if (!thumbnailCache.has(pathCanon) && !activeFetches.has(pathCanon)) {
+                    pendingPrioritizePaths.add(pathCanon);
+                }
+            }
+            if (pendingPrioritizePaths.size > 0) schedulePrioritizeVisibleThumbnails();
+        }
+
         // Kick off loading immediately — don't debounce on render frame
         // (debounced for trackpad scrolling)
         debouncedKickLoadQueue();
@@ -506,6 +539,10 @@ async function fetchPrefetchThumbnail(image) {
     try {
         const response = await fetch(imageUrl.href, { signal: controller.signal, priority: 'low' });
         clearTimeout(timeoutId);
+        if (response.status === 202) {
+            // Backend busy generating — don't cache; it will be retried when visible.
+            return;
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const blob = await response.blob();
@@ -537,6 +574,51 @@ function _findNextUnloaded() {
 function debouncedKickLoadQueue() {
     clearTimeout(scrollbarDebounceTimeout);
     scrollbarDebounceTimeout = setTimeout(kickLoadQueue, isBenchmarking ? 5 : 30);
+}
+
+// --- Backend thumbnail prioritization (P4 frontend) ---
+function _flushPrioritizeThumbnails() {
+    if (pendingPrioritizePaths.size === 0) return;
+    const paths = [...pendingPrioritizePaths];
+    pendingPrioritizePaths.clear();
+    // Fire-and-forget: never block the gallery on this request.
+    fetch('/holaf/images/prioritize-thumbnails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths_canon: paths })
+    }).catch(() => {});
+}
+
+function schedulePrioritizeVisibleThumbnails() {
+    clearTimeout(prioritizeDebounceTimer);
+    if (pendingPrioritizePaths.size >= PRIORITIZE_FLUSH_THRESHOLD) {
+        prioritizeDebounceTimer = null;
+        _flushPrioritizeThumbnails();
+        return;
+    }
+    prioritizeDebounceTimer = setTimeout(() => {
+        prioritizeDebounceTimer = null;
+        _flushPrioritizeThumbnails();
+    }, PRIORITIZE_DEBOUNCE_MS);
+}
+
+// --- Pending (202) thumbnail retry scheduling (P4 frontend) ---
+// Uses a per-item timer instead of the shared idleRestartTimer so a busy backend
+// response never cancels the gallery-wide idle restart mechanism.
+function _scheduleThumbnailRetry(pathCanon, placeholder, delayMs) {
+    if (pendingThumbnailRetries.has(pathCanon)) {
+        clearTimeout(pendingThumbnailRetries.get(pathCanon));
+    }
+    const timer = setTimeout(() => {
+        pendingThumbnailRetries.delete(pathCanon);
+        // Only re-queue if the placeholder is still live and still pending.
+        if (placeholder.isConnected && placeholder.dataset.thumbnailLoadingOrLoaded === "pending") {
+            delete placeholder.dataset.thumbnailLoadingOrLoaded;
+            unloadedVisiblePaths.add(pathCanon);
+            kickLoadQueue();
+        }
+    }, delayMs);
+    pendingThumbnailRetries.set(pathCanon, timer);
 }
 
 async function fetchThumbnail(placeholder, image, forceReload = false) {
@@ -584,6 +666,18 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         });
 
         clearTimeout(timeoutId);
+
+        if (response.status === 202) {
+            // Thumbnail generation is pending on the server (bounded inline generation).
+            // Keep the gray placeholder and re-schedule this thumbnail after Retry-After
+            // instead of showing a broken image. Mark it "pending" so the idle re-kick
+            // does not immediately re-request it in a hot loop.
+            const retryAfterMs = (parseFloat(response.headers.get('Retry-After')) || 2) * 1000;
+            placeholder.dataset.thumbnailLoadingOrLoaded = "pending";
+            unloadedVisiblePaths.delete(pathCanon);
+            _scheduleThumbnailRetry(pathCanon, placeholder, retryAfterMs);
+            return;
+        }
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -762,6 +856,13 @@ function releasePlaceholder(placeholder) {
     if (placeholder._hoverCleanup) {
         placeholder._hoverCleanup();
         placeholder._hoverCleanup = null;
+    }
+
+    // Cancel any pending 202 retry for this item
+    const releasedPath = placeholder.dataset.pathCanon;
+    if (releasedPath && pendingThumbnailRetries.has(releasedPath)) {
+        clearTimeout(pendingThumbnailRetries.get(releasedPath));
+        pendingThumbnailRetries.delete(releasedPath);
     }
 
     // Remove from DOM
@@ -1043,6 +1144,8 @@ function syncGallery(viewer, images) {
     activeFetches.clear();
     activeThumbnailLoads = 0;
     unloadedVisiblePaths.clear();
+    for (const t of pendingThumbnailRetries.values()) clearTimeout(t);
+    pendingThumbnailRetries.clear();
 
     // Keep LRU Cache alive! Don't clear it — thumbnails are still valid.
     // thumbnailCache.clear();
@@ -1066,6 +1169,49 @@ function syncGallery(viewer, images) {
         placeholder.style.cssText = `position: absolute; top: 8px; left: 8px; right: 8px; height: 200px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; border: 2px dashed var(--holaf-border-color); border-radius: var(--holaf-border-radius); color: var(--holaf-text-color-secondary);`;
         placeholder.textContent = 'No images match the current filters.';
         galleryGridEl.appendChild(placeholder);
+    }
+}
+
+/**
+ * Incremental insertion of NEW images at the TOP of the grid (P6).
+ *
+ * This is the ONLY delta path: the caller has already merged `newImages` into the
+ * top of state.images. Here we create DOM for the delta thumbnails (via the existing
+ * virtualized renderer, a single synchronous pass over the visible range) and shift
+ * the existing placeholders down WITHOUT destroying or recreating them. The full
+ * rebuild path (syncGallery) is preserved for the initial 30k load and filter changes.
+ */
+function insertImagesAtTop(newImages, totalDbCount) {
+    if (!galleryEl || !galleryGridEl) return;
+    if (!newImages || newImages.length === 0) return;
+
+    const { images } = imageViewerState.getState();
+    const insertedCount = newImages.length;
+
+    // Anchor the scroll position: the content below shifts down by the rows added at
+    // the top, so bump scrollTop to keep the same items in view (no visible jump).
+    if (columnCount > 0 && itemHeight > 0 && galleryEl.scrollTop > 0) {
+        const oldCount = Math.max(0, images.length - insertedCount);
+        const oldRowCount = Math.ceil(oldCount / columnCount);
+        const newRowCount = Math.ceil(images.length / columnCount);
+        galleryEl.scrollTop += (newRowCount - oldRowCount) * (itemHeight + gap);
+    }
+
+    // Recompute the sizer height — the total now includes the delta rows.
+    updateLayout(false);
+
+    // Render: reuses existing placeholders (only their index/transform change) and
+    // creates DOM for the delta items within the visible range — a single synchronous
+    // pass. Never deferred/batched, and never touches the initial 30k load path.
+    renderVisibleItems();
+
+    // Update the "Displaying X of Y total images" counter.
+    if (viewerInstance && typeof viewerInstance.updateStatusBar === 'function') {
+        const { images: updatedImages } = imageViewerState.getState();
+        viewerInstance.updateStatusBar(
+            updatedImages.length,
+            totalDbCount !== undefined ? totalDbCount : imageViewerState.getState().status.totalImageCount
+        );
     }
 }
 
@@ -1127,6 +1273,7 @@ function forceRelayout(newSize) {
 export {
     initGallery,
     syncGallery,
+    insertImagesAtTop,
     ensureImageVisible,
     alignImageOnExit,
     refreshThumbnailInGallery,

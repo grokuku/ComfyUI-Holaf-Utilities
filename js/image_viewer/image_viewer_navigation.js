@@ -128,13 +128,22 @@ function preloadNextImage(viewer) {
 
 export function getFullImageUrl(image) {
     if (!image) return "";
+    // Use the dedicated /holaf/images/full route (streams the ORIGINAL file with
+    // immutable cache headers). path_canon is preferred (matches the DB key and is
+    // security-checked server-side); filename/subfolder/type is kept as a fallback.
+    // mtime is included as a cache-buster so the immutable cache stays correct when
+    // the file changes.
     const url = new URL(window.location.origin);
-    url.pathname = '/view';
-    url.search = new URLSearchParams({
-        filename: image.filename,
-        subfolder: image.subfolder || '',
-        type: 'output'
-    });
+    url.pathname = '/holaf/images/full';
+    const params = { mtime: image.mtime || image.thumb_hash || '' };
+    if (image.path_canon) {
+        params.path_canon = image.path_canon;
+    } else {
+        params.filename = image.filename;
+        params.subfolder = image.subfolder || '';
+        params.type = 'output';
+    }
+    url.search = new URLSearchParams(params);
     return url.href;
 }
 
