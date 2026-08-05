@@ -36,15 +36,15 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 ### 🖥️ Performance
 - **Thumbnail worker** — File d'attente prioritaire (visible > pending), 6 concurrents, retry avec backoff
-- **Watcher filesystem** — Auto-restart en cas de crash, polling fallback si inotify saturé
-- **Sync périodique** — Toutes les 120s (était 30s). Supprime les thumbnails orphelins
+- **Watcher filesystem** — Auto-restart en cas de crash, fallback poller scandir incrémental si inotify saturé
+- **Sync périodique** — Toutes les 30s (filet de sécurité, cf. fix watcher ; était 120s après les 10 fixes). Supprime les thumbnails orphelins
 - **Folder metadata** — Incrémental (était full rebuild par image)
 - **Worker DB connection** — Persistante pendant l'idle (pas de connect/déconnect toutes les 5s)
 - **Thumbnail cleanup** — Orphelins supprimés pendant le sync (pas seulement manuellement)
 - **Galerie** — `_doKick` limité à 20 cache hits/tick, `textContent` pour bulk DOM removal
 - **Éditeur** — Downscale à 1920px max pour le canvas preview, contrôles 'all' séparés des ranged, pas de closures dans la boucle pixel
 
-### ⚡ Performance galerie — working tree (10 fixes, non commité)
+### ⚡ Performance galerie — commité/poussé (10 fixes, f9975fa + 89174e1)
 
 - **Backend — arrêt du refresh perpétuel** (`holaf_image_viewer_backend/logic.py`) — `sync_image_database_blocking()` ne bump `LAST_DB_UPDATE_TIME` que si un pass détecte des changements (compteurs added/deleted/changed). Avant : bump inconditionnel toutes les 30s → le frontend re-fetchait les 30k images toutes les 30s en boucle. Cause racine du refresh lent après une nouvelle image, des freezes d'onglet et des placeholders gris
 - **Backend — sync allégé** (`logic.py` + `__init__.py`) — Intervalle de sync 30s → 120s ; `_update_folder_metadata_cache_blocking` (DELETE + rebuild complet) ne tourne que si des changements sont détectés
@@ -57,6 +57,13 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 - **Frontend — route cache image pleine taille** (`js/image_viewer/image_viewer_navigation.js`) — `getFullImageUrl` pointe vers `/holaf/images/full` avec cache-buster mtime au lieu de ComfyUI `/view`
 - **Frontend — gestion du 202 en attente** (`image_viewer_gallery.js`) — fetch thumbnail 202 → placeholder gris conservé, retry programmé après `Retry-After` (2s par défaut) via la map dédiée `pendingThumbnailRetries` (aucune collision avec `idleRestartTimer`) ; prefetch early-return aussi sur 202
 - **Code mort activé** — le flag `viewer_is_active` (`worker.py:40`, set par `utility_routes.py:28`) et l'endpoint `/holaf/images/prioritize-thumbnails` existaient mais n'étaient jamais utilisés par le frontend — désormais câblés
+
+### 👁️ Fix watcher — scandir poller (`worker.py` + `__init__.py`, working tree — à pousser)
+
+- **Cause racine** — Limite de watches inotify atteinte (`[Errno 28] ENOSPC`) sur le Docker de l'utilisateur avec 32k images → fallback watchdog `PollingObserver` qui n'émet JAMAIS d'événements sur le FS du conteneur (snapshot full-tree de 32k fichiers trop lent à diff) → les nouvelles images n'étaient détectées que par le sync périodique (120s) → la galerie prenait jusqu'à 2 min à afficher une nouvelle image
+- **Fix** — `PollingObserver` remplacé par un poller incrémental custom basé sur `scandir` (`worker.py`) : détection add/delete par nom avec cache en mémoire, intervalle de scan ~2.5s, pas de `stat` par fichier pour les fichiers inchangés (léger même avec 32k fichiers), warm-up du baseline sans émettre d'événements, print par événement ("Detected creation/deletion")
+- **Sync 120s → 30s** — Filet de sécurité pour les content updates/renames ; le sync ne bump le timestamp DB que sur de vrais changements → pas de refreshes fantômes
+- **COUNT skip (commité 89174e1)** — La requête COUNT (~900ms) n'est plus exécutée sur les requêtes de liste incrémentale (`min_mtime`) (`image_routes.py`) → elle ne tourne plus à chaque check delta de 5s
 
 ---
 

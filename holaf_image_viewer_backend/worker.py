@@ -6,8 +6,8 @@ import time
 import queue
 import json
 import traceback
+import threading
 from watchdog.observers import Observer
-from watchdog.observers.polling import PollingObserver
 from watchdog.events import FileSystemEventHandler
 import errno
 
@@ -35,6 +35,12 @@ from .. import holaf_utils
 FILESYSTEM_EVENT_QUEUE = queue.Queue()
 WATCHER_PROCESS_INTERVAL_SECONDS = 3.0 # How often to process the queue
 WATCHER_TEMP_FILE_PATTERNS = ['_temp_', '.tmp']
+
+# Custom scandir-based poller (fallback when inotify is unavailable).
+# 2.0-3.0s per spec: fast enough for near-real-time adds/deletes, cheap enough
+# that the name-only idle walk of a ~32k file tree stays light.
+CUSTOM_SCAN_INTERVAL_SECONDS = 2.5
+CUSTOM_SCAN_ERROR_RETRY_SECONDS = 5.0 # Backoff after a failed scan pass
 
 # --- Thumbnail Worker Globals ---
 viewer_is_active = False # Updated by /viewer-activity endpoint
@@ -146,13 +152,147 @@ def run_event_queue_processor(stop_event):
     print("🔵 [Holaf-ImageViewer-Worker] Event queue processor stopped.")
 
 
+def _iter_supported_image_files(root_dir, stop_event):
+    """Yield (normalized_abs_path, DirEntry) for every supported image file under root_dir.
+
+    Uses os.scandir (cheap readdir names + d_type) instead of os.stat-based listings.
+    Applies the same rules as HolafFileSystemEventHandler._is_valid_file:
+    - skips the trashcan dir and any 'edit' folder
+    - skips files matching WATCHER_TEMP_FILE_PATTERNS
+    - skips non-supported extensions (SUPPORTED_IMAGE_FORMATS)
+    A single unreadable entry or directory never kills the whole scan.
+    """
+    try:
+        with os.scandir(root_dir) as it:
+            for entry in it:
+                if stop_event.is_set():
+                    return
+                try:
+                    name = entry.name
+                    if entry.is_dir(follow_symlinks=False):
+                        # Prune reserved folders entirely (trashcan + edit dirs)
+                        if name == TRASHCAN_DIR_NAME or name == EDIT_DIR_NAME:
+                            continue
+                        yield from _iter_supported_image_files(entry.path, stop_event)
+                    elif entry.is_file(follow_symlinks=False):
+                        if any(p in name for p in WATCHER_TEMP_FILE_PATTERNS):
+                            continue
+                        _, ext = os.path.splitext(name)
+                        if ext.lower() not in SUPPORTED_IMAGE_FORMATS:
+                            continue
+                        yield os.path.normpath(entry.path), entry
+                except OSError:
+                    continue
+                except Exception:
+                    continue
+    except (OSError, PermissionError):
+        return
+
+
+def run_custom_fs_poller(stop_event):
+    """Custom lightweight scandir-based filesystem poller (inotify fallback).
+
+    Replaces watchdog's PollingObserver, which is unusable on trees with ~32k
+    images on slow Docker filesystems: its full-tree DirectorySnapshot (walk +
+    stat every file) never completes fast enough to produce diffs, so it never
+    emits events.
+
+    This poller keeps an in-memory name cache of supported image files and each
+    tick walks the tree with os.scandir (cheap readdir names + d_type):
+      - not in cache            -> 'created' event + record (mtime, size)
+      - in cache, name present  -> skipped WITHOUT re-stat (name-only compare)
+      - cached but gone on disk -> 'deleted' event + removed from cache
+    The common idle tick is therefore pure name listing with NO per-file stat;
+    only NEW files incur a single os.stat to seed the cache. In-place content
+    updates (same filename, new content) are intentionally NOT re-stat'ed here
+    (that would defeat the whole point on a 32k-file tree); they are covered by
+    the periodic 30s sync safety net (sync_image_database_blocking), which does
+    the expensive full-tree stat comparison.
+
+    The cache is warmed lazily on the FIRST scan: everything found is treated as
+    baseline (populated WITHOUT emitting events), so the poller never re-adds all
+    existing images on startup.
+    """
+    output_dir = folder_paths.get_output_directory()
+    output_dir_norm = os.path.normpath(output_dir)
+    cache = {}  # normalized abs path -> (mtime, size)
+    baseline_done = False
+
+    print("🔵 [Holaf-Watcher-Event] Custom scanner starting...")
+
+    while not stop_event.is_set():
+        try:
+            seen = set()
+            for full_path, entry in _iter_supported_image_files(output_dir_norm, stop_event):
+                seen.add(full_path)
+                if full_path in cache:
+                    # Already tracked and the name is unchanged -> skip (no stat).
+                    # Content updates are handled by the 30s sync safety net.
+                    continue
+
+                # New file: single stat to record its (mtime, size) baseline.
+                stat_tuple = None
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    stat_tuple = (st.st_mtime, st.st_size)
+                except OSError:
+                    try:
+                        st = os.stat(full_path)
+                        stat_tuple = (st.st_mtime, st.st_size)
+                    except OSError:
+                        continue  # raced with a delete; resolved on the next tick
+                cache[full_path] = stat_tuple
+
+                if baseline_done:
+                    print(f"🔵 [Holaf-Watcher-Event] Detected creation: {full_path}")
+                    FILESYSTEM_EVENT_QUEUE.put(('created', full_path))
+
+            # Detect deletions: cached files no longer present on disk
+            for cached_path in list(cache.keys()):
+                if cached_path not in seen:
+                    cache.pop(cached_path, None)
+                    if baseline_done:
+                        print(f"🔵 [Holaf-Watcher-Event] Detected deletion: {cached_path}")
+                        FILESYSTEM_EVENT_QUEUE.put(('deleted', cached_path))
+
+            if not baseline_done:
+                baseline_done = True
+                print(f"🔵 [Holaf-Watcher-Event] Custom scanner active ({len(cache)} files tracked).")
+
+        except Exception as e:
+            print(f"🔴 [Holaf-Watcher-Event] Custom scanner error: {e}")
+            traceback.print_exc()
+            if stop_event.wait(CUSTOM_SCAN_ERROR_RETRY_SECONDS):
+                break
+            continue
+
+        if stop_event.wait(CUSTOM_SCAN_INTERVAL_SECONDS):
+            break
+
+    print("🔵 [Holaf-Watcher-Event] Custom scanner stopped.")
+
+
 def run_filesystem_monitor(stop_event):
     """Worker that watches the filesystem for changes.
-    Tries inotify first; falls back to polling if the inotify watch/instance limit is reached.
+    Tries inotify first (fast, low CPU); falls back to the custom scandir-based
+    poller (run_custom_fs_poller) if the inotify watch/instance limit is reached
+    (ENOSPC/EMFILE on Docker containers with tens of thousands of images).
     Auto-restarts on fatal errors to avoid silent death of the watcher."""
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor started.")
     inotify_failed = False  # Remember inotify failure across restarts
-    
+    custom_poller_thread = None  # Ref to the active custom poller thread (no duplicates)
+
+    def _start_custom_poller():
+        nonlocal custom_poller_thread
+        if custom_poller_thread is not None and custom_poller_thread.is_alive():
+            return  # Already running; never spawn a duplicate poller thread
+        custom_poller_thread = threading.Thread(
+            target=run_custom_fs_poller, args=(stop_event,),
+            daemon=True, name="HolafFsCustomPoller"
+        )
+        custom_poller_thread.start()
+        print("  -> Using custom scandir poller backend (no watch limit, name-diff based).")
+
     while not stop_event.is_set():
         observer = None
         try:
@@ -169,19 +309,13 @@ def run_filesystem_monitor(stop_event):
                 except OSError as e:
                     if e.errno in (errno.ENOSPC, errno.EMFILE):
                         inotify_failed = True
-                        print(f"  -> inotify limit reached ({e}). Falling back to polling observer.")
-                        observer = PollingObserver(timeout=2.0)
-                        observer.schedule(event_handler, output_dir, recursive=True)
-                        observer.start()
-                        print("  -> Using polling backend (slower but no watch limit).")
+                        print(f"  -> inotify limit reached ({e}). Falling back to custom scandir poller.")
+                        _start_custom_poller()
                     else:
                         raise
             else:
                 # Skip inotify entirely on restarts after a known failure
-                observer = PollingObserver(timeout=2.0)
-                observer.schedule(event_handler, output_dir, recursive=True)
-                observer.start()
-                print("  -> Using polling backend (inotify previously failed).")
+                _start_custom_poller()
             
             # Main loop: just wait until stop_event is set
             while not stop_event.is_set():
@@ -199,6 +333,14 @@ def run_filesystem_monitor(stop_event):
             if observer and observer.is_alive():
                 observer.stop()
                 observer.join()
+            # The custom poller thread is independent of the inotify Observer: it
+            # keeps running across monitor restarts, and _start_custom_poller()
+            # guards against duplicates via is_alive(). It exits on the shared
+            # stop_event during real shutdown (joined below).
+
+    # Wait briefly for the custom poller to observe stop_event and exit
+    if custom_poller_thread is not None and custom_poller_thread.is_alive():
+        custom_poller_thread.join(timeout=5.0)
 
     print("🔵 [Holaf-ImageViewer-Worker] Filesystem monitor stopped.")
 

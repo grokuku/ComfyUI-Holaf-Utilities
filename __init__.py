@@ -1161,9 +1161,12 @@ if model_manager_helper and hasattr(model_manager_helper, 'scan_and_update_db'):
 else:
     print("🟡 [Holaf-Init] Model Manager scan_and_update_db not available for scheduling.")
 
-# Sync is a safety net: the inotify/polling watcher already handles real-time
-# events, so a 120s interval is plenty and lightens the 30k-file scan load.
-_periodic_task_wrapper(120.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
+# Sync is a safety net: the custom scandir-based poller handles real-time adds
+# and deletes (name-diff, no per-file stat). The 30s sync covers in-place content
+# updates and renames, which the name-diff poller does not detect without
+# re-stat'ing every file on the ~30k-file tree. 30s keeps fresh content visible
+# quickly while remaining cheap enough for periodic full scans.
+_periodic_task_wrapper(30.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
 
 # --- MODIFICATION START: Correctly schedule all image viewer workers ---
 thumbnail_startup_timer = threading.Timer(15.0, start_thumbnail_worker)
