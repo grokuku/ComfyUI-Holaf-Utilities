@@ -246,11 +246,20 @@ async def list_images_route(request: web.Request):
         final_where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         
         # Build the counting query
-        count_query_base = "SELECT COUNT(DISTINCT i.id)" if tags_filter else "SELECT COUNT(i.id)"
-        count_query = f"{count_query_base} {query_base} {joins} {final_where}"
-        
-        cursor.execute(count_query, params)
-        filtered_count = cursor.fetchone()[0]
+        # --- PERFORMANCE FIX: Skip the COUNT query in the incremental path ---
+        # The frontend incremental delta fetch (min_mtime present, e.g. the
+        # every-5s new-image check) only uses `total_db_count` (from the cached
+        # GlobalStatsManager stats) plus `images` — NOT `filtered_count`. Running
+        # a COUNT here on EVERY request caused a pathological ~900ms full-scan
+        # on large DBs, even when only 1 delta row was returned. Keep the COUNT
+        # strictly for the full-list path where the display counter is consumed.
+        if filters.get('min_mtime') is not None:
+            filtered_count = 0  # Not used by the incremental frontend path.
+        else:
+            count_query_base = "SELECT COUNT(DISTINCT i.id)" if tags_filter else "SELECT COUNT(i.id)"
+            count_query = f"{count_query_base} {query_base} {joins} {final_where}"
+            cursor.execute(count_query, params)
+            filtered_count = cursor.fetchone()[0]
         
         t_count_query = time.perf_counter()
 
@@ -301,7 +310,10 @@ async def list_images_route(request: web.Request):
         serialize_ms = (t_serialization - t_main_query) * 1000
         payload_size_mb = len(body_content) / (1024 * 1024)
         
-        print(f"\n⚡ [Holaf Perf Report] List Images ({filtered_count} items)")
+        # Report the actual number of returned rows (accurate for both the full
+        # path, where filtered_count == len(images_data) since there is no LIMIT,
+        # and the incremental path, where filtered_count is intentionally 0).
+        print(f"\n⚡ [Holaf Perf Report] List Images ({len(images_data)} items)")
         print(f"  ├── Total Time:     {total_time:.2f} ms")
         print(f"  ├── DB Count Query: {db_count_ms:.2f} ms")
         print(f"  ├── DB Fetch Data:  {db_fetch_ms:.2f} ms")

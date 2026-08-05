@@ -177,6 +177,26 @@ def _create_fresh_schema(cursor):
     print("  > Schema creation complete.")
 
 
+def _ensure_performance_indexes(cursor):
+    """
+    Idempotently ensures the performance-critical composite indexes exist.
+
+    CREATE INDEX IF NOT EXISTS is cheap and safe even when the index already
+    exists. This is a safety net for databases that were migrated long ago (via
+    _migrate_database_by_copy) or any DB whose index creation was skipped or
+    predates v13 — without these indexes, COUNT/LIST queries fall back to a
+    full table scan (~900ms on large DBs with big text columns).
+    """
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_gallery_composite 
+        ON images(is_trashed, top_level_subfolder, mtime DESC)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_timeline_composite 
+        ON images(is_trashed, mtime DESC)
+    """)
+
+
 def _migrate_database_by_copy(current_db_version):
     """
     Performs database migration by renaming the old DB, creating a new one,
@@ -351,11 +371,23 @@ def init_database():
             close_db_connection() # Close connection before migrating
             _migrate_database_by_copy(current_db_version)
             print("✅ [Holaf-DB] Database migration process complete.")
+            # The migration closed its own connection; reopen so we can ensure
+            # the performance indexes below.
+            conn = get_db_connection()
+            cursor = conn.cursor()
         elif current_db_version > LATEST_SCHEMA_VERSION:
             print(f"🟡 [Holaf-DB] Warning: Database version (v{current_db_version}) is newer than the code's schema version (v{LATEST_SCHEMA_VERSION}).")
             print("    This can happen after downgrading the extension. Some features may not work correctly.")
         else:
             print(f"  > Database schema is up to date (version {current_db_version}).")
+
+        # --- PERFORMANCE SAFETY NET ---
+        # Idempotently guarantee the composite indexes exist on every startup.
+        # CREATE INDEX IF NOT EXISTS is cheap even when already present. This
+        # fixes migrated/legacy DBs missing the index, where the COUNT/list
+        # queries degenerate into a ~900ms full table scan.
+        _ensure_performance_indexes(cursor)
+        conn.commit()
 
     except Exception as e:
         print(f"🔴 [Holaf-DB] An error occurred during database initialization: {e}")
