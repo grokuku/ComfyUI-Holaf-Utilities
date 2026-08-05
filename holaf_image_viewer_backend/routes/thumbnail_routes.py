@@ -303,6 +303,73 @@ async def regenerate_thumbnail_route(request: web.Request):
         return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 
+async def regenerate_failed_thumbnails_route(request: web.Request):
+    """
+    Resets failed thumbnails so the background worker regenerates them:
+      - thumbnail_status = 3 (permanent failure) -> 0 (pending)
+      - thumbnail_status = 2 ("success") rows whose thumbnail FILE is missing
+        or corrupt on disk -> 0 (pending)
+    Also resets thumbnail_priority_score to 1000 for the reset rows so the
+    worker picks them up promptly.
+    """
+    conn = None
+    current_exception = None
+    try:
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+
+        # Step 1: Reset permanent failures back to pending.
+        cursor.execute(
+            "UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = 1000 "
+            "WHERE thumbnail_status = 3"
+        )
+        count1 = cursor.rowcount
+
+        # Step 2: Find "success" rows whose thumbnail file is missing on disk.
+        cursor.execute(
+            "SELECT path_canon, thumb_hash FROM images "
+            "WHERE thumbnail_status = 2 AND thumb_hash IS NOT NULL"
+        )
+        missing_paths = []
+        for row in cursor.fetchall():
+            thumb_path_abs = os.path.join(
+                holaf_utils.THUMBNAIL_CACHE_DIR, f"{row['thumb_hash']}.jpg"
+            )
+            if not os.path.exists(thumb_path_abs):
+                missing_paths.append(row['path_canon'])
+
+        count2 = 0
+        if missing_paths:
+            placeholders = ','.join(['?'] * len(missing_paths))
+            cursor.execute(
+                f"UPDATE images SET thumbnail_status = 0, thumbnail_priority_score = 1000 "
+                f"WHERE path_canon IN ({placeholders})",
+                missing_paths
+            )
+            count2 = cursor.rowcount
+
+        total = count1 + count2
+        conn.commit()
+
+        logger.info(
+            f"regenerate-failed: reset {count1} permanent-fail + {count2} "
+            f"missing-file thumbnails ({total} total)."
+        )
+        return web.json_response({
+            "status": "ok",
+            "reset_count": total,
+            "message": f"{total} miniature(s) en file de régénération.",
+        })
+
+    except Exception as e:
+        current_exception = e
+        logger.error(f"Error in regenerate_failed_thumbnails_route: {e}", exc_info=True)
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)
+
+
 async def _background_prioritize_task(paths_canon):
     """
     Processes a list of paths to update their priority in the database.

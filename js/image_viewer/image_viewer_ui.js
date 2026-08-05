@@ -200,6 +200,9 @@ class ImageViewerUI {
                             <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="Export selected images">📤 Export</button>
                             <button id="holaf-viewer-btn-reset-filters" class="holaf-viewer-action-button" title="Reset all filters to their default values">🔄 Reset</button>
                         </div>
+                        <div class="holaf-viewer-action-button-row">
+                            <button id="holaf-viewer-btn-regen-thumbs" class="holaf-viewer-action-button" title="Remet en file les miniatures en échec ou corrompues pour régénération">🖼️ Regen Thumbs</button>
+                        </div>
                     </div>
                 </div>
                 <div class="holaf-viewer-display-options">
@@ -285,6 +288,36 @@ class ImageViewerUI {
         this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = () => {
             this.scopeState = { filename: true, prompt: false, workflow: false };
             this.callbacks.onResetFilters();
+        };
+
+        const regenThumbsBtn = this.elements.leftPane.querySelector('#holaf-viewer-btn-regen-thumbs');
+        regenThumbsBtn.onclick = async () => {
+            // Guard against double-clicks: disabled while the request is in flight.
+            if (regenThumbsBtn.disabled) return;
+            regenThumbsBtn.disabled = true;
+            try {
+                const response = await fetch('/holaf/images/regenerate-failed', { method: 'POST' });
+                if (response.ok) {
+                    const data = await response.json();
+                    const message = (data && data.message) || 'Miniatures en file de régénération.';
+                    if (window.holaf && window.holaf.toastManager) {
+                        window.holaf.toastManager.show({ message, type: 'success' });
+                    }
+                    // Refresh the gallery so pending thumbnails are reloaded.
+                    this.callbacks.onFilterChange(true);
+                } else {
+                    if (window.holaf && window.holaf.toastManager) {
+                        window.holaf.toastManager.show({ message: 'Erreur lors de la régénération des miniatures.', type: 'error' });
+                    }
+                }
+            } catch (error) {
+                console.error('[Holaf ImageViewer] Error regenerating thumbnails:', error);
+                if (window.holaf && window.holaf.toastManager) {
+                    window.holaf.toastManager.show({ message: 'Erreur lors de la régénération des miniatures.', type: 'error' });
+                }
+            } finally {
+                regenThumbsBtn.disabled = false;
+            }
         };
 
         const dispatchSearch = () => {

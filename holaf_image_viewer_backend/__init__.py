@@ -28,6 +28,7 @@ from .routes.thumbnail_routes import (
     get_thumbnail_route,
     prioritize_thumbnails_route,
     regenerate_thumbnail_route, # <-- MODIFICATION: Ajout de la nouvelle route
+    regenerate_failed_thumbnails_route, # <-- MODIFICATION: Route de régénération des échecs
     get_thumbnail_stats_route as iv_get_thumbnail_stats_route # Alias to avoid name collision
 )
 from .routes.export_routes import (
@@ -80,6 +81,7 @@ __all__ = [
     'get_thumbnail_route',
     'prioritize_thumbnails_route',
     'regenerate_thumbnail_route', 
+    'regenerate_failed_thumbnails_route', # <-- MODIFICATION: Route de régénération des échecs
     'iv_get_thumbnail_stats_route',
 
     # Export

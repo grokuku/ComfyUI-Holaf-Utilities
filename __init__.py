@@ -867,6 +867,12 @@ async def iv_regenerate_thumbnail_route(r):
     return await holaf_image_viewer_backend.regenerate_thumbnail_route(r)
 # <-- MODIFICATION END -->
 
+# <-- MODIFICATION START: Nouvelle route pour la régénération des miniatures en échec -->
+@routes.post("/holaf/images/regenerate-failed")
+async def iv_regenerate_failed_thumbnails_route(r):
+    return await holaf_image_viewer_backend.regenerate_failed_thumbnails_route(r)
+# <-- MODIFICATION END -->
+
 @routes.get("/holaf/images/thumbnail-stats")
 async def iv_thumbnail_stats_route(r): return await holaf_image_viewer_backend.iv_get_thumbnail_stats_route(r)
 
