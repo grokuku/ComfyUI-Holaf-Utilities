@@ -44,6 +44,10 @@ async def get_thumbnail_route(request: web.Request):
     original_rel_path = None
     error_message_for_client = "ERR: Thumbnail processing failed."
     current_exception = None
+    # Debug/timing state (populated as the pipeline advances; used in `finally`)
+    _start_time = time.monotonic()
+    thumb_status_db = None
+    needs_generation = None
 
     try:
         output_dir = folder_paths.get_output_directory() # Base output
@@ -159,7 +163,12 @@ async def get_thumbnail_route(request: web.Request):
                         headers=_IMMUTABLE_CACHE_HEADERS,
                         content_type='image/jpeg',
                     )
-                except Exception as e: needs_generation = True; error_message_for_client = "ERR: Failed to read existing thumb."
+                except Exception as e:
+                    current_exception = e
+                    needs_generation = True
+                    error_message_for_client = "ERR: Failed to read existing thumb."
+                    logger.error(f"🔴 [Holaf-Thumb] Failed to serve existing thumb for {original_rel_path}: {e}")
+                    traceback.print_exc()
 
             # Generate if needed
             if needs_generation:
@@ -207,7 +216,9 @@ async def get_thumbnail_route(request: web.Request):
                         original_rel_path, # path_canon for DB update
                         edit_data
                     )
-                    if not gen_success: error_message_for_client = "ERR: Thumbnail generation function failed."
+                    if not gen_success:
+                        error_message_for_client = "ERR: Thumbnail generation function failed."
+                        logger.error(f"🔴 [Holaf-Thumb] Generation returned failure for {original_rel_path} (details printed by _create_thumbnail_blocking above).")
                 finally:
                     _THUMBNAIL_GENERATION_SEMAPHORE.release()
         
@@ -220,7 +231,11 @@ async def get_thumbnail_route(request: web.Request):
                         headers=_IMMUTABLE_CACHE_HEADERS,
                         content_type='image/jpeg',
                     )
-                except Exception as e: current_exception = e; error_message_for_client = "ERR: Failed to read generated thumb at final stage."
+                except Exception as e:
+                    current_exception = e
+                    error_message_for_client = "ERR: Failed to read generated thumb at final stage."
+                    logger.error(f"🔴 [Holaf-Thumb] Final serve failed for {original_rel_path}: {e}")
+                    traceback.print_exc()
         finally:
             thumb_lock.release()
         
@@ -229,6 +244,8 @@ async def get_thumbnail_route(request: web.Request):
 
     except Exception as e_outer:
         current_exception = e_outer
+        logger.error(f"🔴 [Holaf-Thumb] Unhandled exception for {original_rel_path}: {e_outer}")
+        traceback.print_exc()
         # ... (Exception handling) ...
         final_error_text = error_message_for_client if error_message_for_client != "ERR: Thumbnail processing failed." else f"ERR: Server error processing thumbnail for {filename}."
         if original_rel_path: 
@@ -244,6 +261,10 @@ async def get_thumbnail_route(request: web.Request):
         return web.Response(status=500, text=final_error_text)
     finally:
         if conn_info_read: holaf_database.close_db_connection(exception=current_exception)
+        # Debug line to correlate requests in the console (fires on every exit path).
+        _elapsed_ms = (time.monotonic() - _start_time) * 1000.0
+        _result_tag = error_message_for_client if ('ERR' in error_message_for_client) else 'OK'
+        print(f"🔵 [Holaf-Thumb] {original_rel_path}: status={thumb_status_db} needs_gen={needs_generation} result={_result_tag} total={_elapsed_ms:.0f}ms")
 
 
 async def regenerate_thumbnail_route(request: web.Request):
@@ -463,3 +484,206 @@ async def get_thumbnail_stats_route(request: web.Request):
     except Exception as e:
         logger.error(f"Error getting thumbnail stats from manager: {e}", exc_info=True)
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def thumbnail_diagnose_route(request: web.Request):
+    """
+    Manual diagnostic: runs the thumbnail pipeline SYNCHRONOUSLY, step by step,
+    capturing each step's outcome and FULL tracebacks. Returns a JSON report
+    with HTTP 200 always (the report itself carries the failure info), so a
+    single curl reveals exactly where the pipeline fails.
+
+    GET /holaf/images/thumbnail-diagnose?path_canon=<canon>[&force_regen=true]
+
+    Intentionally does NOT use the per-file lock or the generation semaphore:
+    this is a manual, direct diagnostic. It reuses the same helpers as
+    get_thumbnail_route (path resolution, DB lookup, thumb_hash filename,
+    logic._create_thumbnail_blocking, web.FileResponse construction).
+    """
+    path_canon_param = request.query.get("path_canon")
+    force_regen_param = request.query.get("force_regen") == "true"
+
+    if not path_canon_param:
+        return web.json_response(
+            {"error": "Missing required query parameter 'path_canon'.", "summary": "REJECTED: path_canon is required."},
+            status=400,
+        )
+
+    diagnostic = {
+        "path_canon": path_canon_param,
+        "source_abs_path": None,
+        "source_exists": False,
+        "source_size": None,
+        "db_row": None,
+        "thumb_path": None,
+        "thumb_exists": False,
+        "thumb_size": None,
+        "needs_generation": None,
+        "generation": {
+            "attempted": False,
+            "success": False,
+            "error": None,
+            "traceback": None,
+            "thumb_exists_after": None,
+            "thumb_size_after": None,
+        },
+        "serve_test": {
+            "constructed": False,
+            "error": None,
+            "traceback": None,
+        },
+        "summary": None,
+    }
+
+    conn = None
+    current_exception = None
+    try:
+        output_dir = folder_paths.get_output_directory()
+
+        # --- Same security checks as get_thumbnail_route ---
+        if ".." in path_canon_param or path_canon_param.startswith("/"):
+            diagnostic["summary"] = "REJECTED: invalid path_canon (path traversal or absolute path)."
+            return web.json_response(diagnostic, status=200)
+        original_rel_path = path_canon_param
+        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
+        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+            diagnostic["summary"] = "REJECTED: path_canon escapes the output directory."
+            return web.json_response(diagnostic, status=200)
+
+        diagnostic["source_abs_path"] = original_abs_path
+        diagnostic["source_exists"] = os.path.isfile(original_abs_path)
+        if diagnostic["source_exists"]:
+            diagnostic["source_size"] = os.path.getsize(original_abs_path)
+
+        # --- SELECT the DB row (same query as the route) ---
+        conn = holaf_database.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT mtime, thumbnail_status, thumbnail_last_generated_at, thumb_hash FROM images WHERE path_canon = ?",
+            (original_rel_path,)
+        )
+        image_db_info = cursor.fetchone()
+        conn.commit()
+        holaf_database.close_db_connection()
+        conn = None
+
+        if image_db_info:
+            diagnostic["db_row"] = {
+                "thumbnail_status": image_db_info['thumbnail_status'],
+                "mtime": image_db_info['mtime'],
+                "thumb_hash": image_db_info['thumb_hash'],
+                "thumbnail_last_generated_at": image_db_info['thumbnail_last_generated_at'],
+            }
+        else:
+            diagnostic["db_row"] = None
+
+        # --- Thumb filename (same logic as the route: DB hash, sha1 fallback) ---
+        if image_db_info and image_db_info['thumb_hash']:
+            thumb_filename = f"{image_db_info['thumb_hash']}.jpg"
+        else:
+            path_hash = hashlib.sha1(original_rel_path.encode('utf-8')).hexdigest()
+            thumb_filename = f"{path_hash}.jpg"
+
+        thumb_path_abs = os.path.join(holaf_utils.THUMBNAIL_CACHE_DIR, thumb_filename)
+        diagnostic["thumb_path"] = thumb_path_abs
+        diagnostic["thumb_exists"] = os.path.exists(thumb_path_abs)
+        if diagnostic["thumb_exists"]:
+            diagnostic["thumb_size"] = os.path.getsize(thumb_path_abs)
+
+        # --- needs_generation (same decision logic as the route) ---
+        needs_generation = force_regen_param
+        if image_db_info:
+            thumb_status_db = image_db_info['thumbnail_status']
+            original_mtime_db = image_db_info['mtime']
+            thumb_last_gen_db = image_db_info['thumbnail_last_generated_at']
+            if thumb_status_db == 0: needs_generation = True
+            elif thumb_status_db == 1: needs_generation = True
+            elif thumb_status_db == 3: needs_generation = False  # permanent failure gate
+            elif thumb_last_gen_db is not None and original_mtime_db > thumb_last_gen_db: needs_generation = True
+            if thumb_status_db == 2 and not os.path.exists(thumb_path_abs) and not needs_generation:
+                needs_generation = True
+        else:
+            # No DB row: fall back to a file-existence based decision.
+            needs_generation = not os.path.exists(thumb_path_abs)
+        diagnostic["needs_generation"] = needs_generation
+
+        # --- Step: generation (direct, no lock/semaphore) ---
+        if needs_generation:
+            diagnostic["generation"]["attempted"] = True
+            try:
+                gen_success = logic._create_thumbnail_blocking(
+                    original_abs_path, thumb_path_abs, original_rel_path
+                )
+                diagnostic["generation"]["success"] = bool(gen_success)
+                if not gen_success:
+                    diagnostic["generation"]["error"] = (
+                        "_create_thumbnail_blocking returned failure (it printed the real "
+                        "error to the server console and marked the DB row as permanent-fail)."
+                    )
+            except Exception as e:
+                diagnostic["generation"]["success"] = False
+                diagnostic["generation"]["error"] = str(e)
+                diagnostic["generation"]["traceback"] = traceback.format_exc()
+            finally:
+                diagnostic["generation"]["thumb_exists_after"] = os.path.exists(thumb_path_abs)
+                diagnostic["generation"]["thumb_size_after"] = (
+                    os.path.getsize(thumb_path_abs)
+                    if diagnostic["generation"]["thumb_exists_after"] else None
+                )
+        else:
+            diagnostic["generation"]["attempted"] = False
+            diagnostic["generation"]["thumb_exists_after"] = diagnostic["thumb_exists"]
+            diagnostic["generation"]["thumb_size_after"] = diagnostic["thumb_size"]
+
+        # --- Step: serve test (FileResponse construction + first-bytes read) ---
+        # FileResponse construction stats the file; reading the first byte is the
+        # closest synchronous proxy for the failure that produces the real 500
+        # "Failed to read generated thumb at final stage."
+        try:
+            if os.path.exists(thumb_path_abs):
+                web.FileResponse(
+                    thumb_path_abs,
+                    headers=_IMMUTABLE_CACHE_HEADERS,
+                    content_type='image/jpeg',
+                )
+                with open(thumb_path_abs, 'rb') as fh:
+                    _ = fh.read(1)
+                diagnostic["serve_test"]["constructed"] = True
+            else:
+                diagnostic["serve_test"]["error"] = "Thumbnail file does not exist on disk; nothing to serve."
+        except Exception as e:
+            diagnostic["serve_test"]["constructed"] = False
+            diagnostic["serve_test"]["error"] = str(e)
+            diagnostic["serve_test"]["traceback"] = traceback.format_exc()
+
+        # --- Summary ---
+        if not diagnostic["source_exists"]:
+            diagnostic["summary"] = "FAILED before generation: source file missing on disk."
+        elif diagnostic["db_row"] is None:
+            diagnostic["summary"] = "WARNING: no DB row for path_canon (worker may never generate)."
+        elif image_db_info and image_db_info['thumbnail_status'] == 3 and not force_regen_param and diagnostic["thumb_exists"]:
+            diagnostic["summary"] = "FAILED at gate: permanent failure (status=3) but a thumb file exists; pass force_regen=true to regenerate and see the real error."
+        elif image_db_info and image_db_info['thumbnail_status'] == 3 and not force_regen_param:
+            diagnostic["summary"] = "FAILED at gate: permanent failure (status=3); pass force_regen=true to retry and capture the real generation error."
+        elif diagnostic["needs_generation"] and not diagnostic["generation"]["success"]:
+            diagnostic["summary"] = f"FAILED at generation: {diagnostic['generation']['error']}"
+        elif diagnostic["needs_generation"] and not diagnostic["serve_test"]["constructed"]:
+            diagnostic["summary"] = f"FAILED at serve (after generation): {diagnostic['serve_test']['error']}"
+        elif not diagnostic["needs_generation"] and not diagnostic["thumb_exists"]:
+            diagnostic["summary"] = "FAILED: thumb marked OK in DB but file missing on disk."
+        elif not diagnostic["serve_test"]["constructed"]:
+            diagnostic["summary"] = f"FAILED at serve (existing thumb): {diagnostic['serve_test']['error']}"
+        else:
+            diagnostic["summary"] = "OK: pipeline complete."
+
+        return web.json_response(diagnostic, status=200)
+
+    except Exception as e:
+        current_exception = e
+        diagnostic["summary"] = f"DIAGNOSTIC ROUTE ERROR: {e}"
+        if diagnostic["serve_test"]["traceback"] is None:
+            diagnostic["serve_test"]["traceback"] = traceback.format_exc()
+        return web.json_response(diagnostic, status=200)
+    finally:
+        if conn:
+            holaf_database.close_db_connection(exception=current_exception)

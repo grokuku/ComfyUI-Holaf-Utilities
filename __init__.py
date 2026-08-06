@@ -876,6 +876,9 @@ async def iv_regenerate_failed_thumbnails_route(r):
 @routes.get("/holaf/images/thumbnail-stats")
 async def iv_thumbnail_stats_route(r): return await holaf_image_viewer_backend.iv_get_thumbnail_stats_route(r)
 
+@routes.get("/holaf/images/thumbnail-diagnose")
+async def iv_thumbnail_diagnose_route(r): return await holaf_image_viewer_backend.thumbnail_diagnose_route(r)
+
 @routes.post("/holaf/image-viewer/save-settings")
 async def image_viewer_save_ui_settings_route(request: web.Request):
     try:
