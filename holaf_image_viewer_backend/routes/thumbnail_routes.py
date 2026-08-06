@@ -161,7 +161,6 @@ async def get_thumbnail_route(request: web.Request):
                     return web.FileResponse(
                         thumb_path_abs,
                         headers=_IMMUTABLE_CACHE_HEADERS,
-                        content_type='image/jpeg',
                     )
                 except Exception as e:
                     current_exception = e
@@ -229,7 +228,6 @@ async def get_thumbnail_route(request: web.Request):
                     return web.FileResponse(
                         thumb_path_abs,
                         headers=_IMMUTABLE_CACHE_HEADERS,
-                        content_type='image/jpeg',
                     )
                 except Exception as e:
                     current_exception = e
@@ -644,7 +642,6 @@ async def thumbnail_diagnose_route(request: web.Request):
                 web.FileResponse(
                     thumb_path_abs,
                     headers=_IMMUTABLE_CACHE_HEADERS,
-                    content_type='image/jpeg',
                 )
                 with open(thumb_path_abs, 'rb') as fh:
                     _ = fh.read(1)
