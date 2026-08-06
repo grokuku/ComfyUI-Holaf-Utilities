@@ -295,27 +295,69 @@ class ImageViewerUI {
             // Guard against double-clicks: disabled while the request is in flight.
             if (regenThumbsBtn.disabled) return;
             regenThumbsBtn.disabled = true;
+
+            const originalLabel = regenThumbsBtn.textContent;
+            const showToast = (message, type) => {
+                if (window.holaf && window.holaf.toastManager) {
+                    window.holaf.toastManager.show({ message, type });
+                }
+            };
+
             try {
-                const response = await fetch('/holaf/images/regenerate-failed', { method: 'POST' });
-                if (response.ok) {
-                    const data = await response.json();
-                    const message = (data && data.message) || 'Miniatures en file de régénération.';
-                    if (window.holaf && window.holaf.toastManager) {
-                        window.holaf.toastManager.show({ message, type: 'success' });
+                // Step 1: Full cleanup — validate every thumbnail on disk and
+                // reset missing/corrupt ones so the worker regenerates them.
+                regenThumbsBtn.textContent = '⏳ Nettoyage...';
+                showToast('Nettoyage des miniatures en cours...', 'info');
+
+                const cleanResponse = await fetch('/holaf/images/maintenance/clean-thumbnails', { method: 'POST' });
+                if (!cleanResponse.ok) {
+                    throw new Error(`clean-thumbnails failed with status ${cleanResponse.status}`);
+                }
+                const cleanData = await cleanResponse.json();
+
+                // Step 2 (best-effort): reset permanent-failure thumbnails.
+                // If this step fails, keep going so the user still sees the
+                // clean results.
+                regenThumbsBtn.textContent = '⏳ Régénération...';
+                let resetCount = 0;
+                let regenFailed = false;
+                try {
+                    const regenResponse = await fetch('/holaf/images/regenerate-failed', { method: 'POST' });
+                    if (!regenResponse.ok) {
+                        throw new Error(`regenerate-failed failed with status ${regenResponse.status}`);
                     }
-                    // Refresh the gallery so pending thumbnails are reloaded.
-                    this.callbacks.onFilterChange(true);
+                    const regenData = await regenResponse.json();
+                    resetCount = (regenData && typeof regenData.reset_count === 'number') ? regenData.reset_count : 0;
+                } catch (regenError) {
+                    regenFailed = true;
+                    console.error('[Holaf ImageViewer] Error during regenerate-failed step:', regenError);
+                }
+
+                // Build a combined message from whichever responses succeeded.
+                const details = (cleanData && cleanData.details) || {};
+                let message;
+                if (typeof details.deleted_orphans === 'number' &&
+                    typeof details.regenerated_missing === 'number' &&
+                    typeof details.regenerated_corrupt === 'number') {
+                    message = `🧹 Nettoyage: ${details.deleted_orphans} orphelines supprimées, ${details.regenerated_missing} manquantes + ${details.regenerated_corrupt} corrompues remises en file.`;
+                    message += regenFailed
+                        ? ' ⚠️ Étape de régénération en échec.'
+                        : ` 🔄 ${resetCount} échouées remises en file.`;
                 } else {
-                    if (window.holaf && window.holaf.toastManager) {
-                        window.holaf.toastManager.show({ message: 'Erreur lors de la régénération des miniatures.', type: 'error' });
-                    }
+                    message = '🧹 Nettoyage des miniatures terminé.';
+                }
+
+                showToast(message, 'success');
+                if (regenFailed) {
+                    showToast('Erreur lors de la régénération des miniatures.', 'error');
                 }
             } catch (error) {
                 console.error('[Holaf ImageViewer] Error regenerating thumbnails:', error);
-                if (window.holaf && window.holaf.toastManager) {
-                    window.holaf.toastManager.show({ message: 'Erreur lors de la régénération des miniatures.', type: 'error' });
-                }
+                showToast('Erreur lors de la régénération des miniatures.', 'error');
             } finally {
+                // Refresh the gallery so thumbnails are reloaded.
+                this.callbacks.onFilterChange(true);
+                regenThumbsBtn.textContent = originalLabel;
                 regenThumbsBtn.disabled = false;
             }
         };
