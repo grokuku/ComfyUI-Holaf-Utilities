@@ -326,6 +326,8 @@ if profiler_engine:
             data = await request.json()
             name = data.get("name", "Untitled Run")
             run_id = profiler_engine.start_run(name=name)
+            if run_id is not None:
+                print("[Holaf-Profiler-DEBUG] run started")
             return web.json_response({"status": "ok", "run_id": run_id})
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
@@ -333,7 +335,13 @@ if profiler_engine:
     @routes.post("/holaf/profiler/run-stop")
     async def profiler_stop_run(request: web.Request):
         try:
+            # Guard so we only log once: if the run was already auto-stopped
+            # (e.g. via 'execution_finished' in the send_sync hook), the hook
+            # already logged "run stopped" and is_profiling is already False.
+            was_profiling = bool(profiler_engine.is_profiling)
             profiler_engine.stop_run()
+            if was_profiling:
+                print("[Holaf-Profiler-DEBUG] run stopped")
             return web.json_response({"status": "ok", "message": "Profiling run stopped."})
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
@@ -374,7 +382,32 @@ if profiler_engine:
 
     def holaf_profiler_hook_send_sync(event, data, sid=None):
         try:
-            if profiler_engine.is_profiling:
+            is_profiling = bool(profiler_engine.is_profiling)
+
+            # --- HOLAF PROFILER DEBUG: log EVERY send_sync event while profiling ---
+            # Diagnostic purpose: reveal exactly which node ids arrive during
+            # subgraph execution (top-level only vs compound "1131:1113" vs
+            # internal-only "1113"), whether 'execution_finished' actually fires
+            # (or only 'execution_success'/'execution_error'), and any unexpected
+            # events (e.g. 'executing' with node=None between nodes).
+            if is_profiling:
+                try:
+                    data_str = json.dumps(data, default=str)
+                except Exception:
+                    data_str = repr(data)
+                print(f"[Holaf-Profiler-DEBUG] event=<{event}> data={data_str}")
+            elif event == 'execution_start':
+                # Run-boundary marker. The run is started by the frontend via
+                # POST /holaf/profiler/run-start (which sets is_profiling=True),
+                # normally BEFORE this event. If execution_start arrives before
+                # is_profiling is set, log it anyway with a note.
+                try:
+                    data_str = json.dumps(data, default=str)
+                except Exception:
+                    data_str = repr(data)
+                print(f"[Holaf-Profiler-DEBUG] event=<{event}> data={data_str} (NOT profiling yet)")
+
+            if is_profiling:
                 if event == 'executing':
                     node_id = data.get('node')
                     if node_id:
@@ -385,13 +418,11 @@ if profiler_engine:
                         if profiler_engine.current_node_id is not None:
                             profiler_engine.on_node_end()
                         pass
-                elif event == 'execution_error':
-                    if profiler_engine.current_node_id is not None:
-                        profiler_engine.on_node_end()
-                elif event == 'execution_finished':
+                elif event in ('execution_error', 'execution_finished', 'execution_success', 'execution_interrupted'):
                     if profiler_engine.current_node_id is not None:
                         profiler_engine.on_node_end()
                     profiler_engine.stop_run()
+                    print("[Holaf-Profiler-DEBUG] run stopped")
         except Exception as e:
             print(f"🔴 [Holaf-Profiler-Hook] Error: {e}")
             traceback.print_exc()

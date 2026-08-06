@@ -14,9 +14,8 @@ export function initProfiler() {
     let currentTotalTime = null;
     
     // Polling / auto-stop detection
-    let lastStepCount = null;   // step count from previous poll
-    let sameStepCount = 0;      // consecutive polls with an identical step count
-    let idlePollCount = 0;      // consecutive polls with no new node added
+    let lastStepCount = null;    // step count from previous poll (feeds the stuck-run safety timeout)
+    let lastProgressTime = null; // timestamp of the last observed progress (new node or step-count change)
     
     // Group Mapping
     let groupMapping = {}; 
@@ -156,6 +155,20 @@ export function initProfiler() {
                 border-bottom: 1px solid var(--holaf-border-color, #3F3F3F);
                 flex-wrap: wrap;
             }
+            .compare-toolbar label {
+                color: var(--holaf-text-secondary, #A0A0A0);
+                font-size: 0.85rem;
+            }
+            .compare-toolbar input[type="text"],
+            .compare-toolbar input[type="range"] {
+                background-color: var(--holaf-input-background, #1A1A1A);
+                border: 1px solid var(--holaf-border-color, #3F3F3F);
+                color: var(--holaf-text-primary, #E0E0E0);
+                padding: 2px 5px;
+                border-radius: 3px;
+                outline: none;
+            }
+            .compare-toolbar input[type="text"]:focus { border-color: var(--holaf-accent-color, #D8700D); }
             .compare-metric-select {
                 background-color: var(--holaf-input-background, #1A1A1A);
                 border: 1px solid var(--holaf-border-color, #3F3F3F);
@@ -301,6 +314,19 @@ export function initProfiler() {
                         <option value="gpu_load_avg">GPU Load Avg</option>
                     </select>
                 </label>
+                <div class="filter-group">
+                    <label title="Only active if at least one node has finished execution">
+                        <input type="checkbox" id="chk-hide-non-executed-cmp"> Hide Non-Executed
+                    </label>
+                </div>
+                <div class="filter-group">
+                    <label>Min Time: <span id="lbl-min-time-cmp" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
+                    <input type="range" id="rng-min-time-cmp" min="0" max="5" step="0.1" value="0">
+                </div>
+                <div class="filter-group">
+                    <label>Exclude Type:</label>
+                    <input type="text" id="inp-filter-type-cmp" placeholder="Type..." style="width: 100px;">
+                </div>
                 <button id="btn-compare-back" class="btn btn-outline">Back</button>
             </div>
             <div class="compare-table-wrap" id="compare-content">
@@ -353,6 +379,27 @@ export function initProfiler() {
     if (inpType) inpType.addEventListener('input', (e) => {
         config.filterTypeExclude = e.target.value.toLowerCase();
         renderTable();
+    });
+
+    // --- COMPARE TAB FILTER CONTROLS (share the same config object as the Live Profile) ---
+    const chkNonExecCmp = document.getElementById('chk-hide-non-executed-cmp');
+    if (chkNonExecCmp) chkNonExecCmp.addEventListener('change', (e) => {
+        config.filterNonExecuted = e.target.checked;
+        renderComparison();
+    });
+
+    const rangeTimeCmp = document.getElementById('rng-min-time-cmp');
+    const labelTimeCmp = document.getElementById('lbl-min-time-cmp');
+    if (rangeTimeCmp) rangeTimeCmp.addEventListener('input', (e) => {
+        config.minTime = parseFloat(e.target.value);
+        if (labelTimeCmp) labelTimeCmp.textContent = config.minTime.toFixed(1) + "s";
+        renderComparison();
+    });
+
+    const inpTypeCmp = document.getElementById('inp-filter-type-cmp');
+    if (inpTypeCmp) inpTypeCmp.addEventListener('input', (e) => {
+        config.filterTypeExclude = e.target.value.toLowerCase();
+        renderComparison();
     });
 
     document.querySelectorAll('th.sortable').forEach(th => {
@@ -411,6 +458,13 @@ export function initProfiler() {
             if (cb.checked) selectedRunIds.add(runId);
             else selectedRunIds.delete(runId);
             updateHistoryActions();
+        });
+
+        // View a past run in the Live Profile tab
+        historyBody.addEventListener('click', (e) => {
+            const btn = e.target.closest('.history-view');
+            if (!btn) return;
+            viewRun(Number(btn.dataset.runId));
         });
 
         // Double-click to edit comment inline
@@ -599,8 +653,30 @@ export function initProfiler() {
         });
     }
 
+    // Keep both the Live Profile and Compare tab filter controls in sync with config
+    function syncFilterControls() {
+        const chk = document.getElementById('chk-hide-non-executed');
+        if (chk) chk.checked = config.filterNonExecuted;
+        const rng = document.getElementById('rng-min-time');
+        if (rng) rng.value = config.minTime;
+        const lbl = document.getElementById('lbl-min-time');
+        if (lbl) lbl.textContent = config.minTime.toFixed(1) + "s";
+        const inp = document.getElementById('inp-filter-type');
+        if (inp) inp.value = config.filterTypeExclude;
+
+        const chkCmp = document.getElementById('chk-hide-non-executed-cmp');
+        if (chkCmp) chkCmp.checked = config.filterNonExecuted;
+        const rngCmp = document.getElementById('rng-min-time-cmp');
+        if (rngCmp) rngCmp.value = config.minTime;
+        const lblCmp = document.getElementById('lbl-min-time-cmp');
+        if (lblCmp) lblCmp.textContent = config.minTime.toFixed(1) + "s";
+        const inpCmp = document.getElementById('inp-filter-type-cmp');
+        if (inpCmp) inpCmp.value = config.filterTypeExclude;
+    }
+
     function renderTable() {
         updateHeaderIcons();
+        syncFilterControls();
 
         const tbody = document.getElementById('profiler-table-body');
         if (!tbody) return;
@@ -728,6 +804,46 @@ export function initProfiler() {
         }
     }
 
+    // Apply a run's steps to nodesMap (shared by live polling and historical "View")
+    function applyStepsToMap(steps) {
+        let newNodesAdded = 0;
+        if (!Array.isArray(steps)) return newNodesAdded;
+        steps.forEach(step => {
+            const idStr = String(step.node_id);
+            let nodeData = nodesMap.get(idStr);
+            
+            if (!nodeData) {
+                nodeData = {
+                    id: idStr,
+                    title: step.node_title || "Unknown",
+                    type: step.node_type || "Unknown",
+                    holaf_group: groupMapping[idStr] || null, 
+                    mode: 0,
+                    exec_order: null,
+                    vram_max: 0, exec_time: 0, gpu_load_max: 0
+                };
+                if (!nodeData.holaf_group && idStr.includes(':')) {
+                    const parentId = idStr.split(':')[0];
+                    const parent = nodesMap.get(parentId);
+                    if (parent && parent.holaf_group) nodeData.holaf_group = parent.holaf_group;
+                }
+                nodesMap.set(idStr, nodeData);
+                newNodesAdded++;
+            }
+
+            nodeData.vram_max = step.vram_max;
+            nodeData.exec_time = step.exec_time;
+            nodeData.gpu_load_max = step.gpu_load_max;
+            if (step.gpu_load_avg !== undefined) nodeData.gpu_load_avg = step.gpu_load_avg;
+            
+            if (step.exec_time > 0 && !nodeData.exec_order) {
+                executionCounter++;
+                nodeData.exec_order = executionCounter;
+            }
+        });
+        return newNodesAdded;
+    }
+
     async function pollRunData() {
         if (!currentRunId) return;
         try {
@@ -738,56 +854,21 @@ export function initProfiler() {
             let newNodesAdded = 0;
 
             if (data.steps && Array.isArray(data.steps)) {
-                data.steps.forEach(step => {
-                    const idStr = String(step.node_id);
-                    let nodeData = nodesMap.get(idStr);
-                    
-                    if (!nodeData) {
-                        nodeData = {
-                            id: idStr,
-                            title: step.node_title || "Unknown",
-                            type: step.node_type || "Unknown",
-                            holaf_group: groupMapping[idStr] || null, 
-                            mode: 0,
-                            exec_order: null,
-                            vram_max: 0, exec_time: 0, gpu_load_max: 0
-                        };
-                        if (!nodeData.holaf_group && idStr.includes(':')) {
-                            const parentId = idStr.split(':')[0];
-                            const parent = nodesMap.get(parentId);
-                            if (parent && parent.holaf_group) nodeData.holaf_group = parent.holaf_group;
-                        }
-                        nodesMap.set(idStr, nodeData);
-                        newNodesAdded++;
-                    }
-
-                    nodeData.vram_max = step.vram_max;
-                    nodeData.exec_time = step.exec_time;
-                    nodeData.gpu_load_max = step.gpu_load_max;
-                    if (step.gpu_load_avg !== undefined) nodeData.gpu_load_avg = step.gpu_load_avg;
-                    
-                    if (step.exec_time > 0 && !nodeData.exec_order) {
-                        executionCounter++;
-                        nodeData.exec_order = executionCounter;
-                    }
-                });
+                newNodesAdded = applyStepsToMap(data.steps);
                 renderTable();
             }
 
             // --- AUTO-STOP DETECTION ---
             const stepCount = (data.steps && data.steps.length) || 0;
 
-            // 1) Same step count twice in a row => run finished
-            if (lastStepCount !== null && stepCount === lastStepCount) {
-                sameStepCount++;
-            } else {
-                sameStepCount = 0;
+            // Track the last time we observed real progress (a new node OR a step-count
+            // change). During a long-running single node (e.g. a ~140s sampler) the step
+            // count stays constant, so this must NOT be used as a finish signal — it only
+            // feeds the generous stuck-run safety timeout below.
+            if (newNodesAdded > 0 || stepCount !== lastStepCount) {
+                lastProgressTime = Date.now();
             }
             lastStepCount = stepCount;
-
-            // 2) No new node added for 3 consecutive polls => idle/stalled
-            if (newNodesAdded === 0) idlePollCount++;
-            else idlePollCount = 0;
 
             // Fetch run metadata for total_time (authoritative finish signal)
             let totalTime = null;
@@ -801,11 +882,23 @@ export function initProfiler() {
 
             updateSummaryBar(totalTime);
 
-            const finished = (totalTime !== null && totalTime !== undefined && totalTime > 0)
-                || sameStepCount >= 2
-                || idlePollCount >= 3;
+            // The ONLY authoritative finish signal is the backend's total_time: it stays
+            // null/0 while the run is in progress and becomes >0 once the backend finalizes
+            // the run on the real end-of-run events
+            // (execution_success/error/interrupted/finished).
+            const finished = (totalTime !== null && totalTime !== undefined && totalTime > 0);
 
             if (finished) {
+                stopPolling(totalTime);
+                return;
+            }
+
+            // Generous safety net: never poll forever if the backend somehow never finalizes
+            // the run. 10 minutes without any progress (no new node, no step-count change)
+            // means the run is genuinely stuck — this will NOT trigger during long samplers
+            // (10 min >> 140s).
+            if (lastProgressTime && (Date.now() - lastProgressTime) > 600000) {
+                console.warn("Run polling timeout (no progress for 10 min) — run may still be active; check History.");
                 stopPolling(totalTime);
             }
         } catch (e) { console.error("Polling error:", e); }
@@ -857,8 +950,7 @@ export function initProfiler() {
 
             // Reset polling / auto-stop state
             lastStepCount = null;
-            sameStepCount = 0;
-            idlePollCount = 0;
+            lastProgressTime = Date.now();
             runFinished = false;
             currentTotalTime = null;
             updateSummaryBar(null);
@@ -891,6 +983,47 @@ export function initProfiler() {
             if (selectedRunIds.size === 0) info.textContent = 'Select 2+ runs to compare';
             else if (selectedRunIds.size === 1) info.textContent = '1 run selected (need 2+)';
             else info.textContent = `${selectedRunIds.size} runs selected`;
+        }
+    }
+
+    // Load a past run's steps into the live profile table, identical to a live run
+    async function viewRun(runId) {
+        if (!runId) return;
+        try {
+            const resp = await fetch(`/holaf/profiler/run/${runId}`);
+            if (!resp.ok) throw new Error('Failed to load run data');
+            const data = await resp.json();
+
+            // Reset order/metrics so the historical run renders faithfully, but keep
+            // nodesMap entries (context names) so breadcrumbs still resolve for
+            // compound ids like "1131:1113".
+            executionCounter = 0;
+            nodesMap.forEach(node => {
+                node.exec_order = null;
+                node.vram_max = 0;
+                node.exec_time = 0;
+                node.gpu_load_max = 0;
+            });
+
+            if (data.steps && Array.isArray(data.steps)) {
+                applyStepsToMap(data.steps);
+            }
+
+            // Fetch total_time from meta (same endpoint pollRunData uses)
+            let totalTime = null;
+            try {
+                const metaResp = await fetch(`/holaf/profiler/run/${runId}/meta`);
+                if (metaResp.ok) {
+                    const metaData = await metaResp.json();
+                    if (metaData.run) totalTime = metaData.run.total_time;
+                }
+            } catch (e) {}
+
+            switchTab('live');
+            renderTable();
+            updateSummaryBar(totalTime);
+        } catch (e) {
+            console.error(`Failed to view run ${runId}:`, e);
         }
     }
 
@@ -930,7 +1063,10 @@ export function initProfiler() {
             return `
                 <tr>
                     <td style="text-align:center;"><input type="checkbox" class="history-checkbox" data-run-id="${id}" ${checked}></td>
-                    <td>${esc(run.name || `Run ${id}`)}</td>
+                    <td>
+                        <button class="btn btn-outline history-view" data-run-id="${id}" title="View this run in the Live Profile" style="padding:2px 8px; font-size:0.8rem; margin-right:8px;">👁 View</button>
+                        ${esc(run.name || `Run ${id}`)}
+                    </td>
                     <td class="metric-cell">${formatTime(run.total_time)}</td>
                     <td class="metric-cell" style="font-size:0.85em;">${formatTimestamp(run.timestamp)}</td>
                     <td class="metric-cell">${run.node_count ?? '-'}</td>
@@ -970,6 +1106,37 @@ export function initProfiler() {
         }
     }
 
+    // Applies the same config filters as renderTable to a unified compare node.
+    // The compare table shows every run in a single row, so a step that would be
+    // hidden by a filter in any one run is hidden from all runs (consistent rows).
+    function compareNodePassesFilters(entry, anyNodeExecuted) {
+        const excludeTypes = config.filterTypeExclude.split(',').map(s => s.trim()).filter(s => s);
+        const runValues = Object.values(entry.values);
+
+        // filterNonExecuted: hide nodes that never executed in the compared runs
+        if (config.filterNonExecuted && anyNodeExecuted) {
+            for (const v of runValues) {
+                const t = v ? (v.exec_time || 0) : 0;
+                if (t <= 0) return false;
+            }
+        }
+
+        // minTime: hide a node if any run's positive exec_time is below the threshold
+        for (const v of runValues) {
+            const t = v ? (v.exec_time || 0) : 0;
+            if (t > 0 && t < config.minTime) return false;
+        }
+
+        // type exclude
+        if (excludeTypes.length > 0) {
+            const rowType = (entry.type || "").toLowerCase();
+            for (const ex of excludeTypes) {
+                if (rowType.includes(ex)) return false;
+            }
+        }
+        return true;
+    }
+
     function renderComparison() {
         const container = document.getElementById('compare-content');
         if (!container) return;
@@ -983,6 +1150,8 @@ export function initProfiler() {
         const steps = compareData.steps || [];
         const runOrder = runs.map(r => String(r.run_id));
         const metric = compareMetric;
+
+        syncFilterControls();
 
         // Rebuild the name map from step titles
         compareNodesMap.clear();
@@ -1011,13 +1180,19 @@ export function initProfiler() {
             )).join(' vs ');
         }
 
-        // Rows
+        // Rows (respect the shared Live Profile filters from config)
+        const anyNodeExecuted = [...unified.values()].some(entry =>
+            Object.values(entry.values).some(v => v && (v.exec_time || 0) > 0)
+        );
+        const filterActive = config.filterNonExecuted || config.minTime > 0 || config.filterTypeExclude !== '';
+
         const rowsHtml = [];
         unified.forEach((entry, nodeId) => {
+            if (!compareNodePassesFilters(entry, anyNodeExecuted)) return;
             rowsHtml.push(renderCompareRow(nodeId, entry, runOrder, metric));
         });
         if (rowsHtml.length === 0) {
-            rowsHtml.push(`<tr><td colspan="${runOrder.length + 2}" class="empty-state">No nodes found in the selected runs.</td></tr>`);
+            rowsHtml.push(`<tr><td colspan="${runOrder.length + 2}" class="empty-state">${filterActive ? 'No nodes match the current filters.' : 'No nodes found in the selected runs.'}</td></tr>`);
         }
 
         // Footer (summary)
