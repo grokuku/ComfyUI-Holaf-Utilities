@@ -18,6 +18,28 @@ import asyncio
 _video_processing_locks = {}
 _video_processing_locks_mutex = asyncio.Lock()
 
+# --- Per-thumbnail-file lock registry ---
+# Guards the remove -> generate -> serve lifecycle for each distinct thumbnail
+# FILE (keyed by the thumbnail FILENAME, e.g. "<thumb_hash>.jpg"). Shared by the
+# background thumbnail worker, the inline get_thumbnail_route and the
+# regenerate_thumbnail_route so no two generators ever touch the same file
+# concurrently. Without this, one generator can os.remove() the file while
+# another is between os.path.exists() and web.FileResponse() construction (which
+# stats the file), raising FileNotFoundError -> 500 "Failed to read generated
+# thumb at final stage.".
+# NOTE: The dict grows with the number of distinct thumb files (~32k here) and
+# each entry is tiny (a Lock object) — bounded and acceptable.
+_thumb_generation_locks = {}
+_thumb_generation_locks_mutex = threading.Lock()
+
+def get_thumb_generation_lock(thumb_key):
+    """Return the per-thumbnail-file lock for thumb_key (thumbnail FILENAME)."""
+    with _thumb_generation_locks_mutex:
+        lock = _thumb_generation_locks.get(thumb_key)
+        if lock is None:
+            lock = _thumb_generation_locks.setdefault(thumb_key, threading.Lock())
+        return lock
+
 # --- NEW DEPENDENCY: Required for reading XMP sidecar files for tags ---
 try:
     from libxmp.files import XMPFiles
