@@ -1244,7 +1244,11 @@ def transcode_video_with_edits(source_path, dest_path, edit_data, format_ext='mp
                 cmd.extend(["-c:a", "copy"])
                 action_log = f"Transcode (Filters: {filter_str})"
         else:
-            cmd.extend(["-c", "copy"])
+            # No filters/edits, but still respect user's quality settings (CRF, codec, preset)
+            video_codec = options.get('codec', 'libx264')
+            cmd.extend(["-c:v", video_codec, "-preset", preset, "-crf", str(crf)])
+            cmd.extend(["-c:a", "copy"])
+            action_log = f"Transcode (No filters, codec={video_codec}, CRF={crf}, preset={preset})"
 
     cmd.append(dest_path)
     

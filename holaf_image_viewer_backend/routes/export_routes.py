@@ -125,6 +125,8 @@ async def prepare_export_route(request: web.Request):
                 # --- EXPORT PROCESSING ---
                 if is_video:
                     # Video Export (Transcoding)
+                    edit_summary = "no edits" if not edit_data else f"{len(edit_data.get('controls', []))} controls"
+                    print(f"🔵 [Holaf-Export] Video: {original_filename} | edits={edit_summary} | format={target_ext} | options={export_options}")
                     await loop.run_in_executor(
                         None, 
                         logic.transcode_video_with_edits, 
