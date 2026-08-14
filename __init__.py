@@ -33,6 +33,7 @@ import re # Added for finalize_upload_model_route for subfolder splitting
 # --- Holaf Utilities Submodules ---
 from . import holaf_database
 from . import holaf_config
+from . import holaf_auth
 from . import holaf_utils # Also initializes its dirs and cleans up temp uploads
 from . import holaf_terminal
 from . import holaf_image_viewer_backend
@@ -66,6 +67,83 @@ CONFIG = {}
 def reload_global_config():
     global CONFIG
     CONFIG = holaf_config.load_all_configs()
+
+# --- CSRF Protection Middleware ---
+#
+# Cross-Site Request Forgery protection for mutating requests. Browser-driven
+# attacks always carry an Origin (or, failing that, Referer) header that points
+# to a different host. Non-browser clients (curl, scripts, ComfyUI's own local
+# fetch where the header is absent) are left untouched.
+#
+# Reverse-proxy handling:
+#   The set of allowed hosts is `request.host` (the Host header seen by this
+#   backend) PLUS any comma-separated values from [Security] allowed_origins.
+#   The config list covers the case where a reverse proxy rewrites the Host
+#   header to an internal value while the browser still sends the external host
+#   in its Origin header.
+def _holaf_normalize_host(value: str) -> str | None:
+    """Normalize an Origin/Referer/Host value to a lowercase host[:port]."""
+    if not value:
+        return None
+    value = value.strip().lower()
+    if '://' in value:
+        value = value.split('://', 1)[1]
+    # Drop path, query and fragment components.
+    value = value.split('/', 1)[0].split('?', 1)[0].split('#', 1)[0]
+    # Drop any userinfo component (should not be present in Origin/Referer).
+    if '@' in value:
+        value = value.rsplit('@', 1)[1]
+    value = value.strip()
+    return value or None
+
+
+def _holaf_allowed_hosts(request: web.Request) -> set:
+    allowed_hosts = set()
+
+    request_host = _holaf_normalize_host(request.host)
+    if request_host:
+        allowed_hosts.add(request_host)
+
+    try:
+        config_parser = holaf_config.get_config_parser()
+        allowed_origins_raw = config_parser.get(
+            'Security', 'allowed_origins', fallback=''
+        )
+    except Exception:
+        allowed_origins_raw = ''
+
+    for entry in allowed_origins_raw.split(','):
+        normalized = _holaf_normalize_host(entry)
+        if normalized:
+            allowed_hosts.add(normalized)
+
+    return allowed_hosts
+
+
+@web.middleware
+async def holaf_csrf_middleware(request: web.Request, handler):
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        return await handler(request)
+
+    source_header = request.headers.get('Origin') or None
+    if source_header is None:
+        source_header = request.headers.get('Referer') or None
+
+    # No browser-style Origin/Referer header means a non-browser client, which
+    # cannot be coerced into CSRF by a third-party site.
+    if source_header is None:
+        return await handler(request)
+
+    source_host = _holaf_normalize_host(source_header)
+    allowed_hosts = _holaf_allowed_hosts(request)
+
+    if source_host is None or source_host not in allowed_hosts:
+        return web.json_response(
+            {"error": "Cross-site request rejected."},
+            status=403,
+        )
+
+    return await handler(request)
 
 # --- Initialization ---
 print("--- Initializing Holaf Utilities ---")
@@ -299,6 +377,14 @@ COMPARER_HTML = """
 
 # --- API Route Definitions ---
 routes = server.PromptServer.instance.routes
+
+# Register CSRF middleware globally. The middleware itself is defined above.
+try:
+    app = server.PromptServer.instance.app
+    app.middlewares.append(holaf_csrf_middleware)
+    print("🔵 [Holaf-Init] CSRF protection middleware registered.")
+except Exception as e:
+    print(f"🔴 [Holaf-Init] Failed to register CSRF protection middleware: {e}")
 
 # --- PROFILER ROUTES & HOOKS ---
 if profiler_engine:
@@ -538,6 +624,19 @@ async def holaf_save_all_settings_route(request: web.Request):
 async def holaf_restart_server_route(request: web.Request):
     return await holaf_server_management.restart_server_route(request)
 
+# Shared Auth Routes
+@routes.post("/holaf/auth/login")
+async def holaf_auth_login_route(request: web.Request):
+    return await holaf_auth.login_route(request, CONFIG)
+
+@routes.post("/holaf/auth/logout")
+async def holaf_auth_logout_route(request: web.Request):
+    return await holaf_auth.logout_route(request)
+
+@routes.get("/holaf/auth/status")
+async def holaf_auth_status_route(request: web.Request):
+    return await holaf_auth.status_route(request)
+
 # Terminal Routes
 @routes.post("/holaf/terminal/set-password")
 async def holaf_terminal_set_password_route(request: web.Request):
@@ -548,6 +647,7 @@ async def holaf_terminal_auth_route(request: web.Request):
     return await holaf_terminal.auth_route(request, CONFIG)
 
 @routes.get("/holaf/terminal") # WebSocket
+@holaf_auth.require_auth
 async def holaf_terminal_websocket_route(request: web.Request):
     return await holaf_terminal.websocket_handler(request, CONFIG)
 
@@ -982,10 +1082,12 @@ if nodes_manager_helper:
         except Exception as e: print(f"🔴 [NM] Batch action error: {e}"); return web.json_response({"error":str(e)},500)
 
     @routes.post("/holaf/nodes/update")
+    @holaf_auth.require_auth
     async def nm_update_route(r): return await _handle_node_action_batch(r, "update_node_from_git")
     @routes.post("/holaf/nodes/delete")
     async def nm_delete_route(r): return await _handle_node_action_batch(r, "delete_node_folder")
     @routes.post("/holaf/nodes/install-requirements")
+    @holaf_auth.require_auth
     async def nm_install_req_route(r): return await _handle_node_action_batch(r, "install_node_requirements")
 
     @routes.get("/holaf/nodes/readme/local/{node_name}")
@@ -1015,6 +1117,7 @@ if nodes_manager_helper:
 
     # --- Node Manager Install & Search Routes ---
     @routes.post("/holaf/nodes/install")
+    @holaf_auth.require_auth
     async def nm_install_route(request: web.Request):
         if nodes_manager_helper is None:
             return web.json_response({"status": "error", "message": "Node manager module not available."}, status=503)

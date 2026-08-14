@@ -32,6 +32,83 @@ import aiohttp
 import shutil
 import sys # For sys.executable
 import time # Added for unique backup folder names
+from urllib.parse import urlparse
+
+# Trusted Git origins for custom node installation/update. Only HTTPS clones
+# from these hosts are allowed. This blocks RCE via attacker-supplied
+# file://, git://, ssh:// or http:// clone URLs.
+ALLOWED_GIT_HOSTS = {'github.com', 'www.github.com'}
+
+# Best-effort guard for pip install -r requirements.txt. This is NOT a sandbox:
+# pip can still execute arbitrary setup.py code from a trusted HTTPS package or
+# a git+https requirement. The intent here is only to reject obvious dangerous
+# patterns (setup.py build options and non-HTTPS sources).
+DANGEROUS_REQUIREMENT_PATTERNS = [
+    re.compile(r'--global-option\b', re.IGNORECASE),
+    re.compile(r'--install-option\b', re.IGNORECASE),
+    re.compile(r'--config-settings\b', re.IGNORECASE),
+    re.compile(r'file://', re.IGNORECASE),
+    re.compile(r'(git\+)?ssh://', re.IGNORECASE),
+    re.compile(r'git\+http://', re.IGNORECASE),
+    re.compile(r'git://', re.IGNORECASE),
+    re.compile(r'http://', re.IGNORECASE),
+    re.compile(r'`'),
+    re.compile(r'\$\(', re.IGNORECASE),
+]
+
+
+def _validate_repo_url(repo_url):
+    """Validate a clone URL for custom node install/update.
+
+    Returns (normalized_url, None) on success or (None, error_message) on
+    failure. Only HTTPS URLs on trusted hosts are accepted.
+    """
+    if not isinstance(repo_url, str) or not repo_url.strip():
+        return None, "Repository URL is required."
+
+    repo_url = repo_url.strip()
+    try:
+        parsed = urlparse(repo_url)
+    except ValueError:
+        return None, "Invalid repository URL."
+
+    if parsed.scheme != 'https':
+        return None, "Only HTTPS repository URLs are allowed."
+
+    if parsed.username is not None or parsed.password is not None:
+        return None, "Repository URLs with embedded credentials are not allowed."
+
+    hostname = (parsed.hostname or '').lower()
+    if hostname not in ALLOWED_GIT_HOSTS:
+        return None, "Repository host is not allowed."
+
+    if not parsed.path or parsed.path.rstrip('/') == '':
+        return None, "Repository URL is missing a repository path."
+
+    return repo_url, None
+
+
+def _requirements_content_is_safe(req_file_path):
+    """Check a requirements.txt for obvious dangerous patterns.
+
+    Returns (True, None) if the file looks safe enough to pass to pip, or
+    (False, message) if it should be refused.
+    """
+    try:
+        with open(req_file_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read(512 * 1024)
+    except OSError as e:
+        return False, f"Could not read requirements file: {e}"
+
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        for pattern in DANGEROUS_REQUIREMENT_PATTERNS:
+            if pattern.search(line):
+                return False, f"Refusing to install requirements containing suspicious pattern: {line[:120]}"
+
+    return True, None
 
 def _sanitize_node_name(node_name_from_client: str) -> str | None:
     """
@@ -291,6 +368,13 @@ def update_node_from_git(node_name: str, repo_url_override: str = None) -> dict:
             print(f"🟡 [Holaf-NodesManager] {msg}")
             return {"status": "info", "message": msg}
 
+        # SECURITY: the override URL comes from the client and must be validated
+        # before it is passed to git clone.
+        repo_url_to_clone, url_err = _validate_repo_url(repo_url_to_clone)
+        if not repo_url_to_clone:
+            print(f"🔴 [Holaf-NodesManager] Re-clone update blocked for '{node_name}': {url_err}")
+            return {"status": "error", "message": url_err}
+
         parent_dir = os.path.dirname(node_path)
         backup_node_path = f"{node_path}_old_{str(int(time.time()))}"
         cloned_successfully = False
@@ -406,7 +490,13 @@ def install_node_requirements(node_name: str) -> dict:
     req_file_path = os.path.join(node_path, 'requirements.txt')
     if not os.path.isfile(req_file_path):
         return {"status": "info", "message": f"No requirements.txt found for node '{node_name}'. Nothing to install."}
-    
+
+    # SECURITY: refuse obviously dangerous requirements before invoking pip.
+    req_is_safe, req_err = _requirements_content_is_safe(req_file_path)
+    if not req_is_safe:
+        print(f"🔴 [Holaf-NodesManager] Requirement installation blocked for '{node_name}': {req_err}")
+        return {"status": "error", "message": req_err}
+
     output_log = ""
     try:
         pip_command = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
@@ -436,8 +526,9 @@ def install_node_requirements(node_name: str) -> dict:
         return {"status": "error", "message": err_msg, "output": output_log}
 
 def install_custom_node(repo_url: str) -> dict:
-    if not repo_url or not repo_url.startswith(('http://', 'https://')):
-        return {"status": "error", "message": "Invalid URL protocol. Must be http:// or https://"}
+    repo_url, url_err = _validate_repo_url(repo_url)
+    if not repo_url:
+        return {"status": "error", "message": url_err}
 
     # Extract folder name from URL
     clean_url = repo_url.rstrip('/')

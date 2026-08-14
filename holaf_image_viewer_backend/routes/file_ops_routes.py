@@ -9,6 +9,7 @@ import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
+from .. import path_validation
 from ... import holaf_database
 
 EDIT_DIR_NAME = "edit"
@@ -43,8 +44,12 @@ async def delete_images_route(request: web.Request):
         errors = []
 
         for original_path_canon in paths_canon_to_delete:
-            original_full_path = os.path.normpath(os.path.join(output_dir, original_path_canon))
-            
+            try:
+                original_full_path = path_validation.validate_output_path(output_dir, original_path_canon)
+            except ValueError as path_err:
+                errors.append({"path": original_path_canon, "error": str(path_err)})
+                continue
+
             if not os.path.isfile(original_full_path):
                 errors.append({"path": original_path_canon, "error": "File not found on disk."})
                 # Mark as trashed in DB anyway if it exists, to clean up entry
@@ -183,8 +188,13 @@ async def restore_images_route(request: web.Request):
                 continue
             
             original_path_canon = row['original_path_canon']
-            current_full_path_in_trash = os.path.normpath(os.path.join(output_dir, path_in_trash_canon))
-            original_full_path_restored = os.path.normpath(os.path.join(output_dir, original_path_canon))
+
+            try:
+                current_full_path_in_trash = path_validation.validate_output_path(output_dir, path_in_trash_canon)
+                original_full_path_restored = path_validation.validate_output_path(output_dir, original_path_canon)
+            except ValueError as path_err:
+                errors.append({"path": path_in_trash_canon, "error": str(path_err)})
+                continue
 
             if not os.path.isfile(current_full_path_in_trash):
                 errors.append({"path": path_in_trash_canon, "error": "File not found in trashcan."})
@@ -295,8 +305,12 @@ async def delete_images_permanently_route(request: web.Request):
             is_trashed_row = cursor.fetchone()
             is_trashed = is_trashed_row and is_trashed_row['is_trashed']
 
-            full_path = os.path.normpath(os.path.join(output_dir, path_canon))
-            
+            try:
+                full_path = path_validation.validate_output_path(output_dir, path_canon)
+            except ValueError as path_err:
+                errors.append({"path": path_canon, "error": str(path_err)})
+                continue
+
             try:
                 # Delete main image file
                 if os.path.isfile(full_path):

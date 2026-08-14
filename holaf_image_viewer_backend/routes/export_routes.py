@@ -14,6 +14,7 @@ import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
+from .. import path_validation
 from ... import holaf_utils
 
 
@@ -45,7 +46,12 @@ async def prepare_export_route(request: web.Request):
         loop = asyncio.get_running_loop()
 
         for path_canon in paths_canon:
-            source_abs_path = os.path.normpath(os.path.join(output_dir, path_canon))
+            try:
+                source_abs_path = path_validation.validate_output_path(output_dir, path_canon)
+            except ValueError as path_err:
+                errors.append({"path": path_canon, "error": str(path_err)})
+                continue
+
             if not os.path.isfile(source_abs_path):
                 errors.append({"path": path_canon, "error": "File not found on disk."})
                 continue

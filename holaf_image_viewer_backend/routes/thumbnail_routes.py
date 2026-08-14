@@ -14,6 +14,7 @@ import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
+from .. import path_validation
 from ... import holaf_database
 from ... import holaf_utils
 
@@ -54,28 +55,22 @@ async def get_thumbnail_route(request: web.Request):
 
         # --- Prioritize path_canon if available (it matches DB key exactly) ---
         if path_canon_param:
-             # Security check is vital here since we trust the param more
-             if ".." in path_canon_param or path_canon_param.startswith("/"):
-                  return web.Response(status=403, text="ERR: Invalid path_canon.")
              original_rel_path = path_canon_param
-             original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
-             if not original_abs_path.startswith(os.path.normpath(output_dir)):
-                 return web.Response(status=403, text="ERR: Forbidden path_canon.")
         
         # Fallback to legacy reconstruction
         elif filename:
             safe_filename = holaf_utils.sanitize_filename(filename)
             # original_rel_path is the path_canon from the DB
             original_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
-            # original_abs_path is its location on disk
-            original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
-
-            if not original_abs_path.startswith(os.path.normpath(output_dir)):
-                error_message_for_client = "ERR: Forbidden path for thumbnail."
-                return web.Response(status=403, text=error_message_for_client)
         else:
             error_message_for_client = "ERR: Filename or path_canon is required."
             return web.Response(status=400, text=error_message_for_client)
+
+        try:
+            original_abs_path = path_validation.validate_output_path(output_dir, original_rel_path)
+        except ValueError:
+            error_message_for_client = "ERR: Forbidden path_canon."
+            return web.Response(status=403, text=error_message_for_client)
 
 
         # --- Retrieve thumb_hash from DB first ---
@@ -276,11 +271,20 @@ async def regenerate_thumbnail_route(request: web.Request):
             return web.json_response({"status": "error", "message": "'path_canon' is required"}, status=400)
 
         output_dir = folder_paths.get_output_directory()
+
+        # Reject traversal/absolute input before sanitization (sanitize would
+        # otherwise silently strip '..' instead of rejecting it).
+        try:
+            path_validation.validate_output_path(output_dir, path_canon)
+        except ValueError:
+            return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
+
         safe_path_canon = holaf_utils.sanitize_path_canon(path_canon)
-        original_abs_path = os.path.normpath(os.path.join(output_dir, safe_path_canon))
-        
-        if not original_abs_path.startswith(os.path.normpath(output_dir)):
-             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
+
+        try:
+            original_abs_path = path_validation.validate_output_path(output_dir, safe_path_canon)
+        except ValueError:
+            return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
         if not os.path.isfile(original_abs_path):
             return web.json_response({"status": "error", "message": "Original image not found"}, status=404)
 
@@ -539,13 +543,11 @@ async def thumbnail_diagnose_route(request: web.Request):
         output_dir = folder_paths.get_output_directory()
 
         # --- Same security checks as get_thumbnail_route ---
-        if ".." in path_canon_param or path_canon_param.startswith("/"):
-            diagnostic["summary"] = "REJECTED: invalid path_canon (path traversal or absolute path)."
-            return web.json_response(diagnostic, status=200)
         original_rel_path = path_canon_param
-        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
-        if not original_abs_path.startswith(os.path.normpath(output_dir)):
-            diagnostic["summary"] = "REJECTED: path_canon escapes the output directory."
+        try:
+            original_abs_path = path_validation.validate_output_path(output_dir, original_rel_path)
+        except ValueError as path_err:
+            diagnostic["summary"] = f"REJECTED: {path_err}"
             return web.json_response(diagnostic, status=200)
 
         diagnostic["source_abs_path"] = original_abs_path

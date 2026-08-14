@@ -11,6 +11,7 @@ import folder_paths # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
+from .. import path_validation
 from ... import holaf_database
 from ... import holaf_utils
 
@@ -26,10 +27,13 @@ async def get_metadata_route(request: web.Request):
         safe_filename = holaf_utils.sanitize_filename(filename)
         # Path is now constructed directly from subfolder and filename query params
         image_rel_path = os.path.join(subfolder, safe_filename).replace(os.sep, '/')
-        image_abs_path = os.path.normpath(os.path.join(output_dir, image_rel_path))
 
-        if not image_abs_path.startswith(os.path.normpath(output_dir)) or \
-           not os.path.isfile(image_abs_path):
+        try:
+            image_abs_path = path_validation.validate_output_path(output_dir, image_rel_path)
+        except ValueError:
+            return web.json_response({"error": "Image not found or path forbidden"}, status=404)
+
+        if not os.path.isfile(image_abs_path):
             return web.json_response({"error": "Image not found or path forbidden"}, status=404)
         
         # --- MODIFICATION: Fetch from DB first, then fallback to blocking extract ---
@@ -93,7 +97,12 @@ async def extract_metadata_route(request: web.Request):
         loop = asyncio.get_running_loop()
 
         for path in paths_canon:
-            image_abs_path = os.path.normpath(os.path.join(output_dir, path))
+            try:
+                image_abs_path = path_validation.validate_output_path(output_dir, path)
+            except ValueError as path_err:
+                failures.append({"path": path, "error": str(path_err)})
+                continue
+
             base_path, _ = os.path.splitext(image_abs_path)
 
             try:
@@ -210,7 +219,12 @@ async def inject_metadata_route(request: web.Request):
         loop = asyncio.get_running_loop()
 
         for path in paths_canon:
-            image_abs_path = os.path.normpath(os.path.join(output_dir, path))
+            try:
+                image_abs_path = path_validation.validate_output_path(output_dir, path)
+            except ValueError as path_err:
+                failures.append({"path": path, "error": str(path_err)})
+                continue
+
             base_path, _ = os.path.splitext(image_abs_path)
 
             try:

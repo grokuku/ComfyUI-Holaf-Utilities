@@ -32,6 +32,7 @@
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
+import { escapeHtml, sanitizeMarkdownHtml, sanitizeUrl } from "./holaf_dom_utils.js";
 
 // Helper to load external scripts
 function loadScript(src, id) {
@@ -446,9 +447,9 @@ const holafNodesManager = {
         }
 
         if (nodeData.is_git_repo && nodeData.repo_url) {
-            iconsHTML += `<svg title="Local Git repository: ${nodeData.repo_url}" class="holaf-nodes-manager-git-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0v1a6 6 0 0 0 6 6h1a5 5 0 0 0 5-5V8zm-6 6a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/><path d="M12 14v6"/><path d="M15 17H9"/></svg>`;
+            iconsHTML += `<svg title="Local Git repository: ${escapeHtml(nodeData.repo_url)}" class="holaf-nodes-manager-git-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0v1a6 6 0 0 0 6 6h1a5 5 0 0 0 5-5V8zm-6 6a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/><path d="M12 14v6"/><path d="M15 17H9"/></svg>`;
         } else if (nodeData.repo_url) {
-            iconsHTML += `<svg title="GitHub repo found (manual install): ${nodeData.repo_url}" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--holaf-accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
+            iconsHTML += `<svg title="GitHub repo found (manual install): ${escapeHtml(nodeData.repo_url)}" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--holaf-accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
         } else {
             iconsHTML += `<svg title="Manually installed (no remote repo identified)" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
         }
@@ -603,7 +604,7 @@ const holafNodesManager = {
         const headerEl = document.getElementById("holaf-nodes-manager-readme-header");
         const contentEl = document.getElementById("holaf-nodes-manager-readme-content");
 
-        headerEl.innerHTML = `<h3>${node.name}</h3>`;
+        headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3>`;
         contentEl.innerHTML = `<p class="holaf-manager-message">Loading...</p>`;
 
         let effectiveRepoUrl = node.repo_url;
@@ -612,7 +613,7 @@ const holafNodesManager = {
         let repoUrlWasFoundThisCall = false;
 
         if (!node.is_git_repo && !effectiveRepoUrl) {
-            contentEl.innerHTML = `<p class="holaf-manager-message">No local Git repo. Searching GitHub for "${node.name}"...</p>`;
+            contentEl.innerHTML = `<p class="holaf-manager-message">No local Git repo. Searching GitHub for "${escapeHtml(node.name)}"...</p>`;
             try {
                 const searchResponse = await fetch(`/holaf/nodes/search/github/${encodeURIComponent(node.name)}`);
                 if (searchResponse.ok) {
@@ -635,9 +636,9 @@ const holafNodesManager = {
         else if (node.repo_url) githubLinkText = "Detected Remote";
 
         if (effectiveRepoUrl) {
-            const repoLink = `<a href="${effectiveRepoUrl}" target="_blank" title="Open on GitHub">${githubLinkText}</a>`;
-            headerEl.innerHTML = `<h3>${node.name}</h3> ${repoLink}`;
-            contentEl.innerHTML = `<p class="holaf-manager-message">Fetching README from GitHub (${effectiveRepoUrl})...</p>`;
+            const repoLink = `<a href="${escapeHtml(sanitizeUrl(effectiveRepoUrl))}" target="_blank" rel="noopener noreferrer" title="Open on GitHub">${escapeHtml(githubLinkText)}</a>`;
+            headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3> ${repoLink}`;
+            contentEl.innerHTML = `<p class="holaf-manager-message">Fetching README from GitHub (${escapeHtml(effectiveRepoUrl)})...</p>`;
             const match = effectiveRepoUrl.match(/github\.com[/:]([^/]+\/[^/]+)/);
             if (match && match[1]) {
                 const [owner, repoWithGit] = match[1].split('/');
@@ -664,7 +665,7 @@ const holafNodesManager = {
             if (effectiveRepoUrl) {
                 contentEl.innerHTML = `<p class="holaf-manager-message">Could not retrieve README from GitHub. Checking for a local file...</p>`;
             } else {
-                headerEl.innerHTML = `<h3>${node.name}</h3>`;
+                headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3>`;
                 contentEl.innerHTML = `<p class="holaf-manager-message">No GitHub repository identified. Checking for a local file...</p>`;
             }
             try {
@@ -681,12 +682,12 @@ const holafNodesManager = {
         if (readmeText === null) {
             readmeText = `## No README Found\n\nCould not find a README file on GitHub or locally for **${node.name}**.`;
             if (!effectiveRepoUrl) {
-                headerEl.innerHTML = `<h3>${node.name}</h3>`;
+                headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3>`;
             }
         }
 
         if (this.scriptsLoaded && window.marked) {
-            contentEl.innerHTML = window.marked.parse(readmeText);
+            contentEl.innerHTML = sanitizeMarkdownHtml(window.marked.parse(readmeText));
         } else {
             contentEl.textContent = readmeText;
         }
@@ -714,7 +715,159 @@ const holafNodesManager = {
         }
     },
 
-    async _executeNodeAction(actionPath, nodePayloads, actionName, confirmMessage) {
+    async _checkAuthStatus() {
+        try {
+            const response = await fetch('/holaf/auth/status', {
+                method: 'GET',
+                cache: 'no-store'
+            });
+            if (!response.ok) return false;
+            const data = await response.json().catch(() => ({}));
+            return data.authenticated === true;
+        } catch (e) {
+            console.warn("[Holaf NodesManager] Auth status check failed:", e);
+            return false;
+        }
+    },
+
+    _showLoginModal(message = "Authentication is required for this action. Please enter your password.") {
+        return new Promise((resolve) => {
+            const overlay = document.createElement("div");
+            overlay.className = "holaf-dialog-overlay";
+            overlay.style.zIndex = "210000";
+
+            const dialog = document.createElement("div");
+            dialog.className = "holaf-utility-panel holaf-dialog-inline";
+            const themeClass = (this.panelElements && this.panelElements.panelEl
+                ? this.panelElements.panelEl.className.match(/holaf-theme-\S+/)?.[0]
+                : null) || HOLAF_THEMES[0].className;
+            dialog.classList.add(themeClass);
+
+            const header = document.createElement("div");
+            header.className = "holaf-utility-header";
+            header.style.cursor = "default";
+            const title = document.createElement("span");
+            title.textContent = "Authentication Required";
+            header.appendChild(title);
+
+            const content = document.createElement("div");
+            content.className = "holaf-dialog-content";
+            content.style.whiteSpace = "normal";
+
+            const info = document.createElement("p");
+            info.textContent = message;
+            info.style.cssText = "margin:0 0 12px 0;color:var(--holaf-text-secondary);line-height:1.4;";
+
+            const label = document.createElement("label");
+            label.textContent = "Password:";
+            label.style.cssText = "display:block;margin-bottom:5px;color:var(--holaf-text-primary);";
+
+            const passwordInput = document.createElement("input");
+            passwordInput.type = "password";
+            passwordInput.autocomplete = "current-password";
+            passwordInput.style.cssText = "width:100%;padding:8px;box-sizing:border-box;background-color:var(--holaf-input-background);color:var(--holaf-text-primary);border:1px solid var(--holaf-border-color);border-radius:3px;outline:none;margin-bottom:10px;";
+
+            const statusMessage = document.createElement("p");
+            statusMessage.style.cssText = "margin:0;color:var(--holaf-accent-color);font-size:0.9em;min-height:1.2em;";
+
+            content.append(info, label, passwordInput, statusMessage);
+
+            const footer = document.createElement("div");
+            footer.className = "holaf-dialog-footer";
+
+            const cancelButton = document.createElement("button");
+            cancelButton.textContent = "Cancel";
+            cancelButton.className = "comfy-button";
+            cancelButton.style.backgroundColor = "var(--holaf-tag-background)";
+
+            const loginButton = document.createElement("button");
+            loginButton.textContent = "Connect";
+            loginButton.className = "comfy-button";
+            loginButton.style.backgroundColor = "var(--holaf-accent-color)";
+            loginButton.style.color = "white";
+
+            footer.append(cancelButton, loginButton);
+            dialog.append(header, content, footer);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            let resolved = false;
+
+            const closeModal = (value) => {
+                if (resolved) return;
+                resolved = true;
+                if (document.body.contains(overlay)) document.body.removeChild(overlay);
+                resolve(value);
+            };
+
+            const submitLogin = async () => {
+                const password = passwordInput.value;
+                if (!password) {
+                    statusMessage.textContent = "Error: Password cannot be empty.";
+                    passwordInput.focus();
+                    return;
+                }
+
+                loginButton.disabled = true;
+                cancelButton.disabled = true;
+                passwordInput.disabled = true;
+                statusMessage.textContent = "Authenticating...";
+
+                try {
+                    const response = await fetch('/holaf/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+                    const data = await response.json().catch(() => ({}));
+
+                    if (response.ok && data.success === true) {
+                        closeModal(true);
+                        return;
+                    }
+
+                    if (response.status === 401) {
+                        statusMessage.textContent = "Mot de passe non configuré ou incorrect.";
+                    } else {
+                        const serverMessage = data.message || data.error || "";
+                        statusMessage.textContent = serverMessage
+                            ? `Error: ${serverMessage}`
+                            : "Mot de passe non configuré ou incorrect.";
+                    }
+                } catch (e) {
+                    console.error("[Holaf NodesManager] Login request failed:", e);
+                    statusMessage.textContent = "Error: Could not reach server.";
+                } finally {
+                    passwordInput.value = "";
+                    loginButton.disabled = false;
+                    cancelButton.disabled = false;
+                    passwordInput.disabled = false;
+                    passwordInput.focus();
+                }
+            };
+
+            loginButton.onclick = submitLogin;
+            cancelButton.onclick = () => closeModal(false);
+            passwordInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitLogin();
+                }
+            });
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeModal(false);
+            });
+
+            passwordInput.focus();
+        });
+    },
+
+    async _ensureAuthenticated(message = "Authentication is required for this action. Please enter your password.") {
+        if (await this._checkAuthStatus()) return true;
+        return this._showLoginModal(message);
+    },
+
+    async _executeNodeAction(actionPath, nodePayloads, actionName, confirmMessage, requiresAuth = false) {
         if (this.isActionInProgress) {
             HolafPanelManager.createDialog({ title: "Action In Progress", message: "Another action is currently running. Please wait." });
             return;
@@ -722,6 +875,11 @@ const holafNodesManager = {
         if (!nodePayloads || nodePayloads.length === 0) {
             HolafPanelManager.createDialog({ title: actionName, message: "No nodes selected for this action." });
             return;
+        }
+
+        if (requiresAuth) {
+            const authenticated = await this._ensureAuthenticated();
+            if (!authenticated) return;
         }
 
         const nodeNamesForDisplay = nodePayloads.map(p => p.name).join(', ');
@@ -785,11 +943,32 @@ const holafNodesManager = {
         showInProgressDialog();
 
         try {
-            const response = await fetch(actionPath, {
+            let response = await fetch(actionPath, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ node_payloads: nodePayloads })
             });
+
+            if (response.status === 401) {
+                removeInProgressDialog();
+                const reconnected = await this._showLoginModal("Your session has expired. Please enter your password to reconnect.");
+                if (!reconnected) {
+                    HolafPanelManager.createDialog({ title: `${actionName} Cancelled`, message: "Authentication is required to perform this action." });
+                    return;
+                }
+                showInProgressDialog();
+                response = await fetch(actionPath, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ node_payloads: nodePayloads })
+                });
+                if (response.status === 401) {
+                    removeInProgressDialog();
+                    HolafPanelManager.createDialog({ title: `${actionName} Error`, message: "Authentication failed. The action was not executed." });
+                    return;
+                }
+            }
+
             const result = await response.json();
 
             removeInProgressDialog();
@@ -889,7 +1068,8 @@ const holafNodesManager = {
             '/holaf/nodes/update',
             nodesToUpdatePayloads,
             "Update",
-            message
+            message,
+            true
         );
     },
 
@@ -915,7 +1095,8 @@ const holafNodesManager = {
             '/holaf/nodes/install-requirements',
             nodesForReqPayloads,
             "Install Requirements",
-            "This will attempt to run 'pip install -r requirements.txt' for the selected nodes. Ensure your ComfyUI Python environment is active. This might take some time."
+            "This will attempt to run 'pip install -r requirements.txt' for the selected nodes. Ensure your ComfyUI Python environment is active. This might take some time.",
+            true
         );
     },
 
@@ -1007,18 +1188,40 @@ const holafNodesManager = {
                     data.results.forEach(r => {
                         const row = document.createElement("div");
                         row.style.cssText = "border-bottom: 1px solid var(--holaf-border-color); padding: 5px; display: flex; align-items: center; justify-content: space-between;";
-                        row.innerHTML = `
-                            <div>
-                                <div style="font-weight: bold;">${r.name}</div>
-                                <div style="font-size: 0.8em; opacity: 0.7;">${r.description || 'No description'}</div>
-                                <div style="font-size: 0.7em; opacity: 0.5;"><a href="${r.url}" target="_blank">View on GitHub</a></div>
-                            </div>
-                            <button class="comfy-button" style="margin-left: 10px;">Install</button>
-                        `;
-                        row.querySelector("button").onclick = () => {
+
+                        const infoDiv = document.createElement('div');
+
+                        const nameDiv = document.createElement('div');
+                        nameDiv.style.fontWeight = 'bold';
+                        nameDiv.textContent = r.name;
+
+                        const descriptionDiv = document.createElement('div');
+                        descriptionDiv.style.fontSize = '0.8em';
+                        descriptionDiv.style.opacity = '0.7';
+                        descriptionDiv.textContent = r.description || 'No description';
+
+                        const linkWrap = document.createElement('div');
+                        linkWrap.style.fontSize = '0.7em';
+                        linkWrap.style.opacity = '0.5';
+                        const link = document.createElement('a');
+                        link.href = sanitizeUrl(r.url);
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = 'View on GitHub';
+                        linkWrap.appendChild(link);
+
+                        infoDiv.append(nameDiv, descriptionDiv, linkWrap);
+
+                        const installButton = document.createElement('button');
+                        installButton.className = 'comfy-button';
+                        installButton.style.marginLeft = '10px';
+                        installButton.textContent = 'Install';
+                        installButton.onclick = () => {
                              document.body.removeChild(overlay);
                              this._performInstall(r.url);
                         };
+
+                        row.append(infoDiv, installButton);
                         resultsContainer.appendChild(row);
                     });
                 } else {
@@ -1026,7 +1229,7 @@ const holafNodesManager = {
                 }
 
             } catch (e) {
-                resultsContainer.innerHTML = `<p style="color:red">Error: ${e.message}</p>`;
+                resultsContainer.innerHTML = `<p style="color:red">Error: ${escapeHtml(e.message)}</p>`;
             }
         };
 
@@ -1037,33 +1240,74 @@ const holafNodesManager = {
 
     async _performInstall(url) {
         if (this.isActionInProgress) return;
+
+        const authenticated = await this._ensureAuthenticated();
+        if (!authenticated) return;
+
         this.isActionInProgress = true;
         this.updateActionButtonsState();
 
-        // Create overlay
-        const overlay = document.createElement("div");
-        overlay.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.6); z-index: 200000; 
-            display: flex; align-items: center; justify-content: center;
-        `;
-        const dialog = document.createElement("div");
-        dialog.className = "holaf-utility-panel";
-        dialog.classList.add(this.panelElements.panelEl.className.match(/holaf-theme-\S+/)?.[0] || HOLAF_THEMES[0].className);
-        dialog.style.cssText = "position:relative;width:auto;min-width:300px;padding:20px;background:var(--holaf-bg-secondary);border:1px solid var(--holaf-border-color);";
-        dialog.innerHTML = `<h3>Installing...</h3><p>Cloning ${url}...</p>`;
-        overlay.append(dialog);
-        document.body.append(overlay);
+        let overlay = null;
+
+        const showInstallOverlay = () => {
+            if (overlay) return;
+
+            overlay = document.createElement("div");
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0, 0, 0, 0.6); z-index: 200000; 
+                display: flex; align-items: center; justify-content: center;
+            `;
+            const dialog = document.createElement("div");
+            dialog.className = "holaf-utility-panel";
+            dialog.classList.add((this.panelElements && this.panelElements.panelEl
+                ? this.panelElements.panelEl.className.match(/holaf-theme-\S+/)?.[0]
+                : null) || HOLAF_THEMES[0].className);
+            dialog.style.cssText = "position:relative;width:auto;min-width:300px;padding:20px;background:var(--holaf-bg-secondary);border:1px solid var(--holaf-border-color);";
+            dialog.innerHTML = `<h3>Installing...</h3><p>Cloning ${escapeHtml(url)}...</p>`;
+            overlay.append(dialog);
+            document.body.append(overlay);
+        };
+
+        const removeInstallOverlay = () => {
+            if (overlay && document.body.contains(overlay)) {
+                document.body.removeChild(overlay);
+                overlay = null;
+            }
+        };
+
+        showInstallOverlay();
 
         try {
-            const response = await fetch('/holaf/nodes/install', {
+            let response = await fetch('/holaf/nodes/install', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: url })
             });
+
+            if (response.status === 401) {
+                removeInstallOverlay();
+                const reconnected = await this._showLoginModal("Your session has expired. Please enter your password to reconnect.");
+                if (!reconnected) {
+                    HolafPanelManager.createDialog({ title: "Install Cancelled", message: "Authentication is required to install nodes." });
+                    return;
+                }
+                showInstallOverlay();
+                response = await fetch('/holaf/nodes/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                if (response.status === 401) {
+                    removeInstallOverlay();
+                    HolafPanelManager.createDialog({ title: "Install Failed", message: "Authentication failed. The node was not installed." });
+                    return;
+                }
+            }
+
             const result = await response.json();
-            
-            document.body.removeChild(overlay);
+
+            removeInstallOverlay();
 
             if (response.ok && result.status === 'success') {
                 HolafPanelManager.createDialog({ title: "Install Complete", message: `Successfully installed node from ${url}.\n\nA restart of ComfyUI is likely required to load the new node.` });
@@ -1072,9 +1316,10 @@ const holafNodesManager = {
                 throw new Error(result.message || "Unknown error");
             }
         } catch (e) {
-            if (document.body.contains(overlay)) document.body.removeChild(overlay);
+            removeInstallOverlay();
             HolafPanelManager.createDialog({ title: "Install Failed", message: `Error installing node: ${e.message}` });
         } finally {
+            removeInstallOverlay();
             this.isActionInProgress = false;
             this.updateActionButtonsState();
         }

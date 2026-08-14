@@ -1,7 +1,5 @@
 # === Holaf Utilities - Terminal Manager ===
 import asyncio
-import hashlib
-import hmac
 import os
 import platform
 import shlex
@@ -28,28 +26,18 @@ else:
         print("   Please run 'pip install pywinpty' in your ComfyUI Python environment.")
         PtyProcess = None
 
+from . import holaf_auth
 from . import holaf_config # For config access if needed, or pass config values
 
 SESSION_TOKENS = set() # Manages active terminal session tokens
 SESSION_TOKENS_LOCK = threading.Lock() # Thread-safe access to SESSION_TOKENS
 
 # --- Password Hashing and Verification ---
-def _hash_password(password: str) -> str:
-    salt = os.urandom(16)
-    iterations = 260000
-    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
-    return f"{salt.hex()}${dk.hex()}"
-
-def _verify_password(stored_hash, provided_password):
-    if not stored_hash or not provided_password: return False
-    try:
-        salt_hex, key_hex = stored_hash.split('$')
-        salt = bytes.fromhex(salt_hex)
-        key = bytes.fromhex(key_hex)
-    except (ValueError, TypeError): return False
-    iterations = 260000
-    new_key = hashlib.pbkdf2_hmac('sha256', provided_password.encode('utf-8'), salt, iterations)
-    return hmac.compare_digest(new_key, key)
+# Factorized into holaf_auth.py so the terminal and the shared auth module use
+# the exact same PBKDF2-HMAC-SHA256 implementation. These aliases keep any
+# existing callers working without changes.
+_hash_password = holaf_auth.hash_password
+_verify_password = holaf_auth.verify_password
 
 # --- Terminal Environment ---
 def is_running_in_conda():
@@ -63,55 +51,98 @@ def is_running_in_venv():
 # --- API Route Handlers ---
 async def set_password_route(request: web.Request, global_app_config):
     # The lock is handled inside save_setting_to_config; removing it here prevents a deadlock.
-    if global_app_config.get('password_hash'): 
-        return web.json_response({"status": "error", "message": "Password is already set."}, status=409)
     try:
-        data = await request.json()
-        password = data.get('password')
-        if not password or len(password) < 4:
-            return web.json_response({"status": "error", "message": "Password is too short."}, status=400)
-        
-        new_hash = _hash_password(password)
-        
         try:
-            await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
-            global_app_config['password_hash'] = new_hash # Update live global config
-            print("🔑 [Holaf-Terminal] A new password has been set and saved via the UI.")
-            return web.json_response({"status": "ok", "action": "reload"})
-        except PermissionError:
-            print("🔵 [Holaf-Terminal] A user tried to set a password, but file permissions prevented saving.")
-            return web.json_response({"status": "manual_required", "hash": new_hash, "message": "Could not save config.ini due to file permissions."}, status=200)
+            data = await request.json()
+        except Exception:
+            return web.json_response({"status": "error", "message": "Invalid request."}, status=400)
+
+        if not isinstance(data, dict):
+            return web.json_response({"status": "error", "message": "Invalid request."}, status=400)
+
+        current_hash = global_app_config.get('password_hash')
+
+        if current_hash:
+            # A password already exists: changing it requires proving knowledge of the
+            # current password. This prevents an unauthenticated attacker from
+            # hijacking the terminal by overwriting the password.
+            current_password = data.get('current_password')
+            if not current_password or not _verify_password(current_hash, current_password):
+                return web.json_response({"status": "error", "message": "Current password is incorrect."}, status=403)
+
+            password = data.get('password')
+            if not password or len(password) < 4:
+                return web.json_response({"status": "error", "message": "New password is too short."}, status=400)
+
+            new_hash = _hash_password(password)
+
+            try:
+                await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
+                global_app_config['password_hash'] = new_hash # Update live global config
+                print("🔑 [Holaf-Terminal] The terminal password has been changed via the UI.")
+                return web.json_response({"status": "ok", "action": "reload"})
+            except PermissionError:
+                print("🔵 [Holaf-Terminal] A user tried to change the password, but file permissions prevented saving.")
+                return web.json_response({"status": "error", "message": "Could not save config.ini due to file permissions."}, status=500)
+
+        # No password is configured yet. We intentionally refuse remote setup to
+        # prevent a "first come, first served" takeover: before any password exists,
+        # the very first client to reach this route could otherwise set its own
+        # password. The owner must set the password locally in config.ini (or via
+        # the local password utility) instead.
+        return web.json_response({
+            "status": "error",
+            "message": "Terminal is not configured. Define the password locally in config.ini (section [Security], key 'password_hash')."
+        }, status=403)
     except Exception as e:
         print(f"🔴 [Holaf-Terminal] Error setting password: {e}")
         traceback.print_exc()
-        return web.json_response({"status": "error", "message": str(e)}, status=500)
+        return web.json_response({"status": "error", "message": "An unexpected error occurred while updating the password."}, status=500)
 
 async def auth_route(request: web.Request, global_app_config):
+    # Compatibility endpoint for the current terminal frontend.
+    #
+    # It performs the same password verification as POST /holaf/auth/login and
+    # sets the shared holaf_session cookie, but it also returns the legacy
+    # one-time 'session_token' that the terminal WebSocket currently appends as
+    # ?token=... for its handshake. New clients should prefer
+    # POST /holaf/auth/login + cookie-only auth.
     if not global_app_config.get('password_hash'):
         return web.json_response({"status": "error", "message": "Terminal is not configured. No password is set."}, status=503)
     try:
         data = await request.json()
         password = data.get('password')
-        if _verify_password(global_app_config['password_hash'], password):
-            session_token = str(uuid.uuid4())
-            with SESSION_TOKENS_LOCK:
-                SESSION_TOKENS.add(session_token)
-            def cleanup_token(): # Runs in the event loop's thread
-                with SESSION_TOKENS_LOCK:
-                    SESSION_TOKENS.discard(session_token)
-            asyncio.get_running_loop().call_later(60, cleanup_token) # Token valid for 60s
-            return web.json_response({"status": "ok", "session_token": session_token})
-        else:
-            return web.json_response({"status": "error", "message": "Invalid password."}, status=403)
-    except Exception as e:
-        return web.json_response({"status": "error", "message": str(e)}, status=400)
+    except Exception:
+        return web.json_response({"status": "error", "message": "Invalid request."}, status=400)
+
+    if not _verify_password(global_app_config['password_hash'], password):
+        return web.json_response({"status": "error", "message": "Invalid password."}, status=403)
+
+    session_token = str(uuid.uuid4())
+    with SESSION_TOKENS_LOCK:
+        SESSION_TOKENS.add(session_token)
+    def cleanup_token(): # Runs in the event loop's thread
+        with SESSION_TOKENS_LOCK:
+            SESSION_TOKENS.discard(session_token)
+    asyncio.get_running_loop().call_later(60, cleanup_token) # Token valid for 60s
+
+    response = web.json_response({"status": "ok", "session_token": session_token})
+    holaf_auth.set_session_cookie(response, request)
+    return response
 
 async def websocket_handler(request: web.Request, global_app_config):
+    # The route wrapper applies require_auth (cookie check). We keep the legacy
+    # one-time query token path for the current frontend: if a ?token= is
+    # supplied it is consumed as before, otherwise the caller must have already
+    # passed the shared cookie check performed by require_auth.
     session_token = request.query.get('token')
-    with SESSION_TOKENS_LOCK:
-        if not session_token or session_token not in SESSION_TOKENS:
-            return web.Response(status=403, text="Invalid or expired session token")
-        SESSION_TOKENS.discard(session_token) # One-time use token
+    if session_token:
+        with SESSION_TOKENS_LOCK:
+            if session_token not in SESSION_TOKENS:
+                return web.Response(status=403, text="Invalid or expired session token")
+            SESSION_TOKENS.discard(session_token) # One-time use token
+    elif not holaf_auth.is_authenticated(request):
+        return web.Response(status=403, text="Invalid or expired session")
     
     ws = web.WebSocketResponse()
     await ws.prepare(request)

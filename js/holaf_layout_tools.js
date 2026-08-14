@@ -242,7 +242,7 @@
             }
     
             if (window.holaf?.toastManager) {
-                window.holaf.toastManager.show(`Recentered ${allEntities.length} elements`, "success");
+                window.holaf.toastManager.show({ message: `Recentered ${allEntities.length} elements`, type: "success" });
             }
         }
     };

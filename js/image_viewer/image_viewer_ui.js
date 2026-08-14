@@ -513,10 +513,16 @@ class ImageViewerUI {
             const tagEl = document.createElement('div');
             tagEl.className = 'holaf-viewer-active-tag';
             tagEl.dataset.tag = tag;
-            tagEl.innerHTML = `
-                <span>${tag}</span>
-                <button class="holaf-viewer-tag-remove" title="Remove tag">×</button>
-            `;
+
+            const tagLabel = document.createElement('span');
+            tagLabel.textContent = tag;
+
+            const removeButton = document.createElement('button');
+            removeButton.className = 'holaf-viewer-tag-remove';
+            removeButton.title = 'Remove tag';
+            removeButton.textContent = '×';
+
+            tagEl.append(tagLabel, removeButton);
             this.elements.activeTagsContainer.appendChild(tagEl);
         });
     }

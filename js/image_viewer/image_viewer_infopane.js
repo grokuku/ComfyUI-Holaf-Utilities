@@ -9,6 +9,7 @@ import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
 import { holafBridge } from "../holaf_comfy_bridge.js";
 import { app as comfyApp } from "../holaf_api_compat.js";
+import { escapeHtml } from "../holaf_dom_utils.js";
 
 // Safe access to app (only available in main tab)
 // comfyApp is now provided via holaf_api_compat.js, which uses window.comfyAPI
@@ -112,10 +113,10 @@ async function displayInfoForImage(image) {
     const sizeInMB = (image.size_bytes / 1048576).toFixed(2);
     let originalPathInfo = '';
     if (image.is_trashed && image.original_path_canon) {
-        originalPathInfo = `<p><strong>Original Path:</strong><br>${image.original_path_canon}</p>`;
+        originalPathInfo = `<p><strong>Original Path:</strong><br>${escapeHtml(image.original_path_canon)}</p>`;
     }
 
-    infoContentEl.innerHTML = `<p><strong>Filename:</strong><br>${image.filename}</p><p><strong>Folder:</strong> ${image.subfolder || '/'}</p>${originalPathInfo}<p><strong>Size:</strong> ${sizeInMB} MB</p><p><strong>Format:</strong> ${image.format}</p><p><strong>Modified:</strong><br>${new Date(image.mtime * 1000).toLocaleString()}</p><div id="holaf-resolution-container"></div><hr><div id="holaf-metadata-container"><p class="holaf-viewer-message"><em>Loading metadata...</em></p></div>`;
+    infoContentEl.innerHTML = `<p><strong>Filename:</strong><br>${escapeHtml(image.filename)}</p><p><strong>Folder:</strong> ${escapeHtml(image.subfolder || '/')}</p>${originalPathInfo}<p><strong>Size:</strong> ${sizeInMB} MB</p><p><strong>Format:</strong> ${escapeHtml(image.format)}</p><p><strong>Modified:</strong><br>${new Date(image.mtime * 1000).toLocaleString()}</p><div id="holaf-resolution-container"></div><hr><div id="holaf-metadata-container"><p class="holaf-viewer-message"><em>Loading metadata...</em></p></div>`;
 
     try {
         const metadataUrl = new URL(window.location.origin);
@@ -132,7 +133,7 @@ async function displayInfoForImage(image) {
             const errorData = await response.json().catch(() => ({ error: `HTTP Error ${response.status}` }));
             // FIX: Re-check abort after inner await
             if (signal.aborted) return;
-            metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> ${errorData.error || 'Unknown error'}</p>`;
+            metadataContainer.innerHTML = `<p class="holaf-viewer-message error"><strong>Error:</strong> ${escapeHtml(errorData.error || 'Unknown error')}</p>`;
             return;
         }
 
@@ -145,8 +146,8 @@ async function displayInfoForImage(image) {
         const resolutionContainer = document.getElementById('holaf-resolution-container');
         if (resolutionContainer) {
             let resolutionHTML = '';
-            if (data.width && data.height) resolutionHTML += `<p><strong>Resolution:</strong> ${data.width}x${data.height} px</p>`;
-            if (data.ratio) resolutionHTML += `<p><strong>Ratio:</strong> ${data.ratio}</p>`;
+            if (data.width && data.height) resolutionHTML += `<p><strong>Resolution:</strong> ${escapeHtml(data.width)}x${escapeHtml(data.height)} px</p>`;
+            if (data.ratio) resolutionHTML += `<p><strong>Ratio:</strong> ${escapeHtml(data.ratio)}</p>`;
             resolutionContainer.innerHTML = resolutionHTML;
         }
 
@@ -255,7 +256,7 @@ async function displayInfoForImage(image) {
             copyWfActions.appendChild(copyWorkflowBtn);
             finalMetadataContainer.appendChild(copyWfActions);
         } else if (data.workflow && data.workflow.error) {
-            finalMetadataContainer.insertAdjacentHTML('beforeend', `<p class="holaf-viewer-message error"><em>Error: ${data.workflow.error}</em></p>`);
+            finalMetadataContainer.insertAdjacentHTML('beforeend', `<p class="holaf-viewer-message error"><em>Error: ${escapeHtml(data.workflow.error)}</em></p>`);
         } else {
             finalMetadataContainer.insertAdjacentHTML('beforeend', `<p class="holaf-viewer-message"><em>No workflow found.</em></p>`);
         }

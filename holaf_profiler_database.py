@@ -157,7 +157,7 @@ class ProfilerDatabase:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE profiler_runs SET total_time=?, node_count=? WHERE id=",
+            "UPDATE profiler_runs SET total_time=?, node_count=? WHERE id=?",
             (total_time, node_count, run_id)
         )
         conn.commit()
@@ -194,7 +194,7 @@ class ProfilerDatabase:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE profiler_runs SET global_comment=? WHERE id=",
+            "UPDATE profiler_runs SET global_comment=? WHERE id=?",
             (comment, run_id)
         )
         conn.commit()
@@ -205,7 +205,7 @@ class ProfilerDatabase:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE profiler_runs SET linked_output_path=? WHERE id=",
+            "UPDATE profiler_runs SET linked_output_path=? WHERE id=?",
             (path, run_id)
         )
         conn.commit()
@@ -216,7 +216,7 @@ class ProfilerDatabase:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE profiler_runs SET workflow_json=? WHERE id=",
+            "UPDATE profiler_runs SET workflow_json=? WHERE id=?",
             (workflow_json, run_id)
         )
         conn.commit()

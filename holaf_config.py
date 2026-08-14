@@ -10,6 +10,47 @@ import json
 CONFIG_LOCK = asyncio.Lock()
 IS_WINDOWS = platform.system() == "Windows" # Needed for default shell
 
+# Strict allow-list for bulk settings updates (used by
+# POST /holaf/utilities/save-all-settings). Only UI preferences may be written
+# through this route. [Security] and [Terminal] are explicitly excluded so an
+# attacker cannot inject a password hash or a Terminal.shell_command (RCE).
+ALLOWED_BULK_SECTIONS = {
+    'TerminalUI': {
+        'theme', 'font_size', 'panel_x', 'panel_y', 'panel_width',
+        'panel_height', 'panel_is_fullscreen',
+    },
+    'ModelManagerUI': {
+        'theme', 'panel_x', 'panel_y', 'panel_width', 'panel_height',
+        'panel_is_fullscreen', 'filter_type', 'filter_search_text',
+        'sort_column', 'sort_order', 'zoom_level',
+    },
+    'ImageViewerUI': {
+        'theme', 'panel_x', 'panel_y', 'panel_width', 'panel_height',
+        'panel_is_fullscreen', 'thumbnail_fit', 'thumbnail_size',
+        'export_format', 'export_include_meta', 'export_meta_method',
+        'search_text', 'startdate', 'enddate', 'startDate', 'endDate',
+        'search_scope_name', 'search_scope_prompt', 'search_scope_workflow',
+        'workflow_filter_internal', 'workflow_filter_external',
+        'folder_filters', 'format_filters', 'locked_folders',
+    },
+    'NodesManagerUI': {
+        'theme', 'panel_x', 'panel_y', 'panel_width', 'panel_height',
+        'panel_is_fullscreen', 'zoom_level', 'filter_text',
+    },
+    'SystemMonitor': {
+        'update_interval_ms', 'max_history_points',
+    },
+}
+
+BLOCKED_BULK_SECTIONS = {'Security', 'Terminal'}
+
+# Defense in depth: even if a key made it into the allow-list by mistake, never
+# accept keys that look like commands, paths or credentials.
+SENSITIVE_KEY_PATTERN = re.compile(
+    r'(shell|command|password|passwd|secret|token|executable|exec|bin|path)',
+    re.IGNORECASE,
+)
+
 def get_config_path():
     return os.path.join(os.path.dirname(__file__), 'config.ini')
 
@@ -139,27 +180,64 @@ async def save_setting_to_config(section, key, value):
             config_parser_obj.write(configfile)
 
 async def save_bulk_settings_to_config(settings_data):
-    """ Saves multiple settings, typically from save-all-settings """
+    """ Saves multiple settings, typically from the save-all-settings route.
+
+    SECURITY: This uses a strict allow-list of sections and keys. Unknown
+    sections/keys are ignored (with a log entry) rather than written, and the
+    [Security] and [Terminal] sections are always rejected. This prevents an
+    attacker from injecting Terminal.shell_command or a password hash through
+    the API.
+    """
+    if not isinstance(settings_data, dict):
+        print("🟡 [Holaf-Config] Bulk settings ignored: payload is not a JSON object.")
+        return
+
     async with CONFIG_LOCK:
         config_path = get_config_path()
         config_parser_obj = get_config_parser()
+        wrote_any = False
 
         for section, settings in settings_data.items():
-            if section == 'Security': continue # Never allow changing security from general save
-            
-            if not config_parser_obj.has_section(section):
-                config_parser_obj.add_section(section)
-            
-            if isinstance(settings, dict):
-                for key, value in settings.items():
-                    safe_key = re.sub(r'[^a-zA-Z0-9_]', '', key)
-                    if not safe_key: continue
-                    
-                    if value is None or str(value).strip() == '':
-                        if config_parser_obj.has_option(section, safe_key):
-                            config_parser_obj.remove_option(section, safe_key)
-                    else:
-                         config_parser_obj.set(section, str(safe_key), str(value))
-        
-        with open(config_path, 'w') as configfile:
-            config_parser_obj.write(configfile)
+            if not isinstance(section, str):
+                continue
+
+            if section in BLOCKED_BULK_SECTIONS:
+                print(f"🔴 [Holaf-Config] Bulk settings rejected: section '{section}' is not writable through this route.")
+                continue
+
+            if section not in ALLOWED_BULK_SECTIONS:
+                print(f"🔴 [Holaf-Config] Bulk settings rejected: unknown section '{section}' ignored.")
+                continue
+
+            if not isinstance(settings, dict):
+                print(f"🟡 [Holaf-Config] Bulk settings ignored for section '{section}': expected a JSON object.")
+                continue
+
+            allowed_keys = ALLOWED_BULK_SECTIONS[section]
+
+            for key, value in settings.items():
+                if not isinstance(key, str):
+                    continue
+
+                safe_key = re.sub(r'[^a-zA-Z0-9_]', '', key)
+                if not safe_key:
+                    continue
+
+                if safe_key not in allowed_keys or SENSITIVE_KEY_PATTERN.search(safe_key):
+                    print(f"🔴 [Holaf-Config] Bulk settings rejected: key '{safe_key}' in section '{section}' is not allowed.")
+                    continue
+
+                if not config_parser_obj.has_section(section):
+                    config_parser_obj.add_section(section)
+
+                if value is None or str(value).strip() == '':
+                    if config_parser_obj.has_option(section, safe_key):
+                        config_parser_obj.remove_option(section, safe_key)
+                else:
+                    config_parser_obj.set(section, str(safe_key), str(value))
+
+                wrote_any = True
+
+        if wrote_any:
+            with open(config_path, 'w') as configfile:
+                config_parser_obj.write(configfile)

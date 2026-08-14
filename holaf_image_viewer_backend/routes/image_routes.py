@@ -12,6 +12,7 @@ import folder_paths  # ComfyUI global
 
 # Imports from sibling/parent modules
 from .. import logic
+from .. import path_validation
 from ... import holaf_database
 from ... import holaf_utils
 
@@ -101,8 +102,6 @@ async def get_full_image_route(request: web.Request):
 
         # --- Resolve path_canon (matches DB key exactly) ---
         if path_canon_param:
-            if ".." in path_canon_param or path_canon_param.startswith("/"):
-                return web.Response(status=403, text="ERR: Invalid path_canon.")
             original_rel_path = path_canon_param
         # --- Fallback to legacy reconstruction ---
         elif filename:
@@ -111,9 +110,9 @@ async def get_full_image_route(request: web.Request):
         else:
             return web.Response(status=400, text="ERR: Filename or path_canon is required.")
 
-        original_abs_path = os.path.normpath(os.path.join(output_dir, original_rel_path))
-        # Whitelist: resolved path must stay inside the output directory.
-        if not original_abs_path.startswith(os.path.normpath(output_dir)):
+        try:
+            original_abs_path = path_validation.validate_output_path(output_dir, original_rel_path)
+        except ValueError:
             return web.Response(status=403, text="ERR: Forbidden path.")
 
         if not os.path.isfile(original_abs_path):

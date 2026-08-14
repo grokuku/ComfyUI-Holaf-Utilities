@@ -575,9 +575,9 @@ const HolafUtilitiesMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(visualGraph)
                     });
-                    window.holaf.toastManager.show("Workflow synced with Profiler.", "success");
+                    window.holaf.toastManager.show({ message: "Workflow synced with Profiler.", type: "success" });
                 } catch (e) {
-                    window.holaf.toastManager.show("Error syncing workflow.", "error");
+                    window.holaf.toastManager.show({ message: "Error syncing workflow.", type: "error" });
                 }
             }
         };
