@@ -37,9 +37,6 @@ ALLOWED_BULK_SECTIONS = {
         'theme', 'panel_x', 'panel_y', 'panel_width', 'panel_height',
         'panel_is_fullscreen', 'zoom_level', 'filter_text',
     },
-    'SystemMonitor': {
-        'update_interval_ms', 'max_history_points',
-    },
 }
 
 BLOCKED_BULK_SECTIONS = {'Security', 'Terminal'}
@@ -147,19 +144,13 @@ def load_all_configs():
          'zoom_level': config_parser_obj.getfloat('NodesManagerUI', 'zoom_level', fallback=1.0),
     })
 
-    monitor_settings = {
-        'update_interval_ms': config_parser_obj.getint('SystemMonitor', 'update_interval_ms', fallback=1500),
-        'max_history_points': config_parser_obj.getint('SystemMonitor', 'max_history_points', fallback=60),
-    }
-
     return {
         'shell_command': shell_cmd,
         'password_hash': password_hash,
         'ui_terminal': ui_settings_terminal,
         'ui_model_manager': ui_settings_model_manager,
         'ui_image_viewer': ui_settings_image_viewer,
-        'ui_nodes_manager': ui_settings_nodes_manager,
-        'monitor': monitor_settings
+        'ui_nodes_manager': ui_settings_nodes_manager
     }
 
 async def save_setting_to_config(section, key, value):

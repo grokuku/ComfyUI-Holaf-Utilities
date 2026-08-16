@@ -1,6 +1,6 @@
 # Holaf Utilities - Features Overview
 
-    Welcome to the Holaf Utilities extension suite for ComfyUI. This document provides an overview of the core modules designed to enhance your workflow, monitor your system, and streamline your creative process.
+    Welcome to the Holaf Utilities extension suite for ComfyUI. This document provides an overview of the core modules designed to enhance your workflow and streamline your creative process.
 
     ---
 
@@ -43,15 +43,7 @@
 
     ---
 
-    ## 4. System Monitor
-
-    A floating hardware monitor overlay.
-
-    ![System Monitor](screenshots/system_monitor.png)
-
-    ---
-
-    ## 5. Shortcuts (Viewport Bookmarks)
+    ## 4. Shortcuts (Viewport Bookmarks)
 
     Never lose your place in massive workflows again. Save and recall exact graph locations.
 
@@ -65,7 +57,7 @@
 
     ---
 
-    ## 6. Universal Remote Comparer
+    ## 5. Universal Remote Comparer
 
     pop-out comparison tool.
 

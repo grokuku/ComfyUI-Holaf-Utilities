@@ -97,7 +97,6 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 | # | Fichier | Problème | Correctif |
 |---|---------|----------|-----------|
-| 10 | `holaf_monitor.js` | WebSocket sans `onclose`/`onerror` | Reconnexion auto exponential backoff |
 | 11 | `image_viewer_infopane.js` | Ctrl+A sélectionnait toute la page | Event listener `capture: true` |
 | 12 | `holaf_image_viewer.css` | Boutons "All/None/Invert" défilent | `position: sticky; top: 0` |
 | 13 | `image_viewer_actions.js` | Balise `</div>` orpheline → boutons hors dialog | Wrappé le `<span>` dans un `<div>` |

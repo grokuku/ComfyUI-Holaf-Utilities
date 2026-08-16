@@ -13,7 +13,6 @@ import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";
 import "./holaf_image_viewer.js";
 import "./holaf_settings_manager.js";
-import "./holaf_monitor.js";
 import "./holaf_layout_tools.js";
 import "./holaf_shortcuts.js";
 import "./holaf_remote_comparer.js";
@@ -161,8 +160,7 @@ const HolafUtilitiesMenu = {
                     const text = li.textContent;
                     if (check) {
                         let isActive = false;
-                        if (text.includes("Monitor")) isActive = app.holafSystemMonitor?.isVisible;
-                        else if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
+                        if (text.includes("Layout Tools")) isActive = window.holaf?.layoutTools?.isVisible;
                         else if (text.includes("Shortcuts")) isActive = app.holafShortcuts?.isVisible;
                         else if (text.includes("Remote Comparer")) isActive = app.holafRemoteComparer?.isOpen; 
                         else if (text.includes("Compact Menu")) isActive = this.isCompactMode;
@@ -212,7 +210,6 @@ const HolafUtilitiesMenu = {
             { type: 'separator' },
             { label: "Compact Menu Bar", special: "toggle_compact_menu" },
             { type: 'separator' },
-            { label: "Toggle Monitor", special: "toggle_monitor" },
             { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
             { label: "Toggle Shortcuts", special: "toggle_shortcuts" },
             { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" },
@@ -245,7 +242,7 @@ const HolafUtilitiesMenu = {
             menuItem.appendChild(labelSpan);
 
             let checkbox = null;
-            if (["toggle_monitor", "toggle_layout_tools", "toggle_shortcuts", "toggle_compact_menu", "toggle_remote_comparer"].includes(itemInfo.special)) {
+            if (["toggle_layout_tools", "toggle_shortcuts", "toggle_compact_menu", "toggle_remote_comparer"].includes(itemInfo.special)) {
                 checkbox = document.createElement("div");
                 Object.assign(checkbox.style, {
                     width: "12px",
@@ -266,9 +263,7 @@ const HolafUtilitiesMenu = {
             const updateCheckboxUI = () => {
                 if (!checkbox) return;
                 let isActive = false;
-                if (itemInfo.special === "toggle_monitor") {
-                    isActive = app.holafSystemMonitor?.isVisible;
-                } else if (itemInfo.special === "toggle_layout_tools") {
+                if (itemInfo.special === "toggle_layout_tools") {
                     isActive = window.holaf?.layoutTools?.isVisible;
                 } else if (itemInfo.special === "toggle_shortcuts") {
                     isActive = app.holafShortcuts?.isVisible;
@@ -401,13 +396,6 @@ const HolafUtilitiesMenu = {
                             });
                         return false;
                     });
-                }
-                else if (itemInfo.special === "toggle_monitor") {
-                    const monitor = app.holafSystemMonitor;
-                    if (monitor && typeof monitor.toggle === "function") {
-                        monitor.toggle();
-                        updateCheckboxUI();
-                    }
                 }
                 else if (itemInfo.special === "toggle_layout_tools") {
                     if (window.holaf && window.holaf.layoutTools) {
@@ -643,7 +631,6 @@ const HolafUtilitiesMenu = {
             "holaf_terminal_styles.css",
             "holaf_nodes_manager_styles.css",
             "holaf_settings_panel_styles.css",
-            "holaf_system_monitor_styles.css",
             "holaf_toasts.css",
             "holaf_profiler.css",
             "holaf_layout_tools.css",

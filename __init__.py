@@ -37,7 +37,6 @@ from . import holaf_auth
 from . import holaf_utils # Also initializes its dirs and cleans up temp uploads
 from . import holaf_terminal
 from . import holaf_image_viewer_backend
-from . import holaf_system_monitor
 from . import holaf_server_management
 
 # --- Profiler Engine Import ---
@@ -604,8 +603,7 @@ async def holaf_get_all_settings_route(request: web.Request):
         "TerminalUI": current_live_config.get('ui_terminal'),
         "ModelManagerUI": current_live_config.get('ui_model_manager'),
         "ImageViewerUI": current_live_config.get('ui_image_viewer'),
-        "NodesManagerUI": current_live_config.get('ui_nodes_manager'),
-        "SystemMonitor": current_live_config.get('monitor')
+        "NodesManagerUI": current_live_config.get('ui_nodes_manager')
     }
     return web.json_response(response_data)
 
@@ -1146,12 +1144,6 @@ if nodes_manager_helper:
             return web.json_response(result)
         except Exception as e:
             return web.json_response({"status": "error", "message": str(e)}, status=500)
-
-
-# System Monitor Routes
-@routes.get("/holaf/monitor/ws") # WebSocket
-async def holaf_monitor_websocket_route(request: web.Request):
-    return await holaf_system_monitor.websocket_handler(request, CONFIG)
 
 
 # --- Dynamic Node Loading from 'nodes/' directory ---
