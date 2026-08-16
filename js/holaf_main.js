@@ -103,6 +103,7 @@ const HolafUtilitiesMenu = {
     styleEl: null,
     startupEnforcerInterval: null,
     _compactObserver: null,
+    _compactWatchdog: null,
 
     init() {
         this.loadSharedCss();
@@ -112,6 +113,7 @@ const HolafUtilitiesMenu = {
         this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
         if (this.isCompactMode) {
             this.waitForUIAndApplyCompact();
+            this.startCompactWatchdog();
         }
 
         if (!document.body.className.includes("holaf-theme-")) {
@@ -503,6 +505,26 @@ const HolafUtilitiesMenu = {
         document.documentElement.style.setProperty('--holaf-compact-card-width', width + 'px');
     },
 
+    startCompactWatchdog() {
+        // Filet de sécurité : la topbar Vue de ComfyUI est montée de façon
+        // asynchrone (parfois bien après le chargement initial, ou re-rendue
+        // plus tard). Ce watchdog basse fréquence ré-applique le mode compact
+        // tant qu'il est actif, même si waitForUIAndApplyCompact a échoué ou
+        // expiré après son timeout de 10 s.
+        if (this._compactWatchdog) return;
+        this._compactWatchdog = setInterval(() => {
+            if (!this.isCompactMode) return;
+            const tabs = document.querySelector('.workflow-tabs-container');
+            const bar = document.querySelector('.actionbar-container');
+            if (!tabs || !bar) return;
+            if (!document.body.classList.contains("holaf-compact-active") || !this._compactObserver) {
+                this.toggleCompactMode(true);
+            } else {
+                this.maintainCompactParent();
+            }
+        }, 2000);
+    },
+
     waitForUIAndApplyCompact() {
         const checkAndApply = () => {
             const tabs = document.querySelector('.workflow-tabs-container');
@@ -551,6 +573,7 @@ const HolafUtilitiesMenu = {
         if (active) {
             document.body.classList.add("holaf-compact-active");
             this.maintainCompactParent();
+            this.startCompactWatchdog();
 
             // Clean up any previous enforcer
             if (this.startupEnforcerInterval) clearInterval(this.startupEnforcerInterval);
@@ -589,6 +612,10 @@ const HolafUtilitiesMenu = {
             if (this._compactObserver) {
                 this._compactObserver.disconnect();
                 this._compactObserver = null;
+            }
+            if (this._compactWatchdog) {
+                clearInterval(this._compactWatchdog);
+                this._compactWatchdog = null;
             }
             
             document.querySelectorAll('.holaf-compact-parent, .holaf-compact-card').forEach(el => {
