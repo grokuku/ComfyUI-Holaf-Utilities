@@ -463,80 +463,48 @@ const HolafUtilitiesMenu = {
         this.styleEl = document.createElement("style");
         this.styleEl.id = "holaf-compact-style-override";
         this.styleEl.innerHTML = `
-            /* 1. Uniformisation du Conteneur : force la hauteur, la taille maximale et le contexte d'empilement */
-            .holaf-compact-parent {
-                position: relative !important;
-                min-height: var(--comfy-tab-height, 40px) !important;
-                width: 100% !important;
-                max-width: 100vw !important; /* EMPÊCHE L'EXTENSION INFINIE due aux onglets */
-                box-sizing: border-box !important;
-                z-index: 1000 !important;
-            }
+            /* MODE COMPACT (nouvelle topbar Vue/Tailwind) :
+               - La rangée des onglets garde sa hauteur (--workflow-tabs-height, ~38px).
+               - La carte d'actions (action-bar-card) est remontée en haut à droite,
+                 dans la même rangée que les onglets. */
 
-            body.holaf-compact-active .workflow-tabs-container {
-                padding-right: 480px !important; /* Marge sûre pour que les onglets ne glissent pas sous les boutons */
+            body.holaf-compact-active [data-testid="topbar-workflow-tabs"] {
+                padding-right: 480px !important; /* Réserve la place pour la barre d'actions */
                 box-sizing: border-box !important;
                 width: 100% !important;
                 max-width: 100% !important;
-                position: relative !important;
-                z-index: 1 !important;
-                overflow-x: auto !important; /* GÈRE LE DEBORDEMENT DES ONGLETS */
-                overflow-y: hidden !important;
             }
 
-            /* 2. Correction du Clipping et positionnement absolu strict */
-            body.holaf-compact-active .actionbar-container {
-                position: absolute !important;
+            body.holaf-compact-active .action-bar-card {
+                position: fixed !important;
                 top: 0 !important;
                 right: 0 !important;
-                height: var(--comfy-tab-height, 40px) !important;
-                width: auto !important;
-                z-index: 1005 !important;
-                background: var(--bg-color, #202020) !important; /* Masque les onglets glissant en dessous */
-                border: none !important;
-                box-shadow: -4px 0 8px rgba(0,0,0,0.3) !important; /* Séparation visuelle nette */
-                display: flex !important;
+                height: var(--workflow-tabs-height, 38px) !important;
+                min-height: 0 !important;
+                flex-direction: row !important;
                 align-items: center !important;
                 flex-wrap: nowrap !important;
+                z-index: 1005 !important;
                 margin: 0 !important;
                 padding: 0 8px !important;
+                border-radius: 0 !important;
+                box-shadow: -4px 0 8px rgba(0,0,0,0.3) !important;
+                background: var(--comfy-menu-bg, #202020) !important;
             }
 
-            body.holaf-compact-active .actionbar-container > * {
-                flex-shrink: 0 !important; /* Empêche l'écrasement des boutons de menu */
-                margin: 0 2px !important;
+            body.holaf-compact-active .action-bar-card > * {
+                flex-shrink: 0 !important;
             }
         `;
         document.head.appendChild(this.styleEl);
     },
 
     maintainCompactParent() {
-        if (!this.isCompactMode) return;
-        const menuBar = document.querySelector('.actionbar-container');
-        const tabs = document.querySelector('.workflow-tabs-container');
-
-        if (menuBar) {
-            let targetParent = menuBar.parentElement;
-            
-            if (tabs) {
-                let current = menuBar.parentElement;
-                while (current && current !== document.body && !current.contains(tabs)) {
-                    current = current.parentElement;
-                }
-                if (current && current !== document.body) {
-                    targetParent = current;
-                }
-            }
-
-            if (targetParent) {
-                if (!targetParent.classList.contains('holaf-compact-parent')) {
-                    document.querySelectorAll('.holaf-compact-parent').forEach(el => {
-                        el.classList.remove('holaf-compact-parent');
-                    });
-                    targetParent.classList.add('holaf-compact-parent');
-                }
-            }
-        }
+        // Le rendu compact est désormais piloté par les règles CSS de
+        // body.holaf-compact-active (voir injectCompactCSS), qui ciblent directement
+        // les sélecteurs réels de la topbar Vue. Plus besoin de classe parent
+        // dynamique : cette méthode est conservée (no-op) pour ne pas casser les
+        // appels de l'enforcer/observer existants.
     },
 
     waitForUIAndApplyCompact() {
