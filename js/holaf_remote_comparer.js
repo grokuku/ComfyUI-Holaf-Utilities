@@ -11,6 +11,9 @@
 import { app, api } from "./holaf_api_compat.js";
 
 const COMPARER_CHANNEL = 'holaf_comparer_bridge';
+const COMPARER_STANDALONE_HEARTBEAT_MS = 2500;
+const COMPARER_STANDALONE_TIMEOUT_MS = 10000;
+const COMPARER_STANDALONE_HEARTBEAT_KEY = 'holaf_comparer_standalone_heartbeat';
 
 const HolafRemoteComparer = {
     name: "Holaf.RemoteComparer",
@@ -19,6 +22,9 @@ const HolafRemoteComparer = {
     isPoppedOut: false,
     isStandalone: false,
     isSidebarOpen: true,
+    _standaloneOpen: false,
+    _standaloneTimeout: null,
+    _standaloneHeartbeatInterval: null,
     _bridge: null,
     _popupTab: null,
 
@@ -120,6 +126,12 @@ const HolafRemoteComparer = {
                 }
             };
         } else {
+            // Main tab: detect an already-running standalone comparer via heartbeat
+            const lastHeartbeat = parseInt(localStorage.getItem(COMPARER_STANDALONE_HEARTBEAT_KEY) || "0", 10);
+            if (lastHeartbeat && Date.now() - lastHeartbeat < COMPARER_STANDALONE_TIMEOUT_MS) {
+                this._markStandaloneOpen();
+            }
+
             // Main tab: relay executed events to the standalone comparer tab
             api.addEventListener("executed", (e) => this.handleNodeExecution(e));
 
@@ -127,6 +139,7 @@ const HolafRemoteComparer = {
                 const { type } = event.data;
                 // If standalone tab requests current state, send it
                 if (type === 'COMPARER_REQUEST_STATE') {
+                    this._markStandaloneOpen();
                     this._bridge.postMessage({
                         type: 'COMPARER_HISTORY',
                         payload: {
@@ -135,9 +148,18 @@ const HolafRemoteComparer = {
                         }
                     });
                 }
-                // If standalone tab closed, restore the in-page comparer
+                // Standalone heartbeat keeps the detached state alive
+                if (type === 'COMPARER_STANDALONE_OPEN') {
+                    this._markStandaloneOpen();
+                }
+                // If standalone tab closed, restore the in-page comparer only if still open
                 if (type === 'COMPARER_STANDALONE_CLOSED') {
+                    this._standaloneOpen = false;
                     this.isPoppedOut = false;
+                    if (this._standaloneTimeout) {
+                        clearTimeout(this._standaloneTimeout);
+                        this._standaloneTimeout = null;
+                    }
                     this._popupTab = null;
                     this.floatingPopoutBtn.style.display = "flex";
                     this.floatingPopinBtn.style.display = "none";
@@ -501,6 +523,30 @@ const HolafRemoteComparer = {
         } catch (e) { }
     },
 
+    isComparerDetached() {
+        return this.isPoppedOut || this._standaloneOpen;
+    },
+
+    _markStandaloneOpen() {
+        this._standaloneOpen = true;
+        if (this._standaloneTimeout) {
+            clearTimeout(this._standaloneTimeout);
+            this._standaloneTimeout = null;
+        }
+        this._standaloneTimeout = setTimeout(() => {
+            this._standaloneTimeout = null;
+            this._standaloneOpen = false;
+        }, COMPARER_STANDALONE_TIMEOUT_MS);
+    },
+
+    _stopStandaloneHeartbeat() {
+        if (this._standaloneHeartbeatInterval) {
+            clearInterval(this._standaloneHeartbeatInterval);
+            this._standaloneHeartbeatInterval = null;
+        }
+        localStorage.removeItem(COMPARER_STANDALONE_HEARTBEAT_KEY);
+    },
+
     // --- CROSSFADER & INTERACTION ---
 
     updateVolumes() {
@@ -655,8 +701,8 @@ const HolafRemoteComparer = {
 
         if (mediaMeta.length === 0) return;
 
-        // Relay to standalone comparer tab if popped out
-        if (this.isPoppedOut) {
+        // Relay to standalone comparer tab if detached (popped out or standalone open)
+        if (this.isComparerDetached()) {
             this._bridge.postMessage({
                 type: 'COMPARER_PAYLOAD',
                 payload: payload
@@ -672,7 +718,7 @@ const HolafRemoteComparer = {
 
         if (shouldReload) {
             this.statusTextEl.style.display = "none";
-            if (!this.isOpen && !this.isPoppedOut) {
+            if (!this.isOpen && !this.isComparerDetached()) {
                 this.show();
                 this.saveState();
             }
@@ -1098,16 +1144,18 @@ const HolafRemoteComparer = {
     popOut() {
         if (this.isPoppedOut || this.isStandalone) return;
         this.isPoppedOut = true;
+        this.isOpen = false;
         this.rootElement.style.display = "none";
+        this.images.forEach(m => { if (m instanceof HTMLMediaElement) m.pause(); });
         if (this.isFullscreen) this.toggleFullscreen();
-
-        // Open in a new browser tab instead of a popup window
-        this._popupTab = window.open('/holaf/comparer', '_blank');
 
         // Hide the in-page panel (the standalone tab will handle display)
         this.floatingPopoutBtn.style.display = "none";
         this.floatingPopinBtn.style.display = "flex";
         this.saveState();
+
+        // Open in a new browser tab instead of a popup window
+        this._popupTab = window.open('/holaf/comparer', '_blank');
     },
 
     popIn() {
@@ -1257,7 +1305,7 @@ const HolafRemoteComparer = {
             this.rootElement.style.height = "100vh";
             this.rootElement.style.right = "auto";
             this.rootElement.style.bottom = "auto";
-        } else if (!this.isPoppedOut) {
+        } else if (!this.isComparerDetached()) {
             this.rootElement.style.display = "flex";
             if (!this.isFullscreen) this.updateVisualPosition();
         }
@@ -1280,8 +1328,15 @@ export function initStandaloneComparer() {
     console.log("[Holaf Remote Comparer] Initializing Standalone mode...");
     HolafRemoteComparer.init();
 
+    // Heartbeat: keep the main tab aware that this standalone comparer is alive
+    HolafRemoteComparer._standaloneHeartbeatInterval = setInterval(() => {
+        HolafRemoteComparer._bridge.postMessage({ type: 'COMPARER_STANDALONE_OPEN' });
+        localStorage.setItem(COMPARER_STANDALONE_HEARTBEAT_KEY, String(Date.now()));
+    }, COMPARER_STANDALONE_HEARTBEAT_MS);
+
     // Notify the main tab when this standalone tab closes
     window.addEventListener('beforeunload', () => {
+        HolafRemoteComparer._stopStandaloneHeartbeat();
         HolafRemoteComparer._bridge.postMessage({ type: 'COMPARER_STANDALONE_CLOSED' });
     });
 }

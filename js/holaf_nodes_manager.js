@@ -721,16 +721,19 @@ const holafNodesManager = {
                 method: 'GET',
                 cache: 'no-store'
             });
-            if (!response.ok) return false;
+            if (!response.ok) return { authenticated: false, passwordConfigured: false };
             const data = await response.json().catch(() => ({}));
-            return data.authenticated === true;
+            return {
+                authenticated: data.authenticated === true,
+                passwordConfigured: data.password_configured === true
+            };
         } catch (e) {
             console.warn("[Holaf NodesManager] Auth status check failed:", e);
-            return false;
+            return { authenticated: false, passwordConfigured: false };
         }
     },
 
-    _showLoginModal(message = "Authentication is required for this action. Please enter your password.") {
+    _showLoginModal(message = "Authentication is required for this action. Please enter your password.", passwordNotConfigured = false) {
         return new Promise((resolve) => {
             const overlay = document.createElement("div");
             overlay.className = "holaf-dialog-overlay";
@@ -747,7 +750,7 @@ const holafNodesManager = {
             header.className = "holaf-utility-header";
             header.style.cursor = "default";
             const title = document.createElement("span");
-            title.textContent = "Authentication Required";
+            title.textContent = passwordNotConfigured ? "Password Setup Required" : "Authentication Required";
             header.appendChild(title);
 
             const content = document.createElement("div");
@@ -755,22 +758,60 @@ const holafNodesManager = {
             content.style.whiteSpace = "normal";
 
             const info = document.createElement("p");
-            info.textContent = message;
+            info.textContent = passwordNotConfigured
+                ? "No password is set yet. Create one to secure this action."
+                : message;
             info.style.cssText = "margin:0 0 12px 0;color:var(--holaf-text-secondary);line-height:1.4;";
 
             const label = document.createElement("label");
-            label.textContent = "Password:";
+            label.textContent = passwordNotConfigured ? "New Password (min 4 chars):" : "Password:";
             label.style.cssText = "display:block;margin-bottom:5px;color:var(--holaf-text-primary);";
 
             const passwordInput = document.createElement("input");
             passwordInput.type = "password";
-            passwordInput.autocomplete = "current-password";
+            passwordInput.autocomplete = passwordNotConfigured ? "new-password" : "current-password";
             passwordInput.style.cssText = "width:100%;padding:8px;box-sizing:border-box;background-color:var(--holaf-input-background);color:var(--holaf-text-primary);border:1px solid var(--holaf-border-color);border-radius:3px;outline:none;margin-bottom:10px;";
+
+            const confirmLabel = document.createElement("label");
+            const confirmInput = document.createElement("input");
+            const manualContainer = document.createElement("div");
+
+            if (passwordNotConfigured) {
+                confirmLabel.textContent = "Confirm Password:";
+                confirmLabel.style.cssText = "display:block;margin-bottom:5px;color:var(--holaf-text-primary);";
+                confirmInput.type = "password";
+                confirmInput.autocomplete = "new-password";
+                confirmInput.style.cssText = "width:100%;padding:8px;box-sizing:border-box;background-color:var(--holaf-input-background);color:var(--holaf-text-primary);border:1px solid var(--holaf-border-color);border-radius:3px;outline:none;margin-bottom:10px;";
+
+                manualContainer.style.cssText = "display:none;margin-top:10px;padding:8px;border:1px dashed var(--holaf-border-color);border-radius:3px;";
+                const manualTitle = document.createElement("p");
+                manualTitle.textContent = "Manual setup required: config.ini is not writable by the server.";
+                manualTitle.style.cssText = "margin:0 0 6px 0;color:var(--holaf-text-secondary);";
+                const manualSteps = document.createElement("p");
+                manualSteps.textContent = "Add the line below under [Security] in config.ini, then restart ComfyUI:";
+                manualSteps.style.cssText = "margin:0 0 6px 0;color:var(--holaf-text-secondary);";
+                const hashInput = document.createElement("input");
+                hashInput.type = "text";
+                hashInput.readOnly = true;
+                hashInput.style.cssText = "width:100%;font-family:monospace;padding:6px;box-sizing:border-box;background-color:var(--holaf-input-background);color:var(--holaf-text-primary);border:1px solid var(--holaf-border-color);border-radius:3px;margin-bottom:6px;";
+                const copyButton = document.createElement("button");
+                copyButton.textContent = "Copy Hash";
+                copyButton.className = "comfy-button";
+                copyButton.addEventListener("click", () => {
+                    if (hashInput.value) {
+                        hashInput.select();
+                        navigator.clipboard.writeText(hashInput.value).catch(() => document.execCommand("copy"));
+                    }
+                });
+                manualContainer.append(manualTitle, manualSteps, hashInput, copyButton);
+            }
 
             const statusMessage = document.createElement("p");
             statusMessage.style.cssText = "margin:0;color:var(--holaf-accent-color);font-size:0.9em;min-height:1.2em;";
 
-            content.append(info, label, passwordInput, statusMessage);
+            content.append(info, label, passwordInput);
+            if (passwordNotConfigured) content.append(confirmLabel, confirmInput, manualContainer);
+            content.append(statusMessage);
 
             const footer = document.createElement("div");
             footer.className = "holaf-dialog-footer";
@@ -780,13 +821,13 @@ const holafNodesManager = {
             cancelButton.className = "comfy-button";
             cancelButton.style.backgroundColor = "var(--holaf-tag-background)";
 
-            const loginButton = document.createElement("button");
-            loginButton.textContent = "Connect";
-            loginButton.className = "comfy-button";
-            loginButton.style.backgroundColor = "var(--holaf-accent-color)";
-            loginButton.style.color = "white";
+            const actionButton = document.createElement("button");
+            actionButton.textContent = passwordNotConfigured ? "Create Password" : "Connect";
+            actionButton.className = "comfy-button";
+            actionButton.style.backgroundColor = "var(--holaf-accent-color)";
+            actionButton.style.color = "white";
 
-            footer.append(cancelButton, loginButton);
+            footer.append(cancelButton, actionButton);
             dialog.append(header, content, footer);
             overlay.appendChild(dialog);
             document.body.appendChild(overlay);
@@ -807,13 +848,50 @@ const holafNodesManager = {
                     passwordInput.focus();
                     return;
                 }
+                if (passwordNotConfigured) {
+                    if (password.length < 4) {
+                        statusMessage.textContent = "Password must be at least 4 characters long.";
+                        passwordInput.focus();
+                        return;
+                    }
+                    if (password !== confirmInput.value) {
+                        statusMessage.textContent = "Passwords do not match.";
+                        confirmInput.focus();
+                        return;
+                    }
+                }
 
-                loginButton.disabled = true;
+                actionButton.disabled = true;
                 cancelButton.disabled = true;
                 passwordInput.disabled = true;
-                statusMessage.textContent = "Authenticating...";
+                if (confirmInput) confirmInput.disabled = true;
+                statusMessage.textContent = passwordNotConfigured ? "Creating password..." : "Authenticating...";
 
                 try {
+                    if (passwordNotConfigured) {
+                        const setupResponse = await fetch('/holaf/terminal/set-password', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password })
+                        });
+                        const setupData = await setupResponse.json().catch(() => ({}));
+
+                        if (setupResponse.ok && setupData.status === "manual_required" && setupData.hash) {
+                            const hashInput = manualContainer.querySelector('input[readonly]');
+                            if (hashInput) hashInput.value = `password_hash = ${setupData.hash}`;
+                            manualContainer.style.display = "block";
+                            statusMessage.textContent = "";
+                            // Keep the modal open so the user can copy the hash;
+                            // the action cannot proceed until a restart.
+                            return;
+                        }
+
+                        if (!(setupResponse.ok && setupData.status === "ok" && setupData.action === "reload")) {
+                            statusMessage.textContent = `Error: ${setupData.message || 'Could not set the password.'}`;
+                            return;
+                        }
+                    }
+
                     const response = await fetch('/holaf/auth/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -839,14 +917,16 @@ const holafNodesManager = {
                     statusMessage.textContent = "Error: Could not reach server.";
                 } finally {
                     passwordInput.value = "";
-                    loginButton.disabled = false;
+                    if (confirmInput) confirmInput.value = "";
+                    actionButton.disabled = false;
                     cancelButton.disabled = false;
                     passwordInput.disabled = false;
+                    if (confirmInput) confirmInput.disabled = false;
                     passwordInput.focus();
                 }
             };
 
-            loginButton.onclick = submitLogin;
+            actionButton.onclick = submitLogin;
             cancelButton.onclick = () => closeModal(false);
             passwordInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -854,6 +934,14 @@ const holafNodesManager = {
                     submitLogin();
                 }
             });
+            if (confirmInput) {
+                confirmInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitLogin();
+                    }
+                });
+            }
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) closeModal(false);
             });
@@ -863,8 +951,9 @@ const holafNodesManager = {
     },
 
     async _ensureAuthenticated(message = "Authentication is required for this action. Please enter your password.") {
-        if (await this._checkAuthStatus()) return true;
-        return this._showLoginModal(message);
+        const status = await this._checkAuthStatus();
+        if (status.authenticated) return true;
+        return this._showLoginModal(message, !status.passwordConfigured);
     },
 
     async _executeNodeAction(actionPath, nodePayloads, actionName, confirmMessage, requiresAuth = false) {

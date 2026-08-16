@@ -70,30 +70,32 @@ async def set_password_route(request: web.Request, global_app_config):
             if not current_password or not _verify_password(current_hash, current_password):
                 return web.json_response({"status": "error", "message": "Current password is incorrect."}, status=403)
 
-            password = data.get('password')
-            if not password or len(password) < 4:
-                return web.json_response({"status": "error", "message": "New password is too short."}, status=400)
+        # No password is configured yet: first-time setup is allowed. This is
+        # protected by the CSRF middleware (Origin/Referer check) and, in remote
+        # deployments, by the authenticated reverse proxy in front of ComfyUI.
+        # On instances exposed WITHOUT an authenticated proxy, pre-configure
+        # 'password_hash' in config.ini to avoid a first-come-first-served takeover.
+        password = data.get('password')
+        if not password or len(password) < 4:
+            return web.json_response({"status": "error", "message": "New password is too short."}, status=400)
 
-            new_hash = _hash_password(password)
+        new_hash = _hash_password(password)
 
-            try:
-                await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
-                global_app_config['password_hash'] = new_hash # Update live global config
+        try:
+            await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
+            global_app_config['password_hash'] = new_hash # Update live global config
+            if current_hash:
                 print("🔑 [Holaf-Terminal] The terminal password has been changed via the UI.")
-                return web.json_response({"status": "ok", "action": "reload"})
-            except PermissionError:
-                print("🔵 [Holaf-Terminal] A user tried to change the password, but file permissions prevented saving.")
-                return web.json_response({"status": "error", "message": "Could not save config.ini due to file permissions."}, status=500)
-
-        # No password is configured yet. We intentionally refuse remote setup to
-        # prevent a "first come, first served" takeover: before any password exists,
-        # the very first client to reach this route could otherwise set its own
-        # password. The owner must set the password locally in config.ini (or via
-        # the local password utility) instead.
-        return web.json_response({
-            "status": "error",
-            "message": "Terminal is not configured. Define the password locally in config.ini (section [Security], key 'password_hash')."
-        }, status=403)
+            else:
+                print("🔑 [Holaf-Terminal] The terminal password has been set via the UI.")
+            return web.json_response({"status": "ok", "action": "reload"})
+        except PermissionError:
+            print("🔵 [Holaf-Terminal] A user tried to set/change the password, but file permissions prevented saving.")
+            if not current_hash:
+                # First-time setup: offer the manual fallback (README-documented UX):
+                # the user copies the hash into config.ini under [Security] password_hash.
+                return web.json_response({"status": "manual_required", "hash": new_hash})
+            return web.json_response({"status": "error", "message": "Could not save config.ini due to file permissions."}, status=500)
     except Exception as e:
         print(f"🔴 [Holaf-Terminal] Error setting password: {e}")
         traceback.print_exc()

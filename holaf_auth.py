@@ -260,6 +260,9 @@ async def logout_route(request: web.Request) -> web.Response:
     return response
 
 
-async def status_route(request: web.Request) -> web.Response:
+async def status_route(request: web.Request, global_config=None) -> web.Response:
     """GET /holaf/auth/status"""
-    return web.json_response({"authenticated": is_authenticated(request)})
+    return web.json_response({
+        "authenticated": is_authenticated(request),
+        "password_configured": bool(global_config.get('password_hash')) if global_config else None,
+    })

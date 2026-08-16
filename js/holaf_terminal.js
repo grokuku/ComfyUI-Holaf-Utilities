@@ -449,6 +449,10 @@ const holafTerminal = {
             const d = await r.json();
             if (r.ok && d.session_token) {
                 this.connectWebSocket(d.session_token);
+            } else if (r.status === 503) {
+                // No password set on the server yet: offer the setup screen.
+                this.loginStatusMessage.textContent = "";
+                this.showView('setup');
             } else {
                 this.loginStatusMessage.textContent = `Error: ${d.message || 'Authentication Failed'}`;
             }

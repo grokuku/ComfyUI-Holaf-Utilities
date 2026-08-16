@@ -635,7 +635,7 @@ async def holaf_auth_logout_route(request: web.Request):
 
 @routes.get("/holaf/auth/status")
 async def holaf_auth_status_route(request: web.Request):
-    return await holaf_auth.status_route(request)
+    return await holaf_auth.status_route(request, CONFIG)
 
 # Terminal Routes
 @routes.post("/holaf/terminal/set-password")
