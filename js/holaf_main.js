@@ -463,19 +463,18 @@ const HolafUtilitiesMenu = {
         this.styleEl = document.createElement("style");
         this.styleEl.id = "holaf-compact-style-override";
         this.styleEl.innerHTML = `
-            /* MODE COMPACT (nouvelle topbar Vue/Tailwind) :
-               - La rangée des onglets garde sa hauteur (--workflow-tabs-height, ~38px).
-               - La carte d'actions (action-bar-card) est remontée en haut à droite,
-                 dans la même rangée que les onglets. */
+            /* MODE COMPACT (nouvelle topbar Vue/Tailwind).
+               La carte d'actions est marquée .holaf-compact-card par maintainCompactParent()
+               et remontée en haut à droite, dans la même rangée que les onglets. */
 
             body.holaf-compact-active [data-testid="topbar-workflow-tabs"] {
-                padding-right: 480px !important; /* Réserve la place pour la barre d'actions */
+                padding-right: var(--holaf-compact-card-width, 480px) !important;
                 box-sizing: border-box !important;
                 width: 100% !important;
                 max-width: 100% !important;
             }
 
-            body.holaf-compact-active .action-bar-card {
+            body.holaf-compact-active .holaf-compact-card {
                 position: fixed !important;
                 top: 0 !important;
                 right: 0 !important;
@@ -492,7 +491,7 @@ const HolafUtilitiesMenu = {
                 background: var(--comfy-menu-bg, #202020) !important;
             }
 
-            body.holaf-compact-active .action-bar-card > * {
+            body.holaf-compact-active .holaf-compact-card > * {
                 flex-shrink: 0 !important;
             }
         `;
@@ -500,11 +499,20 @@ const HolafUtilitiesMenu = {
     },
 
     maintainCompactParent() {
-        // Le rendu compact est désormais piloté par les règles CSS de
-        // body.holaf-compact-active (voir injectCompactCSS), qui ciblent directement
-        // les sélecteurs réels de la topbar Vue. Plus besoin de classe parent
-        // dynamique : cette méthode est conservée (no-op) pour ne pas casser les
-        // appels de l'enforcer/observer existants.
+        if (!this.isCompactMode) return;
+        const ac = document.querySelector('.actionbar-container');
+        if (!ac) return;
+        const card = ac.parentElement;
+        if (!card) return;
+
+        // Marque la carte d'actions avec notre propre classe stable. La classe
+        // native .action-bar-card n'est pas fiable (elle apparaît/disparaît).
+        card.classList.add('holaf-compact-card');
+
+        // Mesure la largeur réelle de la carte et la communique au CSS pour que
+        // le padding-right des onglets corresponde exactement à la barre.
+        const width = Math.round(card.getBoundingClientRect().width);
+        document.documentElement.style.setProperty('--holaf-compact-card-width', width + 'px');
     },
 
     waitForUIAndApplyCompact() {
@@ -595,9 +603,10 @@ const HolafUtilitiesMenu = {
                 this._compactObserver = null;
             }
             
-            document.querySelectorAll('.holaf-compact-parent').forEach(el => {
-                el.classList.remove('holaf-compact-parent');
+            document.querySelectorAll('.holaf-compact-parent, .holaf-compact-card').forEach(el => {
+                el.classList.remove('holaf-compact-parent', 'holaf-compact-card');
             });
+            document.documentElement.style.removeProperty('--holaf-compact-card-width');
         }
     },
 
