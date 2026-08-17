@@ -256,13 +256,20 @@ def run_custom_fs_poller(stop_event):
                     except OSError:
                         continue  # raced with a delete; resolved on the next tick
 
+                if not baseline_done:
+                    # First scan: warm the baseline cache with every existing file
+                    # WITHOUT emitting events. This must happen here (not via
+                    # pending_verify), otherwise the next tick would treat all
+                    # existing files as newly created and replay them as 'created'.
+                    cache[full_path] = stat_tuple
+                    continue
+
                 if full_path in pending_verify and pending_verify[full_path] == stat_tuple:
                     # Stable across two ticks -> fully written, safe to index.
                     cache[full_path] = stat_tuple
                     del pending_verify[full_path]
-                    if baseline_done:
-                        print(f"🔵 [Holaf-Watcher-Event] Detected creation: {full_path}")
-                        FILESYSTEM_EVENT_QUEUE.put(('created', full_path))
+                    print(f"🔵 [Holaf-Watcher-Event] Detected creation: {full_path}")
+                    FILESYSTEM_EVENT_QUEUE.put(('created', full_path))
                 else:
                     pending_verify[full_path] = stat_tuple
 
