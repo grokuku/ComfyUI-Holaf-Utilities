@@ -300,6 +300,27 @@ body.holaf-standalone-mode .holaf-utility-panel:not(.holaf-floating-window) {
     margin-bottom: 10px;
     flex-shrink: 0;
     background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
+    display: flex;
+    gap: 6px;
+}
+
+.holaf-viewer-toolbar-button {
+    background-color: var(--holaf-button-background);
+    color: var(--holaf-button-text);
+    border: 1px solid var(--holaf-border-color);
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s, background-color 0.2s, border-color 0.2s;
+}
+
+.holaf-viewer-toolbar-button:hover {
+    opacity: 0.9;
+}
+
+.holaf-viewer-toolbar-button:active {
+    opacity: 0.8;
 }
 
 #holaf-viewer-gallery {
@@ -1115,4 +1136,17 @@ video::-webkit-media-controls {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 4px;
+}
+
+.holaf-viewer-skeleton {
+    position: absolute;
+    border-radius: 4px;
+    background-color: rgba(128, 128, 128, 0.25);
+    animation: holaf-viewer-skeleton-pulse 1.2s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes holaf-viewer-skeleton-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.9; }
 }

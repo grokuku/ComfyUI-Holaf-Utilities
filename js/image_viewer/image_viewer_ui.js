@@ -223,7 +223,10 @@ class ImageViewerUI {
         pane.className = 'holaf-viewer-pane';
         // [MODIFIED] Added Processing Overlay
         pane.innerHTML = `
-            <div id="holaf-viewer-toolbar"></div>
+            <div id="holaf-viewer-toolbar">
+                <button id="holaf-viewer-jump-newest" class="holaf-viewer-toolbar-button" title="Aller aux images les plus récentes">⏫ récentes</button>
+                <button id="holaf-viewer-jump-oldest" class="holaf-viewer-toolbar-button" title="Aller aux images les plus anciennes">⏬ anciennes</button>
+            </div>
             <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">Loading images...</p></div>
             <div id="holaf-viewer-zoom-view" style="display: none;">
                 <div id="holaf-preview-indicator" style="display:none; position:absolute; bottom:15px; left:15px; color:rgba(255,255,255,0.7); font-size:0.8em; z-index:100; pointer-events:none; text-shadow: 1px 1px 2px black;">⚡ Preview</div>
@@ -284,6 +287,25 @@ class ImageViewerUI {
 
     _setupEventListeners() {
         const viewer = this.callbacks.getViewer();
+
+        const jumpNewestBtn = this.elements.centerPane.querySelector('#holaf-viewer-jump-newest');
+        if (jumpNewestBtn) {
+            jumpNewestBtn.onclick = () => {
+                const state = imageViewerState.getState();
+                if (state.status.pendingNewImages) {
+                    viewer.loadFilteredImages();
+                } else if (viewer.gallery) {
+                    viewer.gallery.jumpToNewest();
+                }
+            };
+        }
+
+        const jumpOldestBtn = this.elements.centerPane.querySelector('#holaf-viewer-jump-oldest');
+        if (jumpOldestBtn) {
+            jumpOldestBtn.onclick = () => {
+                if (viewer.gallery) viewer.gallery.jumpToOldest();
+            };
+        }
 
         this.elements.leftPane.querySelector('#holaf-viewer-btn-reset-filters').onclick = () => {
             this.scopeState = { filename: true, prompt: false, workflow: false };

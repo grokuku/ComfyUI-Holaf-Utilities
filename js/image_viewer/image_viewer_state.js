@@ -9,6 +9,7 @@ class ImageViewerState {
         this.state = {
             // Données principales
             images: [],
+            totalCount: 0,
             selectedImages: new Set(),
             selectedPaths: new Set(), // Derived from selectedImages for O(1) lookups
             activeImage: null,
@@ -48,6 +49,7 @@ class ImageViewerState {
             // Statut de l'application
             status: {
                 isLoading: false,
+                pendingNewImages: false,
                 isExporting: false,
                 lastDbUpdateTime: 0,
                 error: null,

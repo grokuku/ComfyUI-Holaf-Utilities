@@ -151,7 +151,19 @@ async def list_images_route(request: web.Request):
         filters = await request.json()
         
         t_json_received = time.perf_counter()
-        
+
+        # --- Pagination (limit/offset) ---
+        limit_param = filters.get('limit')
+        offset_param = filters.get('offset', 0)
+        try:
+            limit = int(limit_param) if limit_param is not None else None
+            offset = max(0, int(offset_param))
+        except (ValueError, TypeError):
+            limit = None
+            offset = 0
+        if limit is not None and limit <= 0:
+            limit = None
+
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
         t_db_connected = time.perf_counter()
@@ -267,8 +279,12 @@ async def list_images_route(request: web.Request):
         order_by = "ORDER BY i.mtime DESC"
         
         main_query = f"SELECT {query_fields} {query_base} {joins} {final_where} {group_by} {order_by}"
+        main_params = params
+        if limit is not None:
+            main_query += " LIMIT ? OFFSET ?"
+            main_params = params + [limit, offset]
         
-        cursor.execute(main_query, params)
+        cursor.execute(main_query, main_params)
         images_data = [dict(row) for row in cursor.fetchall()]
         
         t_main_query = time.perf_counter()
@@ -286,6 +302,7 @@ async def list_images_route(request: web.Request):
             body_content = orjson.dumps({
                 "images": images_data,
                 "filtered_count": filtered_count,
+                "total_count": filtered_count,
                 "total_db_count": stats["total_db_count"],
                 "generated_thumbnails_count": stats["generated_thumbnails_count"],
                 })
@@ -294,6 +311,7 @@ async def list_images_route(request: web.Request):
             body_content = json.dumps({
                 "images": images_data,
                 "filtered_count": filtered_count,
+                "total_count": filtered_count,
                 "total_db_count": stats["total_db_count"],
                 "generated_thumbnails_count": stats["generated_thumbnails_count"],
                 }).encode('utf-8')

@@ -20,6 +20,12 @@
 
 import { imageViewerState } from "./image_viewer_state.js";
 import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
+import {
+    PAGE_SIZE, getWindowStart, isWindowLoaded, isWindowLoading,
+    getLoadingPromise, registerLoading, unregisterLoading,
+    setWindowLoaded, resetWindowCache, getImageAt, getMissingWindowStarts,
+    forEachLoadedImage
+} from './image_viewer_data.js';
 
 // --- Configuration ---
 const SCROLLBAR_DEBOUNCE_MS = 50;
@@ -92,6 +98,11 @@ let galleryGridEl = null;
 let resizeObserver = null;
 let renderedPlaceholders = new Map(); // path_canon -> DOM Element
 let scrollbarDebounceTimeout = null;
+let renderedSkeletons = new Map();   // index -> DOM skeleton
+const skeletonPool = [];
+const SKELETON_POOL_MAX = 200;
+let windowFetchDebounceTimer = null;
+const WINDOW_FETCH_DEBOUNCE_MS = 200;
 
 // Track active network requests to cancel them if needed
 // Map<path_canon, AbortController>
@@ -252,8 +263,9 @@ function updateLayout(renderAfter = true, overrideThumbSize = null) {
     itemWidth = (containerWidth - totalGapWidth) / columnCount;
     itemHeight = itemWidth;
 
-    const { images } = imageViewerState.getState();
-    const rowCount = Math.ceil(images.length / columnCount);
+    const state = imageViewerState.getState();
+    const totalCount = (state.totalCount != null && state.totalCount > 0) ? state.totalCount : (state.images ? state.images.length : 0);
+    const rowCount = Math.ceil(totalCount / columnCount);
     const totalHeight = rowCount * (itemHeight + gap);
     gallerySizerEl.style.height = `${totalHeight}px`;
 
@@ -271,9 +283,11 @@ function renderVisibleItems() {
         renderRequestID = null;
 
         if (columnCount === 0) return;
-        const { images, activeImage, selectedPaths } = imageViewerState.getState();
+        const state = imageViewerState.getState();
+        const { images, activeImage, selectedPaths } = state;
+        const totalCount = (state.totalCount != null && state.totalCount > 0) ? state.totalCount : (images ? images.length : 0);
 
-        if (!images.length || !galleryEl || !galleryGridEl || itemHeight === 0) {
+        if (!totalCount || !galleryEl || !galleryGridEl || itemHeight === 0) {
             return;
         }
 
@@ -290,14 +304,39 @@ function renderVisibleItems() {
         const endRow = Math.ceil(visibleAreaEnd / itemHeightWithGap);
 
         const startIndex = startRow * columnCount;
-        const endIndex = Math.min(images.length - 1, (endRow * columnCount) + columnCount - 1);
+        const endIndex = Math.min(totalCount - 1, (endRow * columnCount) + columnCount - 1);
 
         const newPlaceholdersToRender = new Map();
+        const newSkeletons = new Map();
         const fragment = document.createDocumentFragment();
 
         for (let i = startIndex; i <= endIndex; i++) {
-            const image = images[i];
-            if (!image) continue;
+            const image = getImageAt(state, i);
+            if (!image) {
+                let sk;
+                if (renderedSkeletons.has(i)) {
+                    sk = renderedSkeletons.get(i);
+                    renderedSkeletons.delete(i);
+                } else {
+                    sk = acquireSkeleton(i);
+                    fragment.appendChild(sk);
+                }
+
+                const row = Math.floor(i / columnCount);
+                const col = i % columnCount;
+                const top = row * itemHeightWithGap;
+                const left = col * (itemWidth + gap);
+
+                const transformVal = `translate(${left}px, ${top}px)`;
+                if (sk.style.transform !== transformVal) {
+                    sk.style.transform = transformVal;
+                }
+                sk.style.width = `${itemWidth}px`;
+                sk.style.height = `${itemHeight}px`;
+
+                newSkeletons.set(i, sk);
+                continue;
+            }
 
             const path = image.path_canon;
             let placeholder;
@@ -350,11 +389,17 @@ function renderVisibleItems() {
             unloadedVisiblePaths.delete(path);
         }
 
+        // Cleanup: remove skeletons leaving the viewport
+        for (const sk of renderedSkeletons.values()) {
+            releaseSkeleton(sk);
+        }
+
         if (fragment.childElementCount > 0) {
             galleryGridEl.appendChild(fragment);
         }
 
         renderedPlaceholders = newPlaceholdersToRender;
+        renderedSkeletons = newSkeletons;
 
         // --- Backend priority queue: collect currently VISIBLE thumbnails ---
         // (debounced ~300ms, fire-and-forget). This tells the backend to generate
@@ -364,9 +409,9 @@ function renderVisibleItems() {
             const viewportStartRow = Math.max(0, Math.floor(scrollTop / itemHeightWithGap));
             const viewportEndRow = Math.ceil((scrollTop + viewportHeight) / itemHeightWithGap);
             const priorityStart = viewportStartRow * columnCount;
-            const priorityEnd = Math.min(images.length - 1, (viewportEndRow * columnCount) + columnCount - 1);
+            const priorityEnd = Math.min(totalCount - 1, (viewportEndRow * columnCount) + columnCount - 1);
             for (let i = priorityStart; i <= priorityEnd; i++) {
-                const img = images[i];
+                const img = getImageAt(state, i);
                 if (!img) continue;
                 const pathCanon = img.path_canon;
                 if (!thumbnailCache.has(pathCanon) && !activeFetches.has(pathCanon)) {
@@ -375,6 +420,9 @@ function renderVisibleItems() {
             }
             if (pendingPrioritizePaths.size > 0) schedulePrioritizeVisibleThumbnails();
         }
+
+        // Fetch any not-yet-loaded window visible in the current range
+        scheduleEnsureRange(startIndex, endIndex);
 
         // Kick off loading immediately — don't debounce on render frame
         // (debounced for trackpad scrolling)
@@ -579,6 +627,50 @@ function _findNextUnloaded() {
 function debouncedKickLoadQueue() {
     clearTimeout(scrollbarDebounceTimeout);
     scrollbarDebounceTimeout = setTimeout(kickLoadQueue, isBenchmarking ? 5 : 30);
+}
+
+function scheduleEnsureRange(startIndex, endIndex) {
+    clearTimeout(windowFetchDebounceTimer);
+    windowFetchDebounceTimer = setTimeout(() => {
+        windowFetchDebounceTimer = null;
+        fetchMissingWindows(startIndex, endIndex);
+    }, WINDOW_FETCH_DEBOUNCE_MS);
+}
+
+async function fetchMissingWindows(startIndex, endIndex) {
+    const starts = getMissingWindowStarts(startIndex, endIndex);
+    for (const start of starts) {
+        await fetchWindow(start);
+    }
+    renderVisibleItems();
+}
+
+async function fetchWindow(start) {
+    const existing = getLoadingPromise(start);
+    if (existing) return existing;
+    const state = imageViewerState.getState();
+    const filters = { ...state.filters };
+    delete filters.locked_folders;
+    const controller = new AbortController();
+    const promise = (async () => {
+        try {
+            const response = await fetch('/holaf/images/list', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...filters, limit: PAGE_SIZE, offset: start }),
+                signal: controller.signal
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            setWindowLoaded(imageViewerState.getState(), start, data.images || []);
+        } catch (err) {
+            console.warn('[Holaf ImageViewer] Window fetch failed', err);
+        } finally {
+            unregisterLoading(start);
+        }
+    })();
+    registerLoading(start, controller, promise);
+    return promise;
 }
 
 // --- Backend thumbnail prioritization (P4 frontend) ---
@@ -913,6 +1005,23 @@ function releasePlaceholder(placeholder) {
     }
 }
 
+function acquireSkeleton(index) {
+    let sk;
+    if (skeletonPool.length > 0) sk = skeletonPool.pop();
+    else {
+        sk = document.createElement('div');
+        sk.className = 'holaf-viewer-thumbnail-placeholder holaf-viewer-skeleton';
+        sk.style.position = 'absolute';
+    }
+    sk.dataset.index = index;
+    return sk;
+}
+
+function releaseSkeleton(sk) {
+    if (sk.parentNode) sk.parentNode.removeChild(sk);
+    if (skeletonPool.length < SKELETON_POOL_MAX) skeletonPool.push(sk);
+}
+
 // --- Video Hover Preview (extracted for reuse with pooled placeholders) ---
 function attachVideoHoverListeners(placeholder, image) {
     const mouseenterHandler = async () => {
@@ -1060,7 +1169,7 @@ function initGallery(viewer) {
         const state = imageViewerState.getState();
         const clickedIndex = parseInt(placeholder.dataset.index, 10);
         if (isNaN(clickedIndex)) return;
-        const clickedImageData = state.images[clickedIndex];
+        const clickedImageData = getImageAt(state, clickedIndex);
         if (!clickedImageData) return;
         const anchorIndex = state.currentNavIndex > -1 ? state.currentNavIndex : clickedIndex;
         const selectedPaths = new Set(state.selectedPaths); // Copy for mutation
@@ -1069,7 +1178,8 @@ function initGallery(viewer) {
             const start = Math.min(anchorIndex, clickedIndex);
             const end = Math.max(anchorIndex, clickedIndex);
             for (let i = start; i <= end; i++) {
-                if (state.images[i]) selectedPaths.add(state.images[i].path_canon);
+                const img = getImageAt(state, i);
+                if (img) selectedPaths.add(img.path_canon);
             }
         } else if (e.ctrlKey || e.target.tagName === 'INPUT') {
             if (selectedPaths.has(clickedImageData.path_canon)) {
@@ -1081,7 +1191,10 @@ function initGallery(viewer) {
             selectedPaths.clear();
             selectedPaths.add(clickedImageData.path_canon);
         }
-        const newSelectedImages = new Set(state.images.filter(img => selectedPaths.has(img.path_canon)));
+        const newSelectedImages = new Set();
+        forEachLoadedImage(state, (img) => {
+            if (selectedPaths.has(img.path_canon)) newSelectedImages.add(img);
+        });
         imageViewerState.setState({ selectedImages: newSelectedImages, activeImage: clickedImageData, currentNavIndex: clickedIndex });
         renderVisibleItems();
         viewerInstance._updateActionButtonsState();
@@ -1124,7 +1237,10 @@ function initGallery(viewer) {
         alignImageOnExit,
         refreshThumbnail: refreshThumbnailInGallery,
         render: renderVisibleItems,
-        getColumnCount: () => columnCount
+        getColumnCount: () => columnCount,
+        jumpToOldest,
+        jumpToNewest,
+        ensureImageLoaded
     };
 }
 
@@ -1166,6 +1282,7 @@ function syncGallery(viewer, images) {
     for (const t of pendingThumbnailRetries.values()) clearTimeout(t);
     pendingThumbnailRetries.clear();
     thumbnailTimeoutRetries.clear();
+    resetWindowCache();
 
     // Keep LRU Cache alive! Don't clear it — thumbnails are still valid.
     // thumbnailCache.clear();
@@ -1181,6 +1298,7 @@ function syncGallery(viewer, images) {
     if (messageEl) messageEl.remove();
 
     if (images && images.length > 0) {
+        galleryEl.scrollTop = 0;
         updateLayout(true);
     } else {
         gallerySizerEl.style.height = '300px';
@@ -1189,49 +1307,6 @@ function syncGallery(viewer, images) {
         placeholder.style.cssText = `position: absolute; top: 8px; left: 8px; right: 8px; height: 200px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; border: 2px dashed var(--holaf-border-color); border-radius: var(--holaf-border-radius); color: var(--holaf-text-color-secondary);`;
         placeholder.textContent = 'No images match the current filters.';
         galleryGridEl.appendChild(placeholder);
-    }
-}
-
-/**
- * Incremental insertion of NEW images at the TOP of the grid (P6).
- *
- * This is the ONLY delta path: the caller has already merged `newImages` into the
- * top of state.images. Here we create DOM for the delta thumbnails (via the existing
- * virtualized renderer, a single synchronous pass over the visible range) and shift
- * the existing placeholders down WITHOUT destroying or recreating them. The full
- * rebuild path (syncGallery) is preserved for the initial 30k load and filter changes.
- */
-function insertImagesAtTop(newImages, totalDbCount) {
-    if (!galleryEl || !galleryGridEl) return;
-    if (!newImages || newImages.length === 0) return;
-
-    const { images } = imageViewerState.getState();
-    const insertedCount = newImages.length;
-
-    // Anchor the scroll position: the content below shifts down by the rows added at
-    // the top, so bump scrollTop to keep the same items in view (no visible jump).
-    if (columnCount > 0 && itemHeight > 0 && galleryEl.scrollTop > 0) {
-        const oldCount = Math.max(0, images.length - insertedCount);
-        const oldRowCount = Math.ceil(oldCount / columnCount);
-        const newRowCount = Math.ceil(images.length / columnCount);
-        galleryEl.scrollTop += (newRowCount - oldRowCount) * (itemHeight + gap);
-    }
-
-    // Recompute the sizer height — the total now includes the delta rows.
-    updateLayout(false);
-
-    // Render: reuses existing placeholders (only their index/transform change) and
-    // creates DOM for the delta items within the visible range — a single synchronous
-    // pass. Never deferred/batched, and never touches the initial 30k load path.
-    renderVisibleItems();
-
-    // Update the "Displaying X of Y total images" counter.
-    if (viewerInstance && typeof viewerInstance.updateStatusBar === 'function') {
-        const { images: updatedImages } = imageViewerState.getState();
-        viewerInstance.updateStatusBar(
-            updatedImages.length,
-            totalDbCount !== undefined ? totalDbCount : imageViewerState.getState().status.totalImageCount
-        );
     }
 }
 
@@ -1285,6 +1360,35 @@ function alignImageOnExit(imageIndex) {
     }, 50);
 }
 
+function jumpToOldest() {
+    if (!galleryEl || columnCount <= 0 || itemHeight === 0) return;
+    const state = imageViewerState.getState();
+    const total = (state.totalCount != null && state.totalCount > 0) ? state.totalCount : state.images.length;
+    const rowCount = Math.ceil(total / columnCount);
+    galleryEl.scrollTop = rowCount * (itemHeight + gap);
+    renderVisibleItems();
+}
+
+function jumpToNewest() {
+    if (!galleryEl) return;
+    galleryEl.scrollTop = 0;
+    renderVisibleItems();
+}
+
+async function ensureImageLoaded(index) {
+    const state = imageViewerState.getState();
+    const image = getImageAt(state, index);
+    if (image) return image;
+    const start = getWindowStart(index);
+    if (isWindowLoading(start)) {
+        const p = getLoadingPromise(start);
+        if (p) await p;
+    } else if (!isWindowLoaded(start)) {
+        await fetchWindow(start);
+    }
+    return getImageAt(imageViewerState.getState(), index) || null;
+}
+
 function forceRelayout(newSize) {
     if (!galleryEl) return;
     updateLayout(true, newSize);
@@ -1293,7 +1397,6 @@ function forceRelayout(newSize) {
 export {
     initGallery,
     syncGallery,
-    insertImagesAtTop,
     ensureImageVisible,
     alignImageOnExit,
     refreshThumbnailInGallery,

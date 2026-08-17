@@ -14,7 +14,8 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
-import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout, insertImagesAtTop } from './image_viewer/image_viewer_gallery.js';
+import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';
+import { PAGE_SIZE, setWindowLoaded, resetWindowCache, forEachLoadedImage } from './image_viewer/image_viewer_data.js';
 import * as Actions from './image_viewer/image_viewer_actions.js';
 import * as InfoPane from './image_viewer/image_viewer_infopane.js';
 import * as Navigation from './image_viewer/image_viewer_navigation.js';
@@ -504,9 +505,9 @@ const holafImageViewer = {
             }
 
             let topMtime = 0;
-            for (const img of currentImages) {
+            forEachLoadedImage(imageViewerState.getState(), (img) => {
                 if (img.mtime && img.mtime > topMtime) topMtime = img.mtime;
-            }
+            });
             if (topMtime <= 0) {
                 // No usable mtime — fall back to a full fetch.
                 await this.loadFilteredImages();
@@ -520,11 +521,16 @@ const holafImageViewer = {
 
             const newImages = (delta && delta.images) || [];
             if (newImages.length > 0) {
-                // They are mtime DESC and newer than everything we have: merge at the top.
-                this._mergeNewImagesAtTop(newImages);
-                // Insert ONLY the delta thumbnails at the top of the grid (no full rebuild).
-                insertImagesAtTop(newImages, delta.total_db_count);
-                this._updateActionButtonsState();
+                const g = document.getElementById('holaf-viewer-gallery');
+                const isAtTop = g ? (g.scrollTop < g.clientHeight) : true;
+                if (isAtTop) {
+                    await this.loadFilteredImages();
+                } else {
+                    imageViewerState.setState({ status: { pendingNewImages: true } });
+                    if (window.holaf?.toastManager) {
+                        window.holaf.toastManager.show({ message: "Nouvelles images détectées — cliquez sur « ⏫ récentes ».", type: "info" });
+                    }
+                }
             } else if (delta && delta.total_db_count !== undefined) {
                 // Nothing changed for the current filter — just keep the counter fresh.
                 this.updateStatusBar(currentImages.length, delta.total_db_count);
@@ -733,11 +739,16 @@ const holafImageViewer = {
         }
     },
 
-    async _fetchFilteredImages() {
+    async _fetchFilteredImages(limit = null, offset = 0) {
         console.time('BE Fetch & Parse');
         const { filters } = imageViewerState.getState();
         const payload = { ...filters };
         delete payload.locked_folders;
+
+        if (limit != null) {
+            payload.limit = limit;
+            payload.offset = offset;
+        }
 
         const response = await fetch('/holaf/images/list', {
             method: 'POST',
@@ -789,37 +800,6 @@ const holafImageViewer = {
         return changed;
     },
 
-    /**
-     * Merges an incremental delta (newest-first, mtime DESC) at the TOP of state.images.
-     * Dedupes by path_canon: a modified file re-appears with a newer mtime, so its old
-     * occurrence is dropped and its newest version is unshifted to the top. Selection and
-     * navigation indices are reconciled afterwards.
-     */
-    _mergeNewImagesAtTop(newImages) {
-        const state = imageViewerState.getState();
-        const current = state.images || [];
-        const deltaPaths = new Set(newImages.map(img => img.path_canon));
-        const deduped = current.filter(img => !deltaPaths.has(img.path_canon));
-        // newImages are mtime DESC and newer than everything already present.
-        const merged = newImages.concat(deduped);
-
-        const selectedPaths = state.selectedPaths;
-        const newSelectedImages = new Set();
-        for (const img of merged) {
-            if (selectedPaths.has(img.path_canon)) newSelectedImages.add(img);
-        }
-        let newNavIndex = -1;
-        if (state.activeImage) {
-            newNavIndex = merged.findIndex(img => img.path_canon === state.activeImage.path_canon);
-        }
-        imageViewerState.setState({
-            images: merged,
-            selectedImages: newSelectedImages,
-            activeImage: state.activeImage,
-            currentNavIndex: newNavIndex
-        });
-    },
-
     async loadFilteredImages(isInitialLoad = false) {
         if (this.isLoading) return; 
         
@@ -832,7 +812,15 @@ const holafImageViewer = {
         try {
             const { filters } = imageViewerState.getState();
             if (!filters.folder_filters || filters.folder_filters.length === 0) {
-                imageViewerState.setState({ images: [], selectedImages: new Set(), activeImage: null, currentNavIndex: -1 });
+                resetWindowCache();
+                imageViewerState.setState({
+                    images: [],
+                    totalCount: 0,
+                    selectedImages: new Set(),
+                    activeImage: null,
+                    currentNavIndex: -1,
+                    status: { pendingNewImages: false, isLoading: false, error: null }
+                });
                 this.syncGallery([]);
                 this.updateStatusBar(0, imageViewerState.getState().status.totalImageCount);
                 this._updateActionButtonsState();
@@ -850,14 +838,17 @@ const holafImageViewer = {
             const currentSelectedPaths = new Set(currentState.selectedPaths);
             const activeImageCanonPath = currentState.activeImage ? currentState.activeImage.path_canon : null;
 
+            resetWindowCache();
             imageViewerState.setState({ selectedImages: new Set() });
 
-            const data = await this._fetchFilteredImages();
-            const newImages = data.images || [];
+            const data = await this._fetchFilteredImages(PAGE_SIZE, 0);
+            const windowImages = data.images || [];
+            const totalCount = (data.total_count != null) ? data.total_count : (data.filtered_count ?? 0);
+            const sparse = new Array(totalCount);
 
             const newSelectedImages = new Set();
             if (currentSelectedPaths.size > 0) {
-                newImages.forEach(img => {
+                windowImages.forEach(img => {
                     if (currentSelectedPaths.has(img.path_canon)) {
                         newSelectedImages.add(img);
                     }
@@ -868,24 +859,29 @@ const holafImageViewer = {
             let newNavIndex = -1;
 
             if (activeImageCanonPath) {
-                newNavIndex = newImages.findIndex(img => img.path_canon === activeImageCanonPath);
+                newNavIndex = windowImages.findIndex(img => img.path_canon === activeImageCanonPath);
                 if (newNavIndex > -1) {
-                    newActiveImage = newImages[newNavIndex];
+                    newActiveImage = windowImages[newNavIndex];
                 }
             }
 
             console.time('State Update & Gallery Sync');
+            const currentStatus = imageViewerState.getState().status;
             imageViewerState.setState({
-                images: newImages,
+                images: sparse,
+                totalCount,
                 selectedImages: newSelectedImages,
                 activeImage: newActiveImage,
-                currentNavIndex: newNavIndex
+                currentNavIndex: newNavIndex,
+                status: { ...currentStatus, pendingNewImages: false, isLoading: false, error: null }
             });
 
-            this.syncGallery(newImages);
+            setWindowLoaded(imageViewerState.getState(), 0, windowImages);
+
+            this.syncGallery(sparse);
             console.timeEnd('State Update & Gallery Sync');
 
-            this.updateStatusBar(data.filtered_count, data.total_db_count);
+            this.updateStatusBar(totalCount, data.total_db_count);
 
 
             const allThumbsGenerated = data.total_db_count > 0 && data.generated_thumbnails_count >= data.total_db_count;
@@ -915,7 +911,7 @@ const holafImageViewer = {
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load images:", e);
             if (this.panelElements) this.setLoadingState(`Error: ${e.message}`);
-            imageViewerState.setState({ images: [], activeImage: null, currentNavIndex: -1, status: { error: e.message } });
+            imageViewerState.setState({ images: [], totalCount: 0, activeImage: null, currentNavIndex: -1, status: { error: e.message } });
         } finally {
             this.isLoading = false;
             if (this.isDirty) {

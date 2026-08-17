@@ -12,6 +12,7 @@ import { imageViewerState } from './image_viewer_state.js';
 import { handleDeletion } from './image_viewer_actions.js';
 import { HolafPanelManager, dialogState } from '../holaf_panel_manager.js';
 import { getThumbnailUrl } from './image_viewer_gallery.js';
+import { getImageAt } from './image_viewer_data.js';
 
 function _applyEditorPreview(viewer, mediaEl) {
     if (!viewer.editor || !mediaEl) return;
@@ -78,6 +79,19 @@ function _isMediaImage(image) {
         && !['WAV', 'MP3', 'OGG', 'FLAC', 'AAC', 'M4A'].includes(image.format);
 }
 
+function _getTotalCount(state) {
+    const total = state.totalCount;
+    if (typeof total === 'number' && total >= 0) return total;
+    return state.images ? state.images.length : 0;
+}
+
+async function _ensureImageLoaded(viewer, index) {
+    if (viewer.gallery && typeof viewer.gallery.ensureImageLoaded === 'function') {
+        return viewer.gallery.ensureImageLoaded(index);
+    }
+    return getImageAt(imageViewerState.getState(), index) || null;
+}
+
 function _cancelPreloads() {
     for (const img of [..._preloadJobs]) {
         img.src = '';
@@ -92,11 +106,12 @@ function _preloadBatch(viewer) {
     // Cancel stale batch preloads
     _cancelPreloads();
 
+    const total = _getTotalCount(state);
     const start = Math.max(0, state.currentNavIndex + 1);
-    const end = Math.min(state.images.length - 1, state.currentNavIndex + PRELOAD_BATCH_SIZE);
+    const end = Math.min(total - 1, state.currentNavIndex + PRELOAD_BATCH_SIZE);
 
     for (let i = start; i <= end; i++) {
-        const img = state.images[i];
+        const img = getImageAt(state, i);
         if (_isMediaImage(img)) {
             const preloader = new Image();
             _preloadJobs.add(preloader);
@@ -108,10 +123,11 @@ function _preloadBatch(viewer) {
 
 function preloadNextImage(viewer) {
     const state = imageViewerState.getState();
-    if (state.currentNavIndex < 0 || (state.currentNavIndex + 1) >= state.images.length) return;
+    const total = _getTotalCount(state);
+    if (state.currentNavIndex < 0 || (state.currentNavIndex + 1) >= total) return;
 
     // Immediately preload just the next image (instant response on next arrow press)
-    const nextImage = state.images[state.currentNavIndex + 1];
+    const nextImage = getImageAt(state, state.currentNavIndex + 1);
     if (_isMediaImage(nextImage)) {
         const preloader = new Image();
         _preloadJobs.add(preloader);
@@ -390,17 +406,20 @@ export async function navigate(viewer, direction) {
     if (action === 'cancel') return;
 
     const state = imageViewerState.getState();
-    if (state.images.length === 0) return;
+    const total = _getTotalCount(state);
+    if (total === 0) return;
 
     let newIndex = (state.currentNavIndex === -1) ? 0 : state.currentNavIndex + direction;
 
     if (newIndex < 0) {
-        newIndex = state.images.length - 1;
-    } else if (newIndex >= state.images.length) {
+        newIndex = total - 1;
+    } else if (newIndex >= total) {
         newIndex = 0;
     }
 
-    const newActiveImage = state.images[newIndex];
+    const newActiveImage = await _ensureImageLoaded(viewer, newIndex);
+    if (!newActiveImage) return;
+
     imageViewerState.setState({ currentNavIndex: newIndex, activeImage: newActiveImage });
 
     if (viewer.gallery?.render) viewer.gallery.render();
@@ -424,16 +443,18 @@ export async function navigate(viewer, direction) {
     }
 }
 
-export function navigateGrid(viewer, direction) {
+export async function navigateGrid(viewer, direction) {
     const state = imageViewerState.getState();
-    if (state.images.length === 0 || !viewer.gallery) return;
+    const total = _getTotalCount(state);
+    if (total === 0 || !viewer.gallery) return;
 
     const columnCount = viewer.gallery.getColumnCount();
     if (columnCount <= 0) return;
 
     const currentIndex = state.currentNavIndex;
     if (currentIndex === -1) {
-        const newActiveImage = state.images[0];
+        const newActiveImage = await _ensureImageLoaded(viewer, 0);
+        if (!newActiveImage) return;
         imageViewerState.setState({ currentNavIndex: 0, activeImage: newActiveImage });
         if (viewer.gallery?.render) viewer.gallery.render();
         if (viewer.gallery?.ensureImageVisible) {
@@ -444,11 +465,13 @@ export function navigateGrid(viewer, direction) {
 
     const newIndex = currentIndex + (direction * columnCount);
 
-    if (newIndex < 0 || newIndex >= state.images.length) {
+    if (newIndex < 0 || newIndex >= total) {
         return;
     }
 
-    const newActiveImage = state.images[newIndex];
+    const newActiveImage = await _ensureImageLoaded(viewer, newIndex);
+    if (!newActiveImage) return;
+
     imageViewerState.setState({ currentNavIndex: newIndex, activeImage: newActiveImage });
 
     if (viewer.gallery?.render) viewer.gallery.render();
@@ -491,34 +514,6 @@ export async function handleEscape(viewer) {
     }
 }
 
-function _restoreDeletedImage(viewer, img, allImages, originalIdx, currentMode) {
-    // Restore the image back into the state at its original position
-    const restored = [...allImages];
-    restored.splice(originalIdx, 0, img);
-    imageViewerState.setState({
-        images: restored,
-        activeImage: img,
-        currentNavIndex: originalIdx
-    });
-    if (viewer.syncGallery) viewer.syncGallery(restored);
-
-    // Re-update the media source to show the restored image
-    if (currentMode === 'fullscreen') {
-        const { overlay, img: fImg, video: fVid } = viewer.fullscreenElements;
-        _updateMediaSource(viewer, img, overlay, fImg, fVid, viewer.fullscreenViewState, true);
-    } else if (currentMode === 'zoom') {
-        const zView = document.getElementById('holaf-viewer-zoom-view');
-        const zImg = zView?.querySelector('img');
-        const zVid = viewer.elements?.zoomVideo;
-        _updateMediaSource(viewer, img, zView, zImg, zVid, viewer.zoomViewState, true);
-    }
-
-    window.holaf.toastManager?.show({
-        message: 'Delete failed — image restored.',
-        type: 'error'
-    });
-}
-
 export async function handleKeyDown(viewer, e) {
     if (dialogState.isOpen) return;
     if (!viewer.panelElements?.panelEl || viewer.panelElements.panelEl.style.display === 'none') return;
@@ -528,6 +523,7 @@ export async function handleKeyDown(viewer, e) {
 
     const state = imageViewerState.getState();
     const currentMode = state.ui.view_mode;
+    const total = _getTotalCount(state);
     const galleryEl = document.getElementById('holaf-viewer-gallery');
 
     switch (e.key) {
@@ -535,17 +531,14 @@ export async function handleKeyDown(viewer, e) {
             if (currentMode !== 'gallery' || !state.activeImage) break;
             e.preventDefault();
 
-            const currentSelection = new Set(state.selectedPaths); // Copy for mutation
-            const activeImagePath = state.activeImage.path_canon;
-
-            if (currentSelection.has(activeImagePath)) {
-                currentSelection.delete(activeImagePath);
+            const currentSelection = new Set(state.selectedImages); // Copy for mutation
+            if (currentSelection.has(state.activeImage)) {
+                currentSelection.delete(state.activeImage);
             } else {
-                currentSelection.add(activeImagePath);
+                currentSelection.add(state.activeImage);
             }
 
-            const newSelectedImages = new Set(state.images.filter(img => currentSelection.has(img.path_canon)));
-            imageViewerState.setState({ selectedImages: newSelectedImages });
+            imageViewerState.setState({ selectedImages: currentSelection });
             if (viewer.gallery?.render) viewer.gallery.render();
             viewer._updateActionButtonsState();
             break;
@@ -555,60 +548,26 @@ export async function handleKeyDown(viewer, e) {
             const isPermanent = e.shiftKey;
 
             if (currentMode !== 'gallery' && state.activeImage) {
-                // Delete from edit/fullscreen — no confirmation, navigate to next
-                const img = state.activeImage;
-                const allImages = state.images;
-                const currentIdx = allImages.findIndex(i => i.path_canon === img.path_canon);
-
-                // Optimistic remove
-                const remaining = allImages.filter(i => i.path_canon !== img.path_canon);
-                const nextIdx = currentIdx >= remaining.length ? remaining.length - 1 : currentIdx;
-                const nextImage = remaining[nextIdx] || null;
-
-                imageViewerState.setState({
-                    images: remaining,
-                    activeImage: nextImage,
-                    currentNavIndex: nextImage ? nextIdx : -1
-                });
-                if (viewer.syncGallery) viewer.syncGallery(remaining);
-
-                if (!nextImage) {
-                    if (currentMode === 'fullscreen') hideFullscreenView(viewer);
-                    hideZoomedView(viewer);
-                    imageViewerState.setState({ activeImage: null, currentNavIndex: -1, ui: { view_mode: 'gallery' } });
-                } else {
-                    // Update the current view with next image via _updateMediaSource (handles img + video)
+                // Delete from edit/fullscreen — handleDeletion shows the confirmation.
+                const success = await handleDeletion(viewer, isPermanent, [state.activeImage]);
+                if (success) {
                     if (currentMode === 'fullscreen') {
-                        const { overlay, img: fImg, video: fVid } = viewer.fullscreenElements;
-                        _updateMediaSource(viewer, nextImage, overlay, fImg, fVid, viewer.fullscreenViewState);
-                    } else {
-                        const zView = document.getElementById('holaf-viewer-zoom-view');
-                        const zImg = zView?.querySelector('img');
-                        const zVid = viewer.elements?.zoomVideo;
-                        _updateMediaSource(viewer, nextImage, zView, zImg, zVid, viewer.zoomViewState);
+                        hideFullscreenView(viewer);
+                    } else if (currentMode === 'zoom') {
+                        if (viewer.elements?.zoomVideo) viewer.elements.zoomVideo.pause();
+                        const zoomView = document.getElementById('holaf-viewer-zoom-view');
+                        if (zoomView) zoomView.style.display = 'none';
+                        const galleryView = document.getElementById('holaf-viewer-gallery');
+                        if (galleryView) galleryView.style.display = 'flex';
                     }
+                    imageViewerState.setState({
+                        selectedImages: new Set(),
+                        activeImage: null,
+                        currentNavIndex: -1,
+                        ui: { view_mode: 'gallery' }
+                    });
+                    await viewer.loadFilteredImages();
                 }
-
-                // Background delete with rollback on failure
-                const apiUrl = isPermanent ? '/holaf/images/delete-permanently' : '/holaf/images/delete';
-                fetch(apiUrl, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ paths_canon: [img.path_canon] })
-                }).then(r => r.json()).then(result => {
-                    if (result.deleted_count > 0) {
-                        window.holaf.toastManager?.show({
-                            message: isPermanent ? 'Permanently deleted' : 'Moved to trash',
-                            type: 'success'
-                        });
-                    } else {
-                        // Server didn't delete — restore UI
-                        _restoreDeletedImage(viewer, img, allImages, currentIdx, currentMode);
-                    }
-                }).catch(() => {
-                    // Network error — restore UI
-                    _restoreDeletedImage(viewer, img, allImages, currentIdx, currentMode);
-                });
-
             } else if (state.selectedPaths.size > 0) {
                 const success = await handleDeletion(viewer, isPermanent, null);
                 if (success) {
@@ -628,11 +587,13 @@ export async function handleKeyDown(viewer, e) {
             break;
         case 'Home':
         case 'End':
-            if (currentMode === 'gallery' && state.images.length > 0) {
+            if (currentMode === 'gallery' && total > 0) {
                 e.preventDefault();
-                const targetIndex = e.key === 'Home' ? 0 : state.images.length - 1;
-                const newActiveImage = state.images[targetIndex];
+                const targetIndex = e.key === 'Home' ? 0 : total - 1;
+                const newActiveImage = await _ensureImageLoaded(viewer, targetIndex);
+                if (!newActiveImage) break;
                 imageViewerState.setState({ currentNavIndex: targetIndex, activeImage: newActiveImage });
+                if (viewer.gallery?.render) viewer.gallery.render();
                 if (viewer.gallery?.ensureImageVisible) {
                     viewer.gallery.ensureImageVisible(targetIndex);
                 }
@@ -640,12 +601,14 @@ export async function handleKeyDown(viewer, e) {
             break;
         case 'Enter':
             e.preventDefault();
-            const { currentNavIndex, activeImage, images } = state;
+            const { currentNavIndex, activeImage } = state;
             let targetImage = activeImage;
 
-            if (currentNavIndex === -1 && images.length > 0) {
-                targetImage = images[0];
-                imageViewerState.setState({ activeImage: targetImage, currentNavIndex: 0 });
+            if (currentNavIndex === -1 && total > 0) {
+                targetImage = await _ensureImageLoaded(viewer, 0);
+                if (targetImage) {
+                    imageViewerState.setState({ activeImage: targetImage, currentNavIndex: 0 });
+                }
             }
 
             if (targetImage) {
@@ -665,7 +628,7 @@ export async function handleKeyDown(viewer, e) {
         case 'ArrowDown':
             if (currentMode === 'gallery') {
                 e.preventDefault();
-                navigateGrid(viewer, e.key === 'ArrowDown' ? 1 : -1);
+                await navigateGrid(viewer, e.key === 'ArrowDown' ? 1 : -1);
             }
             break;
         case 'Escape':
