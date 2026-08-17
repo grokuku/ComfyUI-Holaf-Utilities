@@ -893,6 +893,9 @@ async def iv_get_thumbnail_route(r): return await holaf_image_viewer_backend.get
 @routes.get("/holaf/images/full")
 async def iv_get_full_image_route(r): return await holaf_image_viewer_backend.get_full_image_route(r)
 
+@routes.get("/holaf/images/perf")
+async def iv_get_perf_route(r): return await holaf_image_viewer_backend.get_perf_route(r)
+
 @routes.get("/holaf/images/metadata")
 async def iv_get_metadata_route(r): return await holaf_image_viewer_backend.get_metadata_route(r)
 

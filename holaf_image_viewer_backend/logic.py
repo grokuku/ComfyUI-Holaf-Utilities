@@ -1306,8 +1306,16 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
     file_ext = os.path.splitext(original_path_abs)[1].lower()
     generation_succeeded = False
 
+    # --- Perf instrumentation: decode / resize / save ---
+    t_start_total = time.perf_counter()
+    t_decode_ms = 0.0
+    t_resize_ms = 0.0
+    t_save_ms = 0.0
+    t_total_ms = 0.0
+
     try:
         if os.path.exists(thumb_path_abs): os.remove(thumb_path_abs)
+        t_decode_start = time.perf_counter()
         
         img = None
         
@@ -1380,26 +1388,46 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             img = Image.open(original_path_abs)
 
         with img:
-            img_copy = img.copy()
-            # Apply Edits (Supports Hue now)
-            if edit_data: img_copy = apply_edits_to_image(img_copy, edit_data)
-            
             target_dim_w, target_dim_h = holaf_utils.THUMBNAIL_SIZE if isinstance(holaf_utils.THUMBNAIL_SIZE, tuple) else (holaf_utils.THUMBNAIL_SIZE, holaf_utils.THUMBNAIL_SIZE)
-            original_width, original_height = img_copy.size
+            original_width, original_height = img.size
             if original_width == 0 or original_height == 0: raise ValueError("Image dimensions cannot be zero.")
             
             ratio = min(target_dim_w / original_width, target_dim_h / original_height)
             new_width, new_height = int(original_width * ratio), int(original_height * ratio)
-            
             if new_width <= 0: new_width = 1
             if new_height <= 0: new_height = 1
-            
-            img_copy = img_copy.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            # JPEG : décodage à résolution réduite dès le décodeur (gros gain sur les
+            # grosses photos). Sans effet sur PNG. draft() lève une exception pour
+            # les modes incompatibles -> ignorée.
+            if img.format == 'JPEG':
+                try:
+                    img.draft('RGB', (new_width * 2, new_height * 2))
+                except Exception:
+                    pass
+
+            # Copie plein format UNIQUEMENT si une édition doit être appliquée ;
+            # sinon on resize directement (évite un décodage/copie complet inutile).
+            if edit_data:
+                img_copy = img.copy()
+                img_copy = apply_edits_to_image(img_copy, edit_data)
+            else:
+                img_copy = img
+
+            # BILINEAR ~2-3x plus rapide que LANCZOS pour une cible 200x200,
+            # qualité visuellement quasi identique à cette taille.
+            t_before_resize = time.perf_counter()
+            img_copy = img_copy.resize((new_width, new_height), Image.Resampling.BILINEAR)
+            t_after_resize = time.perf_counter()
             img_to_save = img_copy.convert("RGB")
-            # optimize=False: ~30-50% faster generation, negligible quality loss at thumbnail size.
             img_to_save.save(thumb_path_abs, "JPEG", quality=85, optimize=False)
+            t_after_save = time.perf_counter()
             
         generation_succeeded = True
+        t_total_ms = (t_after_save - t_start_total) * 1000.0
+        t_decode_ms = (t_before_resize - t_decode_start) * 1000.0
+        t_resize_ms = (t_after_resize - t_before_resize) * 1000.0
+        t_save_ms = (t_after_save - t_after_resize) * 1000.0
 
     except Image.DecompressionBombError as e:
         # FIX: Legitimate large images (e.g. 18K×18K AI art) exceed Pillow's pixel
@@ -1461,6 +1489,9 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
     finally:
         if conn_update_db:
             holaf_database.close_db_connection(exception=update_exception)
+
+    if t_total_ms > 100:
+        print(f"⚡ [Holaf Perf] thumb {os.path.basename(original_path_abs)} decode={t_decode_ms:.1f}ms resize={t_resize_ms:.1f}ms save={t_save_ms:.1f}ms total={t_total_ms:.1f}ms")
 
     if generation_succeeded and image_path_canon_for_db_update:
         return _mark_thumbnail_generated_retry(image_path_canon_for_db_update)

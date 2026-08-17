@@ -309,6 +309,7 @@ function renderVisibleItems() {
         const newPlaceholdersToRender = new Map();
         const newSkeletons = new Map();
         const fragment = document.createDocumentFragment();
+        const renderStart = performance.now();
 
         for (let i = startIndex; i <= endIndex; i++) {
             const image = getImageAt(state, i);
@@ -427,6 +428,11 @@ function renderVisibleItems() {
         // Kick off loading immediately — don't debounce on render frame
         // (debounced for trackpad scrolling)
         debouncedKickLoadQueue();
+
+        const renderMs = performance.now() - renderStart;
+        if (renderMs > 100) {
+            console.log("[Holaf Perf] renderVisibleItems total_ms=" + renderMs.toFixed(1));
+        }
     });
 }
 
@@ -654,14 +660,21 @@ async function fetchWindow(start) {
     const controller = new AbortController();
     const promise = (async () => {
         try {
+            const tStart = performance.now();
             const response = await fetch('/holaf/images/list', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...filters, limit: PAGE_SIZE, offset: start }),
+                body: JSON.stringify({ ...filters, limit: PAGE_SIZE, offset: start, skip_count: true }),
                 signal: controller.signal
             });
+            const tFetch = performance.now();
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
+            const tParse = performance.now();
+            const totalMs = tParse - tStart;
+            if (totalMs > 100) {
+                console.log("[Holaf Perf] fetchWindow offset=" + start + " fetch_ms=" + (tFetch - tStart).toFixed(1) + " parse_ms=" + (tParse - tFetch).toFixed(1) + " total_ms=" + totalMs.toFixed(1));
+            }
             setWindowLoaded(imageViewerState.getState(), start, data.images || []);
         } catch (err) {
             console.warn('[Holaf ImageViewer] Window fetch failed', err);
@@ -757,10 +770,12 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
     let decrementDone = false;
 
     try {
+        const tStart = performance.now();
         const response = await fetch(imageUrl.href, {
             signal: controller.signal,
             priority: 'high'
         });
+        const tFetch = performance.now();
 
         clearTimeout(timeoutId);
 
@@ -779,6 +794,11 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const blob = await response.blob();
+        const tBlob = performance.now();
+        const totalMs = tBlob - tStart;
+        if (totalMs > 300) {
+            console.log("[Holaf Perf] fetchThumbnail " + pathCanon + " fetch_ms=" + (tFetch - tStart).toFixed(1) + " blob_ms=" + (tBlob - tFetch).toFixed(1) + " total_ms=" + totalMs.toFixed(1));
+        }
         const objectURL = URL.createObjectURL(blob);
 
         // Add to LRU Cache

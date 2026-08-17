@@ -7,6 +7,11 @@ import os
 from collections import defaultdict
 import math
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 from aiohttp import web
 import folder_paths  # ComfyUI global
 
@@ -130,6 +135,116 @@ async def get_full_image_route(request: web.Request):
         return web.Response(status=500, text=f"ERR: Server error serving full image: {e}")
 
 
+async def get_perf_route(request: web.Request):
+    """
+    GET /holaf/images/perf
+
+    Returns a lightweight hardware/disk benchmark report to help identify
+    whether gallery slowness is CPU-, RAM-, disk- or filesystem-walk-bound.
+    """
+    result = {
+        "cpu_percent": None,
+        "cpu_count": {"physical": None, "logical": None},
+        "memory_percent": None,
+        "memory_used_gb": None,
+        "memory_total_gb": None,
+        "disk_io_read_gb": None,
+        "disk_io_write_gb": None,
+        "output_dir": None,
+        "walk_count": 0,
+        "walk_ms": None,
+        "stat_ms": None,
+    }
+
+    # --- CPU / memory / disk I/O (psutil is optional at import time) ---
+    if psutil is not None:
+        try:
+            result["cpu_percent"] = psutil.cpu_percent(interval=0.2)
+        except Exception:
+            pass
+        try:
+            result["cpu_count"] = {
+                "physical": psutil.cpu_count(logical=False),
+                "logical": psutil.cpu_count(logical=True),
+            }
+        except Exception:
+            pass
+
+        try:
+            vm = psutil.virtual_memory()
+            result["memory_percent"] = vm.percent
+            result["memory_used_gb"] = round(vm.used / (1024 ** 3), 2)
+            result["memory_total_gb"] = round(vm.total / (1024 ** 3), 2)
+        except Exception:
+            pass
+
+        try:
+            dio = psutil.disk_io_counters()
+            result["disk_io_read_gb"] = round(dio.read_bytes / (1024 ** 3), 3)
+            result["disk_io_write_gb"] = round(dio.write_bytes / (1024 ** 3), 3)
+        except Exception:
+            pass
+
+    # --- Output directory + mini disk walk benchmark ---
+    try:
+        output_dir = folder_paths.get_output_directory()
+        result["output_dir"] = output_dir
+    except Exception:
+        output_dir = None
+
+    if output_dir and os.path.isdir(output_dir):
+        stat_sample_paths = []
+        try:
+            walk_count = 0
+            t_walk_start = time.perf_counter()
+            stack = [output_dir]
+            supported_formats = logic.SUPPORTED_IMAGE_FORMATS
+
+            # Limit to ~2000 supported files so the endpoint stays responsive even
+            # on a 30k+ image gallery (the goal is a representative walk sample).
+            while stack and walk_count < 2000:
+                current_dir = stack.pop()
+                try:
+                    with os.scandir(current_dir) as it:
+                        for entry in it:
+                            if walk_count >= 2000:
+                                break
+                            try:
+                                if entry.is_dir(follow_symlinks=False):
+                                    stack.append(entry.path)
+                                elif entry.is_file(follow_symlinks=False):
+                                    if os.path.splitext(entry.name)[1].lower() in supported_formats:
+                                        walk_count += 1
+                                        if len(stat_sample_paths) < 200:
+                                            stat_sample_paths.append(entry.path)
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+
+            result["walk_count"] = walk_count
+            result["walk_ms"] = round((time.perf_counter() - t_walk_start) * 1000.0, 1)
+        except Exception:
+            result["walk_ms"] = None
+
+        # --- os.stat sample benchmark (up to ~200 files collected above) ---
+        if stat_sample_paths:
+            try:
+                t_stat_start = time.perf_counter()
+                for p in stat_sample_paths:
+                    try:
+                        os.stat(p)
+                    except OSError:
+                        pass
+                result["stat_ms"] = round((time.perf_counter() - t_stat_start) * 1000.0, 1)
+            except Exception:
+                result["stat_ms"] = None
+        else:
+            result["stat_ms"] = 0.0
+
+    return web.json_response(result)
+
+
 async def list_images_route(request: web.Request):
     # --- BENCHMARK START ---
     t_start = time.perf_counter()
@@ -163,6 +278,11 @@ async def list_images_route(request: web.Request):
             offset = 0
         if limit is not None and limit <= 0:
             limit = None
+
+        # When true, the caller is fetching a scroll window (offset > 0) and does
+        # not consume filtered_count/total_count. Skipping the COUNT query avoids
+        # a costly full scan on TEXT columns for every single window fetch.
+        skip_count = bool(filters.get('skip_count', False))
 
         conn = holaf_database.get_db_connection()
         cursor = conn.cursor()
@@ -264,13 +384,53 @@ async def list_images_route(request: web.Request):
         # a COUNT here on EVERY request caused a pathological ~900ms full-scan
         # on large DBs, even when only 1 delta row was returned. Keep the COUNT
         # strictly for the full-list path where the display counter is consumed.
-        if filters.get('min_mtime') is not None:
-            filtered_count = 0  # Not used by the incremental frontend path.
+
+        # In-memory stats (already kept warm by GlobalStatsManager):
+        # total_db_count is SELECT COUNT(*) FROM images WHERE is_trashed = 0.
+        stats = logic.stats_manager.get_stats()
+
+        # Any filter that narrows the result below "all non-trashed images"
+        # forces a real COUNT query. When none is active (the common "all"
+        # gallery view), reuse the cached total_db_count and skip the expensive
+        # ~10s full COUNT entirely.
+        has_folder_filter = bool(folder_filters)
+        has_format_filter = bool(format_filters)
+        has_date_filter = bool(filters.get('startDate') or filters.get('endDate'))
+        has_text_search = bool(
+            filters.get('filename_search')
+            or filters.get('prompt_search')
+            or filters.get('workflow_search')
+        )
+        has_bool_filter = any(v is not None for v in (bool_filters or {}).values())
+        has_workflow_source_filter = bool(workflow_sources)
+        has_tag_filter = bool(tags_filter)
+
+        has_reducing_filter = (
+            has_folder_filter
+            or has_format_filter
+            or has_date_filter
+            or has_text_search
+            or has_bool_filter
+            or has_workflow_source_filter
+            or has_tag_filter
+        )
+
+        t_count_query_start = time.perf_counter()
+        count_query_executed = False
+        if skip_count or filters.get('min_mtime') is not None:
+            # The frontend does not use total_count for offset > 0 window fetches
+            # (and the incremental delta path only reads total_db_count), so skip
+            # the expensive COUNT entirely.
+            filtered_count = 0
+        elif not has_reducing_filter:
+            # "all" non-trashed images: counter already available in RAM.
+            filtered_count = stats["total_db_count"]
         else:
             count_query_base = "SELECT COUNT(DISTINCT i.id)" if tags_filter else "SELECT COUNT(i.id)"
             count_query = f"{count_query_base} {query_base} {joins} {final_where}"
             cursor.execute(count_query, params)
             filtered_count = cursor.fetchone()[0]
+            count_query_executed = True
         
         t_count_query = time.perf_counter()
 
@@ -293,7 +453,6 @@ async def list_images_route(request: web.Request):
 
         # Use orjson for faster JSON serialization if available
         # FIX: Include total_db_count and generated_thumbnails_count in response
-        stats = logic.stats_manager.get_stats()
         body_content = ""
         serialization_method = "json"
         
@@ -321,21 +480,13 @@ async def list_images_route(request: web.Request):
         t_serialization = time.perf_counter()
         
         # --- BENCHMARK REPORTING ---
-        total_time = (t_serialization - t_start) * 1000
-        db_count_ms = (t_count_query - t_db_connected) * 1000
-        db_fetch_ms = (t_main_query - t_count_query) * 1000
+        total_ms = (t_serialization - t_start) * 1000
+        count_ms = (t_count_query - t_count_query_start) * 1000 if count_query_executed else 0.0
+        fetch_ms = (t_main_query - t_count_query) * 1000
         serialize_ms = (t_serialization - t_main_query) * 1000
         payload_size_mb = len(body_content) / (1024 * 1024)
         
-        # Report the actual number of returned rows (accurate for both the full
-        # path, where filtered_count == len(images_data) since there is no LIMIT,
-        # and the incremental path, where filtered_count is intentionally 0).
-        print(f"\n⚡ [Holaf Perf Report] List Images ({len(images_data)} items)")
-        print(f"  ├── Total Time:     {total_time:.2f} ms")
-        print(f"  ├── DB Count Query: {db_count_ms:.2f} ms")
-        print(f"  ├── DB Fetch Data:  {db_fetch_ms:.2f} ms")
-        print(f"  ├── JSON Serialize: {serialize_ms:.2f} ms ({serialization_method})")
-        print(f"  └── Payload Size:   {payload_size_mb:.2f} MB")
+        print(f"⚡ [Holaf Perf] list offset={offset} limit={limit} count={count_ms:.2f}ms fetch={fetch_ms:.2f}ms serialize={serialize_ms:.2f}ms total={total_ms:.2f}ms")
         
         if payload_size_mb > 5.0:
             print(f"  ⚠️  WARNING: Payload is large (>5MB). Network transfer will be the bottleneck.")

@@ -225,6 +225,10 @@ const holafImageViewer = {
                 clearTimeout(this._statsDeferTimer);
                 this._statsDeferTimer = null;
             }
+            if (this._resyncDebounceTimer) {
+                clearTimeout(this._resyncDebounceTimer);
+                this._resyncDebounceTimer = null;
+            }
             this._statsDeferralScheduled = false;
             this._updateViewerActivity(false);
             Navigation.stopPlayback(this);
@@ -461,6 +465,7 @@ const holafImageViewer = {
         if (this._isGalleryScrolling) {
             return;
         }
+        const tStart = performance.now();
         try {
             const response = await fetch('/holaf/images/last-update-time', { cache: 'no-store' });
             if (!response.ok) return;
@@ -524,7 +529,13 @@ const holafImageViewer = {
                 const g = document.getElementById('holaf-viewer-gallery');
                 const isAtTop = g ? (g.scrollTop < g.clientHeight) : true;
                 if (isAtTop) {
-                    await this.loadFilteredImages();
+                    // Debounce: coalesce les rafales de "new data" (batch de génération) en un
+                    // seul rechargement, pour éviter de refaire COUNT + fetch + rebuild en boucle.
+                    if (this._resyncDebounceTimer) clearTimeout(this._resyncDebounceTimer);
+                    this._resyncDebounceTimer = setTimeout(() => {
+                        this._resyncDebounceTimer = null;
+                        this.loadFilteredImages();
+                    }, 1200);
                 } else {
                     imageViewerState.setState({ status: { pendingNewImages: true } });
                     if (window.holaf?.toastManager) {
@@ -537,6 +548,11 @@ const holafImageViewer = {
             }
         } catch (e) {
             console.error("[Holaf ImageViewer] Error checking for updates:", e);
+        } finally {
+            const totalMs = performance.now() - tStart;
+            if (totalMs > 100) {
+                console.log("[Holaf Perf] checkForUpdates total_ms=" + totalMs.toFixed(1));
+            }
         }
     },
 

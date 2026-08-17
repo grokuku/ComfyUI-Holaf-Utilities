@@ -11,7 +11,8 @@ from .logic import (
 from .routes.image_routes import (
     get_filter_options_route,
     list_images_route,
-    get_full_image_route
+    get_full_image_route,
+    get_perf_route
 )
 from .routes.file_ops_routes import (
     delete_images_route,
@@ -66,6 +67,7 @@ __all__ = [
     'get_filter_options_route',
     'list_images_route',
     'get_full_image_route',
+    'get_perf_route',
     
     # File Operations
     'delete_images_route',

@@ -27,7 +27,9 @@ EDIT_DIR_NAME = "edit"
 # 20 concurrent CPU-heavy PIL jobs and saturate the CPU). If the semaphore is
 # unavailable we respond immediately with 202 + a retry hint instead of queueing
 # unbounded work. The background thumbnail worker is NOT gated by this semaphore.
-_THUMBNAIL_GENERATION_SEMAPHORE = threading.Semaphore(2)
+# 4 concurrent PIL generations gives a good CPU/RAM compromise: it keeps a
+# couple of cores busy without exhausting memory on large 8K+ source images.
+_THUMBNAIL_GENERATION_SEMAPHORE = threading.Semaphore(4)
 
 # Immutable cache header for generated thumbnails. Safe because the URL includes
 # thumb_hash (or path hash) as a cache-buster.
@@ -49,6 +51,7 @@ async def get_thumbnail_route(request: web.Request):
     _start_time = time.monotonic()
     thumb_status_db = None
     needs_generation = None
+    gen_ms = None
 
     try:
         output_dir = folder_paths.get_output_directory() # Base output
@@ -186,7 +189,7 @@ async def get_thumbnail_route(request: web.Request):
                 if not os.path.isfile(original_abs_path):
                      return web.Response(status=404, text="ERR: Source file missing for generation.")
 
-                # Bound inline generation: at most 2 PIL generations run at once. If the
+                # Bound inline generation: at most 4 PIL generations run at once. If the
                 # semaphore is unavailable, respond immediately (202 + retry hint) instead
                 # of waiting/queueing unbounded work.
                 if not _THUMBNAIL_GENERATION_SEMAPHORE.acquire(blocking=False):
@@ -219,6 +222,7 @@ async def get_thumbnail_route(request: web.Request):
 
                     loop = asyncio.get_running_loop()
                     # Pass explicit args to blocking logic, including edit_data
+                    t_gen_start = time.monotonic()
                     gen_success = await loop.run_in_executor(
                         None, 
                         logic._create_thumbnail_blocking, 
@@ -227,6 +231,7 @@ async def get_thumbnail_route(request: web.Request):
                         original_rel_path, # path_canon for DB update
                         edit_data
                     )
+                    gen_ms = (time.monotonic() - t_gen_start) * 1000.0
                     if not gen_success:
                         error_message_for_client = "ERR: Thumbnail generation function failed."
                         logger.error(f"🔴 [Holaf-Thumb] Generation returned failure for {original_rel_path} (details printed by _create_thumbnail_blocking above).")
@@ -274,7 +279,8 @@ async def get_thumbnail_route(request: web.Request):
         # Debug line to correlate requests in the console (fires on every exit path).
         _elapsed_ms = (time.monotonic() - _start_time) * 1000.0
         _result_tag = error_message_for_client if ('ERR' in error_message_for_client) else 'OK'
-        print(f"🔵 [Holaf-Thumb] {original_rel_path}: status={thumb_status_db} needs_gen={needs_generation} result={_result_tag} total={_elapsed_ms:.0f}ms")
+        _gen_part = f" gen={gen_ms:.0f}ms" if gen_ms is not None else ""
+        print(f"🔵 [Holaf-Thumb] {original_rel_path}: status={thumb_status_db} needs_gen={needs_generation} result={_result_tag} total={_elapsed_ms:.0f}ms{_gen_part}")
 
 
 async def regenerate_thumbnail_route(request: web.Request):
