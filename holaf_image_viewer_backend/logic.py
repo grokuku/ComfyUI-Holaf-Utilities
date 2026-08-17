@@ -7,6 +7,7 @@ import time
 import datetime
 import traceback
 import shutil
+import sqlite3
 import subprocess
 import threading
 import tempfile
@@ -305,7 +306,7 @@ def _update_image_tags_in_db(cursor, image_id, tags_list):
 
 # --- Database Synchronization ---
 
-def add_or_update_single_image(image_abs_path):
+def add_or_update_single_image(image_abs_path, _attempts=1):
     """
     Efficiently adds or updates a single image in the database.
     """
@@ -417,6 +418,11 @@ def add_or_update_single_image(image_abs_path):
         update_exception = e
         print(f"🔴 [Holaf-Logic] Error in add_or_update_single_image for {image_abs_path}: {e}")
         traceback.print_exc()
+        # Retry transient DB-lock failures: a silent failure here would leave the
+        # image invisible until the next periodic sync (minutes).
+        if _attempts < 3 and isinstance(e, sqlite3.OperationalError):
+            time.sleep(0.5)
+            return add_or_update_single_image(image_abs_path, _attempts + 1)
     finally:
         if conn:
             holaf_database.close_db_connection(exception=update_exception)
@@ -1298,6 +1304,7 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
     conn_update_db = None
     update_exception = None
     file_ext = os.path.splitext(original_path_abs)[1].lower()
+    generation_succeeded = False
 
     try:
         if os.path.exists(thumb_path_abs): os.remove(thumb_path_abs)
@@ -1392,16 +1399,7 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             # optimize=False: ~30-50% faster generation, negligible quality loss at thumbnail size.
             img_to_save.save(thumb_path_abs, "JPEG", quality=85, optimize=False)
             
-        if image_path_canon_for_db_update:
-            conn_update_db = holaf_database.get_db_connection()
-            cursor = conn_update_db.cursor()
-            cursor.execute("UPDATE images SET thumbnail_status = 2, thumbnail_last_generated_at = ? WHERE path_canon = ?", (time.time(), image_path_canon_for_db_update))
-            conn_update_db.commit()
-            
-            # --- NOTIFY STATS ---
-            stats_manager.increment_thumbnail()
-            
-            return True  # FIX: Explicit success return
+        generation_succeeded = True
 
     except Image.DecompressionBombError as e:
         # FIX: Legitimate large images (e.g. 18K×18K AI art) exceed Pillow's pixel
@@ -1463,6 +1461,53 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
     finally:
         if conn_update_db:
             holaf_database.close_db_connection(exception=update_exception)
+
+    if generation_succeeded and image_path_canon_for_db_update:
+        return _mark_thumbnail_generated_retry(image_path_canon_for_db_update)
+    return False
+
+
+def _mark_thumbnail_generated_retry(path_canon, attempts=4, backoff=0.4):
+    """Mark a thumbnail as generated (status=2) with a short busy timeout and
+    retries. The thumbnail FILE is already written and valid; only the DB status
+    lags. A persistent DB lock here must NEVER flip the row to status=3
+    (permanent failure): that would show a permanent "Err" overlay for a valid
+    image. If the lock persists, the row is left pending and will be picked up
+    later (the route also serves a fresh thumb file directly via mtime).
+    """
+    last_err = None
+    for attempt in range(attempts):
+        conn = None
+        try:
+            conn = sqlite3.connect(holaf_database.DB_PATH, timeout=3)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout = 3000;")
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE images SET thumbnail_status = 2, thumbnail_last_generated_at = ? WHERE path_canon = ?",
+                (time.time(), path_canon)
+            )
+            conn.commit()
+            stats_manager.increment_thumbnail()
+            return True
+        except sqlite3.OperationalError as e:
+            last_err = e
+            try:
+                if conn:
+                    conn.rollback()
+            except Exception:
+                pass
+            if attempt < attempts - 1:
+                time.sleep(backoff)
+        finally:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+    print(f"🟡 [Holaf-ImageViewer] Could not mark thumbnail generated for {path_canon} after {attempts} attempts (DB busy): {last_err}")
+    return False
+
 
 def _strip_png_metadata_and_get_mtime(image_abs_path):
     try:

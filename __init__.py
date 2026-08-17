@@ -1269,7 +1269,11 @@ else:
 # updates and renames, which the name-diff poller does not detect without
 # re-stat'ing every file on the ~30k-file tree. 30s keeps fresh content visible
 # quickly while remaining cheap enough for periodic full scans.
-_periodic_task_wrapper(30.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
+# Safety-net sync: the filesystem watcher (inotify / custom poller) handles
+# real-time adds/deletes. A full-tree os.walk + os.stat every 30s saturates
+# slow filesystems (huge trees on Docker volumes) and starves the watcher's
+# adds, delaying new images by minutes. Run it rarely (5 min) as a pure fallback.
+_periodic_task_wrapper(300.0, holaf_image_viewer_backend.sync_image_database_blocking, initial_delay=10.0)
 
 # --- MODIFICATION START: Correctly schedule all image viewer workers ---
 thumbnail_startup_timer = threading.Timer(15.0, start_thumbnail_worker)

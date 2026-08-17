@@ -83,6 +83,15 @@ class HolafFileSystemEventHandler(FileSystemEventHandler):
             print(f"🔵 [Holaf-Watcher-Event] Detected creation: {event.src_path}")
             FILESYSTEM_EVENT_QUEUE.put(('created', event.src_path))
 
+    def on_modified(self, event):
+        # In-place content updates: ComfyUI may write directly to the final
+        # filename instead of temp+rename, so the first 'created' event can fire
+        # while the file is still being written (partial content, metadata
+        # extraction aborts). Re-processing on modify self-heals: the batch
+        # processor dedupes repeated events for the same path.
+        if not event.is_directory and self._is_valid_file(event.src_path):
+            FILESYSTEM_EVENT_QUEUE.put(('created', event.src_path))
+
     def on_deleted(self, event):
         if not event.is_directory:
             filename = os.path.basename(event.src_path)
@@ -216,6 +225,7 @@ def run_custom_fs_poller(stop_event):
     output_dir = folder_paths.get_output_directory()
     output_dir_norm = os.path.normpath(output_dir)
     cache = {}  # normalized abs path -> (mtime, size)
+    pending_verify = {}  # new files seen once, awaiting size-stability confirmation
     baseline_done = False
 
     print("🔵 [Holaf-Watcher-Event] Custom scanner starting...")
@@ -227,10 +237,14 @@ def run_custom_fs_poller(stop_event):
                 seen.add(full_path)
                 if full_path in cache:
                     # Already tracked and the name is unchanged -> skip (no stat).
-                    # Content updates are handled by the 30s sync safety net.
+                    # Content updates are handled by the periodic sync safety net.
                     continue
 
-                # New file: single stat to record its (mtime, size) baseline.
+                # New file: stat once and keep it in pending_verify until its
+                # (mtime, size) is stable across two ticks. A file is often seen
+                # MID-WRITE (ComfyUI may write directly to the final name); if we
+                # emitted 'created' immediately, the add would fail on partial
+                # content and the name would stay stuck in cache until the sync.
                 stat_tuple = None
                 try:
                     st = entry.stat(follow_symlinks=False)
@@ -241,11 +255,16 @@ def run_custom_fs_poller(stop_event):
                         stat_tuple = (st.st_mtime, st.st_size)
                     except OSError:
                         continue  # raced with a delete; resolved on the next tick
-                cache[full_path] = stat_tuple
 
-                if baseline_done:
-                    print(f"🔵 [Holaf-Watcher-Event] Detected creation: {full_path}")
-                    FILESYSTEM_EVENT_QUEUE.put(('created', full_path))
+                if full_path in pending_verify and pending_verify[full_path] == stat_tuple:
+                    # Stable across two ticks -> fully written, safe to index.
+                    cache[full_path] = stat_tuple
+                    del pending_verify[full_path]
+                    if baseline_done:
+                        print(f"🔵 [Holaf-Watcher-Event] Detected creation: {full_path}")
+                        FILESYSTEM_EVENT_QUEUE.put(('created', full_path))
+                else:
+                    pending_verify[full_path] = stat_tuple
 
             # Detect deletions: cached files no longer present on disk
             for cached_path in list(cache.keys()):
@@ -254,6 +273,11 @@ def run_custom_fs_poller(stop_event):
                     if baseline_done:
                         print(f"🔵 [Holaf-Watcher-Event] Detected deletion: {cached_path}")
                         FILESYSTEM_EVENT_QUEUE.put(('deleted', cached_path))
+
+            # Clean up pending verification for files that vanished mid-write
+            for pending_path in list(pending_verify.keys()):
+                if pending_path not in seen:
+                    pending_verify.pop(pending_path, None)
 
             if not baseline_done:
                 baseline_done = True

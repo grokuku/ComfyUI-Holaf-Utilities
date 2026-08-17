@@ -100,6 +100,11 @@ const activeFetches = new Map();
 // Track hover timeouts and abort controllers for video preview race condition prevention
 const hoverTimeouts = new Map();
 
+// Track consecutive timeouts per thumbnail to bound retries: transient server-side
+// DB contention must not leave a permanent "Timeout" overlay.
+const thumbnailTimeoutRetries = new Map(); // path_canon -> consecutive timeout count
+const MAX_THUMBNAIL_TIMEOUT_RETRIES = 4;
+
 let isWheelScrolling = false;
 let wheelScrollTimeout = null;
 let activeThumbnailLoads = 0;
@@ -686,6 +691,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
 
         // Add to LRU Cache
         thumbnailCache.put(pathCanon, objectURL);
+        thumbnailTimeoutRetries.delete(pathCanon);
 
         if (!placeholder.isConnected) {
             // If placeholder is gone, we cached it, but we don't need to render it now.
@@ -724,8 +730,21 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
         }
 
         if (isTimeout || err.name !== 'AbortError') {
-            // Real error or timeout
+            // Real error or timeout. A timeout is usually transient server-side
+            // DB contention: retry a bounded number of times instead of showing
+            // a permanent "Timeout" overlay.
             if (placeholder.isConnected) {
+                if (isTimeout) {
+                    const retries = (thumbnailTimeoutRetries.get(pathCanon) || 0) + 1;
+                    if (retries <= MAX_THUMBNAIL_TIMEOUT_RETRIES) {
+                        thumbnailTimeoutRetries.set(pathCanon, retries);
+                        placeholder.dataset.thumbnailLoadingOrLoaded = "pending";
+                        unloadedVisiblePaths.delete(pathCanon);
+                        _scheduleThumbnailRetry(pathCanon, placeholder, 3000);
+                        return;
+                    }
+                    thumbnailTimeoutRetries.delete(pathCanon);
+                }
                 placeholder.classList.add('error');
                 placeholder.dataset.thumbnailLoadingOrLoaded = "error";
                 unloadedVisiblePaths.delete(pathCanon);
@@ -1146,6 +1165,7 @@ function syncGallery(viewer, images) {
     unloadedVisiblePaths.clear();
     for (const t of pendingThumbnailRetries.values()) clearTimeout(t);
     pendingThumbnailRetries.clear();
+    thumbnailTimeoutRetries.clear();
 
     // Keep LRU Cache alive! Don't clear it — thumbnails are still valid.
     // thumbnailCache.clear();

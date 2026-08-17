@@ -7,7 +7,7 @@
 
 // Global variable for the ComfyUI App instance (only populated in main tab)
 // Uses the compatibility layer via holaf_api_compat.js
-import { app as comfyApp } from "./holaf_api_compat.js";
+import { app as comfyApp, api as comfyApi } from "./holaf_api_compat.js";
 let app = comfyApp;
 
 import { HolafPanelManager } from "./holaf_panel_manager.js";
@@ -23,7 +23,7 @@ import { imageViewerState } from './image_viewer/image_viewer_state.js';
 
 const STATS_REFRESH_INTERVAL_MS = 2000;
 const DOWNLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
-const FILTER_REFRESH_INTERVAL_MS = 5000;
+const FILTER_REFRESH_INTERVAL_MS = 2000;
 // [NEW] Delay before reloading gallery after a filter click
 const FILTER_DEBOUNCE_DELAY_MS = 300; 
 
@@ -167,6 +167,20 @@ const holafImageViewer = {
 
             if (!this.filterRefreshIntervalId) {
                 this.filterRefreshIntervalId = setInterval(() => this.checkForUpdates(), FILTER_REFRESH_INTERVAL_MS);
+            }
+
+            // Refresh as soon as a ComfyUI workflow execution finishes: new images
+            // are written to the output folder and the gallery should pick them up
+            // immediately instead of waiting for the next poll tick.
+            if (!this._executionRefreshBound) {
+                this._executionRefreshBound = true;
+                const onExecutionFinished = () => {
+                    if (this.panelElements?.panelEl && this.panelElements.panelEl.style.display !== "none") {
+                        this.checkForUpdates();
+                    }
+                };
+                comfyApi.addEventListener("execution_success", onExecutionFinished);
+                comfyApi.addEventListener("execution_error", onExecutionFinished);
             }
 
             // Track gallery scrolling to skip update checks during active scroll

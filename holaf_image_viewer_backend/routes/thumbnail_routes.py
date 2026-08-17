@@ -111,10 +111,27 @@ async def get_thumbnail_route(request: web.Request):
         
         # Determine generation needs
         needs_generation = force_regen_param
-        if thumb_status_db == 0: needs_generation = True
-        elif thumb_status_db == 1: needs_generation = True
-        elif thumb_status_db == 3: error_message_for_client = "ERR: Thumbnail previously failed (permanent)."
-        elif thumb_last_gen_db is not None and original_mtime_db > thumb_last_gen_db: needs_generation = True
+
+        # A thumbnail file newer than the source image is always valid, even if
+        # the DB status is stale (e.g. a transient DB lock prevented the status=2
+        # write). Serving it avoids pointless regeneration loops and "Err" states.
+        thumb_fresh = False
+        if os.path.exists(thumb_path_abs):
+            try:
+                thumb_fresh = os.path.getmtime(thumb_path_abs) >= (original_mtime_db or 0)
+            except Exception:
+                thumb_fresh = False
+
+        if thumb_fresh and not force_regen_param:
+            needs_generation = False
+        elif thumb_status_db == 0:
+            needs_generation = True
+        elif thumb_status_db == 1:
+            needs_generation = True
+        elif thumb_status_db == 3:
+            error_message_for_client = "ERR: Thumbnail previously failed (permanent)."
+        elif thumb_last_gen_db is not None and original_mtime_db > thumb_last_gen_db:
+            needs_generation = True
         if thumb_status_db == 2 and not os.path.exists(thumb_path_abs) and not needs_generation:
             needs_generation = True
         
