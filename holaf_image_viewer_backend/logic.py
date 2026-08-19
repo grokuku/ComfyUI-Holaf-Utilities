@@ -92,10 +92,17 @@ class GlobalStatsManager:
         return cls._instance
 
     def initialize_from_db(self):
-        """Called once at startup to populate counters from DB."""
+        """Called once at startup to populate counters from DB.
+
+        Uses a DEDICATED, self-owned connection so it never touches (and thus
+        never closes) the shared thread-local connection that other code (e.g.
+        routes) may be actively using. This fixes the "Cannot operate on a
+        closed database" crash that occurred when this lazy init ran inside
+        list_images_route's active query.
+        """
         conn = None
         try:
-            conn = holaf_database.get_db_connection()
+            conn = holaf_database.open_own_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM images WHERE is_trashed = 0")
             self.total_images = cursor.fetchone()[0]
@@ -106,7 +113,9 @@ class GlobalStatsManager:
         except Exception as e:
             print(f"🔴 [Holaf-Stats] Failed to initialize stats: {e}")
         finally:
-            if conn: holaf_database.close_db_connection()
+            # Only close our OWN dedicated connection. Never touch the shared
+            # thread-local one (close_db_connection() is deliberately not used).
+            holaf_database.close_own_connection(conn)
 
     def increment_total(self):
         with self._lock: self.total_images += 1

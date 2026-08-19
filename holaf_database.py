@@ -19,46 +19,91 @@ LATEST_SCHEMA_VERSION = 13
 # Ensures each thread gets its own connection, important for SQLite with multiple threads.
 local_data = threading.local()
 
+def _create_connection():
+    """
+    Creates a brand-new sqlite3 connection to DB_PATH with all PRAGMAs applied.
+
+    This is the single source of truth for connection setup, shared by the
+    thread-local connection (get_db_connection) and any dedicated connections
+    that need to be opened/closed independently (e.g. the GlobalStatsManager).
+
+    IMPORTANT: The returned connection is NOT stored in thread-local storage.
+    The caller is responsible for closing it (conn.close()).
+    """
+    # Ensure the directory exists before trying to connect, crucial for first run
+    if not os.path.exists(DB_DIR):
+        os.makedirs(DB_DIR, exist_ok=True)
+
+    # --- CORRECTION: Increased timeout to 30s to handle long transactions (Video Export/Scan) ---
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+
+    # --- PERFORMANCE TUNING (CRITICAL FOR LISTING SPEED) ---
+    # WAL Mode: Allows simultaneous readers and one writer.
+    conn.execute("PRAGMA journal_mode=WAL;")
+
+    # Synchronous Normal: Good balance between safety and speed in WAL mode.
+    # Significantly faster writes/commits than FULL.
+    conn.execute("PRAGMA synchronous = NORMAL;")
+
+    # Memory Mapping: Maps the DB file into RAM.
+    # Drastically reduces I/O system calls for reads. Set to ~30GB limit.
+    conn.execute("PRAGMA mmap_size = 30000000000;")
+
+    # Cache Size: Increase page cache to ~64MB (negative value = kilobytes).
+    conn.execute("PRAGMA cache_size = -64000;")
+
+    # Temp Store: Store temporary tables/indices in RAM, not disk.
+    conn.execute("PRAGMA temp_store = MEMORY;")
+
+    conn.execute("PRAGMA foreign_keys = ON;")
+
+    # --- CORRECTION: Increased busy_timeout to 30000ms (30s) ---
+    conn.execute("PRAGMA busy_timeout = 30000;")
+
+    return conn
+
+
 def get_db_connection():
     """Gets or creates a thread-local database connection."""
     if not hasattr(local_data, 'connection') or local_data.connection is None:
         try:
-            # Ensure the directory exists before trying to connect, crucial for first run
-            if not os.path.exists(DB_DIR):
-                os.makedirs(DB_DIR, exist_ok=True)
-
-            # --- CORRECTION: Increased timeout to 30s to handle long transactions (Video Export/Scan) ---
-            local_data.connection = sqlite3.connect(DB_PATH, timeout=30)
-            local_data.connection.row_factory = sqlite3.Row
-            
-            # --- PERFORMANCE TUNING (CRITICAL FOR LISTING SPEED) ---
-            # WAL Mode: Allows simultaneous readers and one writer.
-            local_data.connection.execute("PRAGMA journal_mode=WAL;")
-            
-            # Synchronous Normal: Good balance between safety and speed in WAL mode.
-            # Significantly faster writes/commits than FULL.
-            local_data.connection.execute("PRAGMA synchronous = NORMAL;")
-            
-            # Memory Mapping: Maps the DB file into RAM.
-            # Drastically reduces I/O system calls for reads. Set to ~30GB limit.
-            local_data.connection.execute("PRAGMA mmap_size = 30000000000;")
-            
-            # Cache Size: Increase page cache to ~64MB (negative value = kilobytes).
-            local_data.connection.execute("PRAGMA cache_size = -64000;")
-            
-            # Temp Store: Store temporary tables/indices in RAM, not disk.
-            local_data.connection.execute("PRAGMA temp_store = MEMORY;")
-            
-            local_data.connection.execute("PRAGMA foreign_keys = ON;")
-            
-            # --- CORRECTION: Increased busy_timeout to 30000ms (30s) ---
-            local_data.connection.execute("PRAGMA busy_timeout = 30000;") 
-            
+            local_data.connection = _create_connection()
         except sqlite3.Error as e:
             print(f"🔴 [Holaf-DB] Thread {threading.get_ident()}: Error connecting to database at {DB_PATH}: {e}")
             local_data.connection = None # Ensure it's None if connection failed
             raise # Re-raise the exception so the caller knows connection failed
     return local_data.connection
+
+
+def open_own_connection():
+    """
+    Opens a DEDICATED database connection that is fully owned by the caller.
+
+    Unlike get_db_connection(), this connection is NOT stored in thread-local
+    storage and is NOT affected by close_db_connection(). It is intended for
+    short-lived background reads (such as the GlobalStatsManager initialisation)
+    that must never close the shared connection another code path is using.
+
+    The caller MUST close it via conn.close() (or close_own_connection(conn)).
+    """
+    return _create_connection()
+
+
+def close_own_connection(conn, exception=None):
+    """Closes a connection previously opened by open_own_connection()."""
+    if conn is None:
+        return
+    if exception:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+    try:
+        conn.close()
+    except sqlite3.Error:
+        pass
+
 
 def close_db_connection(exception=None):
     """Closes the thread-local database connection if it exists."""
