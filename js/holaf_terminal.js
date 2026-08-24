@@ -7,6 +7,19 @@
  * MODIFIED: Added fullscreen state management (double-click on header).
  * CORRECTION: Removed dynamic menu registration. Added object to `app` for static menu access.
  * CORRECTION: Re-integrated critical CSS for terminal container layout.
+ * FIX(lifecycle): Full session lifecycle rework:
+ *   - The server sends {"type":"session-ended"} (TEXT control frame) when the
+ *     shell exits (Ctrl+D / exit / crash). On receipt we tear down the socket
+ *     AND the xterm instance, then show a clean login screen. The next
+ *     successful login creates a brand-new WebSocket + fresh PTY-bound
+ *     terminal instead of resurrecting a dead session.
+ *   - Every connection disposes the previous xterm and opens a pristine one.
+ *   - All handlers are guarded against stale events from a replaced socket
+ *     (late onclose/onerror of the old socket used to null out the NEW socket,
+ *     leaving a live-looking but dead terminal).
+ *   - Keyboard input is sent as BINARY frames; TEXT frames are reserved for
+ *     JSON control messages (resize / session-ended), so keystrokes that look
+ *     like JSON can no longer be swallowed by the control parser.
  *
  * SECURITY NOTE: Terminal passwords are sent as plaintext over WebSocket.
  *   This is acceptable for local/loopback connections. For remote deployments,
@@ -463,6 +476,44 @@ const holafTerminal = {
         }
     },
 
+    // --- Session lifecycle helpers -----------------------------------------
+    // Tear down the current xterm instance so the next connection gets a
+    // pristine terminal bound to the fresh PTY (never a stale buffer).
+    disposeTerminal() {
+        if (this.terminal) {
+            try { this.terminal.dispose(); } catch (e) { }
+            this.terminal = null;
+        }
+        this.fitAddon = null;
+        if (this._xterm_container) {
+            try { this._xterm_container.innerHTML = ""; } catch (e) { }
+        }
+    },
+    // Detach every handler BEFORE closing/replacing a socket: late onclose /
+    // onerror events from a dying socket used to run against the NEW socket's
+    // state and null it out, leaving a live-looking but dead terminal.
+    closeSocket() {
+        const s = this.socket;
+        this.socket = null;
+        if (!s) return;
+        s.onopen = null; s.onmessage = null; s.onclose = null; s.onerror = null;
+        if (s.readyState !== WebSocket.CLOSED) {
+            try { s.close(); } catch (e) { }
+        }
+    },
+    // The server told us the shell exited (Ctrl+D / 'exit' / crash). Reset all
+    // session state and return to a clean login screen; the next successful
+    // login opens a brand-new WebSocket + fresh PTY.
+    handleSessionEnded() {
+        this.closeSocket();
+        this.disposeTerminal();
+        if (this.panelElements && this.panelElements.panelEl.style.display === 'flex') {
+            if (this.loginStatusMessage) this.loginStatusMessage.textContent = "Session ended. Please log in again.";
+            this.showView('login');
+        }
+    },
+    // ------------------------------------------------------------------------
+
     async connectWebSocket(sessionToken) {
         if (!sessionToken) { if (this.loginStatusMessage) this.loginStatusMessage.textContent = "Error: No session token."; this.showView('login'); return; }
 
@@ -474,39 +525,45 @@ const holafTerminal = {
         }
 
         try {
-            if (!this.terminal) {
-                const currentThemeConfig = HOLAF_THEMES.find(t => t.name === this.settings.theme) || HOLAF_THEMES[0];
+            const currentThemeConfig = HOLAF_THEMES.find(t => t.name === this.settings.theme) || HOLAF_THEMES[0];
 
-                if (!window.Terminal || !window.FitAddon) {
-                    console.error("[Holaf Terminal] xterm.js or FitAddon not loaded!");
-                    if (this.loadingView) this.loadingView.textContent = "Error: Terminal library not loaded.";
-                    this.showView('loading'); return;
-                }
-                this.terminal = new window.Terminal({
-                    cursorBlink: true, fontSize: this.settings.fontSize,
-                    theme: {
-                        background: currentThemeConfig.colors.backgroundPrimary,
-                        foreground: currentThemeConfig.colors.textPrimary,
-                        cursor: currentThemeConfig.colors.cursor,
-                        selectionBackground: currentThemeConfig.colors.selectionBackground
-                    },
-                    fontFamily: "monospace", rows: 24,
-                });
-                this.fitAddon = new window.FitAddon.FitAddon();
-                this.terminal.loadAddon(this.fitAddon);
-
-                if (!this._xterm_container || !this._xterm_container.isConnected) {
-                    console.error("[Holaf Terminal] _xterm_container is not ready for terminal.open().");
-                    if (this.loadingView) this.loadingView.textContent = "Error: Terminal container not ready.";
-                    this.showView('loading'); return;
-                }
-                this.terminal.open(this._xterm_container);
-                this.terminal.onData(data => { if (this.socket && this.socket.readyState === WebSocket.OPEN) this.socket.send(data); });
-                this.terminal.attachCustomKeyEventHandler(e => { if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && e.type === 'keydown') { if (this.terminal.hasSelection()) { try { navigator.clipboard.writeText(this.terminal.getSelection()); } catch (err) { } return false; } } if (e.ctrlKey && (e.key === 'v' || e.key === 'V') && e.type === 'keydown') { try { navigator.clipboard.readText().then(text => { if (text && this.terminal) this.terminal.paste(text); }); } catch (err) { } return false; } return true; });
-            } else {
-                this.setTheme(this.settings.theme, false);
-                this.terminal.options.fontSize = this.settings.fontSize;
+            if (!window.Terminal || !window.FitAddon) {
+                console.error("[Holaf Terminal] xterm.js or FitAddon not loaded!");
+                if (this.loadingView) this.loadingView.textContent = "Error: Terminal library not loaded.";
+                this.showView('loading'); return;
             }
+
+            // Always start from a pristine xterm: the previous instance was
+            // attached to a PTY that may be gone, and its buffer holds the old
+            // session. Reusing it after re-login is what produced "dead"
+            // terminals full of leftover output.
+            this.disposeTerminal();
+            this.terminal = new window.Terminal({
+                cursorBlink: true, fontSize: this.settings.fontSize,
+                theme: {
+                    background: currentThemeConfig.colors.backgroundPrimary,
+                    foreground: currentThemeConfig.colors.textPrimary,
+                    cursor: currentThemeConfig.colors.cursor,
+                    selectionBackground: currentThemeConfig.colors.selectionBackground
+                },
+                fontFamily: "monospace", rows: 24,
+            });
+            this.fitAddon = new window.FitAddon.FitAddon();
+            this.terminal.loadAddon(this.fitAddon);
+
+            if (!this._xterm_container || !this._xterm_container.isConnected) {
+                console.error("[Holaf Terminal] _xterm_container is not ready for terminal.open().");
+                if (this.loadingView) this.loadingView.textContent = "Error: Terminal container not ready.";
+                this.showView('loading'); return;
+            }
+            this.terminal.open(this._xterm_container);
+            // Keyboard input travels as BINARY frames; TEXT frames are reserved
+            // for JSON control messages ({resize} / {type:'session-ended'}). This
+            // prevents keystrokes that happen to parse as JSON from being
+            // swallowed by the server-side control parser.
+            const encoder = new TextEncoder();
+            this.terminal.onData(data => { if (this.socket && this.socket.readyState === WebSocket.OPEN) this.socket.send(encoder.encode(data)); });
+            this.terminal.attachCustomKeyEventHandler(e => { if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && e.type === 'keydown') { if (this.terminal.hasSelection()) { try { navigator.clipboard.writeText(this.terminal.getSelection()); } catch (err) { } return false; } } if (e.ctrlKey && (e.key === 'v' || e.key === 'V') && e.type === 'keydown') { try { navigator.clipboard.readText().then(text => { if (text && this.terminal) this.terminal.paste(text); }); } catch (err) { } return false; } return true; });
         } catch (e) {
             console.error("Holaf Utilities: Terminal component instantiation error", e);
             if (this.loadingView) this.loadingView.textContent = "Error: Terminal creation failed.";
@@ -517,37 +574,70 @@ const holafTerminal = {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const url = `${protocol}//${window.location.host}/holaf/terminal?token=${encodeURIComponent(sessionToken)}`;
 
-        if (this.socket && this.socket.readyState !== WebSocket.CLOSED) {
-            this.socket.onclose = null; this.socket.close();
-        }
-        this.socket = new WebSocket(url);
-        this.socket.binaryType = 'arraybuffer';
+        this.closeSocket(); // Detach + drop any previous socket first.
+        // Per-connection flag: set when the server explicitly announced the end
+        // of the session ('session-ended' TEXT control frame). onclose uses it
+        // to tell a clean end-of-session apart from a bare network drop.
+        let sessionEndedReceived = false;
+        const socket = new WebSocket(url);
+        this.socket = socket;
+        socket.binaryType = 'arraybuffer';
 
-        this.socket.onopen = () => {
+        // Every handler below starts with a stale-event guard: if `this.socket`
+        // no longer points at THIS socket, the event belongs to a connection
+        // that was replaced and must be ignored entirely.
+        socket.onopen = () => {
+            if (this.socket !== socket) return;
             this.showView('terminal');
             requestAnimationFrame(() => {
-                if (this.terminal) {
-                    this.fitTerminal();
-                    this.terminal.focus();
-                    setTimeout(() => {
-                        if (this.terminal && this.panelElements.panelEl.style.display === 'flex') {
-                            this.fitTerminal();
-                        }
-                    }, 100);
-                }
+                if (this.socket !== socket || !this.terminal) return;
+                this.fitTerminal();
+                this.terminal.focus();
+                setTimeout(() => {
+                    if (this.socket !== socket || !this.terminal) return;
+                    if (this.panelElements.panelEl.style.display === 'flex') {
+                        this.fitTerminal();
+                    }
+                }, 100);
             });
         };
-        this.socket.onmessage = (event) => { if (this.terminal) { try { if (event.data instanceof ArrayBuffer) this.terminal.write(new Uint8Array(event.data)); else this.terminal.write(event.data); } catch (e) { console.warn("[Holaf Terminal] Error writing to terminal:", e) } } };
-        this.socket.onclose = (event) => {
-            if (this.terminal) { try { this.terminal.writeln("\r\n\r\n--- CONNECTION CLOSED ---"); } catch (e) { } }
+        socket.onmessage = (event) => {
+            if (this.socket !== socket || !this.terminal) return;
+            try {
+                if (typeof event.data === 'string') {
+                    // TEXT = control channel only.
+                    let msg = null;
+                    try { msg = JSON.parse(event.data); } catch (e) { msg = null; }
+                    if (msg && msg.type === 'session-ended') {
+                        sessionEndedReceived = true;
+                        this.handleSessionEnded();
+                        return;
+                    }
+                    // Unknown control message: ignore (never printed into the shell).
+                    return;
+                }
+                this.terminal.write(new Uint8Array(event.data));
+            } catch (e) { console.warn("[Holaf Terminal] Error writing to terminal:", e); }
+        };
+        socket.onclose = (event) => {
+            if (this.socket !== socket) return; // Stale event (replaced/session-ended)
             this.socket = null;
+            if (!sessionEndedReceived) {
+                // FIX: no 'session-ended' control frame arrived (network drop,
+                // server restart, proxy timeout...). Reset to a pristine login
+                // view instead of leaving a dead terminal bound to a gone PTY:
+                // the leftover writeln used to produce "dead" terminals that a
+                // re-login could not revive.
+                console.warn("[Holaf Terminal] WebSocket closed without 'session-ended'; resetting session.");
+                this.handleSessionEnded();
+            }
             if (this.panelElements && this.panelElements.panelEl.style.display === 'flex') { this.checkServerStatus(); }
         };
-        this.socket.onerror = (e) => {
-            console.error("Holaf Utilities: Terminal WebSocket error.", e);
+        socket.onerror = (event) => {
+            if (this.socket !== socket) return;
+            console.error("Holaf Utilities: Terminal WebSocket error.", event);
             if (this.terminal) { try { this.terminal.writeln("\r\n\r\n--- CONNECTION ERROR ---"); } catch (e) { } }
-            this.socket = null;
-            if (this.panelElements && this.panelElements.panelEl.style.display === 'flex') { this.checkServerStatus(); }
+            // No reset here: the close event always follows and performs it.
         };
     },
 
