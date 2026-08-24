@@ -4,10 +4,12 @@ import folder_paths
 class UserDataManager:
     """
     Manages data storage locations within the ComfyUI user directory.
-    Target structure: ComfyUI/user/[user]/ComfyUI-Holaf-Utilities/[subsystem]/
+    Target structure: ComfyUI/user/[user]/AI-Helper/[subsystem]/
+    (legacy data under ComfyUI-Holaf-Utilities/ is migrated automatically
+    by holaf_migration.run_data_migration() at startup)
     """
     
-    ROOT_NAME = "ComfyUI-Holaf-Utilities"
+    ROOT_NAME = "AI-Helper"
     
     @staticmethod
     def get_user_base_path():
@@ -22,7 +24,7 @@ class UserDataManager:
 
     @staticmethod
     def get_root_path():
-        """Returns the path to 'ComfyUI/user/default/ComfyUI-Holaf-Utilities/'"""
+        """Returns the path to 'ComfyUI/user/default/AI-Helper/'"""
         base = UserDataManager.get_user_base_path()
         root = os.path.join(base, UserDataManager.ROOT_NAME)
         if not os.path.exists(root):

@@ -380,7 +380,7 @@ const holafTerminal = {
         view.className = "holaf-terminal-non-terminal-view"; view.style.fontSize = "12px";
         const title = document.createElement("h3"); title.textContent = "Manual Setup Required"; title.className = "holaf-terminal-title-warning";
         const p1 = document.createElement("p"); p1.innerHTML = "The server couldn't save <code>config.ini</code> due to file permissions.";
-        const p2 = document.createElement("p"); p2.innerHTML = "1. Manually create/edit <code>ComfyUI/custom_nodes/ComfyUI-Holaf-Utilities/config.ini</code><br>2. Add the following under a <code>[Security]</code> section:<br>"; p2.style.margin = "10px 0"; p2.style.textAlign = "left";
+        const p2 = document.createElement("p"); p2.innerHTML = "1. Manually create/edit <code>config.ini</code> inside this extension's folder<br>2. Add the following under a <code>[Security]</code> section:<br>"; p2.style.margin = "10px 0"; p2.style.textAlign = "left";
         this.hashDisplay = document.createElement("input"); this.hashDisplay.type = "text"; this.hashDisplay.readOnly = true; this.hashDisplay.style.cssText = "width: 100%; font-family: monospace; margin: 5px 0; padding: 5px;";
         const copyButton = document.createElement("button"); copyButton.textContent = "Copy Hash String"; copyButton.className = "comfy-button"; copyButton.style.marginTop = "5px";
         copyButton.addEventListener("click", () => { if (this.hashDisplay) { this.hashDisplay.select(); navigator.clipboard.writeText(this.hashDisplay.value).catch(() => document.execCommand("copy")); } });

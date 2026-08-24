@@ -59,7 +59,7 @@ def generate_password_hash():
     print("Copy the following line into your config.ini file under [Security]:")
     print(f"password_hash = {stored_hash}")
     print("="*40)
-    print("\nIf the file doesn't exist, create 'config.ini' in the 'ComfyUI-Holaf-Utilities' directory.")
+    print("\nIf the file doesn't exist, create 'config.ini' inside this extension's folder.")
 
 if __name__ == "__main__":
     generate_password_hash()

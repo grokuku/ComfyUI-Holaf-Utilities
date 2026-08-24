@@ -17,6 +17,17 @@ import sys
 # Prevent Python from writing __pycache__ / .pyc files in the source tree
 os.environ.setdefault('PYTHONDONTWRITEBYTECODE', '1')
 
+# --- Legacy Data Migration (extension folder was renamed) ---
+# MUST run before ANY other initialisation opens the database, the thumbnail
+# cache, config.ini, the temp directories or the user data root: holaf_database
+# computes its DB path at import time and holaf_utils creates/cleans temp dirs
+# at import time. Late import keeps this module free of sibling dependencies.
+try:
+    from .holaf_migration import run_data_migration
+    run_data_migration()
+except Exception as _mig_err:
+    print(f"🔴 [Holaf-Migration] Unexpected error during startup migration: {_mig_err}")
+
 import server
 import asyncio
 import json
