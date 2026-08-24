@@ -1,8 +1,47 @@
-import { HolafComfyBridge } from '/extensions/ComfyUI-Holaf-Utilities/holaf_comfy_bridge.js';
+/*
+ * Holaf Profiler standalone app.
+ *
+ * NOTE ON IMPORTS: this entry module is served through the alias route
+ * /holaf/profiler/app.js (a MIME-type workaround, see __init__.py). Its browser
+ * URL therefore does NOT mirror its disk location: static relative imports
+ * would resolve against /holaf/ and fail. The host page (PROFILER_HTML in
+ * __init__.py) exposes the resolved extension asset base as window.HOLAF_EXT_BASE
+ * before calling initProfiler(); pack modules are imported dynamically from it.
+ */
 
-export function initProfiler() {
+/**
+ * Resolves a pack asset URL from the base injected by the host page.
+ * @param {string} relativePath e.g. "js/holaf_comfy_bridge.js"
+ */
+function holafPackUrl(relativePath) {
+    const rel = String(relativePath).replace(/^\/+/, "");
+    const base = (typeof window !== "undefined" && window.HOLAF_EXT_BASE) || null;
+    if (!base) {
+        console.warn("[Holaf Profiler] window.HOLAF_EXT_BASE is not set; cannot resolve pack asset:", rel);
+        return rel;
+    }
+    return `${base.replace(/\/+$/, "")}/${rel}`;
+}
+
+/**
+ * Loads HolafComfyBridge dynamically (see import note above).
+ * Falls back to an inert stub so the profiler remains usable without the
+ * live group-sync feature if the bridge cannot be located.
+ */
+async function loadHolafComfyBridge() {
+    try {
+        const mod = await import(holafPackUrl("js/holaf_comfy_bridge.js"));
+        return mod.HolafComfyBridge;
+    } catch (err) {
+        console.warn("[Holaf Profiler] Could not load holaf_comfy_bridge.js; live group-sync disabled.", err);
+        return class InertBridge { listen() {} send() {} };
+    }
+}
+
+export async function initProfiler() {
     console.log("Holaf Profiler Initializing...");
     
+    const HolafComfyBridge = await loadHolafComfyBridge();
     const bridge = new HolafComfyBridge();
     
     // --- STATE ---

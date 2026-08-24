@@ -67,6 +67,19 @@ def reload_global_config():
     global CONFIG
     CONFIG = holaf_config.load_all_configs()
 
+# --- Dynamic asset base for browser-served files ---
+# ComfyUI serves this pack's web assets under "/extensions/<pack_folder_name>/".
+# The folder name must never be hardcoded (the pack may be renamed): derive it
+# from this file's own location instead. Used to build asset URLs inside the
+# standalone HTML pages served below (gallery, profiler, comparer).
+PACK_DIR_NAME = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+EXTENSION_ASSET_BASE = f"/extensions/{PACK_DIR_NAME}"
+_HOLAF_EXT_BASE_TOKEN = "@@HOLAF_EXT_BASE@@"
+
+def _subst_ext_base(html: str) -> str:
+    """Substitutes the extension asset base token inside an HTML template."""
+    return html.replace(_HOLAF_EXT_BASE_TOKEN, EXTENSION_ASSET_BASE)
+
 # --- CSRF Protection Middleware ---
 #
 # Cross-Site Request Forgery protection for mutating requests. Browser-driven
@@ -163,17 +176,17 @@ print("🔵 [Holaf-Init] Live image updates now handled by Filesystem Watcher.")
 # --- MODIFICATION END ---
 
 # --- STANDALONE GALLERY HTML TEMPLATE ---
-GALLERY_HTML = """
+GALLERY_HTML = _subst_ext_base("""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Holaf Gallery</title>
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_themes.css">
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_shared_panel.css">
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css">
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_toasts.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_themes.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_shared_panel.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_image_viewer.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_toasts.css">
     <style>
         /* Shim for ComfyUI variables to maintain dark theme */
         :root {
@@ -240,17 +253,20 @@ GALLERY_HTML = """
 <body>
     <!-- The script will inject the gallery UI here -->
     <script type="module">
-        import { initStandaloneGallery } from '/extensions/ComfyUI-Holaf-Utilities/holaf_image_viewer.js';
+        import { initStandaloneGallery } from '@@HOLAF_EXT_BASE@@/holaf_image_viewer.js';
         // Initialize immediately
         initStandaloneGallery();
     </script>
 </body>
 </html>
-"""
+""")
 
 # --- PROFILER HTML TEMPLATE ---
-# We use a custom route for the JS to ensure correct MIME type
-PROFILER_HTML = """
+# We use a custom route for the JS to ensure correct MIME type.
+# window.HOLAF_EXT_BASE is injected before the module runs so that the aliased
+# entry (/holaf/profiler/app.js) can locate pack assets without hardcoding the
+# extension folder name (see js/profiler/holaf_profiler.js).
+PROFILER_HTML = _subst_ext_base("""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -301,10 +317,11 @@ PROFILER_HTML = """
             padding: 20px;
         }
     </style>
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_profiler.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_profiler.css">
 </head>
 <body>
     <div id="holaf-profiler-root"></div>
+    <script>window.HOLAF_EXT_BASE = "@@HOLAF_EXT_BASE@@";</script>
     <script type="module">
         // Import from our custom route to bypass MIME type issues
         import { initProfiler } from '/holaf/profiler/app.js';
@@ -312,19 +329,19 @@ PROFILER_HTML = """
     </script>
 </body>
 </html>
-"""
+""")
 
 # --- REMOTE COMPARER HTML TEMPLATE ---
-COMPARER_HTML = """
+COMPARER_HTML = _subst_ext_base("""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Holaf Remote Comparer</title>
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_themes.css">
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_shared_panel.css">
-    <link rel="stylesheet" href="/extensions/ComfyUI-Holaf-Utilities/css/holaf_remote_comparer_styles.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_themes.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_shared_panel.css">
+    <link rel="stylesheet" href="@@HOLAF_EXT_BASE@@/css/holaf_remote_comparer_styles.css">
     <style>
         :root {
             /* Holaf theme variables - Steel Blue dark theme */
@@ -367,12 +384,12 @@ COMPARER_HTML = """
 </head>
 <body class="holaf-theme-steel-blue">
     <script type="module">
-        import { initStandaloneComparer } from '/extensions/ComfyUI-Holaf-Utilities/holaf_remote_comparer.js';
+        import { initStandaloneComparer } from '@@HOLAF_EXT_BASE@@/holaf_remote_comparer.js';
         initStandaloneComparer();
     </script>
 </body>
 </html>
-"""
+""")
 
 # --- API Route Definitions ---
 routes = server.PromptServer.instance.routes
@@ -1155,7 +1172,10 @@ nodes_dir_path = os.path.join(os.path.dirname(__file__), "nodes")
 if os.path.isdir(nodes_dir_path):
     for filename in os.listdir(nodes_dir_path):
         if filename.endswith(".py") and not filename.startswith("__"):
-            module_name = f"ComfyUI-Holaf-Utilities.nodes.{os.path.splitext(filename)[0]}"
+            # Synthetic sys.modules key (modules are loaded by file path via
+            # spec_from_file_location); derived from this package's own name
+            # so it stays consistent if the extension folder is renamed.
+            module_name = f"{__name__}.nodes.{os.path.splitext(filename)[0]}"
             full_module_path_for_spec = os.path.join(nodes_dir_path, filename)
             try:
                 spec = importlib.util.spec_from_file_location(module_name, full_module_path_for_spec)

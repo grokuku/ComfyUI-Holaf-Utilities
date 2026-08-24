@@ -12,6 +12,7 @@ let app = comfyApp;
 
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
+import { holafExtUrl } from './holaf_ext_base.js';
 import * as Settings from './image_viewer/image_viewer_settings.js';
 import { UI, createThemeMenu } from './image_viewer/image_viewer_ui.js';
 import { initGallery, syncGallery, refreshThumbnailInGallery, forceRelayout } from './image_viewer/image_viewer_gallery.js';
@@ -133,7 +134,7 @@ const holafImageViewer = {
             link.id = cssId;
             link.rel = "stylesheet";
             link.type = "text/css";
-            link.href = "/extensions/ComfyUI-Holaf-Utilities/css/holaf_image_viewer.css";
+            link.href = holafExtUrl("css/holaf_image_viewer.css");
             document.head.appendChild(link);
         }
 

@@ -28,6 +28,7 @@
  */
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
+import { holafExtUrl } from "./holaf_ext_base.js";
 // CORRECTED IMPORT: No longer depends on panel_manager for themes.
 import { HOLAF_THEMES } from "./holaf_themes.js";
 
@@ -110,16 +111,15 @@ const holafTerminal = {
     async ensureScriptsLoaded() {
         if (this.scriptsLoaded && window.Terminal && window.FitAddon) return true;
         try {
-            const basePath = "extensions/ComfyUI-Holaf-Utilities/js/";
             if (!window.Terminal) {
-                await loadScript(`${basePath}xterm.js`);
+                await loadScript(holafExtUrl("js/xterm.js"));
                 // Verify the global is now available (guard against race conditions)
                 if (!window.Terminal) {
                     await new Promise(r => setTimeout(r, 100));
                 }
             }
             if (!window.FitAddon) {
-                await loadScript(`${basePath}xterm-addon-fit.js`);
+                await loadScript(holafExtUrl("js/xterm-addon-fit.js"));
                 if (!window.FitAddon) {
                     await new Promise(r => setTimeout(r, 100));
                 }

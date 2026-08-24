@@ -1,5 +1,5 @@
 import { app } from "../holaf_api_compat.js";
-import { holafBridge } from "/extensions/ComfyUI-Holaf-Utilities/holaf_comfy_bridge.js";
+import { holafBridge } from "../holaf_comfy_bridge.js";
 
 /*
  * Listener for Holaf Profiler

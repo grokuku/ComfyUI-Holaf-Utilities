@@ -4,6 +4,7 @@
  */
 
 import { app } from "./holaf_api_compat.js";
+import { holafExtUrl } from "./holaf_ext_base.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 
@@ -664,7 +665,6 @@ const HolafUtilitiesMenu = {
             "holaf_remote_comparer_styles.css",
             "holaf_shortcuts_styles.css"
         ];
-        const basePath = "extensions/ComfyUI-Holaf-Utilities/css/";
         cssFiles.forEach(fileName => {
             const cssId = `holaf-css-${fileName.replace('.css', '')}`;
             if (!document.getElementById(cssId)) {
@@ -672,7 +672,7 @@ const HolafUtilitiesMenu = {
                 link.id = cssId;
                 link.rel = "stylesheet";
                 link.type = "text/css";
-                link.href = basePath + fileName;
+                link.href = holafExtUrl(`css/${fileName}`);
                 document.head.appendChild(link);
             }
         });
