@@ -3,17 +3,94 @@
 **Dernière mise à jour :** 2026-06-27  
 **Version du projet :** Schema v13, éditeur à contrôles empilables, sauvegarde automatique
 
+> **Fusion** : ce fichier unique remplace l'ancien couple `ROADMAP.md` (vision produit app mobile) + `roadmap.md` (rapport de bugs/statut), afin d'éviter toute collision de casse sur les filesystems insensibles à la casse (Windows/macOS). Il contient deux volets :
+>
+> 1. **Roadmap produit — App mobile Android**
+> 2. **Rapport de bugs & statut du projet**
+
 ---
 
-## ÉTAT GÉNÉRAL DU PROJET
+## Roadmap produit — App mobile Android
+
+**Statut :** Proposition — non démarrée  
+**Périmètre :** Nouvelle direction produit : app Android + serveur externe relais pour piloter ComfyUI à distance.
+
+---
+
+### Vision
+
+App Android connectée à un serveur externe relais permettant de :
+
+* parcourir sa galerie d'images générées,
+* lancer des générations à distance avec des interfaces personnalisées construites depuis des nodes ComfyUI dédiées,
+* comparer des images en temps réel sur mobile.
+
+**Objectif UX : aucune configuration réseau pour l'utilisateur final.**
+
+---
+
+### Architecture cible
+
+* **Serveur externe (relais)** : comptes utilisateurs/auth, routage des messages entre apps Android et instances ComfyUI.
+* **Connexions SORTANTES uniquement** (WebSocket) côté ComfyUI et côté app → pas de port forwarding, pas d'IP fixe requise chez l'utilisateur.
+* **Pack de nodes compagnon côté ComfyUI (« bridge »)** : connexion au serveur, envoi des événements/images/miniatures, réception des jobs de génération.
+* **App Android** : les 3 modules ci-dessous.
+
+---
+
+### Module 1 — Galerie simplifiée
+
+* Grille de miniatures, navigation par dates/dossiers/filtres simples, vue plein écran.
+* S'appuie sur la logique du visualiseur existant (miniatures, filtres, pagination par index de positions).
+* Flux : ComfyUI → serveur → app ; images pleine résolution à la demande uniquement.
+
+### Module 2 — Génération à distance
+
+* Nodes d'entrée standard dans ComfyUI qui déclarent un **schéma de contrôle** (textbox, slider, dropdown de modèles, seed, upload d'image…).
+* Le workflow exporte une « spécification de formulaire » JSON qui pilote l'interface rendue nativement sur le téléphone.
+* Outil dans ComfyUI : prévisualisation du rendu mobile + éditeur de mise en page (réorganiser, customiser).
+* Widgets de base v1 : texte, texte multiligne, nombre/slider, dropdown (listes de modèles dynamiques), seed, toggle, image picker. Extensible au fur et à mesure.
+* Exécution : l'app soumet les valeurs → relais serveur → ComfyUI exécute le workflow → progression temps réel (WS) → résultat visible dans la galerie.
+
+### Module 3 — Comparer remote
+
+* Reprise de la node comparer existante (`HolafRemoteComparer`), adaptée mobile :
+  * comparaison A/B par geste slide/swipe,
+  * mise à jour temps réel quand une nouvelle génération arrive.
+
+---
+
+### Phasage proposé
+
+0. **Design du protocole serveur** (auth, WS, format des messages) + POC chaîne complète ComfyUI ↔ serveur ↔ app.
+1. **Bridge ComfyUI + génération minimale** (un prompt texte → image résultat affichée dans l'app).
+2. **Module galerie.**
+3. **Spécification de formulaires + prévisualisation + éditeur de layout** (le plus lourd : volontairement tardif).
+4. **Comparer remote.**
+
+---
+
+### Questions ouvertes / risques
+
+* **Confidentialité** : les images transitent par le serveur → politique de rétention/cache/stream-through à décider.
+* **Bande passante et coût serveur** : les générations produisent de gros fichiers.
+* **Sécurité multi-tenant** : isolation stricte entre comptes utilisateurs.
+* **Versioning des specs de formulaires** : survivre aux modifications de workflow (migration ou invalidation propre des layouts sauvegardés).
+* **Choix technologique Android** (natif Kotlin vs Flutter vs React Native) : à trancher tôt car il impacte tout le projet.
+
+---
+
+## Rapport de bugs & statut du projet
+
+### ÉTAT GÉNÉRAL DU PROJET
 
 Le projet a subi une session de debug/optimisation/fonctionnalités complète. Tous les bugs critiques et importants sont corrigés. Le projet est stable et utilisable au quotidien.
 
 ---
 
-## FONCTIONNALITÉS IMPLÉMENTÉES
+### FONCTIONNALITÉS IMPLÉMENTÉES
 
-### 🎨 Éditeur d'images
+#### 🎨 Éditeur d'images
 - **Contrôles empilables** — Plus de sliders fixes. Bouton "+ Add Control" → choisit un type (Brightness/Contrast/Saturation/Hue) + choix du range (All/Shadows/Midtones/Highlights) → le contrôle s'ajoute à la liste
 - **Duplication autorisée** — Plusieurs contrôles du même type (ex: 2× Brightness avec ranges différents)
 - **Range masking** — Shadows/Midtones/Highlights avec masques de luminance progressifs (PIL côté backend, canvas côté frontend)
@@ -25,7 +102,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 - **Transition plein écran fluide** — La miniature sert de placeholder pendant le chargement de l'image pleine taille. Blur + spinner si > 1s
 - **Suppression optimiste** — Delete en zoom/éditeur → image retirée immédiatement de la galerie + navigation vers la suivante. Requête en arrière-plan avec rollback si échec
 
-### 🖼️ Galerie
+#### 🖼️ Galerie
 - **Scrolling virtualisé** — Seuls les éléments visibles sont rendus dans le DOM
 - **Object pool** — Les placeholders DOM sont recyclés (pas de createElement à chaque scroll)
 - **LRU cache** — 2000 thumbnails en cache mémoire
@@ -34,7 +111,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 - **Chargement optimiste** — Les images supprimées disparaissent immédiatement
 - **Polling updates** — Détection des nouvelles images toutes les 5s (skip pendant le scroll)
 
-### 🖥️ Performance
+#### 🖥️ Performance
 - **Thumbnail worker** — File d'attente prioritaire (visible > pending), 6 concurrents, retry avec backoff
 - **Watcher filesystem** — Auto-restart en cas de crash, fallback poller scandir incrémental si inotify saturé
 - **Sync périodique** — Toutes les 30s (filet de sécurité, cf. fix watcher ; était 120s après les 10 fixes). Supprime les thumbnails orphelins
@@ -44,7 +121,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 - **Galerie** — `_doKick` limité à 20 cache hits/tick, `textContent` pour bulk DOM removal
 - **Éditeur** — Downscale à 1920px max pour le canvas preview, contrôles 'all' séparés des ranged, pas de closures dans la boucle pixel
 
-### ⚡ Performance galerie — commité/poussé (10 fixes, f9975fa + 89174e1)
+#### ⚡ Performance galerie — commité/poussé (10 fixes, f9975fa + 89174e1)
 
 - **Backend — arrêt du refresh perpétuel** (`holaf_image_viewer_backend/logic.py`) — `sync_image_database_blocking()` ne bump `LAST_DB_UPDATE_TIME` que si un pass détecte des changements (compteurs added/deleted/changed). Avant : bump inconditionnel toutes les 30s → le frontend re-fetchait les 30k images toutes les 30s en boucle. Cause racine du refresh lent après une nouvelle image, des freezes d'onglet et des placeholders gris
 - **Backend — sync allégé** (`logic.py` + `__init__.py`) — Intervalle de sync 30s → 120s ; `_update_folder_metadata_cache_blocking` (DELETE + rebuild complet) ne tourne que si des changements sont détectés
@@ -58,7 +135,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 - **Frontend — gestion du 202 en attente** (`image_viewer_gallery.js`) — fetch thumbnail 202 → placeholder gris conservé, retry programmé après `Retry-After` (2s par défaut) via la map dédiée `pendingThumbnailRetries` (aucune collision avec `idleRestartTimer`) ; prefetch early-return aussi sur 202
 - **Code mort activé** — le flag `viewer_is_active` (`worker.py:40`, set par `utility_routes.py:28`) et l'endpoint `/holaf/images/prioritize-thumbnails` existaient mais n'étaient jamais utilisés par le frontend — désormais câblés
 
-### 👁️ Fix watcher — scandir poller (`worker.py` + `__init__.py`, working tree — à pousser)
+#### 👁️ Fix watcher — scandir poller (`worker.py` + `__init__.py`, working tree — à pousser)
 
 - **Cause racine** — Limite de watches inotify atteinte (`[Errno 28] ENOSPC`) sur le Docker de l'utilisateur avec 32k images → fallback watchdog `PollingObserver` qui n'émet JAMAIS d'événements sur le FS du conteneur (snapshot full-tree de 32k fichiers trop lent à diff) → les nouvelles images n'étaient détectées que par le sync périodique (120s) → la galerie prenait jusqu'à 2 min à afficher une nouvelle image
 - **Fix** — `PollingObserver` remplacé par un poller incrémental custom basé sur `scandir` (`worker.py`) : détection add/delete par nom avec cache en mémoire, intervalle de scan ~2.5s, pas de `stat` par fichier pour les fichiers inchangés (léger même avec 32k fichiers), warm-up du baseline sans émettre d'événements, print par événement ("Detected creation/deletion")
@@ -67,9 +144,9 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 ---
 
-## CORRECTIONS DE BUGS
+### CORRECTIONS DE BUGS
 
-### 🔴 Critiques (3)
+#### 🔴 Critiques (3)
 
 | # | Fichier | Problème | Correctif |
 |---|---------|----------|-----------|
@@ -77,7 +154,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 | 2 | `holaf_terminal.py` | Deadlock déconnexion client | `asyncio.wait(FIRST_COMPLETED)` + terminate PTY |
 | 3 | `holaf_profiler_engine.py` | Thread monitor en doublon | Toujours créer nouveau thread + join |
 
-### 🟠 Importants (3)
+#### 🟠 Importants (3)
 
 | # | Fichier | Problème | Correctif |
 |---|---------|----------|-----------|
@@ -85,7 +162,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 | 5 | `dependency_manager.py` | RIFE supprimé avant move → perte données | Backup avant suppression |
 | 6 | `holaf_terminal.py` | Variables potentiellement unbound dans `finally` | `try/except NameError` |
 
-### 🟡 Modérés (3)
+#### 🟡 Modérés (3)
 
 | # | Fichier | Problème | Correctif |
 |---|---------|----------|-----------|
@@ -93,7 +170,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 | 8 | `logic.py` | Import `uuid` mort | Supprimé |
 | 9 | `worker.py` | Watcher filesystem mourait silencieusement | Auto-restart avec retry 10s |
 
-### ⚪ Mineurs / Frontend (6)
+#### ⚪ Mineurs / Frontend (6)
 
 | # | Fichier | Problème | Correctif |
 |---|---------|----------|-----------|
@@ -103,13 +180,13 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 | 14 | `holaf_image_viewer.css` | Export dialog sans max-height | `max-height: 90%` + flex column |
 | 15 | `holaf_shared_panel.css` | `createDialog`/`HolafModal` sans max-height | Même pattern appliqué |
 
-### 🔧 Harmonisation modales (3)
+#### 🔧 Harmonisation modales (3)
 
 - `createDialog` étendu : `messageElement` (DOM custom) + close-on-overlay-click + `min-height: 0`
 - `HolafModal` → `createDialog` pour "Not Implemented". Reste uniquement pour le restart
 - CSS unifié : `max-height: 90vh` + `overflow: hidden` + content scrollable + footer fixe
 
-### 🔒 Code review fixes (5)
+#### 🔒 Code review fixes (5)
 
 | # | Problème | Correctif |
 |---|----------|-----------|
@@ -119,7 +196,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 | 4 | `_compareRefresh` faisait full teardown | `_compareFilterDirty` flag |
 | 5 | `_cancelEdits` + `_hide` sans cleanup | Ajouté les cleanups |
 
-### ⚡ Performance (4)
+#### ⚡ Performance (4)
 
 | # | Fichier | Changement |
 |---|---------|------------|
@@ -128,7 +205,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 | 3 | `holaf_image_viewer.js` | `checkForUpdates` skip pendant le scroll |
 | 4 | `image_viewer_gallery.js` | `textContent` au lieu de `removeChild` en boucle |
 
-### 🎨 Refonte éditeur (12 changements)
+#### 🎨 Refonte éditeur (12 changements)
 
 - Système de contrôles empilables (add/remove/duplicate)
 - Format `.edt` nouveau avec migration automatique
@@ -145,7 +222,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 ---
 
-## BUGS RESTANTS CONNUS
+### BUGS RESTANTS CONNUS
 
 | Bug | Sévérité | Statut |
 |-----|----------|--------|
@@ -156,7 +233,7 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 ---
 
-## FICHIERS SUPPRIMÉS
+### FICHIERS SUPPRIMÉS
 
 | Fichier | Raison |
 |---------|--------|
