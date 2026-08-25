@@ -370,6 +370,42 @@ def _register_credentials_group(r):
 
 
 # ══════════════════════════════════════════════════════════════════════
+# GROUPE 2 — Update (POST /aih/update, SANS auto-restart)
+
+def _register_update_group(r):
+    """POST /aih/update — git fetch + reset --hard FETCH_HEAD.
+
+    Contrat pour le chantier D (widgets JS) :
+        200 {"status": str, "message": str, "log": str, "updated": bool,
+             "before"?: sha, "after"?: sha}
+        500 {"status": "error", ..., "updated": false}
+    Si ``updated`` est vrai : le repo local a été mis à jour sur disque mais
+    le code chargé en mémoire est l'ancien. Le frontend doit PROPOSER un
+    redémarrage et appeler l'endpoint Utils existant
+    POST /holaf/utilities/restart — cette route ne redémarre JAMAIS seule
+    (l'auto os.execv de la source AI-Helper a été retiré volontairement,
+    cf. aih/update_manager.py). L'ancienne POST /aih/restart n'est pas
+    recréée : le bouton Restart autonome appelle directement
+    /holaf/utilities/restart.
+    """
+    from aih import update_manager as _update_manager
+
+    @r.post("/aih/update")
+    async def aih_update_route(request):
+        try:
+            result = _update_manager.update_repo()
+            return web.json_response(result)
+        except Exception as e:
+            import traceback
+            return web.json_response({
+                "status": "error",
+                "message": f"Exception: {e}",
+                "log": traceback.format_exc(),
+                "updated": False,
+            }, status=500)
+
+
+
 # POINT D'ENTRÉE — appelé une fois par le __init__.py racine
 # ══════════════════════════════════════════════════════════════════════
 
@@ -409,11 +445,7 @@ def register(server_routes, require_auth=None):
     return len(log)
 
 
-# Groupes restants — remplis par les commits incrémentaux du chantier C :
-def _register_update_group(r):
-    return 0
-
-
+# Groupes blobby/models/local — remplis par les commits incrémentaux suivants :
 def _register_blobby_group(r, require_auth):
     return 0
 
