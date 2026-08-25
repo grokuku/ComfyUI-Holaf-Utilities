@@ -1,6 +1,6 @@
 # Roadmap & Rapport de Bugs — ComfyUI-Holaf-Utils
 
-**Dernière mise à jour :** 2026-06-27  
+**Dernière mise à jour :** 2026-08-25  
 **Version du projet :** Schema v13, éditeur à contrôles empilables, sauvegarde automatique
 
 > **Fusion** : ce fichier unique remplace l'ancien couple `ROADMAP.md` (vision produit app mobile) + `roadmap.md` (rapport de bugs/statut), afin d'éviter toute collision de casse sur les filesystems insensibles à la casse (Windows/macOS). Il contient deux volets :
@@ -88,6 +88,19 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 
 ---
 
+### SUIVI DU PROJET
+
+#### 🔀 Fusion — Phase 0 terminée
+
+Branche `fusion/consolidation-aih` mergée dans **main** en fast-forward (**→ `2637dd7`**) — cf. `PLAN_FUSION.md` :
+
+* **Licences** — LICENSE GPLv3 intégrale + THIRD-PARTY-NOTICES.md pour xterm.js (`629028c`)
+* **Assets** — dé-hardcodage des chemins d'assets via helper dynamique `js/holaf_ext_base.js` (`438008a`)
+* **Migration automatique des données Zones A/B** (dossier d'extension / répertoires utilisateur) via `holaf_migration.py`, validée 6/6 scénarios (`95e477d`)
+* **Rename repo → ComfyUI-AI-Helper** — reporté à plus tard (opérations manuelles utilisateur)
+
+---
+
 ### FONCTIONNALITÉS IMPLÉMENTÉES
 
 #### 🎨 Éditeur d'images
@@ -141,6 +154,11 @@ Le projet a subi une session de debug/optimisation/fonctionnalités complète. T
 - **Fix** — `PollingObserver` remplacé par un poller incrémental custom basé sur `scandir` (`worker.py`) : détection add/delete par nom avec cache en mémoire, intervalle de scan ~2.5s, pas de `stat` par fichier pour les fichiers inchangés (léger même avec 32k fichiers), warm-up du baseline sans émettre d'événements, print par événement ("Detected creation/deletion")
 - **Sync 120s → 30s** — Filet de sécurité pour les content updates/renames ; le sync ne bump le timestamp DB que sur de vrais changements → pas de refreshes fantômes
 - **COUNT skip (commité 89174e1)** — La requête COUNT (~900ms) n'est plus exécutée sur les requêtes de liste incrémentale (`min_mtime`) (`image_routes.py`) → elle ne tourne plus à chaque check delta de 5s
+
+#### ⌨️ Fix terminal — PTY session lifecycle (`holaf_terminal.py`, commit `994a27a` — ✅ validé production)
+
+- **Ctrl+D → session morte après re-login** — Durcissement du cycle de vie des sessions PTY (« harden PTY session lifecycle ») : reconnexion propre après Ctrl+D, une nouvelle session est créée au re-login au lieu d'hériter d'une session morte
+- **Validation terrain** — Corrigé et VALIDÉ par l'utilisateur en conditions réelles après déploiement (`994a27a` + compléments côté lifecycle)
 
 ---
 
