@@ -30,3 +30,10 @@ numpy
 spandrel
 # av (PyAV): video decoding/encoding for Load Image/Video and Save Media.
 av
+
+# --- Nodes & infrastructure imported from AIH / AI-Helper (fusion) ---
+# requests: backend kw.holaf.fr calls from the AIH nodes (Elements, Enhance,
+# Ideogram 4, Music...) and the sync engine.
+requests
+# paramiko: SFTP chunked transfers + fingerprint for the /api/aih/models routes.
+paramiko
