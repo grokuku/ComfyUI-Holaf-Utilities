@@ -99,6 +99,15 @@ Branche `fusion/consolidation-aih` mergée dans **main** en fast-forward (**→ 
 * **Migration automatique des données Zones A/B** (dossier d'extension / répertoires utilisateur) via `holaf_migration.py`, validée 6/6 scénarios (`95e477d`)
 * **Rename repo → ComfyUI-AI-Helper** — reporté à plus tard (opérations manuelles utilisateur)
 
+#### 🔀 Fusion — Phase 1 terminée
+
+Branche `fusion/consolidation-aih` mergée dans **main** en fast-forward (**→ `f31a734`**) — cf. `PLAN_FUSION.md` :
+
+* **Nodes** — intégration des 24 nodes CUI-Holaf en clés `AIH*` avec alias legacy compatibles anciens workflows (`e544d36`)
+* **Requirements** — ajout de `spandrel` / `av` / `numpy` (`23c1e11`)
+* **Widgets JS** — matching dual-forme `AIH*`/`Holaf*` et ids `registerExtension` normalisés (`2ce784b`)
+* **Validation** — simulation loader : 50 mappings résolus ; `py_compile` : 26 fichiers OK ; `node --check` : 5/5 JS OK
+
 ---
 
 ### FONCTIONNALITÉS IMPLÉMENTÉES
