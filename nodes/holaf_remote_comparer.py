@@ -33,12 +33,18 @@ async def update_comparer_settings(request):
         return web.json_response({"status": "error", "message": str(e)})
 
 # --- 2. UNIVERSAL TYPE DEFINITION ---
-class AnyType(str):
-    """A special class that is always equal to any string in ComfyUI type checking."""
-    def __ne__(self, __value: object) -> bool:
-        return False
+# AnyType is shared pack-wide via nodes/holaf_node_helpers.py since the fusion
+# (the former local duplicate class was removed; see PLAN_FUSION.md §3.1).
+# The helper's implementation overrides both __eq__ and __ne__, which is a
+# strict superset of the old local behaviour under ComfyUI type checking.
+import os as _os
+import sys as _sys
 
-ANY = AnyType("*")
+_NODE_DIR = _os.path.dirname(_os.path.abspath(__file__))
+if _NODE_DIR not in _sys.path:
+    _sys.path.insert(0, _NODE_DIR)
+
+from holaf_node_helpers import ANY_TYPE as ANY  # noqa: E402  (requires _NODE_DIR above)
 
 # --- 3. FFMPEG CACHE ---
 def get_ffmpeg_encoder():
@@ -72,7 +78,7 @@ class HolafRemoteComparerNode:
     RETURN_TYPES = (ANY, ANY)
     RETURN_NAMES = ("input_1", "input_2")
     FUNCTION = "compare"
-    CATEGORY = "Holaf"
+    CATEGORY = "AIH/View"
     OUTPUT_NODE = True # Forces execution
 
     def compare(self, comparison_name="Comparison 1", input_1=None, input_2=None):
@@ -273,5 +279,12 @@ class HolafRemoteComparerNode:
 
         return {"ui": {"holaf_payload": [payload]}, "result": (input_1, input_2)}
 
-NODE_CLASS_MAPPINGS = {"HolafRemoteComparer": HolafRemoteComparerNode}
-NODE_DISPLAY_NAME_MAPPINGS = {"HolafRemoteComparer": "Remote Comparer (Holaf)"}
+NODE_CLASS_MAPPINGS = {
+    "AIHRemoteComparer": HolafRemoteComparerNode,
+    # Legacy alias - never purge.
+    "HolafRemoteComparer": HolafRemoteComparerNode,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "AIHRemoteComparer": "AIH Remote Comparer",
+    "HolafRemoteComparer": "AIH Remote Comparer",
+}
