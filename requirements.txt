@@ -21,5 +21,12 @@ python-xmp-toolkit
 
 aiohttp
 Pillow
-python-xmp-toolkit
 pynvml
+
+# --- Nodes imported from CUI-Holaf (fusion) ---
+# numpy: tensor/image conversions in the shared node helpers and several nodes.
+numpy
+# spandrel: model loading for the Upscale node (AIHUpscale).
+spandrel
+# av (PyAV): video decoding/encoding for Load Image/Video and Save Media.
+av
