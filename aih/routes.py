@@ -406,6 +406,142 @@ def _register_update_group(r):
 
 
 
+# GROUPE 3 — Blobby Companion (settings + exec SÉCURISÉ)
+
+def _get_blobby_file():
+    """Chemin des paramètres du companion : user/default/aih/blobby.json.
+
+    Porté de AIH_ComfyUI/blobby_companion/settings_api.py (chemin inchangé),
+    avec migration paresseuse depuis l'ancien user/default/aih_blobby.json.
+    Calculé à la volée (et non à l'import comme la source) pour rester
+    testable hors ComfyUI.
+    """
+    try:
+        import folder_paths
+        user_dir = folder_paths.get_user_directory()
+    except Exception:
+        user_dir = os.path.expanduser("~")
+    blobby_file = os.path.join(user_dir, "default", "aih", "blobby.json")
+
+    # Migration depuis l'ancien emplacement : user/default/aih_blobby.json
+    try:
+        old_blobby = os.path.join(user_dir, "default", "aih_blobby.json")
+        if os.path.isfile(old_blobby) and not os.path.isfile(blobby_file):
+            import shutil
+            os.makedirs(os.path.dirname(blobby_file), exist_ok=True)
+            shutil.move(old_blobby, blobby_file)
+            logging.info(f"[Blobby] Migrated {old_blobby} → {blobby_file}")
+    except Exception as e:
+        logging.warning(f"[Blobby] Migration failed: {e}")
+    return blobby_file
+
+
+def _register_blobby_group(r, require_auth):
+    """Routes du Blobby Companion.
+
+    - POST /aih/blobby/save + GET /aih/blobby/load : stockage JSON clé→valeur
+      des paramètres du companion (fichier local, portage fidèle — pas
+      d'authentification à la source, CSRF middleware global d'Utils actif).
+    - POST /aih/blobby/exec : exécution shell locale. 🔴 À la source, cette
+      route était OUVERTE (aucune auth). Elle est ici PORTÉE UNIQUEMENT
+      SÉCURISÉE derrière l'authentification par mot de passe du terminal
+      Holaf : le décorateur ``require_auth`` (holaf_auth.require_auth, passé
+      par le __init__.py racine) vérifie le cookie de session signé
+      ``holaf_session`` — exactement la même garde que GET /holaf/terminal.
+      Le client doit donc s'authentifier au préalable via
+      POST /holaf/auth/login ou POST /holaf/terminal/auth (le cookie part
+      ensuite automatiquement sur chaque requête même origine). Sans session
+      valide → 401. Si aucun décorateur n'a été fourni à register(), une
+      garde fail-closed renvoie 503 en permanence : jamais de shell ouvert.
+    """
+
+    @r.post("/aih/blobby/save")
+    async def aih_blobby_save_route(request):
+        try:
+            body = await request.json()
+            key = body.get("key")
+            data = body.get("data")
+            if not key:
+                return web.json_response({"error": "key required"}, status=400)
+            blobby_file = _get_blobby_file()
+            all_data = {}
+            if os.path.isfile(blobby_file):
+                with open(blobby_file, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+            all_data[key] = data
+            os.makedirs(os.path.dirname(blobby_file), exist_ok=True)
+            with open(blobby_file, "w", encoding="utf-8") as f:
+                json.dump(all_data, f, indent=2, ensure_ascii=False)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            logging.error(f"[Blobby] save error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @r.get("/aih/blobby/load")
+    async def aih_blobby_load_route(request):
+        try:
+            key = request.query.get("key")
+            if not key:
+                return web.json_response({"error": "key required"}, status=400)
+            blobby_file = _get_blobby_file()
+            all_data = {}
+            if os.path.isfile(blobby_file):
+                with open(blobby_file, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+            return web.json_response({"data": all_data.get(key, None)})
+        except Exception as e:
+            logging.error(f"[Blobby] load error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ── Blobby Exec (commandes shell locales) — AUTH OBLIGATOIRE ────────
+
+    guard = require_auth if require_auth is not None else _fail_closed_auth_guard
+
+    @r.post("/aih/blobby/exec")
+    @guard
+    async def aih_blobby_exec_route(request):
+        """Exécute une commande shell locale sur la machine ComfyUI."""
+        import subprocess as _sp
+        try:
+            data = await request.json()
+            action = (data.get("action") or "").strip()
+
+            if action == "shell":
+                cmd = (data.get("command") or "").strip()
+                if not cmd:
+                    return web.json_response({"ok": False, "output": "⚠️ Commande vide"}, status=400)
+                # Limiter la durée des commandes shell.
+                # Utiliser /bin/bash si disponible (boucles for, etc.)
+                shell = os.environ.get('SHELL', '/bin/sh')
+                if os.path.exists('/bin/bash'):
+                    shell = '/bin/bash'
+                try:
+                    proc = _sp.run(cmd, shell=True, executable=shell,
+                                   capture_output=True, text=True, timeout=15)
+                    out = proc.stdout.strip()
+                    if proc.stderr:
+                        out += "\n" + proc.stderr.strip()
+                    if proc.returncode != 0:
+                        out += f"\n❌ Code: {proc.returncode}"
+                    if not out:
+                        out = "✅ Commande exécutée (pas de sortie)"
+                    return web.json_response({"ok": True, "output": out})
+                except _sp.TimeoutExpired:
+                    return web.json_response({"ok": False, "output": "⏱️ Commande trop longue (>15s)"})
+                except Exception as e:
+                    return web.json_response({"ok": False, "output": f"❌ Erreur: {e}"})
+
+            return web.json_response({"ok": False, "output": f"Action '{action}' inconnue"}, status=400)
+
+        except Exception as e:
+            import traceback
+            return web.json_response(
+                {"ok": False, "output": f"❌ Erreur: {e}", "log": traceback.format_exc()},
+                status=500,
+            )
+
+
+
 # POINT D'ENTRÉE — appelé une fois par le __init__.py racine
 # ══════════════════════════════════════════════════════════════════════
 
@@ -445,11 +581,7 @@ def register(server_routes, require_auth=None):
     return len(log)
 
 
-# Groupes blobby/models/local — remplis par les commits incrémentaux suivants :
-def _register_blobby_group(r, require_auth):
-    return 0
-
-
+# Groupes models/local — remplis par les commits incrémentaux suivants :
 def _register_models_group(r):
     return 0
 
