@@ -1,0 +1,44 @@
+"""aih — Socle backend partagé AIH (porté depuis AI-Helper/AIH_ComfyUI).
+
+Ce sous-package héberge l'infrastructure partagée par les futures nodes et
+routes ``/aih/*`` :
+
+- ``store``            : store SQLite WAL local (miroirs + outbox + meta)
+                         dans ``<ComfyUI>/user/default/aih/data/aihelper.db`` ;
+- ``sync_engine``      : moteur de synchronisation avec le backend kw.holaf.fr
+                         (manifest/export paginé, outbox, thread périodique) ;
+- ``embedding_engine`` : embeddings locaux (sentence-transformers ou Ollama) ;
+- ``local_source``     : couche de lecture locale par-dessus le store ;
+- ``credentials``      : lecture/écriture de ``user/default/aih/credentials.json``
+                         (api_key + server_url, cache mémoire) ;
+- ``llm_helper``       : appels LLM unifiés (LM Studio SDK, API compatible
+                         OpenAI, Ollama ; vision multimodale incluse).
+
+Importation : la racine du pack est ajoutée au ``sys.path`` par le
+``__init__.py`` racine de l'extension (bootstrap unique — voir le bloc
+« AIH shared backend package bootstrap »), car ComfyUI charge les packs
+custom-nodes SANS ajouter leur dossier au sys.path. Tous les modules
+s'importent donc en absolu : ``from aih import store``. Un seul exemplaire
+de chaque module existe ainsi dans tout le pack.
+
+Aucun module de ce package ne déclare de node ComfyUI et aucun thread/route
+n'est démarré à l'import : c'est le rôle des consommateurs (chantiers B/C du
+PLAN_FUSION.md).
+
+Chemins de données : conservés À L'IDENTIQUE de l'extension AI-Helper
+d'origine (``user/default/aih/``) afin de ne pas perdre les données existantes
+des utilisateurs (aihelper.db, credentials.json, presets, clés OpenAI...).
+Ce répertoire cohabite avec ``user/default/AI-Helper/``, racine des
+sous-systèmes Holaf (cf. ``holaf_user_data_manager.UserDataManager.ROOT_NAME``)
+: noms distincts, aucune collision même sur filesystem insensible à la casse ;
+une unification éventuelle est différée (voir PLAN_FUSION.md §3.9).
+"""
+
+__all__ = [
+    "store",
+    "sync_engine",
+    "embedding_engine",
+    "local_source",
+    "credentials",
+    "llm_helper",
+]

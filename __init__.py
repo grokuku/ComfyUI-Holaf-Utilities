@@ -28,6 +28,21 @@ try:
 except Exception as _mig_err:
     print(f"🔴 [Holaf-Migration] Unexpected error during startup migration: {_mig_err}")
 
+# --- AIH shared backend package bootstrap -----------------------------------
+# The shared AIH backend lives in the 'aih/' subpackage at the root of this
+# extension (SQLite mirror store, sync engine, embeddings, local source,
+# credentials, unified LLM helper — ported from AI-Helper/AIH_ComfyUI).
+# ComfyUI loads custom-node packs through importlib WITHOUT adding the pack
+# folder to sys.path (and the per-file node loader below registers each file
+# under a synthetic "<package>.nodes.<stem>" name), so plain absolute imports
+# such as `from aih import store` would fail everywhere. Registering the pack
+# root on sys.path once, here and early, makes the subpackage importable by
+# every consumer (routes, background threads and individually-loaded node
+# files) while guaranteeing a SINGLE shared module instance pack-wide.
+_AIH_PACK_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _AIH_PACK_ROOT not in sys.path:
+    sys.path.insert(0, _AIH_PACK_ROOT)
+
 import server
 import asyncio
 import json
