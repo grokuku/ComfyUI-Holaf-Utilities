@@ -309,15 +309,15 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 
 | Phase | Élément | Statut |
 |---|---|---|
-| 0 | Créer une branche dédiée à la fusion | À faire |
-| 0 | Ajouter `LICENSE` (texte GPLv3 intégral) à la racine | À faire |
-| 0 | Créer `THIRD-PARTY-NOTICES.md` (notice MIT + crédit xterm.js authors) | À faire |
-| 0 | Fusionner les `requirements.txt` (numpy, Pillow, spandrel, av, paramiko, requests + psutil, pywinpty, aiofiles, orjson, watchdog, python-xmp-toolkit, aiohttp, pynvml) | À faire |
-| 0 | Supprimer l'auto pip install au boot d'AIH | À faire |
-| 0 | Dé-hardcoder les chemins JS `/extensions/ComfyUI-Holaf-Utilities/` (dérivation dynamique depuis l'URL du script chargé : import.meta.url ou src du tag script) — prérequis bloquant du renommage (§3.11) | À faire |
-| 0 | Auditer toutes les occurrences de `ComfyUI-Holaf-Utilities` en Python/JS (grep complet) et classer chaque occurrence : stockage utilisateur (couvert par la migration automatique) vs assets servi (à dynamiser) | À faire |
-| 0 | Dynamiser les chemins d'assets servis identifiés par l'audit (§3.11) | À faire |
-| 0 | Implémenter la logique de migration automatique des données (Zones A et B — §3.11) | À faire |
+| 0 | Créer une branche dédiée à la fusion | ✅ Terminé (branche `fusion/consolidation-aih`, commit 629028c) |
+| 0 | Ajouter `LICENSE` (texte GPLv3 intégral) à la racine | ✅ Terminé (commit 629028c) |
+| 0 | Créer `THIRD-PARTY-NOTICES.md` (notice MIT + crédit xterm.js authors) | ✅ Terminé (commit 629028c) |
+| 0 | Fusionner les `requirements.txt` (numpy, Pillow, spandrel, av, paramiko, requests + psutil, pywinpty, aiofiles, orjson, watchdog, python-xmp-toolkit, aiohttp, pynvml) | ✅ Terminé |
+| 0 | Supprimer l'auto pip install au boot d'AIH | ✅ Terminé |
+| 0 | Dé-hardcoder les chemins JS `/extensions/ComfyUI-Holaf-Utilities/` (dérivation dynamique depuis l'URL du script chargé : import.meta.url ou src du tag script) — prérequis bloquant du renommage (§3.11) | ✅ Terminé (commit 438008a) |
+| 0 | Auditer toutes les occurrences de `ComfyUI-Holaf-Utilities` en Python/JS (grep complet) et classer chaque occurrence : stockage utilisateur (couvert par la migration automatique) vs assets servi (à dynamiser) | ✅ Terminé (couvert par le commit 438008a) |
+| 0 | Dynamiser les chemins d'assets servis identifiés par l'audit (§3.11) | ✅ Terminé (commit 438008a) |
+| 0 | Implémenter la logique de migration automatique des données (Zones A et B — §3.11) | ✅ Terminé (commit 95e477d) |
 | 0+ (post-Phase 0) | Renommer le repo sur GitHub : `ComfyUI-Holaf-Utils` → `ComfyUI-AI-Helper` (redirections automatiques des anciennes URLs) | À faire |
 | 0+ (post-Phase 0) | Mettre à jour les remotes git locaux vers le nouveau nom | À faire |
 | 0+ (post-Phase 0) | Communiquer aux utilisateurs : réinstaller l'extension sous le nouveau nom (données migrées automatiquement au premier démarrage, §3.11) | À faire |
@@ -358,3 +358,5 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 4 | Vérifier que LICENSE/en-têtes/notices Copyright de CUI-Holaf sont intacts | À faire |
 | 4 | Confirmer la licence spandrel avant release (`pip show spandrel`) | À faire |
 | 4 | Checklist licence complète passée avant publication | À faire |
+
+> **Note — Phase 0** : réalisée sur la branche `fusion/consolidation-aih` (commits 629028c, 438008a, 95e477d) — en attente de merge vers main.
