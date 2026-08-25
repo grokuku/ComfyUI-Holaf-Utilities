@@ -312,7 +312,7 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 0 | Créer une branche dédiée à la fusion | ✅ Terminé (branche `fusion/consolidation-aih`, commit 629028c) |
 | 0 | Ajouter `LICENSE` (texte GPLv3 intégral) à la racine | ✅ Terminé (commit 629028c) |
 | 0 | Créer `THIRD-PARTY-NOTICES.md` (notice MIT + crédit xterm.js authors) | ✅ Terminé (commit 629028c) |
-| 0 | Fusionner les `requirements.txt` (numpy, Pillow, spandrel, av, paramiko, requests + psutil, pywinpty, aiofiles, orjson, watchdog, python-xmp-toolkit, aiohttp, pynvml) | ✅ Terminé |
+| 0 | Fusionner les `requirements.txt` (numpy, Pillow, spandrel, av, paramiko, requests + psutil, pywinpty, aiofiles, orjson, watchdog, python-xmp-toolkit, aiohttp, pynvml) | ✅ Terminé (complété par le commit 23c1e11 : spandrel/av/numpy + dédoublonnage) |
 | 0 | Supprimer l'auto pip install au boot d'AIH | ✅ Terminé |
 | 0 | Dé-hardcoder les chemins JS `/extensions/ComfyUI-Holaf-Utilities/` (dérivation dynamique depuis l'URL du script chargé : import.meta.url ou src du tag script) — prérequis bloquant du renommage (§3.11) | ✅ Terminé (commit 438008a) |
 | 0 | Auditer toutes les occurrences de `ComfyUI-Holaf-Utilities` en Python/JS (grep complet) et classer chaque occurrence : stockage utilisateur (couvert par la migration automatique) vs assets servi (à dynamiser) | ✅ Terminé (couvert par le commit 438008a) |
@@ -321,11 +321,11 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 0+ (post-Phase 0) | Renommer le repo sur GitHub : `ComfyUI-Holaf-Utils` → `ComfyUI-AI-Helper` (redirections automatiques des anciennes URLs) | À faire |
 | 0+ (post-Phase 0) | Mettre à jour les remotes git locaux vers le nouveau nom | À faire |
 | 0+ (post-Phase 0) | Communiquer aux utilisateurs : réinstaller l'extension sous le nouveau nom (données migrées automatiquement au premier démarrage, §3.11) | À faire |
-| 1 | Intégrer les 24 nodes CUI-Holaf dans `nodes/` | À faire |
-| 1 | Adapter l'enregistrement des nodes CUI-Holaf au loader par-fichier d'Utils (ou intégrer leur registre central — choix à documenter) | À faire |
-| 1 | Intégrer les widgets JS associés aux 24 nodes | À faire |
-| 1 | Rapatrier `nodes/holaf_utils.py` de CUI-Holaf (futur `holaf_node_helpers.py`) | À faire |
-| 1 | Vérifier le chargement des 24 nodes dans ComfyUI sans erreur | À faire |
+| 1 | Intégrer les 24 nodes CUI-Holaf dans `nodes/` | ✅ Terminé (commit e544d36 — clés `AIH*` canoniques + alias legacy) |
+| 1 | Adapter l'enregistrement des nodes CUI-Holaf au loader par-fichier d'Utils (ou intégrer leur registre central — choix à documenter) | ✅ Terminé (couvert par le commit e544d36) |
+| 1 | Intégrer les widgets JS associés aux 24 nodes | ✅ Terminé (commit 2ce784b — ids `registerExtension` `AIH.*`, matching dual-forme `AIH*`/legacy sur toutes les comparaisons de clés, fixes window.holaf clobbering + LogLevel) |
+| 1 | Rapatrier `nodes/holaf_utils.py` de CUI-Holaf (futur `holaf_node_helpers.py`) | ✅ Terminé (commit e544d36 — renommé `holaf_node_helpers.py`, AnyType unifié, comparer renommée `AIHRemoteComparer`) |
+| 1 | Vérifier le chargement des 24 nodes dans ComfyUI sans erreur | ✅ Terminé (validations : py_compile 26 fichiers, simulation réelle du loader — 50 entrées, 2 ordres de scan —, `node --check` 5/5, test unitaire du matching ; chargement ComfyUI en conditions réelles à confirmer avant merge, cf. note) |
 | 2 | Refactorer le `__init__.py` AIH (~1812 lignes) : suppression du chargement via `sys.modules`, imports standardisés, préfixe `/aih/*` conservé | À faire |
 | 2 | Intégrer les 8 nodes AIH (Elements Picker, Prompt Enhancer, Ideogram 4 Builder, Keywords, Ref Image Prep, LMStudio Settings, OpenAI Settings, Music) | À faire |
 | 2 | Renommer la clé `"AIH Ref Image Prep"` (avec espaces) en `AIHRefImagePrep` et créer son alias legacy | À faire |
@@ -359,4 +359,4 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 4 | Confirmer la licence spandrel avant release (`pip show spandrel`) | À faire |
 | 4 | Checklist licence complète passée avant publication | À faire |
 
-> **Note — Phase 0** : réalisée sur la branche `fusion/consolidation-aih` (commits 629028c, 438008a, 95e477d) — en attente de merge vers main.
+> **Note — Phases 0 et 1** : réalisées sur la branche `fusion/consolidation-aih` (Phase 0 : commits 629028c, 438008a, 95e477d ; Phase 1 : commits e544d36 — chantier A nodes, 23c1e11 — chantier A requirements, 2ce784b — chantier B widgets JS) — en attente de merge vers main et de validation en conditions réelles avant de démarrer la Phase 2.
