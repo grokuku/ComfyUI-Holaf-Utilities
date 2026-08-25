@@ -1,0 +1,2392 @@
+/**
+ * AIH — Blobby Companion
+ * Personnage interactif pour le canvas ComfyUI.
+ * Dessiné 100% Canvas 2D (zero asset visuel).
+ * Activation/désactivation via le menu AIH.
+ *
+ * Ce fichier est la version déployée.
+ * La source de développement est dans AIH_ComfyUI/blobby_companion/web/js/blobby.js
+ *
+ * Note pack fusionné : POST /aih/blobby/exec est sécurisé derrière l'auth
+ * terminal Holaf (cookie holaf_session). Un 401 est affiché à l'utilisateur
+ * avec une invitation au login via le Terminal Holaf (jamais d'erreur muette).
+ */
+
+var _blobbyDefaultCharacter = 'Tu es Blobby, une petite creature orange toute mignonne qui vit dans ComfyUI. Tu es curieux, enthousiaste, et tu as un acces terminal complet ! Tu peux executer n\'importe quelle commande shell (ls, dir, git, python, pip, cat, grep, etc.) sur la machine ou ComfyUI tourne. Tu n\'es pas un assistant robotique : tu es un petit compagnon vivant et attachant qui parle simplement mais correctement. Quand on te demande de faire quelque chose, tu reflechis aux commandes necessaires et tu les executes avec [SHELL commande]. Tu peux aussi creer des skills : quand tu reussis une tache interessante, tu la sauvegardes avec [SKILL_SAVE] pour la refaire plus tard. Tu peux lister tes skills avec [SKILL_LIST] et les rejouer avec [SKILL_RUN nom]. Tu es toujours content d\'aider ! Et si tu ne sais pas faire, tu le dis simplement.';
+
+const AIH_CONFIG_KEY = "AIH_config";
+
+function _getAIHConfig() {
+    try { return JSON.parse(localStorage.getItem(AIH_CONFIG_KEY)) || {}; }
+    catch { return {}; }
+}
+
+function _setAIHConfig(cfg) {
+    localStorage.setItem(AIH_CONFIG_KEY, JSON.stringify(cfg));
+}
+
+
+function _blobbyLoadFromServer() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+        var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+        var headers = { 'Content-Type': 'application/json' };
+        if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+        fetch(baseUrl + '/api/settings', { method: 'GET', headers: headers })
+            .then(function(r) { return r.json().catch(function(){ return {}; }); })
+            .then(function(serverSettings) {
+                if (serverSettings && serverSettings.blobbyData) {
+                    // Le serveur est prioritaire : on ecrase le localStorage
+                    try {
+                        var c = JSON.parse(localStorage.getItem('AIH_config')) || {};
+                        c.blobbyData = JSON.parse(JSON.stringify(serverSettings.blobbyData));
+                        localStorage.setItem('AIH_config', JSON.stringify(c));
+                    } catch {}
+                    if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) {
+                        Blobby._loadAppearance();
+                    }
+                }
+            })
+            .catch(function(){});
+    } catch {}
+}
+
+function _blobbyScheduleSync(data) {
+    if (_blobbySyncTimer) clearTimeout(_blobbySyncTimer);
+    _blobbySyncTimer = setTimeout(function() {
+        _blobbySyncTimer = null;
+        try {
+            var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+            var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+            var headers = { 'Content-Type': 'application/json' };
+            if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+            fetch(baseUrl + '/api/settings', { method: 'GET', headers: headers })
+                .then(function(r) { return r.json().catch(function(){ return {}; }); })
+                .then(function(existing) {
+                    existing.blobbyData = data;
+                    return fetch(baseUrl + '/api/settings', {
+                        method: 'POST', headers: headers, body: JSON.stringify(existing)
+                    });
+                })
+                .then(function() {
+                    _blobbySyncStatus = 'synced';
+                    _blobbySyncIndicator();
+                })
+                .catch(function(){
+                    _blobbySyncStatus = 'error';
+                    _blobbySyncIndicator();
+                });
+        } catch {
+            _blobbySyncStatus = 'error';
+            _blobbySyncIndicator();
+        }
+    }, 2000);
+}
+
+var _blobbySyncTimer = null;
+var _blobbySyncStatus = 'local'; // 'local' | 'pending' | 'synced' | 'error'
+
+function _blobbySyncIndicator() {
+    var el = document.getElementById('blobby-sync-status');
+    if (!el) return;
+    switch (_blobbySyncStatus) {
+        case 'local': el.textContent = '⬤'; el.style.color = '#888'; el.title = 'Local seulement'; break;
+        case 'pending': el.textContent = '◌'; el.style.color = '#facc15'; el.title = 'Sync en attente...'; break;
+        case 'synced': el.textContent = '⬤'; el.style.color = '#4ade80'; el.title = 'Sauvegarde serveur OK'; break;
+        case 'error': el.textContent = '⬤'; el.style.color = '#f87171'; el.title = 'Erreur de sync'; break;
+    }
+}
+
+function _blobbyGetAll() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+        return cfg.blobbyData || {};
+    } catch { return {}; }
+}
+
+function _blobbySetAll(data) {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+        cfg.blobbyData = data;
+        localStorage.setItem('AIH_config', JSON.stringify(cfg));
+        _blobbySyncStatus = 'pending';
+        _blobbySyncIndicator();
+        _blobbyScheduleSync(data);
+    } catch {}
+}
+
+function _blobbySave(key, data) {
+    var all = _blobbyGetAll();
+    all[key] = data;
+    _blobbySetAll(all);
+}
+
+function _blobbyLoad(key, defaultVal) {
+    var all = _blobbyGetAll();
+    return all[key] !== undefined ? all[key] : defaultVal;
+}
+
+function _blobbySaveAppearance(data) { _blobbySave('appearance', data); }
+function _blobbyLoadAppearance(def) { return _blobbyLoad('appearance', def); }
+function _blobbySaveCharacter(text) { _blobbySave('character', text); }
+function _blobbyLoadCharacter(def) { return _blobbyLoad('character', def); }
+function _blobbySaveChatHistory(data) { _blobbySave('chatHistory', data); }
+function _blobbyLoadChatHistory() { return _blobbyLoad('chatHistory', []); }
+function _blobbySaveChatState(data) { _blobbySave('chatState', data); }
+function _blobbyLoadChatState(def) { return _blobbyLoad('chatState', def); }
+function _blobbySaveFps(fps) { _blobbySave('fps', fps); }
+function _blobbyLoadFps(def) { return _blobbyLoad('fps', def); }
+
+// ── Skill management (Blobby's learned procedures) ──
+
+function _blobbyGetSkills() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+        return cfg.blobbySkills || [];
+    } catch { return []; }
+}
+
+function _blobbySaveSkill(name, description, command) {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+        if (!cfg.blobbySkills) cfg.blobbySkills = [];
+        // Remplacer si existe deja
+        var existing = cfg.blobbySkills.findIndex(function(s) { return s.name === name; });
+        var skill = { name: name, description: description, command: command, created: Date.now() };
+        if (existing >= 0) cfg.blobbySkills[existing] = skill;
+        else cfg.blobbySkills.push(skill);
+        localStorage.setItem('AIH_config', JSON.stringify(cfg));
+    } catch {}
+}
+
+function _blobbyGetSkill(name) {
+    var skills = _blobbyGetSkills();
+    return skills.find(function(s) { return s.name.toLowerCase() === name.toLowerCase(); });
+}
+
+function _blobbyListSkills() {
+    return _blobbyGetSkills();
+}
+
+// ── Memory system (Blobby's vector memory) ──
+
+var _blobbyMsgCounter = 0;
+var _blobbyLocalMemories = []; // fallback local si backend inaccessible
+var _blobbyBackendAvailable = true;
+
+function _blobbyGetBackendUrl() {
+    try { return JSON.parse(localStorage.getItem('AIH_config'))?.serverUrl?.replace(/\/+$/, '') || 'https://kw.holaf.fr'; }
+    catch { return 'https://kw.holaf.fr'; }
+}
+
+function _blobbyGetApiKey() {
+    try { return JSON.parse(localStorage.getItem('AIH_config'))?.apiKey || ''; }
+    catch { return ''; }
+}
+
+async function _blobbySearchMemories(query, limit) {
+    limit = limit || 5;
+    var url = _blobbyGetBackendUrl() + '/api/blobby/memory/search?q=' + encodeURIComponent(query) + '&limit=' + limit;
+    var headers = { 'Content-Type': 'application/json' };
+    var apiKey = _blobbyGetApiKey();
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+    try {
+        var res = await fetch(url, { headers: headers, signal: AbortSignal.timeout(3000) });
+        if (!res.ok) { _blobbyBackendAvailable = false; return _blobbyLocalSearch(query, limit); }
+        var data = await res.json();
+        _blobbyBackendAvailable = true;
+        return data.results || [];
+    } catch(e) {
+        _blobbyBackendAvailable = false;
+        return _blobbyLocalSearch(query, limit);
+    }
+}
+
+function _blobbyLocalSearch(query, limit) {
+    // Fallback : recherche par mots-clés dans localStorage
+    var q = query.toLowerCase();
+    var words = q.split(/\s+/).filter(function(w) { return w.length > 2; });
+    var scored = _blobbyLocalMemories.map(function(m) {
+        var content = (m.content || '').toLowerCase();
+        var score = 0;
+        words.forEach(function(w) { if (content.indexOf(w) >= 0) score += 1; });
+        return { id: m.id || 0, type: m.type || 'episode', content: m.content, importance: m.importance || 3, created_at: m.created_at || '', score: score };
+    });
+    scored.sort(function(a, b) { return b.score - a.score; });
+    return scored.slice(0, limit).filter(function(s) { return s.score > 0; });
+}
+
+async function _blobbySaveMemory(content, memType, importance) {
+    memType = memType || 'episode';
+    importance = importance || 3;
+    // Local backup
+    _blobbyLocalMemories.push({ content: content, type: memType, importance: importance, created_at: new Date().toISOString() });
+    if (_blobbyLocalMemories.length > 50) _blobbyLocalMemories = _blobbyLocalMemories.slice(-50);
+    try { localStorage.setItem('blobbyLocalMemories', JSON.stringify(_blobbyLocalMemories)); } catch {}
+    // Backend save (fire-and-forget)
+    if (!_blobbyBackendAvailable) return;
+    var url = _blobbyGetBackendUrl() + '/api/blobby/memory';
+    var headers = { 'Content-Type': 'application/json' };
+    var apiKey = _blobbyGetApiKey();
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ content: content, type: memType, importance: importance })
+        });
+    } catch(e) { /* silent fail */ }
+}
+
+async function _blobbyForgetAll() {
+    // Local
+    _blobbyLocalMemories = [];
+    try { localStorage.removeItem('blobbyLocalMemories'); } catch {}
+    // Backend
+    var url = _blobbyGetBackendUrl() + '/api/blobby/memory/forget';
+    var headers = { 'Content-Type': 'application/json' };
+    var apiKey = _blobbyGetApiKey();
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+    try { await fetch(url, { method: 'POST', headers: headers }); } catch {}
+}
+
+// Charger les souvenirs locaux au démarrage
+try { _blobbyLocalMemories = JSON.parse(localStorage.getItem('blobbyLocalMemories')) || []; } catch {}
+
+
+
+
+
+
+// ── Minimal Markdown parser for Blobby chat ─────────────────────
+function _blobbyMarkdownToHtml(md) {
+    if (!md) return '';
+    // Escape HTML first to prevent injection
+    var s = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Code blocks (```...```)
+    s = s.replace(/```[\w]*\n([\s\S]*?)```/g, function(m, code) {
+        return '<pre style="background:#111;padding:8px;border-radius:6px;overflow-x:auto;font-size:11px;border:1px solid #333;margin:4px 0;"><code>' + code.replace(/\n$/, '') + '</code></pre>';
+    });
+    // Inline code (`code`)
+    s = s.replace(/`([^`\n]+)`/g, '<code style="background:#111;padding:1px 4px;border-radius:3px;font-size:11px;">$1</code>');
+    // Bold (**text**)
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic (*text* — but not ** ** which are already processed)
+    // Avoid lookbehind (not supported in all browsers)
+    s = s.replace(/(^|[^*])\*([^*\n]+?)\*(?![*])/g, '$1<em>$2</em>');
+    // Headings (### text, ## text, # text)
+    s = s.replace(/^###\s+(.+)$/gm, '<h4 style="margin:6px 0 2px;font-size:13px;color:#FF8F00;">$1</h4>');
+    s = s.replace(/^##\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:14px;color:#FF8F00;">$1</h3>');
+    s = s.replace(/^#\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:15px;color:#FF8F00;">$1</h3>');
+    // Links [text](url)
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#6366f1;text-decoration:underline;">$1</a>');
+    // Unordered lists (- text or * text)
+    s = s.replace(/(?:^|\n)[-\*]\s+(.+)/g, function(m, line) {
+        return '\n<li style="margin-left:16px;list-style:disc;">' + line + '</li>';
+    });
+    // Ordered lists (1. text)
+    s = s.replace(/(?:^|\n)\d+\.\s+(.+)/g, function(m, line) {
+        return '\n<li style="margin-left:16px;list-style:decimal;">' + line + '</li>';
+    });
+    // Wrap consecutive <li> in <ul>
+    s = s.replace(/(<li[^>]*>.*?<\/li>(?:\n<li[^>]*>.*?<\/li>)*)/gs, function(m) {
+        return '<ul style="margin:4px 0;padding:0;">' + m.replace(/\n/g, '') + '</ul>';
+    });
+    // Tables (| col | col |\n| --- | --- |\n| cell | cell |)
+    s = s.replace(/((?:^|\n)\|[^\n]+\|(?:\n\|[^\n]+\|)+)/g, function(m, tableText) {
+        var rows = tableText.trim().split('\n');
+        if (rows.length < 2) return m;
+        // Check if row 1 is the separator (| --- | --- |)
+        var isSep = /^\|\s*[-:]+\s*(\|\s*[-:]+\s*)+\|?$/.test(rows[1].trim());
+        if (!isSep) return m;  // Not a table, leave as-is
+        var html = '<table style="border-collapse:collapse;width:100%;font-size:11px;margin:6px 0;">';
+        // Header row
+        var headers = rows[0].split('|').map(function(c){return c.trim();}).filter(function(c){return c!=='';});
+        html += '<thead><tr>';
+        headers.forEach(function(h) {
+            html += '<th style="border:1px solid #444;padding:4px 8px;background:#2a2a2e;color:#FF8F00;text-align:left;">' + h + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+        // Data rows (skip header and separator)
+        for (var i = 2; i < rows.length; i++) {
+            var cells = rows[i].split('|').map(function(c){return c.trim();}).filter(function(c){return c!=='';});
+            html += '<tr>';
+            cells.forEach(function(c) {
+                html += '<td style="border:1px solid #444;padding:4px 8px;">' + c + '</td>';
+            });
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        return html;
+    });
+    // Line breaks (preserve newlines as br outside of pre blocks)
+    s = s.replace(/(<pre[\s\S]*?<\/pre>)|\n/g, function(m, pre) {
+        return pre || '<br>';
+    });
+    return s;
+}
+
+// ── Populate Blobby tab in AIH settings modal ──
+
+function _blobbyPopulateSettings() {
+    var container = document.getElementById('blobby-settings-container');
+    if (!container || container.children.length > 0) return; // Already populated
+
+    var _self = window.Blobby || Blobby;
+    container.innerHTML = '';
+
+    // FPS slider
+    var fpsDiv = document.createElement('div');
+    fpsDiv.innerHTML = '<label class="text-xs text-slate-500 dark:text-slate-400">FPS animation (0 = auto)</label>';
+    var fpsSlider = document.createElement('input');
+    fpsSlider.type = 'range';
+    fpsSlider.min = 0; fpsSlider.max = 165; fpsSlider.value = _blobbyLoadFps(0);
+    fpsSlider.className = 'w-full';
+    Object.assign(fpsSlider.style, { accentColor: '#FF8F00' });
+    var fpsVal = document.createElement('span');
+    fpsVal.textContent = fpsSlider.value;
+    fpsVal.className = 'text-xs text-slate-400 ml-2';
+    fpsSlider.oninput = function() {
+        fpsVal.textContent = this.value;
+        _blobbySaveFps(parseInt(this.value));
+        if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
+    };
+    fpsDiv.appendChild(fpsSlider);
+    fpsDiv.appendChild(fpsVal);
+    container.appendChild(fpsDiv);
+
+    // Note
+    var note = document.createElement('p');
+    note.textContent = 'L\'apparence (couleurs, yeux, bouche, particules) se regle dans la modale Blobby du chat.';
+    Object.assign(note.style, { fontSize: '11px', color: '#64748b', marginTop: '8px' });
+    container.appendChild(note);
+
+    // Status mémoire
+    var memDiv = document.createElement('div');
+    memDiv.style.marginTop = '12px';
+    var memTitle = document.createElement('h3');
+    memTitle.textContent = 'Memoire';
+    memTitle.className = 'text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2';
+    memDiv.appendChild(memTitle);
+
+    var localCount = _blobbyLocalMemories.length;
+    var memInfo = document.createElement('p');
+    memInfo.className = 'text-xs text-slate-500 dark:text-slate-400';
+    memInfo.innerHTML = 'Souvenirs locaux: ' + localCount + '<br>La personnalite de Blobby evolue naturellement au fil des conversations. Utilise le bouton 🧹 dans le chat pour tout oublier.';
+    memDiv.appendChild(memInfo);
+    container.appendChild(memDiv);
+}
+
+const Blobby = {
+    x: 400,
+    y: 300,
+    vx: 0,
+    vy: 0,
+    scale: 1,
+
+    bodyParticles: [],
+    _fxParticles: [],
+    NUM_PARTICLES: 60,
+    GRAVITY: 0.003,
+    DAMPING: 0.94,
+    REPULSION: 0.4,
+    COHESION: 0.04,
+    CUT_RADIUS: 50,
+
+    mood: "happy",
+    moodTimer: 0,
+    mouthOpen: 0,
+    targetMouthOpen: 0,
+
+    organX: 400,
+    organY: 300,
+    organVx: 0,
+    organVy: 0,
+
+    mouseX: 0,
+    mouseY: 0,
+    mousePX: 0,
+    mousePY: 0,
+    mouseActive: false,
+
+    blinkTimer: 0,
+    isBlinking: false,
+    blinkFrame: 0,
+    BLINK_DURATION: 8,
+
+    followMouse: false,
+    isDragging: false,
+    dragPrevX: 0, dragPrevY: 0,
+    throwVx: 0, throwVy: 0,
+    dragDistance: 0,
+    time: 0,
+    nodeBounceCooldown: 0,
+
+    // ── Apparence (surchargeable via localStorage) ──
+    bodyAlpha: 1.0,
+    brainAlpha: 1.0,
+    brainSize: 1.0,
+    eyeY: 6,        // decalage Y des yeux depuis le centre
+    eyeSpread: 15,   // ecartement horizontal des yeux
+    eyeScale: 1.0,   // taille des yeux
+    mouthY: 22,      // decalage Y de la bouche
+    mouthScale: 1.0, // taille de la bouche
+    colors: {         // couleurs par humeur
+        happy: '#FF8F00',
+        surprised: '#E65100',
+        sleepy: '#43A047',
+        _default: '#FF8F00'
+    },
+
+    visibleArea: null,
+    _offscreen: null,
+    _octx: null,
+
+    _active: false,
+    _canvas: null,
+    _lastTime: 0,
+    _animInterval: null,
+    _origDraw: null,
+    _origMD: null,
+    _origMM: null,
+    _origMU: null,
+    _contextHandler: null,
+
+    _loadAppearance() {
+        try {
+            var a = _blobbyLoadAppearance({});
+            var oldParticles = this.NUM_PARTICLES;
+            if (a.numParticles) this.NUM_PARTICLES = a.numParticles;
+            if (a.bodyAlpha !== undefined) this.bodyAlpha = a.bodyAlpha;
+            if (a.brainAlpha !== undefined) this.brainAlpha = a.brainAlpha;
+            if (a.brainSize !== undefined) this.brainSize = a.brainSize;
+            if (a.eyeY !== undefined) this.eyeY = a.eyeY;
+            if (a.eyeSpread !== undefined) this.eyeSpread = a.eyeSpread;
+            if (a.eyeScale !== undefined) this.eyeScale = a.eyeScale;
+            if (a.mouthY !== undefined) this.mouthY = a.mouthY;
+            if (a.mouthScale !== undefined) this.mouthScale = a.mouthScale;
+            if (a.colors) {
+                for (var k in a.colors) {
+                    if (a.colors.hasOwnProperty(k)) this.colors[k] = a.colors[k];
+                }
+            }
+            if (this.NUM_PARTICLES !== oldParticles) {
+                this.initParticles();
+            }
+        } catch {}
+    },
+
+    init(canvas) {
+        this._canvas = canvas;
+        this.x = 400;
+        this.y = 300;
+        this.organX = this.x;
+        this.organY = this.y;
+        this.blinkTimer = 60 + Math.random() * 120;
+        // Charger les settings depuis le serveur (si disponible)
+        _blobbyLoadFromServer();
+        this._loadAppearance();
+        this.initParticles();
+
+        this._offscreen = document.createElement('canvas');
+        this._octx = this._offscreen.getContext('2d');
+
+        this._origDraw = canvas.onDrawForeground;
+        this._origMD = canvas.processMouseDown;
+        this._origMM = canvas.processMouseMove;
+        this._origMU = canvas.processMouseUp;
+
+        // Handler DOM pour le clic droit, independant de Litegraph
+        var _self = this;
+        this._contextHandler = function(e) {
+            if (!_self._active) return;
+            // Convertir les coordonnées ecran → graph (inverser zoom/pan)
+            var rect = canvas.canvas.getBoundingClientRect();
+            var mx = (e.clientX - rect.left) / canvas.ds_scale + canvas.ds_translate[0];
+            var my = (e.clientY - rect.top) / canvas.ds_scale + canvas.ds_translate[1];
+            if (_self.hitTest(mx, my)) {
+                e.preventDefault();
+                e.stopPropagation();
+                _self._openChatModal();
+                _self.mood = "happy"; _self.moodTimer = 0;
+                for (var i = 0; i < 3; i++) _self.addParticle(_self.x + (Math.random() - 0.5) * 20, _self.y + (Math.random() - 0.5) * 20, "sparkle");
+            }
+        };
+        canvas.canvas.addEventListener('contextmenu', this._contextHandler);
+    },
+
+    initParticles() {
+        this.bodyParticles = [];
+        const count = this.NUM_PARTICLES;
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.random() * 30;
+            this.bodyParticles.push({
+                x: this.x + Math.cos(angle) * r,
+                y: this.y + Math.sin(angle) * r,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                radius: 16 + (Math.random() - 0.5) * 4
+            });
+        }
+    },
+
+    activate() {
+        if (this._active) return;
+        this._active = true;
+
+        const canvas = this._canvas;
+        if (!canvas) return;
+
+        
+        var _self = this;
+        canvas.onDrawForeground = (ctx, visibleArea) => {
+            if (_self._origDraw) {
+                try { _self._origDraw.apply(canvas, arguments); }
+                catch (e) { console.error("[Blobby] Erreur origDraw:", e); }
+            }
+            try {
+                var now = performance.now();
+                var dt = _self._lastTime ? Math.min((now - _self._lastTime) / 1000, 0.1) : (1 / 60);
+                _self._lastTime = now;
+                let mouseGraph = null;
+                if (canvas.graph_mouse) {
+                    mouseGraph = [canvas.graph_mouse[0], canvas.graph_mouse[1]];
+                }
+                const currentVisibleArea = canvas.visible_area || visibleArea;
+                const app = window.app || window.comfyAPI?.app?.app;
+                _self.update(dt, app?.graph?.nodes, mouseGraph, currentVisibleArea);
+                _self.draw(ctx);
+            } catch (e) {
+                console.error("[Blobby] Erreur draw:", e);
+            }
+        };
+
+        canvas.processMouseDown = (e) => {
+            if (this._origMD) this._origMD.apply(canvas, arguments);
+        };
+
+        canvas.processMouseMove = (e) => {
+            if (this._origMM) this._origMM.apply(canvas, arguments);
+        };
+
+        canvas.processMouseUp = (e) => {
+            if (this._origMU) this._origMU.apply(canvas, arguments);
+        };
+
+        // Blobby vit en autonomie via setInterval (separe du rAF de ComfyUI)
+        var fps = this._getFpsSetting();
+        this._startAnimationInterval(fps);
+
+        console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
+    },
+
+    deactivate() {
+        if (!this._active) return;
+        this._active = false;
+
+        const canvas = this._canvas;
+        if (!canvas) return;
+
+        canvas.onDrawForeground = this._origDraw || null;
+        canvas.processMouseDown = this._origMD || null;
+        canvas.processMouseMove = this._origMM || null;
+        canvas.processMouseUp = this._origMU || null;
+
+        // Nettoyer le handler contextmenu
+        if (this._contextHandler && canvas.canvas) {
+            canvas.canvas.removeEventListener('contextmenu', this._contextHandler);
+            this._contextHandler = null;
+        }
+
+        // Nettoyer l'intervalle d'animation
+        if (this._animInterval) {
+            clearInterval(this._animInterval);
+            this._animInterval = null;
+        }
+
+        if (canvas.setDirty) canvas.setDirty(true, true);
+        console.log("%c🧡 Blobby désactivé.", "font-size: 14px; color: #888;");
+    },
+
+    isActive() { return this._active; },
+
+    _getFpsSetting() {
+        return _blobbyLoadFps(30);
+    },
+
+    _saveFpsSetting(fps) {
+        _blobbySaveFps(fps);
+    },
+
+    _startAnimationInterval(fps) {
+        if (this._animInterval) {
+            clearInterval(this._animInterval);
+            this._animInterval = null;
+        }
+        if (!fps || fps <= 0) return;
+        var intervalMs = Math.round(1000 / fps);
+        var canvas = this._canvas;
+        var _self = this;
+        this._animInterval = setInterval(function() {
+            if (!_self._active) return;
+            if (canvas.setDirty) canvas.setDirty(true, true);
+        }, intervalMs);
+    },
+
+    _restartAnimationInterval(fps) {
+        this._saveFpsSetting(fps);
+        this._startAnimationInterval(fps);
+    },
+
+    _getGM(canvas) {
+        return canvas.graph_mouse ? [canvas.graph_mouse[0], canvas.graph_mouse[1]] : null;
+    },
+
+    update(deltaTime, nodes, mousePosGraph, visibleArea) {
+        this.time += deltaTime;
+        this.moodTimer += deltaTime;
+        this.visibleArea = visibleArea;
+
+        if (this.moodTimer > 5 + Math.random() * 8) {
+            const moods = ["happy", "happy", "happy", "surprised", "sleepy", "happy"];
+            this.mood = moods[Math.floor(Math.random() * moods.length)];
+            this.moodTimer = 0;
+        }
+
+        if (mousePosGraph) {
+            this.mousePX = this.mouseX;
+            this.mousePY = this.mouseY;
+            this.mouseX = mousePosGraph[0];
+            this.mouseY = mousePosGraph[1];
+            this.mouseActive = true;
+        } else {
+            this.mouseActive = false;
+        }
+
+        if (visibleArea) {
+            const [vx, vy, vw, vh] = visibleArea;
+            const cvx = vx + vw / 2, cvy = vy + vh / 2;
+            const dx = cvx - this.x, dy = cvy - this.y;
+            const dist = Math.hypot(dx, dy);
+            const maxDist = Math.min(vw, vh) * 0.35;
+            if (dist > maxDist && dist > 0.1) {
+                const pull = (dist - maxDist) / dist * 0.03;
+                this.x += dx * pull;
+                this.y += dy * pull;
+            }
+        }
+
+        this.updateParticlePhysics();
+        this.updateNodeCollision(nodes);
+        this.updateOrganPosition(deltaTime);
+
+        if (this.isDragging && mousePosGraph) {
+            const dx = mousePosGraph[0] - this.x;
+            const dy = mousePosGraph[1] - this.y;
+            this.x = mousePosGraph[0];
+            this.y = mousePosGraph[1];
+            for (const p of this.bodyParticles) { p.x += dx; p.y += dy; }
+            this.throwVx = dx / deltaTime;
+            this.throwVy = dy / deltaTime;
+            this.dragPrevX = this.x;
+            this.dragPrevY = this.y;
+            this.dragDistance += Math.hypot(dx, dy);
+        }
+
+        if (!this.isDragging) {
+            this.x += this.vx * deltaTime * 60;
+            this.y += this.vy * deltaTime * 60;
+            this.vx *= Math.pow(0.995, deltaTime * 60);
+            this.vy *= Math.pow(0.995, deltaTime * 60);
+            if (Math.random() < 0.015 * deltaTime * 60) {
+                this.vx += (Math.random() - 0.5) * 1.2 * deltaTime * 60;
+                this.vy += (Math.random() - 0.5) * 1.2 * deltaTime * 60;
+            }
+            const speed = Math.hypot(this.vx, this.vy);
+            if (speed > 5) { this.vx = (this.vx / speed) * 5; this.vy = (this.vy / speed) * 5; }
+            if (this.mood === "sleepy") { this.vx *= Math.pow(0.97, deltaTime * 60); this.vy *= Math.pow(0.97, deltaTime * 60); }
+
+            if (this.mouseActive && this.followMouse) {
+                const dx = this.mouseX - this.x;
+                const dy = this.mouseY - this.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist > 10) {
+                    this.vx += (dx / dist) * 0.3 * deltaTime * 60;
+                    this.vy += (dy / dist) * 0.3 * deltaTime * 60;
+                }
+            }
+        }
+
+        this.targetMouthOpen = this.mood === "surprised" ? 0.8 :
+            this.mood === "sleepy" ? 0.1 :
+                this.mood === "happy" ? 0.3 + Math.sin(this.time * 2) * 0.15 : 0.3;
+        this.mouthOpen += (this.targetMouthOpen - this.mouthOpen) * 0.1 * deltaTime * 60;
+
+        this.blinkTimer += deltaTime * 60;
+        if (!this.isBlinking && this.blinkTimer > 120 + Math.random() * 180) {
+            this.isBlinking = true;
+            this.blinkFrame = 0;
+        }
+        if (this.isBlinking) {
+            this.blinkFrame++;
+            if (this.blinkFrame >= this.BLINK_DURATION) {
+                this.isBlinking = false;
+                this.blinkTimer = 0;
+            }
+        }
+
+        this.updateParticles(deltaTime);
+        if (this.mood === "sleepy" && Math.random() < 0.03) {
+            this.addParticle(this.x - 15, this.y - 25, "zzz");
+        }
+    },
+
+    updateParticlePhysics() {
+        const cx = this.x, cy = this.y;
+        const numP = this.bodyParticles.length;
+
+        for (const p of this.bodyParticles) {
+            const dx = cx - p.x, dy = cy - p.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 0.1) {
+                const force = dist * this.GRAVITY;
+                p.vx += (dx / dist) * force;
+                p.vy += (dy / dist) * force;
+            }
+            p.vx *= this.DAMPING;
+            p.vy *= this.DAMPING;
+        }
+
+        for (let i = 0; i < numP; i++) {
+            const p1 = this.bodyParticles[i];
+            for (let j = i + 1; j < numP; j++) {
+                const p2 = this.bodyParticles[j];
+                const dx = p2.x - p1.x, dy = p2.y - p1.y;
+                const dist = Math.hypot(dx, dy);
+                const minDist = p1.radius + p2.radius - 8;
+                if (dist > 0.1) {
+                    if (dist < minDist) {
+                        const force = (minDist - dist) / minDist * this.REPULSION;
+                        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+                        p1.vx -= fx; p1.vy -= fy;
+                        p2.vx += fx; p2.vy += fy;
+                    } else if (dist < minDist * 2.2) {
+                        const force = (dist - minDist) / minDist * this.COHESION;
+                        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+                        p1.vx += fx; p1.vy += fy;
+                        p2.vx -= fx; p2.vy -= fy;
+                    }
+                }
+            }
+        }
+
+        if (this.mouseActive) {
+            const sdx = this.mouseX - this.mousePX;
+            const sdy = this.mouseY - this.mousePY;
+            const segLen = Math.hypot(sdx, sdy);
+            if (segLen > 3) {
+                const nx = -sdy / segLen, ny = sdx / segLen;
+                for (const p of this.bodyParticles) {
+                    let t = ((p.x - this.mousePX) * sdx + (p.y - this.mousePY) * sdy) / (segLen * segLen);
+                    t = Math.max(0, Math.min(1, t));
+                    const projX = this.mousePX + t * sdx, projY = this.mousePY + t * sdy;
+                    const distToSeg = Math.hypot(p.x - projX, p.y - projY);
+                    if (distToSeg < this.CUT_RADIUS) {
+                        const cross = sdx * (p.y - this.mousePY) - sdy * (p.x - this.mousePX);
+                        const side = cross >= 0 ? 1 : -1;
+                        const intensity = (1 - distToSeg / this.CUT_RADIUS);
+                        const push = Math.min(segLen * 0.16, 12) * intensity;
+                        p.vx += nx * side * push;
+                        p.vy += ny * side * push;
+                    }
+                }
+            }
+        }
+
+        let minX = -10000, maxX = 10000, minY = -10000, maxY = 10000;
+        if (this.visibleArea && this.visibleArea.length === 4) {
+            const [vx, vy, vw, vh] = this.visibleArea;
+            if (vw > 100 && vh > 100) { minX = vx; maxX = vx + vw; minY = vy; maxY = vy + vh; }
+        }
+
+        for (const p of this.bodyParticles) {
+            if (isNaN(p.x) || isNaN(p.y) || isNaN(p.vx) || isNaN(p.vy) || !isFinite(p.x) || !isFinite(p.y)) {
+                p.x = cx + (Math.random() - 0.5) * 10;
+                p.y = cy + (Math.random() - 0.5) * 10;
+                p.vx = 0; p.vy = 0;
+                continue;
+            }
+            p.x += p.vx; p.y += p.vy;
+            const pr = p.radius;
+            if (p.x < minX + pr) { p.x = minX + pr; p.vx *= -0.5; }
+            if (p.x > maxX - pr) { p.x = maxX - pr; p.vx *= -0.5; }
+            if (p.y < minY + pr) { p.y = minY + pr; p.vy *= -0.5; }
+            if (p.y > maxY - pr) { p.y = maxY - pr; p.vy *= -0.5; }
+        }
+    },
+
+    updateNodeCollision(nodes) {
+        if (!nodes) return;
+        function getNodeBounds(node) {
+            if (typeof node.getBounding === 'function') {
+                try {
+                    var bbox = node.getBounding();
+                    if (bbox && bbox.length === 4) return { x: bbox[0], y: bbox[1], w: bbox[2], h: bbox[3] };
+                } catch {}
+            }
+            // Le titre de la node est dessine au-dessus de node.pos
+            // On remonte le Y de la hauteur du titre pour couvrir le titre
+            var titleH = window.LiteGraph?.NODE_TITLE_HEIGHT || 30;
+            return { x: node.pos[0], y: node.pos[1] - titleH, w: node.size[0], h: node.size[1] + titleH };
+        }
+
+        if (!this.isDragging) {
+            for (const node of nodes) {
+                var b = getNodeBounds(node);
+                const nx = b.x, ny = b.y, nw = b.w, nh = b.h;
+                const isInside = (this.x >= nx && this.x <= nx + nw && this.y >= ny && this.y <= ny + nh);
+                if (isInside) {
+                    const dl = this.x - nx, dr = (nx + nw) - this.x;
+                    const dt = this.y - ny, db = (ny + nh) - this.y;
+                    const minDist = Math.min(dl, dr, dt, db);
+                    if (minDist === dl) { this.x = nx - 30; this.vx = -1.5; }
+                    else if (minDist === dr) { this.x = nx + nw + 30; this.vx = 1.5; }
+                    else if (minDist === dt) { this.y = ny - 30; this.vy = -1.5; }
+                    else { this.y = ny + nh + 30; this.vy = 1.5; }
+                }
+            }
+        }
+
+        for (const p of this.bodyParticles) {
+            if (isNaN(p.x) || isNaN(p.y)) continue;
+            for (const node of nodes) {
+                var b = getNodeBounds(node);
+                const nx = b.x, ny = b.y, nw = b.w, nh = b.h, pr = p.radius;
+                const isInside = (p.x >= nx && p.x <= nx + nw && p.y >= ny && p.y <= ny + nh);
+                if (isInside) {
+                    const dl = p.x - nx, dr = (nx + nw) - p.x;
+                    const dt = p.y - ny, db = (ny + nh) - p.y;
+                    const minDist = Math.min(dl, dr, dt, db);
+                    if (minDist === dl) { p.x = nx - pr; p.vx = -Math.abs(p.vx) * 0.6 - 1.5; }
+                    else if (minDist === dr) { p.x = nx + nw + pr; p.vx = Math.abs(p.vx) * 0.6 + 1.5; }
+                    else if (minDist === dt) { p.y = ny - pr; p.vy = -Math.abs(p.vy) * 0.6 - 1.5; }
+                    else { p.y = ny + nh + pr; p.vy = Math.abs(p.vy) * 0.6 + 1.5; }
+                } else {
+                    const cx = Math.max(nx, Math.min(p.x, nx + nw));
+                    const cy = Math.max(ny, Math.min(p.y, ny + nh));
+                    const dx = p.x - cx, dy = p.y - cy;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < pr && dist > 0.1) {
+                        const force = (pr - dist) / pr * 2.5;
+                        p.x += (dx / dist) * force; p.y += (dy / dist) * force;
+                        p.vx += (dx / dist) * force * 1.5; p.vy += (dy / dist) * force * 1.5;
+                    }
+                }
+            }
+        }
+
+        if (this.nodeBounceCooldown <= 0) {
+            for (const p of this.bodyParticles) {
+                for (const node of nodes) {
+                    var b = getNodeBounds(node);
+                    const nx = b.x, ny = b.y, nw = b.w, nh = b.h;
+                    if (p.x >= nx && p.x <= nx + nw && p.y >= ny && p.y <= ny + nh) {
+                        if (node.comfyClass?.includes("KSampler")) {
+                            this.mood = "surprised"; this.moodTimer = 0;
+                        }
+                        this.nodeBounceCooldown = 0.3;
+                        break;
+                    }
+                }
+            }
+        }
+        this.nodeBounceCooldown = Math.max(0, this.nodeBounceCooldown - 0.016);
+    },
+
+    updateOrganPosition(deltaTime) {
+        let sx = 0, sy = 0, validCount = 0;
+        for (const p of this.bodyParticles) {
+            if (!isNaN(p.x) && !isNaN(p.y)) { sx += p.x; sy += p.y; validCount++; }
+        }
+        if (validCount === 0) return;
+        const comX = sx / validCount, comY = sy / validCount;
+        const dx = comX - this.organX, dy = comY - this.organY;
+        this.organVx += dx * 0.08 * deltaTime * 60; this.organVy += dy * 0.08 * deltaTime * 60;
+        this.organVx *= Math.pow(0.78, deltaTime * 60); this.organVy *= Math.pow(0.78, deltaTime * 60);
+        this.organX += this.organVx; this.organY += this.organVy;
+    },
+
+    draw(ctx) {
+        const zoom = Math.max(0.01, this._canvas?.ds_scale || 1);
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(1 / zoom, 1 / zoom);
+        const s = this.scale || 1;
+        const ox = this.organX - this.x, oy = this.organY - this.y;
+        this.drawGooeyBody(ctx, s);
+        this.drawBrain(ctx, ox, oy, s);
+        this.drawEyes(ctx, ox, oy, s);
+        this.drawMouth(ctx, ox, oy, s);
+        this.drawParticles(ctx);
+        ctx.restore();
+    },
+
+    drawGooeyBody(ctx, s) {
+        const particles = this.bodyParticles;
+        if (particles.length === 0) return;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of particles) {
+            if (isNaN(p.x) || isNaN(p.y)) continue;
+            const lx = p.x - this.x, ly = p.y - this.y, r = p.radius;
+            if (lx - r < minX) minX = lx - r;
+            if (ly - r < minY) minY = ly - r;
+            if (lx + r > maxX) maxX = lx + r;
+            if (ly + r > maxY) maxY = ly + r;
+        }
+        const pad = 30;
+        let bw = Math.ceil(maxX - minX + pad * 2);
+        let bh = Math.ceil(maxY - minY + pad * 2);
+        const MAX_SIZE = 800;
+        if (bw > MAX_SIZE) bw = MAX_SIZE;
+        if (bh > MAX_SIZE) bh = MAX_SIZE;
+        if (bw < 2 || bh < 2 || !isFinite(bw) || !isFinite(bh)) {
+            this.drawFallbackBody(ctx, s);
+            return;
+        }
+        try {
+            const oc = this._offscreen, octx = this._octx;
+            oc.width = bw; oc.height = bh;
+            octx.clearRect(0, 0, bw, bh);
+            for (const p of particles) {
+                if (isNaN(p.x) || isNaN(p.y)) continue;
+                const lx = p.x - this.x - minX + pad, ly = p.y - this.y - minY + pad;
+                const grad = octx.createRadialGradient(lx, ly, 0, lx, ly, p.radius);
+                grad.addColorStop(0, "rgba(255,255,255,1)");
+                grad.addColorStop(0.5, "rgba(255,255,255,0.9)");
+                grad.addColorStop(0.85, "rgba(255,255,255,0.3)");
+                grad.addColorStop(1, "rgba(255,255,255,0)");
+                octx.fillStyle = grad;
+                octx.beginPath(); octx.arc(lx, ly, p.radius, 0, Math.PI * 2); octx.fill();
+            }
+            octx.filter = "blur(6px)";
+            octx.drawImage(oc, 0, 0);
+            octx.filter = "none";
+            const bodyColor = this.getBodyColor();
+            octx.save();
+            octx.globalCompositeOperation = "source-in";
+            octx.fillStyle = bodyColor;
+            octx.fillRect(0, 0, bw, bh);
+            octx.restore();
+            ctx.globalAlpha = this.bodyAlpha;
+            ctx.drawImage(oc, minX - pad, minY - pad);
+            ctx.globalAlpha = 1;
+        } catch (e) {
+            this.drawFallbackBody(ctx, s);
+        }
+    },
+
+    drawFallbackBody(ctx, s) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, 32 * s, 0, Math.PI * 2);
+        ctx.fillStyle = this.getBodyColor();
+        ctx.globalAlpha = 0.6;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "rgba(0,0,0,0.15)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+    },
+
+    getBodyColor() {
+        return this.colors[this.mood] || this.colors._default;
+    },
+
+    drawBrain(ctx, ox, oy, s) {
+        ctx.save();
+        ctx.globalAlpha = this.brainAlpha;
+        const pulse = 1 + Math.sin(this.time * 4) * 0.03;
+        ctx.translate(ox, oy - 18 * s);
+        ctx.scale(pulse, pulse);
+        ctx.scale(this.brainSize, this.brainSize);
+        ctx.fillStyle = "#ff4da6";
+        ctx.beginPath();
+        ctx.arc(-7 * s, -4 * s, 10 * s, 0, Math.PI * 2);
+        ctx.arc(-3 * s, -11 * s, 8 * s, 0, Math.PI * 2);
+        ctx.arc(-8 * s, 4 * s, 7 * s, 0, Math.PI * 2);
+        ctx.arc(7 * s, -4 * s, 10 * s, 0, Math.PI * 2);
+        ctx.arc(3 * s, -11 * s, 8 * s, 0, Math.PI * 2);
+        ctx.arc(8 * s, 4 * s, 7 * s, 0, Math.PI * 2);
+        ctx.arc(0, 6 * s, 6 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#9d004b";
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(0, -18 * s); ctx.lineTo(0, 6 * s);
+        ctx.arc(-5 * s, -5 * s, 4 * s, Math.PI, Math.PI * 2.5);
+        ctx.moveTo(-9 * s, 3 * s); ctx.quadraticCurveTo(-5 * s, 5 * s, -1 * s, 2 * s);
+        ctx.arc(5 * s, -5 * s, 4 * s, 0, Math.PI * 1.5);
+        ctx.moveTo(9 * s, 3 * s); ctx.quadraticCurveTo(5 * s, 5 * s, 1 * s, 2 * s);
+        ctx.stroke();
+        ctx.restore();
+    },
+
+    drawEyes(ctx, ox, oy, s) {
+        var es = this.eyeScale;
+        var eY = this.eyeY;
+        var eSpr = this.eyeSpread;
+        ctx.strokeStyle = "#0f172a";
+        ctx.lineWidth = 2.5 * es;
+        ctx.lineCap = "round";
+        // Les sourcils suivent la position des yeux (eyeY)
+        const leftEyeX = ox - eSpr * s * es, rightEyeX = ox + eSpr * s * es;
+        var eyeCenterY = oy + eY * s * es;
+        var browY = eyeCenterY - 12 * s * es;  // toujours 12px au-dessus de l'oeil
+        ctx.beginPath();
+        if (this.mood === "surprised") {
+            ctx.moveTo(leftEyeX - 8 * s * es, browY - 3 * s * es);
+            ctx.quadraticCurveTo(leftEyeX, browY - 8 * s * es, leftEyeX + 6 * s * es, browY - 5 * s * es);
+            ctx.moveTo(rightEyeX + 8 * s * es, browY - 3 * s * es);
+            ctx.quadraticCurveTo(rightEyeX, browY - 8 * s * es, rightEyeX - 6 * s * es, browY - 5 * s * es);
+        } else if (this.mood === "sleepy") {
+            ctx.moveTo(leftEyeX - 7 * s * es, browY + 2 * s * es); ctx.lineTo(leftEyeX + 7 * s * es, browY + 2 * s * es);
+            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s * es); ctx.lineTo(rightEyeX + 7 * s * es, browY + 2 * s * es);
+        } else {
+            ctx.arc(leftEyeX, browY + 2 * s * es, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s * es);
+            ctx.arc(rightEyeX, browY + 2 * s * es, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
+        }
+        ctx.stroke();
+
+        const drawOneEye = (ex) => {
+            const eyeX = ox + ex, eyeY = oy + eY * s * es;
+            const angle = Math.atan2(this.mouseY - (this.y + eyeY), this.mouseX - (this.x + eyeX));
+            const lookDist = Math.min(5 * s * es, Math.hypot(this.mouseX - (this.x + eyeX), this.mouseY - (this.y + eyeY)) * 0.02);
+            const pupilX = eyeX + Math.cos(angle) * lookDist;
+            const pupilY = eyeY + Math.sin(angle) * lookDist;
+            if (this.isBlinking) {
+                ctx.strokeStyle = "#0f172a"; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(eyeX - 9 * s * es, eyeY); ctx.quadraticCurveTo(eyeX, eyeY + 3 * s * es, eyeX + 9 * s * es, eyeY); ctx.stroke();
+                return;
+            }
+            const scleraR = (this.mood === "surprised" ? 11 : 9) * s * es;
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath(); ctx.arc(eyeX, eyeY, scleraR, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.stroke();
+            const pupilR = (this.mood === "surprised" ? 3 : 4.5) * s * es;
+            ctx.fillStyle = "#0f172a";
+            ctx.beginPath(); ctx.arc(pupilX, pupilY, pupilR, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath(); ctx.arc(pupilX - pupilR * 0.3, pupilY - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
+        };
+        drawOneEye(-eSpr * s * es); drawOneEye(eSpr * s * es);
+    },
+
+    drawMouth(ctx, ox, oy, s) {
+        var mY = this.mouthY;
+        var mS = this.mouthScale;
+        const mouthY = oy + mY * s * mS, mouthW = (10 + this.mouthOpen * 6) * s * mS;
+        if (this.mood === "surprised" && this.mouthOpen > 0.3) {
+            ctx.beginPath(); ctx.ellipse(ox, mouthY, 6 * s * mS, (3 + this.mouthOpen * 6) * s * mS, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "#5D4037"; ctx.fill();
+            ctx.beginPath(); ctx.ellipse(ox, mouthY + s * mS, 4 * s * mS, (1 + this.mouthOpen * 4) * s * mS, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "#D32F2F"; ctx.fill();
+        } else if (this.mood === "sleepy") {
+            ctx.beginPath(); ctx.ellipse(ox, mouthY, 2 * s * mS, 1.5 * s * mS, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "#5D4037"; ctx.fill();
+        } else {
+            ctx.beginPath(); ctx.arc(ox, mouthY - 2 * s, mouthW, 0.1, Math.PI - 0.1);
+            ctx.strokeStyle = "#5D4037"; ctx.lineWidth = 2 * s; ctx.lineCap = "round"; ctx.stroke();
+        }
+    },
+
+    addParticle(x, y, type) {
+        this._fxParticles = this._fxParticles || [];
+        this._fxParticles.push({
+            x, y, vx: (Math.random() - 0.5) * 0.5, vy: -0.3 - Math.random() * 0.5,
+            life: 1, decay: 0.008 + Math.random() * 0.005, size: 3 + Math.random() * 4,
+            type: type || "bubble", hue: 30 + Math.random() * 20
+        });
+    },
+
+    updateParticles(dt) {
+        const arr = this._fxParticles || [];
+        for (let i = arr.length - 1; i >= 0; i--) {
+            const p = arr[i];
+            p.x += p.vx; p.y += p.vy;
+            p.life -= p.decay;
+            if (p.life <= 0) arr.splice(i, 1);
+        }
+    },
+
+    drawParticles(ctx) {
+        const arr = this._fxParticles || [];
+        for (const p of arr) {
+            const lx = p.x - this.x, ly = p.y - this.y;
+            if (p.type === "zzz") {
+                ctx.save();
+                ctx.font = `${12 + (1 - p.life) * 8}px serif`;
+                ctx.fillStyle = `rgba(100, 200, 100, ${p.life * 0.6})`;
+                ctx.fillText("z", lx, ly);
+                ctx.restore();
+            } else {
+                ctx.beginPath(); ctx.arc(lx, ly, p.size * p.life, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${p.hue}, 80%, 70%, ${p.life * 0.5})`;
+                ctx.fill();
+            }
+        }
+    },
+
+    hitTest(mx, my) {
+        for (const p of this.bodyParticles) {
+            const dx = mx - p.x, dy = my - p.y;
+            if (dx * dx + dy * dy < (p.radius * 2.5) ** 2) return true;
+        }
+        return false;
+    },
+
+    onMouseDown(pos) {
+        if (this.hitTest(pos[0], pos[1])) {
+            this._openChatModal();
+            this.mood = "happy"; this.moodTimer = 0;
+            for (let i = 0; i < 3; i++) this.addParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, "sparkle");
+            return true;
+        }
+        return false;
+    },
+
+    onMouseMove(pos) {},
+
+    onMouseUp() {},
+
+// ─── Chat modal ────────────────────────────────────────────────
+
+    _openChatSettings() {
+        // Ouvrir la modale AIH et switcher sur l'onglet Blobby
+        var aihModal = document.getElementById('modal-user-settings');
+        if (aihModal) {
+            aihModal.classList.remove('hidden');
+            aihModal.classList.add('flex');
+            var blobbyTab = aihModal.querySelector('[data-tab="blobby"]');
+            if (blobbyTab) switchSettingsTab('blobby', blobbyTab);
+            return;
+        }
+        // Fallback : si la modale AIH n'existe pas, on crée la notre via v2
+        var existing = document.querySelector('.aih-modal.blobby-chat-settings');
+        if (existing) { existing.style.display = 'flex'; return; }
+
+        var _self = this;
+
+        // Tabs
+        var tabsBar = document.createElement('div');
+        Object.assign(tabsBar.style, {
+            display: 'flex', borderBottom: '1px solid #333', background: '#1a1a1e', flexShrink: '0',
+        });
+
+        var tabNames = ['provider', 'appearance'];
+        var tabLabels = { provider: 'Général', appearance: 'Apparence' };
+        var tabContent = document.createElement('div');
+        Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
+
+        function switchTab(name) {
+            tabsBar.querySelectorAll('.bcs-tab').forEach(function(b) { b.style.borderBottom = '2px solid transparent'; b.style.color = '#888'; });
+            var btn = document.getElementById('bcs-tab-' + name);
+            if (btn) { btn.style.borderBottom = '2px solid #FF8F00'; btn.style.color = '#fff'; }
+            document.querySelectorAll('.bcs-tab-content').forEach(function(d) { d.style.display = 'none'; });
+            var el = document.getElementById('bcs-content-' + name);
+            if (el) el.style.display = 'flex';
+        }
+
+        tabNames.forEach(function(name) {
+            var btn = document.createElement('button');
+            btn.id = 'bcs-tab-' + name;
+            btn.className = 'bcs-tab';
+            btn.textContent = tabLabels[name];
+            Object.assign(btn.style, {
+                flex: '1', padding: '8px 12px', border: 'none', cursor: 'pointer',
+                background: 'transparent', fontSize: '12px', transition: 'all 0.15s',
+                borderBottom: '2px solid transparent', color: '#888',
+            });
+            btn.onclick = function() { switchTab(name); };
+            tabsBar.appendChild(btn);
+        });
+
+        // ── Tab Provider ──
+        var provContent = document.createElement('div');
+        provContent.id = 'bcs-content-provider';
+        provContent.className = 'bcs-tab-content';
+        Object.assign(provContent.style, { display: 'flex', flexDirection: 'column', gap: '12px' });
+
+        var pLabel = document.createElement('label');
+        pLabel.textContent = 'Provider LLM';
+        Object.assign(pLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        var select = document.createElement('select');
+        select.id = 'blobby-chat-preset';
+        Object.assign(select.style, {
+            width: '100%', padding: '8px 10px', borderRadius: '6px',
+            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
+            fontSize: '12px', outline: 'none',
+        });
+        select.innerHTML = '<option value="">Chargement...</option>';
+
+        (async function() {
+            try {
+                var cfg = {};
+                try { cfg = JSON.parse(localStorage.getItem('AIH_config')) || {}; } catch {}
+                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var headers = { 'Content-Type': 'application/json' };
+                if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+                var res = await fetch(baseUrl + '/api/presets', { headers });
+                if (!res.ok) { select.innerHTML = '<option value="">Erreur chargement</option>'; return; }
+                var presets = await res.json();
+                var savedPreset = cfg.blobbyPreset || '';
+                select.innerHTML = '<option value="">-- Provider LLM --</option>';
+                presets.forEach(function(p) {
+                    var opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
+                    if (String(p.id) === String(savedPreset)) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } catch (e) { select.innerHTML = '<option value="">Erreur: ' + (e.message || '') + '</option>'; }
+        })();
+
+        select.onchange = function() {
+            try {
+                var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+                cfg.blobbyPreset = select.value;
+                localStorage.setItem('AIH_config', JSON.stringify(cfg));
+            } catch {}
+        };
+
+        var pNote = document.createElement('p');
+        pNote.textContent = 'Provider utilise par Blobby pour discuter. Configure les providers dans AIH > Parametres.';
+        Object.assign(pNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+
+        provContent.appendChild(pLabel);
+        provContent.appendChild(select);
+        provContent.appendChild(pNote);
+
+        // ── FPS Control ──
+        var fpsSeparator = document.createElement('hr');
+        Object.assign(fpsSeparator.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        provContent.appendChild(fpsSeparator);
+
+        var fpsLabel = document.createElement('label');
+        fpsLabel.textContent = 'Animation (FPS)';
+        Object.assign(fpsLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        // Lire la valeur sauvegardee
+        var savedFps = 30;
+        try {
+            var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
+            savedFps = parseInt(cfg.blobbyFps) || 30;
+        } catch {}
+
+        var fpsContainer = document.createElement('div');
+        Object.assign(fpsContainer.style, { display: 'flex', alignItems: 'center', gap: '10px' });
+
+        var fpsRange = document.createElement('input');
+        fpsRange.type = 'range';
+        fpsRange.id = 'blobby-fps-range';
+        Object.assign(fpsRange.style, { flex: '1', accentColor: '#FF8F00' });
+        fpsRange.min = 0;
+        fpsRange.max = 165;
+        fpsRange.step = 5;
+        fpsRange.value = savedFps;
+
+        var fpsValue = document.createElement('span');
+        fpsValue.id = 'blobby-fps-value';
+        fpsValue.textContent = savedFps > 0 ? savedFps + ' fps' : 'Off';
+        Object.assign(fpsValue.style, { fontSize: '12px', color: '#e2e8f0', minWidth: '45px', textAlign: 'right', fontWeight: '600' });
+
+        fpsRange.oninput = function() {
+            var v = parseInt(this.value) || 0;
+            fpsValue.textContent = v > 0 ? v + ' fps' : 'Off';
+            _self._saveFpsSetting(v);
+            _self._restartAnimationInterval(v);
+        };
+
+        var fpsNote = document.createElement('p');
+        fpsNote.textContent = 'Regle la frequence d\'animation de Blobby. 0 = arrete, 30 = fluide, 60+ = fluide, 120-165 = max (ecrans haut refresh).';
+        Object.assign(fpsNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+
+        fpsContainer.appendChild(fpsRange);
+        fpsContainer.appendChild(fpsValue);
+        provContent.appendChild(fpsLabel);
+        provContent.appendChild(fpsContainer);
+        provContent.appendChild(fpsNote);
+
+        // ── Tab Caractere ──
+        // ── Tab Apparence ──
+        var appContent = document.createElement('div');
+        appContent.id = 'bcs-content-appearance';
+        appContent.className = 'bcs-tab-content';
+        Object.assign(appContent.style, { display: 'none', flexDirection: 'column', gap: '12px' });
+
+        // Helper pour creer un slider
+        function makeSlider(label, id, min, max, step, val, suffix, onChange) {
+            var row = document.createElement('div');
+            var lbl = document.createElement('label');
+            lbl.textContent = label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', fontWeight: '600' });
+            var cont = document.createElement('div');
+            Object.assign(cont.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var input = document.createElement('input');
+            input.type = 'range';
+            input.id = id;
+            Object.assign(input.style, { flex: '1', accentColor: '#FF8F00' });
+            input.min = min; input.max = max; input.step = step; input.value = val;
+            var valSpan = document.createElement('span');
+            valSpan.textContent = val + (suffix || '');
+            Object.assign(valSpan.style, { fontSize: '11px', color: '#e2e8f0', minWidth: '35px', textAlign: 'right' });
+            input.oninput = function() {
+                var v = parseFloat(this.value);
+                valSpan.textContent = v + (suffix || '');
+                if (onChange) onChange(v);
+            };
+            cont.appendChild(input);
+            cont.appendChild(valSpan);
+            row.appendChild(lbl);
+            row.appendChild(cont);
+            return row;
+        }
+
+        // Helper pour creer un color picker
+        function makeColorPicker(label, color, onChange) {
+            var row = document.createElement('div');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var lbl = document.createElement('span');
+            lbl.textContent = label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', flex: '1' });
+            var input = document.createElement('input');
+            input.type = 'color';
+            input.id = 'bapp-color-' + label.replace(/[^a-z]/gi,'').toLowerCase();
+            input.value = color;
+            Object.assign(input.style, { width: '32px', height: '24px', padding: '0', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' });
+            input.oninput = function() { if (onChange) onChange(this.value); };
+            row.appendChild(lbl);
+            row.appendChild(input);
+            return row;
+        }
+
+        var _saveAppearance = function() {
+            try {
+                var a = {};
+                a.numParticles = parseInt(document.getElementById('bapp-particles')?.value) || 60;
+                a.bodyAlpha = (parseFloat(document.getElementById('bapp-body-alpha')?.value) || 100) / 100;
+                a.brainAlpha = (parseFloat(document.getElementById('bapp-brain-alpha')?.value) || 100) / 100;
+                a.brainSize = parseFloat(document.getElementById('bapp-brain-size')?.value) || 1;
+                a.eyeY = parseFloat(document.getElementById('bapp-eye-y')?.value) || 6;
+                a.eyeSpread = parseFloat(document.getElementById('bapp-eye-spread')?.value) || 15;
+                a.eyeScale = parseFloat(document.getElementById('bapp-eye-scale')?.value) || 1;
+                a.mouthY = parseFloat(document.getElementById('bapp-mouth-y')?.value) || 22;
+                a.mouthScale = parseFloat(document.getElementById('bapp-mouth-scale')?.value) || 1;
+                a.colors = {};
+                ['happy','surprised','sleepy','_default'].forEach(function(k) {
+                    var el = document.getElementById('bapp-color-' + k);
+                    if (el) a.colors[k] = el.value;
+                });
+                _blobbySaveAppearance(a);
+                _self._loadAppearance();
+            } catch {}
+        };
+
+        function _onAppChange() { _saveAppearance(); }
+
+        // Charger valeurs actuelles
+        var _app = _blobbyLoadAppearance({});
+
+        appContent.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
+
+        var sep1 = document.createElement('hr');
+        Object.assign(sep1.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep1);
+
+        var secLabel = document.createElement('span');
+        secLabel.textContent = 'Transparences';
+        Object.assign(secLabel.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel);
+        appContent.appendChild(makeSlider('Corps', 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%', function(v) { _onAppChange(); }));
+        appContent.appendChild(makeSlider('Cerveau', 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%', _onAppChange));
+
+        var sep2 = document.createElement('hr');
+        Object.assign(sep2.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep2);
+
+        var secLabel2 = document.createElement('span');
+        secLabel2.textContent = 'Yeux';
+        Object.assign(secLabel2.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel2);
+        appContent.appendChild(makeSlider('Hauteur', 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, '', _onAppChange));
+        appContent.appendChild(makeSlider('Écartement', 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, '', _onAppChange));
+        appContent.appendChild(makeSlider('Taille', 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, '', _onAppChange));
+
+        var sep3 = document.createElement('hr');
+        Object.assign(sep3.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep3);
+
+        var secLabel3 = document.createElement('span');
+        secLabel3.textContent = 'Bouche';
+        Object.assign(secLabel3.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel3);
+        appContent.appendChild(makeSlider('Hauteur', 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, '', _onAppChange));
+        appContent.appendChild(makeSlider('Taille', 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, '', _onAppChange));
+
+        var sep4 = document.createElement('hr');
+        Object.assign(sep4.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep4);
+
+        var secLabel4 = document.createElement('span');
+        secLabel4.textContent = 'Cerveau';
+        Object.assign(secLabel4.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel4);
+        appContent.appendChild(makeSlider('Taille', 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, '', _onAppChange));
+
+        var sep5 = document.createElement('hr');
+        Object.assign(sep5.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep5);
+
+        var secLabel5 = document.createElement('span');
+        secLabel5.textContent = 'Couleurs par humeur';
+        Object.assign(secLabel5.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel5);
+
+        var moods = [
+            { key: 'happy', label: '😊 Heureux' },
+            { key: 'surprised', label: '😮 Surpris' },
+            { key: 'sleepy', label: '😴 Endormi' },
+            { key: '_default', label: '😐 Neutre' },
+        ];
+        moods.forEach(function(m) {
+            var curColors = _app.colors || {};
+            var c = curColors[m.key] || Blobby.colors[m.key] || '#FF8F00';
+            // On remplace makeColorPicker pour controler l'id
+            var row = document.createElement('div');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var lbl = document.createElement('span');
+            lbl.textContent = m.label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', flex: '1' });
+            var input = document.createElement('input');
+            input.type = 'color';
+            input.id = 'bapp-color-' + m.key;
+            input.value = c;
+            Object.assign(input.style, { width: '32px', height: '24px', padding: '0', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' });
+            input.oninput = function() { _onAppChange(); };
+            row.appendChild(lbl);
+            row.appendChild(input);
+            appContent.appendChild(row);
+        });
+
+        tabContent.appendChild(provContent);
+        tabContent.appendChild(appContent);
+
+        // ── Body wrapper pour la v2 (tabsBar + tabContent) ──
+        var bodyWrapper = document.createElement('div');
+        Object.assign(bodyWrapper.style, {
+            display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden',
+        });
+        tabsBar.style.flexShrink = '0';
+        bodyWrapper.appendChild(tabsBar);
+        tabContent.style.flex = '1';
+        tabContent.style.overflowY = 'auto';
+        bodyWrapper.appendChild(tabContent);
+
+        // ── Créer la modale via v2 ──
+        var m = window.aihOpenModalV2({
+            title: '⚙️ Blobby',
+            content: bodyWrapper,
+            width: '380px',
+            minWidth: '300px',
+            minHeight: '200px',
+            maxWidth: '90vw',
+            maxHeight: '80vh',
+            className: 'blobby-chat-settings',
+            resizable: false,
+            draggable: true,
+            closeOnEscape: true,
+        });
+        // Supprimer le padding par défaut du body v2 car on gère le layout nous-mêmes
+        m.body.style.padding = '0';
+
+        // Activer le premier onglet
+        switchTab('provider');
+    },
+
+    getCharacter: function() {
+        // La personnalite evolue via le systeme memoire, pas par edition manuelle
+        // L'ADN de base est le point de depart, les souvenirs l'enrichissent
+        return _blobbyDefaultCharacter;
+    },
+
+    _saveChatHistory() {
+        var msgs = document.getElementById('blobby-chat-msgs');
+        if (!msgs) return;
+        var history = [];
+        msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
+            history.push({ role: el.dataset.role, text: el.innerHTML });
+        });
+        if (history.length > 50) history = history.slice(-50);
+        _blobbySaveChatHistory(history);
+    },
+
+    _openChatModal() {
+        // Si deja ouverte, la ramener au premier plan
+        var existing = document.querySelector('.aih-modal.blobby-chat-modal');
+        if (existing) {
+            existing.querySelector('.blobby-chat-input')?.focus();
+            return;
+        }
+
+        // Restaurer la position/taille/opacite sauvegardees (ancien système AIH_config)
+        var savedState = {};
+        try { var scfg = JSON.parse(localStorage.getItem('AIH_config')) || {}; savedState = scfg.blobbyChatState || {}; } catch {}
+
+        var _self = this;
+
+        // ── Contenu interne : messages + ctx + input ──
+        var bodyWrapper = document.createElement('div');
+        Object.assign(bodyWrapper.style, {
+            display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden',
+        });
+
+        // Messages area
+        var messages = document.createElement('div');
+        messages.id = 'blobby-chat-msgs';
+        Object.assign(messages.style, {
+            flex: '1', overflowY: 'auto', padding: '10px 12px',
+            display: 'flex', flexDirection: 'column', gap: '8px',
+        });
+
+        // Restaurer l'historique
+        var history = _blobbyLoadChatHistory();
+        history.forEach(function(msg) {
+            var div = document.createElement('div');
+            div.className = 'blobby-msg';
+            div.dataset.role = msg.role;
+            Object.assign(div.style, {
+                padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
+                lineHeight: '1.4', maxWidth: '85%', wordBreak: 'break-word',
+                whiteSpace: 'pre-wrap',
+            });
+            if (msg.role === 'user') {
+                div.style.background = '#6366f1'; div.style.color = '#fff';
+                div.style.alignSelf = 'flex-end';
+                div.textContent = msg.text;
+            } else if (msg.role === 'blobby') {
+                div.style.background = '#2a2a2e'; div.style.color = '#e2e8f0';
+                div.style.alignSelf = 'flex-start'; div.style.border = '1px solid #444';
+                div.style.whiteSpace = 'normal';
+                div.innerHTML = msg.text;  // deja rendu en HTML au moment du save
+            } else if (msg.role === 'system') {
+                div.style.background = 'transparent'; div.style.color = '#888';
+                div.style.alignSelf = 'center'; div.style.fontSize = '11px';
+                div.textContent = msg.text;
+            } else if (msg.role === 'action') {
+                div.style.background = '#1a3a1a'; div.style.color = '#86efac';
+                div.style.alignSelf = 'center'; div.style.fontSize = '11px';
+                div.style.border = '1px solid #166534';
+                div.innerHTML = '⚡ ' + msg.text;
+            }
+            messages.appendChild(div);
+        });
+
+        if (messages.children.length === 0) {
+            // Message de bienvenue si aucun historique
+            this._addChatMessage(messages, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
+        }
+        messages.scrollTop = messages.scrollHeight;
+
+        // Contexte (en bas de la zone de messages)
+        var ctxBar = document.createElement('div');
+        ctxBar.id = 'blobby-chat-ctx';
+        Object.assign(ctxBar.style, {
+            padding: '3px 12px', fontSize: '10px', color: '#555',
+            textAlign: 'right', borderTop: '1px solid #2a2a2e', flexShrink: '0',
+            userSelect: 'none',
+        });
+        function _updateCtxBar() {
+            var totalChars = 0;
+            messages.querySelectorAll('.blobby-msg').forEach(function(el) {
+                totalChars += (el.textContent || '').length;
+            });
+            var estTokens = Math.round(totalChars / 4);
+            var maxCtx = parseInt(ctxBar.dataset.maxCtx) || 4096;
+            ctxBar.textContent = '~' + estTokens + ' tokens | ' + maxCtx + ' max';
+            var pct = estTokens / maxCtx;
+            ctxBar.style.color = pct > 0.75 ? '#f87171' : (pct > 0.5 ? '#facc15' : '#555');
+        }
+        _updateCtxBar();
+
+        // Input area
+        var inputArea = document.createElement('div');
+        Object.assign(inputArea.style, {
+            display: 'flex', gap: '6px', padding: '8px 10px',
+            borderTop: '1px solid #333', background: '#2a2a2e',
+        });
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'blobby-chat-input';
+        Object.assign(input.style, {
+            flex: '1', padding: '6px 10px', borderRadius: '6px',
+            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
+            fontSize: '12px', outline: 'none',
+        });
+        input.placeholder = 'Parle a Blobby...';
+
+        var sendBtn = document.createElement('button');
+        sendBtn.textContent = '➤';
+        Object.assign(sendBtn.style, {
+            padding: '6px 12px', borderRadius: '6px', border: 'none',
+            background: '#6366f1', color: '#fff', cursor: 'pointer',
+            fontSize: '14px', fontWeight: '600',
+        });
+        sendBtn.onmouseenter = () => sendBtn.style.background = '#4f46e5';
+        sendBtn.onmouseleave = () => sendBtn.style.background = '#6366f1';
+
+        function sendMessage() {
+            var text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            _self._addChatMessage(messages, 'user', text);
+            _self._handleChatMessage(messages, text);
+        }
+
+        input.onkeydown = (e) => { if (e.key === 'Enter') sendMessage(); };
+        sendBtn.onclick = sendMessage;
+
+        inputArea.appendChild(input);
+        inputArea.appendChild(sendBtn);
+
+        bodyWrapper.appendChild(messages);
+        bodyWrapper.appendChild(ctxBar);
+        bodyWrapper.appendChild(inputArea);
+
+        // ── Créer la modale via v2 ──
+        var m = window.aihOpenModalV2({
+            title: '🧡 Blobby',
+            content: bodyWrapper,
+            width: (savedState.w || '360') + 'px',
+            height: (savedState.h || '420') + 'px',
+            minWidth: '280px',
+            minHeight: '200px',
+            maxWidth: '90vw',
+            maxHeight: '85vh',
+            className: 'blobby-chat-modal',
+            resizable: true,
+            draggable: true,
+            closeOnEscape: false, // Le chat a son propre handling via l'input
+            onClose: function() {
+                _saveChatState();
+            },
+        });
+        // Supprimer le padding du body v2 (on a notre propre padding dans les enfants)
+        m.body.style.padding = '0';
+        m.body.style.overflow = 'hidden';
+
+        // Restaurer la position bottom-relative depuis l'ancien système
+        if (savedState.x) m.modal.style.left = savedState.x + 'px';
+        if (savedState.y) {
+            var modalH = parseInt(m.modal.style.height) || 420;
+            m.modal.style.top = (window.innerHeight - savedState.y - modalH) + 'px';
+        }
+        // Transparence
+        m.modal.style.opacity = (savedState.alpha || 100) / 100;
+
+        // SyncDot dans le titre
+        var titleEl = m.header.querySelector('.aih-modal-title');
+        titleEl.innerHTML = '🧡 <b>Blobby</b>';
+        titleEl.style.color = '#FF8F00';
+        var syncDot = document.createElement('span');
+        syncDot.id = 'blobby-sync-status';
+        Object.assign(syncDot.style, { fontSize: '9px', marginLeft: '4px', cursor: 'help' });
+        titleEl.appendChild(syncDot);
+        setTimeout(function() { _blobbySyncIndicator(); }, 100);
+
+        // ── Header right buttons ──
+        var headerRight = m.header.querySelector('.aih-modal-header-right');
+
+        // Settings button
+        var settingsBtn = document.createElement('button');
+        settingsBtn.innerHTML = '⚙️';
+        Object.assign(settingsBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px', padding: '0 4px' });
+        settingsBtn.onmouseenter = () => settingsBtn.style.color = '#fff';
+        settingsBtn.onmouseleave = () => settingsBtn.style.color = '#888';
+        settingsBtn.onclick = (e) => { e.stopPropagation(); _self._openChatSettings(); };
+        headerRight.appendChild(settingsBtn);
+
+        // Clear button
+        var clearBtn = document.createElement('button');
+        clearBtn.textContent = '🗑';
+        clearBtn.title = 'Effacer la conversation';
+        Object.assign(clearBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
+        clearBtn.onmouseenter = () => clearBtn.style.color = '#f87171';
+        clearBtn.onmouseleave = () => clearBtn.style.color = '#888';
+        clearBtn.onclick = function(e) {
+            e.stopPropagation();
+            var msgs = document.getElementById('blobby-chat-msgs');
+            if (msgs) { msgs.innerHTML = ''; }
+            _blobbySaveChatHistory([]);
+            if (typeof Blobby !== 'undefined' && Blobby._addChatMessage) {
+                Blobby._addChatMessage(msgs, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
+            }
+        };
+        headerRight.appendChild(clearBtn);
+
+        // Forget button (confirmation via v2)
+        var forgetBtn = document.createElement('button');
+        forgetBtn.textContent = '🧹';
+        forgetBtn.title = 'Tout oublier (mémoire)';
+        Object.assign(forgetBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
+        forgetBtn.onmouseenter = () => forgetBtn.style.color = '#f87171';
+        forgetBtn.onmouseleave = () => forgetBtn.style.color = '#888';
+        forgetBtn.onclick = async function(e) {
+            e.stopPropagation();
+            var confirmed = await window.aihShowConfirm(
+                'Tout oublier',
+                'Blobby va tout oublier de vos conversations passées. Continuer ?'
+            );
+            if (confirmed) {
+                _blobbyForgetAll();
+                _blobbyMsgCounter = 0;
+                _self._addChatMessage(document.getElementById('blobby-chat-msgs'), 'system', '🧹 Blobby a tout oublié. C\'est reparti !');
+            }
+        };
+        headerRight.appendChild(forgetBtn);
+
+        // Compact button
+        var compactBtn = document.createElement('button');
+        compactBtn.textContent = '📦';
+        compactBtn.title = 'Mode compact';
+        Object.assign(compactBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
+        compactBtn.onmouseenter = () => compactBtn.style.color = '#fff';
+        compactBtn.onmouseleave = () => compactBtn.style.color = '#888';
+        compactBtn.onclick = function(e) {
+            e.stopPropagation();
+            var msgs = document.getElementById('blobby-chat-msgs');
+            if (!msgs) return;
+            var isCompact = compactBtn.dataset.compact === '1';
+            if (isCompact) {
+                msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
+                    el.style.padding = '';
+                    el.style.fontSize = '';
+                    el.style.borderRadius = '';
+                });
+                msgs.querySelectorAll('.blobby-msg-compact').forEach(function(el) { el.remove(); });
+                compactBtn.dataset.compact = '0';
+                compactBtn.style.color = '#888';
+            } else {
+                msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
+                    el.style.padding = '2px 8px';
+                    el.style.fontSize = '11px';
+                    el.style.borderRadius = '4px';
+                });
+                var note = document.createElement('div');
+                note.className = 'blobby-msg-compact';
+                note.textContent = '📦 Mode compact';
+                Object.assign(note.style, { textAlign: 'center', color: '#666', fontSize: '10px', padding: '2px' });
+                msgs.appendChild(note);
+                compactBtn.dataset.compact = '1';
+                compactBtn.style.color = '#4ade80';
+            }
+        };
+        compactBtn.dataset.compact = '0';
+        headerRight.appendChild(compactBtn);
+
+        // ── Sauvegarde d'état via l'ancien système (AIH_config.blobbyChatState) ──
+        function _saveChatState() {
+            try {
+                var r = m.modal.getBoundingClientRect();
+                var state = {
+                    x: Math.round(r.left),
+                    y: Math.round(window.innerHeight - r.top - r.height),
+                    w: Math.round(r.width),
+                    h: Math.round(r.height),
+                    alpha: parseInt((m.modal.style.opacity || 1) * 100),
+                };
+                _blobbySaveChatState(state);
+            } catch {}
+        }
+        // ResizeObserver pour sauvegarder via l'ancien système
+        var ro = new ResizeObserver(_saveChatState);
+        ro.observe(m.modal);
+
+        // Focus input
+        input.focus();
+    },
+
+    _addChatMessage(container, role, text) {
+        var div = document.createElement('div');
+        div.className = 'blobby-msg';
+        div.dataset.role = role;
+        Object.assign(div.style, {
+            padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
+            lineHeight: '1.4', maxWidth: '85%', wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap',
+        });
+        if (role === 'user') {
+            div.style.background = '#6366f1';
+            div.style.color = '#fff';
+            div.style.alignSelf = 'flex-end';
+            div.textContent = text;
+        } else if (role === 'blobby') {
+            div.style.background = '#2a2a2e';
+            div.style.color = '#e2e8f0';
+            div.style.alignSelf = 'flex-start';
+            div.style.border = '1px solid #444';
+            div.style.whiteSpace = 'normal';
+            div.innerHTML = _blobbyMarkdownToHtml(text);
+        } else if (role === 'system') {
+            div.style.background = 'transparent';
+            div.style.color = '#888';
+            div.style.alignSelf = 'center';
+            div.style.fontSize = '11px';
+            div.textContent = text;
+        } else if (role === 'action') {
+            div.style.background = '#1a3a1a';
+            div.style.color = '#86efac';
+            div.style.alignSelf = 'center';
+            div.style.fontSize = '11px';
+            div.style.border = '1px solid #166534';
+            div.innerHTML = '⚡ ' + text;
+        }
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+        this._saveChatHistory();
+        // Mettre a jour la barre de contexte
+        var ctxBar = document.getElementById('blobby-chat-ctx');
+        if (ctxBar) {
+            var totalChars = 0;
+            container.querySelectorAll('.blobby-msg').forEach(function(el) {
+                totalChars += (el.textContent || '').length;
+            });
+            var estTokens = Math.round(totalChars / 4);
+            var maxCtx = parseInt(ctxBar.dataset.maxCtx) || 4096;
+            ctxBar.textContent = '~' + estTokens + ' tokens | ' + maxCtx + ' max';
+            var pct = estTokens / maxCtx;
+            ctxBar.style.color = pct > 0.75 ? '#f87171' : (pct > 0.5 ? '#facc15' : '#555');
+        }
+    },
+
+    async _handleChatMessage(container, userText) {
+        this._addChatMessage(container, 'system', '🤔 Blobby réfléchit...');
+
+        try {
+            // Construire le contexte : workflow actuel
+            var workflowDesc = this._describeWorkflow();
+
+            // Recuperer le preset LLM depuis AIH_config
+            var cfg = {};
+            try { cfg = JSON.parse(localStorage.getItem('AIH_config')) || {}; } catch {}
+            var presetId = cfg.blobbyPreset || '';
+
+            if (!presetId) {
+                this._addChatMessage(container, 'blobby',
+                    '⚠️ Configure d\'abord un provider LLM dans les ☰ Paramètres &gt; Provider LLM, ou clique sur ⚙️ dans le chat.');
+                return;
+            }
+
+            // ── Recherche de souvenirs pertinents ──
+            var memories = [];
+            try {
+                memories = await _blobbySearchMemories(userText, 5);
+            } catch {}
+            
+            // Construire le bloc mémoire
+            var memoryBlock = '';
+            if (memories && memories.length > 0) {
+                memoryBlock = '\n\n[SOUVENIRS PERTINENTS]\n';
+                memories.forEach(function(m) {
+                    memoryBlock += '• ' + (m.content || '') + '\n';
+                });
+            }
+            
+            // ── Construire le prompt ──
+            var character = this.getCharacter();
+            var moodDesc = this.mood === 'happy' ? '😊 Tout content et joyeux !'
+                : this.mood === 'surprised' ? '😮 Surpris et curieux !'
+                : this.mood === 'sleepy' ? '😴 Endormi et lent...'
+                : '😐 Neutre';
+            var instruction = character + memoryBlock + '\n\n'
+                + 'Humeur actuelle : ' + moodDesc + '\n'
+                + '(Ton \"Blobby\" doit refletter cette humeur)\n\n'
+                + 'Workflow actuel :\n' + workflowDesc + '\n\n'
+                + 'Instructions :\n'
+                + '- Si l\'utilisateur demande une action, reponds avec la commande entre crochets.\n'
+                + '- Commandes disponibles :\n'
+                + '  [SHELL commande] - Execute une commande shell. Ex: [SHELL ls -la], [SHELL dir], [SHELL git status], [SHELL python --version]\n'
+                + '  [SKILL_SAVE nom | description | commande] - Sauvegarde une procedure pour la reutilisee. Ex: [SKILL_SAVE check_updates | Verifier les mises a jour des nodes | cd custom_nodes && for /d %d in (*) do git -C \"%d\" fetch --quiet && git -C \"%d\" log HEAD..origin/main --oneline]\n'
+                + '  [SKILL_RUN nom] - Execute une skill sauvegardee\n'
+                + '  [SKILL_LIST] - Liste toutes les skills disponibles\n'
+                + '  [MOVE_TO nom] - Deplace la vue vers un noeud du workflow\n'
+                + '  [SET nom param valeur] - Modifie un parametre d\'un noeud\n'
+                + '  [FOCUS nom] - Met en surbrillance un noeud\n'
+                + 'Skills disponibles : ' + JSON.stringify(_blobbyGetSkills().map(function(s){return s.name;})) + '\n'
+                + 'Tu peux utiliser le Markdown pour mettre en forme tes reponses (gras, listes, titres, code).\n'
+                + 'Note : Tu as un VRAI terminal. Reflechis aux commandes a executer. Sauvegarde les procedures qui marchent comme skills. Ne fais pas que parler, agis !\n'
+                + 'Environnement :\n'
+                + '- OS : ' + (navigator.platform || 'inconnu') + '\n'
+                + '- Shell : /bin/bash (Linux) ou cmd (Windows) — utilise des commandes simples et compatibles\n'
+                + '- ComfyUI est installe dans le dossier custom_nodes/ de ComfyUI\n'
+                + '- Le repo AIH Tools est dans custom_nodes/AIH_Tools/\n'
+                + '- Pour les boucles, prefere des commandes simples (ex: ls, find, xargs) plutot que des scripts complexes\n'
+                + '\n'
+                + 'Message de l\'utilisateur : ' + userText;
+
+            var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+            var headers = { 'Content-Type': 'application/json' };
+            if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+
+                        // ── Boucle agentic : LLM → commandes → résultats → LLM → ... ──
+            // Pas de limite fixe — Blobby continue jusqu'à ce qu'il ait fini.
+            // Sécurité : détection de boucle infinie (même réponse 2x de suite).
+            var currentInstruction = instruction;
+            var finalReply = '';
+            var allCommandResults = [];
+            var lastReplyHash = '__INITIAL__';
+            var repeatedCount = 0;  // 0 = première occurrence, 1 = 2ème occurrence identique → break
+
+            for (var turn = 0; turn < 100; turn++) {  // 100 = sécurité, jamais atteint en pratique
+                // Mettre à jour l'indicateur
+                var thinking = container.querySelector('div:last-child');
+                if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
+                    thinking.textContent = turn === 0
+                        ? '🤔 Blobby réfléchit...'
+                        : '🔄 Blobby analyse les résultats (tour ' + turn + ')...';
+                }
+
+                var res = await fetch(baseUrl + '/api/keywords/llm-process', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        preset_id: parseInt(presetId),
+                        instruction: currentInstruction
+                    })
+                });
+
+                var data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    var th = container.querySelector('div:last-child');
+                    if (th && th.textContent.indexOf('Blobby') >= 0) th.remove();
+                    this._addChatMessage(container, 'blobby',
+                        '😅 Désolé, j\'ai eu un problème : ' + (data.error || 'Erreur ' + res.status));
+                    return;
+                }
+
+                if (data.max_context) {
+                    var ctxBar = document.getElementById('blobby-chat-ctx');
+                    if (ctxBar) ctxBar.dataset.maxCtx = data.max_context;
+                }
+
+                var reply = data.output || '...';
+
+                // Détection de boucle : si le LLM répond la même chose 2x de suite, on force l'arrêt
+                // repeatedCount = 0 : première occurrence jamais vue
+                // repeatedCount = 1 : 2ème occurrence identique → on break
+                var replyHash = reply.replace(/\[SHELL[^\]]*\]/g, '').trim();
+                if (replyHash === lastReplyHash) {
+                    repeatedCount++;
+                    if (repeatedCount >= 1) {
+                        reply = this._executeCommands(reply);
+                        finalReply = reply;
+                        break;
+                    }
+                } else {
+                    repeatedCount = 0;
+                }
+                lastReplyHash = replyHash;
+
+                // Verifier les [SHELL] AVANT _executeCommands
+                var hasShellCommands = /\[SHELL\s+.+\]/i.test(reply);
+
+                // Executer les commandes locales (MOVE_TO, SET, FOCUS)
+                reply = this._executeCommands(reply);
+
+                if (hasShellCommands) {
+                    // Mettre à jour l'indicateur pendant l'exécution
+                    var extCommands = (reply.match(/\[SHELL\s+.+?\]/gi) || []);
+                    if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
+                        thinking.textContent = '⚡ Blobby exécute ' + extCommands.length + ' commande(s)...';
+                    }
+
+                    var turnResults = await this._executeShellCommandsAsync(reply);
+                    allCommandResults = allCommandResults.concat(turnResults);
+
+                    // Construire l'instruction pour le tour suivant
+                    var resultsText = turnResults.map(function(r) {
+                        return 'Commande: ' + r.command + '\nRésultat:\n' + r.output;
+                    }).join('\n\n---\n\n');
+
+                    var chatHistory = this._getRecentChatHistory(6);
+                    currentInstruction = character + '\n\n'
+                        + 'Historique de la conversation:\n' + chatHistory + '\n\n'
+                        + 'Tu as exécuté des commandes shell. Voici les résultats:\n\n'
+                        + resultsText + '\n\n'
+                        + 'Analyse ces résultats et réponds à l\'utilisateur.\n'
+                        + 'Si tu as besoin d\'autres commandes, utilise [SHELL commande] (tu as le droit d\'enchaîner autant de tours que nécessaire).\n'
+                        + 'Sinon, donne ta réponse finale en Markdown (sans commandes [SHELL]).\n'
+                        + 'Question actuelle de l\'utilisateur: ' + userText;
+                    continue;
+                }
+
+                // Pas de commandes shell → c'est la réponse finale
+                finalReply = reply;
+                break;
+            }
+
+            if (!finalReply) {
+                finalReply = 'J\'ai fait beaucoup d\'essais mais je n\'ai pas pu terminer. Voici ce que j\'ai trouvé:\n\n'
+                    + allCommandResults.map(function(r) { return r.output; }).join('\n\n');
+            }
+
+
+            // Enlever le thinking
+            var thinkingEl = container.querySelector('div:last-child');
+            if (thinkingEl && thinkingEl.textContent.indexOf('Blobby') >= 0) thinkingEl.remove();
+
+            // Nettoyer les placeholders restants
+            finalReply = finalReply.replace(/⏳[^\n]*/g, '').replace(/\n{3,}/g, '\n\n').trim();
+
+            // Afficher la réponse finale avec markdown
+            this._addChatMessage(container, 'blobby', finalReply);
+
+            // ── Sauvegarder le souvenir (fire-and-forget) ──
+            _blobbyMsgCounter++;
+            var memText = 'User: ' + userText + ' → Blobby: ' + finalReply.substring(0, 200);
+            var importance = 3;
+            if (finalReply.indexOf('⚠️ MEMORABLE') >= 0) importance = 5;
+            _blobbySaveMemory(memText, 'episode', importance);
+
+            // ── Mise à jour personnalité tous les 5 messages ──
+            if (_blobbyMsgCounter % 5 === 0) {
+                // Demander au LLM de mettre à jour la personnalité (fire-and-forget)
+                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var updateHeaders = { 'Content-Type': 'application/json' };
+                if (cfg.apiKey) updateHeaders['Authorization'] = 'Bearer ' + cfg.apiKey;
+                var updateInstruction = 'Tu es Blobby. Voici ta personnalite actuelle et la conversation recente. '
+                    + 'Mets a jour ta personnalite en gardant 80% de l\'ancienne et en ajoutant max 20% de nouveau. '
+                    + 'Reste concis (max 200 caracteres). Reponds UNIQUEMENT avec la nouvelle description de personnalite.\n\n'
+                    + 'Personnalite actuelle: ' + character + '\n\n'
+                    + 'Derniers echanges: ' + userText.substring(0, 200);
+                fetch(baseUrl + '/api/keywords/llm-process', {
+                    method: 'POST',
+                    headers: updateHeaders,
+                    body: JSON.stringify({ preset_id: parseInt(presetId), instruction: updateInstruction })
+                }).then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.output) {
+                        // Sauvegarder la nouvelle personnalite
+                        _blobbySaveCharacter(d.output.trim().substring(0, 300));
+                        _blobbySaveMemory('Personnalite mise a jour: ' + d.output.trim().substring(0, 100), 'personality', 4);
+                    }
+                }).catch(function() {});
+            }
+
+        } catch (e) {
+            var thinking = container.querySelector('div:last-child');
+            if (thinking && thinking.textContent === '🤔 Blobby réfléchit...') thinking.remove();
+            this._addChatMessage(container, 'system', '❌ Erreur: ' + (e.message || ''));
+        }
+    },
+
+    _getRecentChatHistory(count) {
+        var msgs = document.getElementById('blobby-chat-msgs');
+        if (!msgs) return '';
+        var history = [];
+        var allMsgs = msgs.querySelectorAll('.blobby-msg');
+        var start = Math.max(0, allMsgs.length - count);
+        for (var i = start; i < allMsgs.length; i++) {
+            var el = allMsgs[i];
+            var role = el.dataset.role;
+            var text = el.textContent || '';
+            if (role === 'user') {
+                history.push('Utilisateur: ' + text);
+            } else if (role === 'blobby') {
+                history.push('Blobby: ' + text.substring(0, 300));
+            }
+        }
+        return history.join('\n');
+    },
+
+    _describeWorkflow() {
+        var app = window.app || window.comfyAPI?.app?.app;
+        if (!app || !app.graph || !app.graph.nodes) return 'Aucun workflow ouvert.';
+
+        var nodes = app.graph.nodes;
+        var desc = 'Ce workflow contient ' + nodes.length + ' nœud(s) :\n';
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            var title = n.title || n.comfyClass || 'Inconnu';
+            var widgets = '';
+            if (n.widgets && n.widgets.length > 0) {
+                widgets = ' [' + n.widgets.map(function(w) {
+                    if (w.type === 'number' || w.type === 'slider') return w.name + '=' + w.value;
+                    if (w.type === 'combo') return w.name + '=' + (w.value || '');
+                    return w.name;
+                }).join(', ') + ']';
+            }
+            desc += '  - ' + title + widgets + '\n';
+        }
+        return desc;
+    },
+
+    _executeCommands(reply) {
+        // Executer les commandes [MOVE_TO ...], [SET ...], [FOCUS ...]
+        var app = window.app || window.comfyAPI?.app?.app;
+        if (!app || !app.graph || !app.graph.nodes) return reply;
+
+        var result = reply;
+        var commandsFound = false;
+
+        // [MOVE_TO nom_du_noeud]
+        result = result.replace(/\[MOVE_TO\s+([^\]]+)\]/gi, (match, nodeName) => {
+            commandsFound = true;
+            var name = nodeName.trim().toLowerCase();
+            for (var i = 0; i < app.graph.nodes.length; i++) {
+                var n = app.graph.nodes[i];
+                var title = (n.title || n.comfyClass || '').toLowerCase();
+                if (title.includes(name)) {
+                    app.canvas.centerOnNode(n);
+                    return '✅ Vue déplacée vers "' + (n.title || n.comfyClass) + '"';
+                }
+            }
+            return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
+        });
+
+        // [FOCUS nom_du_noeud]
+        result = result.replace(/\[FOCUS\s+([^\]]+)\]/gi, (match, nodeName) => {
+            commandsFound = true;
+            var name = nodeName.trim().toLowerCase();
+            for (var i = 0; i < app.graph.nodes.length; i++) {
+                var n = app.graph.nodes[i];
+                var title = (n.title || n.comfyClass || '').toLowerCase();
+                if (title.includes(name)) {
+                    // Mettre en surbrillance en centrant + animant
+                    n.color = '#FF8F00';
+                    n.bgcolor = '#2a1a00';
+                    app.canvas.centerOnNode(n);
+                    app.graph.setDirtyCanvas(true, true);
+                    setTimeout(() => {
+                        n.color = undefined;
+                        n.bgcolor = undefined;
+                        app.graph.setDirtyCanvas(true, true);
+                    }, 2000);
+                    return '🔍 Focus sur "' + (n.title || n.comfyClass) + '" (2s)';
+                }
+            }
+            return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
+        });
+
+        // [SHELL], [SKILL_SAVE], [SKILL_LIST], [SKILL_RUN] sont gérés par la boucle agentic
+        // Ne PAS les remplacer par des placeholders ici
+
+        return result;
+    },
+
+    async _executeShellCommandsAsync(reply) {
+        // Execute les commandes [SHELL ...] de maniere synchrone et retourne les resultats
+        var localUrl = window.location.origin.replace(/\/+$/, '');
+        var headers = { 'Content-Type': 'application/json' };
+        var results = [];
+
+        // Extraire toutes les commandes [SHELL ...]
+        var commands = [];
+        var textWithoutShell = reply.replace(/\[SHELL\s+(.+)\]/gi, function(match, cmd) {
+            commands.push(cmd.trim());
+            return '⏳';
+        });
+
+        // Executer chaque commande sequentiellement
+        for (var i = 0; i < commands.length; i++) {
+            try {
+                var r = await fetch(localUrl + '/aih/blobby/exec', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ action: 'shell', command: commands[i] })
+                });
+                // L'exec est protégé par l'auth terminal Holaf (cookie holaf_session).
+                // Un 401 doit se voir : on invite au login au lieu d'une erreur muette.
+                if (r.status === 401) {
+                    results.push({ command: commands[i], output: '⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal Holaf (menu Holaf Utilities → Terminal), puis réessaie.' });
+                    continue;
+                }
+                var data = await r.json().catch(() => ({}));
+                var output = data.output || (data.ok ? '✅ Fait' : '❌ Erreur');
+                results.push({ command: commands[i], output: output });
+            } catch(e) {
+                results.push({ command: commands[i], output: '❌ Erreur réseau: ' + e.message });
+            }
+        }
+
+        // Traiter aussi [SKILL_SAVE] et [SKILL_LIST] et [SKILL_RUN]
+        textWithoutShell = textWithoutShell.replace(/\[SKILL_SAVE\s+(.+)\]/gi, function(match, args) {
+            var parts = args.split('|').map(function(s) { return s.trim(); });
+            if (parts.length >= 3) {
+                _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
+                return '✅ Skill "' + parts[0] + '" sauvegardee !';
+            }
+            return '⚠️ Format: [SKILL_SAVE nom | description | commande]';
+        });
+
+        textWithoutShell = textWithoutShell.replace(/\[SKILL_LIST\]/gi, function() {
+            var skills = _blobbyListSkills();
+            if (skills.length === 0) return 'Aucune skill sauvegardee.';
+            return skills.map(function(s) { return '• ' + s.name + ': ' + s.description; }).join('\n');
+        });
+
+        textWithoutShell = textWithoutShell.replace(/\[SKILL_RUN\s+(.+)\]/gi, function(match, name) {
+            var skill = _blobbyGetSkill(name.trim());
+            if (!skill) return '⚠️ Skill "' + name.trim() + '" introuvable';
+            // Re-executer la commande de la skill
+            if (skill.command) {
+                results.push({ command: skill.command, output: '[Skill: ' + name.trim() + ']' });
+            }
+            return '🔄 Execution de la skill ' + name.trim() + '...';
+        });
+
+        return results;
+    },
+
+    _executeRemoteCommands(reply, callback) {
+        // Execute les commandes [SHELL ...] et [SKILL_* ...] via le serveur ComfyUI local
+        var localUrl = window.location.origin.replace(/\/+$/, '');
+        var headers = { 'Content-Type': 'application/json' };
+
+        var commands = [];
+        var output = reply;
+
+        // [SHELL commande] — greedy match to last ] (commands may contain ] in bash tests like [ -d "$x" ])
+        output = output.replace(/\[SHELL\s+(.+)\]/gi, function(match, cmd) {
+            commands.push({ action: 'shell', command: cmd.trim() });
+            return '⏳';
+        });
+
+        // [SKILL_SAVE nom | description | commande]
+        // greedy match: the commande part may contain ] in bash syntax
+        output = output.replace(/\[SKILL_SAVE\s+(.+)\]/gi, function(match, args) {
+            var parts = args.split('|').map(function(s) { return s.trim(); });
+            if (parts.length >= 3) {
+                _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
+                return '✅ Skill \"' + parts[0] + '\" sauvegardee !';
+            }
+            return '⚠️ Format: [SKILL_SAVE nom | description | commande]';
+        });
+
+        // [SKILL_LIST]
+        output = output.replace(/\[SKILL_LIST\]/gi, function() {
+            var skills = _blobbyListSkills();
+            if (skills.length === 0) return 'Aucune skill sauvegardee pour le moment.';
+            var lines = skills.map(function(s) {
+                return '• ' + s.name + ' : ' + s.description;
+            });
+            return '📋 Skills disponibles:\n' + lines.join('\n');
+        });
+
+        // [SKILL_RUN nom]
+        output = output.replace(/\[SKILL_RUN\s+([^\]]+)\]/gi, function(match, skillName) {
+            var skill = _blobbyGetSkill(skillName.trim());
+            if (!skill) return '⚠️ Skill \"' + skillName.trim() + '\" introuvable. Utilise [SKILL_LIST] pour voir les skills.';
+            commands.push({ action: 'shell', command: skill.command });
+            return '⏳';
+        });
+
+        if (commands.length === 0) {
+            if (callback) callback(output);
+            return;
+        }
+
+        // Executer les commandes sequentiellement
+        var idx = 0;
+        function runNext() {
+            if (idx >= commands.length) {
+                if (callback) callback(output);
+                return;
+            }
+            var cmd = commands[idx];
+            fetch(localUrl + '/aih/blobby/exec', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ action: 'shell', command: cmd.command })
+            })
+            .then(function(r) {
+                // L'exec est protégé par l'auth terminal Holaf (cookie holaf_session).
+                // Un 401 doit se voir : on invite au login au lieu d'une erreur muette.
+                if (r.status === 401) {
+                    output = output.replace('⏳', '\n\n⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal Holaf (menu Holaf Utilities → Terminal), puis réessaie.');
+                    idx++;
+                    runNext();
+                    return null;
+                }
+                return r.json();
+            })
+            .then(function(data) {
+                if (data === null) return;
+                var result = '';
+                if (data.ok) {
+                    result = '\n\n' + (data.output || '✅ Fait !');
+                } else {
+                    result = '\n\n❌ ' + (data.error || data.output || 'Erreur');
+                }
+                output = output.replace('⏳', result.trim());
+                idx++;
+                runNext();
+            })
+            .catch(function(err) {
+                output = output.replace('⏳', '\n\n❌ ' + (err.message || ''));
+                idx++;
+                runNext();
+            });
+        }
+        runNext();
+    },
+};
+
+// ─── Exposition publique pour le menu AIH ───
+window.BlobbyCompanion = {
+    activate: () => Blobby.activate(),
+    deactivate: () => Blobby.deactivate(),
+    isActive: () => Blobby.isActive(),
+    toggle: () => {
+        const newState = !Blobby.isActive();
+        if (newState) { Blobby.activate(); } else { Blobby.deactivate(); }
+        const cfg = _getAIHConfig();
+        cfg.blobbyActive = newState;
+        _setAIHConfig(cfg);
+        return newState;
+    },
+    openChat: () => {
+        if (Blobby.isActive()) {
+            Blobby._openChatModal();
+        }
+    },
+    chatVisible: () => {
+        var m = document.querySelector('.aih-modal.blobby-chat-modal');
+        return m && m.style.display !== 'none';
+    }
+};
+
+// ─── Auto-init ───
+(function waitForApp() {
+    const app = window.app || window.comfyAPI?.app?.app;
+    if (!app) { setTimeout(waitForApp, 100); return; }
+
+    app.registerExtension({
+        name: "Blobby.Companion",
+        async setup() {
+            const canvas = app.canvas;
+            if (!canvas) { console.warn("[Blobby] Pas de canvas"); return; }
+            Blobby.init(canvas);
+
+            const cfg = _getAIHConfig();
+            if (cfg.blobbyActive) {
+                Blobby.activate();
+            }
+
+            console.log("%c🧡 Blobby Companion chargé. Menu AIH > Activer Blobby", "font-size: 13px; color: #FF8F00;");
+        }
+    });
+})();
