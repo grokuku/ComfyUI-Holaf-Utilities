@@ -219,6 +219,8 @@ const HolafUtilitiesMenu = {
             { type: 'separator' },
             { label: "Settings", handlerName: "holafSettingsManager" },
             { type: 'separator' },
+            { label: "AIH Update", special: 'aih_update' },
+            { label: "AIH Restart", special: 'aih_restart' },
             { label: "Restart ComfyUI", special: 'restart' }
         ];
 
@@ -282,123 +284,11 @@ const HolafUtilitiesMenu = {
             setTimeout(updateCheckboxUI, 50);
 
             menuItem.onclick = (e) => {
-                if (itemInfo.special === 'restart') {
-                    const restartDiv = document.createElement("div");
-                    const restartMsg = document.createElement("p");
-                    restartMsg.id = "holaf-restart-message";
-                    restartMsg.textContent = "Are you sure you want to restart the ComfyUI server?";
-                    restartDiv.appendChild(restartMsg);
-                    const restartTimerLine = document.createElement("p");
-                    restartTimerLine.id = "holaf-restart-timer-line";
-                    restartTimerLine.style.cssText = "visibility: hidden; margin-top: 10px; height: 1.2em;";
-                    restartTimerLine.appendChild(document.createTextNode("Time elapsed: "));
-                    const restartTimerSpan = document.createElement("span");
-                    restartTimerSpan.id = "holaf-restart-timer";
-                    restartTimerSpan.textContent = "0";
-                    restartTimerLine.appendChild(restartTimerSpan);
-                    restartTimerLine.appendChild(document.createTextNode("s"));
-                    restartDiv.appendChild(restartTimerLine);
-
-                    HolafModal.show("Restart ComfyUI", restartDiv, () => {
-                        const dialog = document.getElementById("holaf-modal-dialog");
-                        if (!dialog) return;
-
-                        const messageEl = document.getElementById("holaf-restart-message");
-                        const timerLineEl = document.getElementById("holaf-restart-timer-line");
-
-                        dialog.querySelector(".holaf-utility-header span").textContent = "Restarting Server";
-                        messageEl.textContent = "Sending restart command...";
-                        timerLineEl.style.visibility = "visible";
-
-                        const footerEl = dialog.querySelector(".holaf-modal-footer");
-                        footerEl.replaceChildren();
-                        const restartCloseBtn = document.createElement("button");
-                        restartCloseBtn.id = "holaf-restart-close-btn";
-                        restartCloseBtn.className = "comfy-button secondary";
-                        restartCloseBtn.textContent = "Close";
-                        const restartRefreshBtn = document.createElement("button");
-                        restartRefreshBtn.id = "holaf-restart-refresh-btn";
-                        restartRefreshBtn.className = "comfy-button";
-                        restartRefreshBtn.disabled = true;
-                        restartRefreshBtn.textContent = "Refresh";
-                        footerEl.appendChild(restartCloseBtn);
-                        footerEl.appendChild(restartRefreshBtn);
-
-                        const cleanupAndClose = () => {
-                            const overlay = document.getElementById("holaf-modal-overlay");
-                            if (overlay) overlay.remove();
-                            if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
-                            if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
-                            delete window.holaf.restartMonitorInterval;
-                            delete window.holaf.restartTimerInterval;
-                        }
-
-                        dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
-
-                        fetch("/holaf/utilities/restart", { method: 'POST' })
-                            .then(res => res.json())
-                            .then(data => {
-                                if (data.status !== "ok") throw new Error(data.message || 'Unknown server error');
-
-                                const timerEl = document.getElementById("holaf-restart-timer");
-                                const refreshBtn = document.getElementById("holaf-restart-refresh-btn");
-                                if (!messageEl || !timerEl || !refreshBtn) return;
-
-                                messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
-
-                                let seconds = 0;
-                                window.holaf.restartTimerInterval = setInterval(() => {
-                                    seconds++;
-                                    if (timerEl) timerEl.textContent = seconds;
-                                }, 1000);
-
-                                let serverIsDown = false;
-                                const checkServerStatus = () => {
-                                    fetch(window.location.origin, { method: 'HEAD', cache: 'no-cache' })
-                                        .then(response => {
-                                            if (response.ok) {
-                                                if (serverIsDown) {
-                                                    clearInterval(window.holaf.restartMonitorInterval);
-                                                    clearInterval(window.holaf.restartTimerInterval);
-                                                    delete window.holaf.restartMonitorInterval;
-                                                    delete window.holaf.restartTimerInterval;
-
-                                                    if (!messageEl || !refreshBtn) return;
-
-                                                    messageEl.textContent = "✅ Server has rebooted successfully in " + seconds + " seconds."
-                                                    if (timerLineEl) timerLineEl.style.visibility = "hidden";
-                                                    refreshBtn.textContent = "Refresh Page";
-                                                    refreshBtn.disabled = false;
-                                                    refreshBtn.onclick = () => location.reload();
-                                                    refreshBtn.focus();
-                                                }
-                                            } else {
-                                                if (!serverIsDown) {
-                                                    if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
-                                                    serverIsDown = true;
-                                                }
-                                            }
-                                        })
-                                        .catch(() => {
-                                            if (!serverIsDown) {
-                                                if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
-                                                serverIsDown = true;
-                                            }
-                                        });
-                                };
-
-                                window.holaf.restartMonitorInterval = setInterval(checkServerStatus, 2000);
-                            })
-                            .catch(err => {
-                                const errorP = document.createElement('p');
-                                errorP.style.color = 'var(--holaf-error-color, #F44336)';
-                                errorP.textContent = "Failed to send restart command to the server: " + (err.message || "Unknown error") + ".";
-                                dialog.querySelector(".holaf-modal-content").replaceChildren(errorP);
-                                const rb = dialog.querySelector("#holaf-restart-refresh-btn");
-                                if (rb) rb.disabled = true;
-                            });
-                        return false;
-                    });
+                if (itemInfo.special === 'restart' || itemInfo.special === 'aih_restart') {
+                    this.startRestartFlow();
+                }
+                else if (itemInfo.special === 'aih_update') {
+                    this.checkForAIHUpdate();
                 }
                 else if (itemInfo.special === "toggle_layout_tools") {
                     if (window.holaf && window.holaf.layoutTools) {
@@ -445,6 +335,158 @@ const HolafUtilitiesMenu = {
                 }
             };
             this.dropdownMenuEl.appendChild(menuItem);
+        });
+    },
+
+    // ── AIH Update ──
+    // POST /aih/update applies the update on disk and answers {updated: bool}
+    // (never restarts by itself). When something changed, propose the restart
+    // via the shared Utils mechanism POST /holaf/utilities/restart.
+    checkForAIHUpdate() {
+        const toast = window.holaf?.toastManager;
+        const waitId = toast ? toast.show({ message: "Checking for AIH update...", type: "info", duration: 0 }) : null;
+        fetch("/aih/update", { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (waitId && toast) toast.hide(waitId);
+                if (data.updated) {
+                    HolafModal.show(
+                        "AIH Update",
+                        "Update installed on disk. Restart ComfyUI now to load the new version?",
+                        () => { this.startRestartFlow(); return false; },
+                        "Restart",
+                        "Later"
+                    );
+                } else if (data.status === "error") {
+                    if (toast) toast.show({ message: "AIH update failed: " + (data.message || "unknown error"), type: "error" });
+                } else {
+                    if (toast) toast.show({ message: "AIH is already up to date.", type: "success" });
+                }
+            })
+            .catch(err => {
+                if (waitId && toast) toast.hide(waitId);
+                if (toast) toast.show({ message: "AIH update check failed: " + (err.message || "network error"), type: "error" });
+            });
+    },
+
+    // ── Shared restart flow (used by both "Restart ComfyUI" and "AIH Restart",
+    //    and by the post-update prompt) ──
+    startRestartFlow() {
+        const restartDiv = document.createElement("div");
+        const restartMsg = document.createElement("p");
+        restartMsg.id = "holaf-restart-message";
+        restartMsg.textContent = "Are you sure you want to restart the ComfyUI server?";
+        restartDiv.appendChild(restartMsg);
+        const restartTimerLine = document.createElement("p");
+        restartTimerLine.id = "holaf-restart-timer-line";
+        restartTimerLine.style.cssText = "visibility: hidden; margin-top: 10px; height: 1.2em;";
+        restartTimerLine.appendChild(document.createTextNode("Time elapsed: "));
+        const restartTimerSpan = document.createElement("span");
+        restartTimerSpan.id = "holaf-restart-timer";
+        restartTimerSpan.textContent = "0";
+        restartTimerLine.appendChild(restartTimerSpan);
+        restartTimerLine.appendChild(document.createTextNode("s"));
+        restartDiv.appendChild(restartTimerLine);
+
+        HolafModal.show("Restart ComfyUI", restartDiv, () => {
+            const dialog = document.getElementById("holaf-modal-dialog");
+            if (!dialog) return;
+
+            const messageEl = document.getElementById("holaf-restart-message");
+            const timerLineEl = document.getElementById("holaf-restart-timer-line");
+
+            dialog.querySelector(".holaf-utility-header span").textContent = "Restarting Server";
+            messageEl.textContent = "Sending restart command...";
+            timerLineEl.style.visibility = "visible";
+
+            const footerEl = dialog.querySelector(".holaf-modal-footer");
+            footerEl.replaceChildren();
+            const restartCloseBtn = document.createElement("button");
+            restartCloseBtn.id = "holaf-restart-close-btn";
+            restartCloseBtn.className = "comfy-button secondary";
+            restartCloseBtn.textContent = "Close";
+            const restartRefreshBtn = document.createElement("button");
+            restartRefreshBtn.id = "holaf-restart-refresh-btn";
+            restartRefreshBtn.className = "comfy-button";
+            restartRefreshBtn.disabled = true;
+            restartRefreshBtn.textContent = "Refresh";
+            footerEl.appendChild(restartCloseBtn);
+            footerEl.appendChild(restartRefreshBtn);
+
+            const cleanupAndClose = () => {
+                const overlay = document.getElementById("holaf-modal-overlay");
+                if (overlay) overlay.remove();
+                if (window.holaf.restartMonitorInterval) clearInterval(window.holaf.restartMonitorInterval);
+                if (window.holaf.restartTimerInterval) clearInterval(window.holaf.restartTimerInterval);
+                delete window.holaf.restartMonitorInterval;
+                delete window.holaf.restartTimerInterval;
+            }
+
+            dialog.querySelector("#holaf-restart-close-btn").onclick = cleanupAndClose;
+
+            fetch("/holaf/utilities/restart", { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status !== "ok") throw new Error(data.message || 'Unknown server error');
+
+                    const timerEl = document.getElementById("holaf-restart-timer");
+                    const refreshBtn = document.getElementById("holaf-restart-refresh-btn");
+                    if (!messageEl || !timerEl || !refreshBtn) return;
+
+                    messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
+
+                    let seconds = 0;
+                    window.holaf.restartTimerInterval = setInterval(() => {
+                        seconds++;
+                        if (timerEl) timerEl.textContent = seconds;
+                    }, 1000);
+
+                    let serverIsDown = false;
+                    const checkServerStatus = () => {
+                        fetch(window.location.origin, { method: 'HEAD', cache: 'no-cache' })
+                            .then(response => {
+                                if (response.ok) {
+                                    if (serverIsDown) {
+                                        clearInterval(window.holaf.restartMonitorInterval);
+                                        clearInterval(window.holaf.restartTimerInterval);
+                                        delete window.holaf.restartMonitorInterval;
+                                        delete window.holaf.restartTimerInterval;
+
+                                        if (!messageEl || !refreshBtn) return;
+
+                                        messageEl.textContent = "✅ Server has rebooted successfully in " + seconds + " seconds."
+                                        if (timerLineEl) timerLineEl.style.visibility = "hidden";
+                                        refreshBtn.textContent = "Refresh Page";
+                                        refreshBtn.disabled = false;
+                                        refreshBtn.onclick = () => location.reload();
+                                        refreshBtn.focus();
+                                    }
+                                } else {
+                                    if (!serverIsDown) {
+                                        if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                        serverIsDown = true;
+                                    }
+                                }
+                            })
+                            .catch(() => {
+                                if (!serverIsDown) {
+                                    if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                    serverIsDown = true;
+                                }
+                            });
+                    };
+
+                    window.holaf.restartMonitorInterval = setInterval(checkServerStatus, 2000);
+                })
+                .catch(err => {
+                    const errorP = document.createElement('p');
+                    errorP.style.color = 'var(--holaf-error-color, #F44336)';
+                    errorP.textContent = "Failed to send restart command to the server: " + (err.message || "Unknown error") + ".";
+                    dialog.querySelector(".holaf-modal-content").replaceChildren(errorP);
+                    const rb = dialog.querySelector("#holaf-restart-refresh-btn");
+                    if (rb) rb.disabled = true;
+                });
+            return false;
         });
     },
 
