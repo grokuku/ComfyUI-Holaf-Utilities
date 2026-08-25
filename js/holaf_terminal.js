@@ -112,14 +112,16 @@ const holafTerminal = {
         if (this.scriptsLoaded && window.Terminal && window.FitAddon) return true;
         try {
             if (!window.Terminal) {
-                await loadScript(holafExtUrl("js/xterm.js"));
+                // WEB_DIRECTORY is mounted at the extension root: xterm.js is
+                // served at <base>/xterm.js (no "js/" segment in browser URLs).
+                await loadScript(holafExtUrl("xterm.js"));
                 // Verify the global is now available (guard against race conditions)
                 if (!window.Terminal) {
                     await new Promise(r => setTimeout(r, 100));
                 }
             }
             if (!window.FitAddon) {
-                await loadScript(holafExtUrl("js/xterm-addon-fit.js"));
+                await loadScript(holafExtUrl("xterm-addon-fit.js"));
                 if (!window.FitAddon) {
                     await new Promise(r => setTimeout(r, 100));
                 }
