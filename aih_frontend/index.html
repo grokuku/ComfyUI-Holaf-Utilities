@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Helper</title>
+  <script>
+    // Système de thème : data-theme (palette) + .dark (mode) — défaut : Nord Dark
+    // Migration depuis l'ancien système (theme='dark'|'light') vers le nouveau
+    (function(){
+      var t = localStorage.getItem('theme');
+      var m = localStorage.getItem('theme-mode');
+      // Migration : ancien système où theme était 'dark' ou 'light'
+      if (t === 'dark' || t === 'light') {
+        m = t;
+        t = 'nord';
+        localStorage.setItem('theme', t);
+        localStorage.setItem('theme-mode', m);
+      }
+      t = t || 'nord';
+      if (m === null) m = 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+      if (m === 'dark') document.documentElement.classList.add('dark');
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body style="background-color:var(--bg-body);color:var(--text-primary)" class="antialiased overflow-hidden h-screen">
+
+  <div id="app" class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header style="background-color:var(--bg-header);" class="text-white shadow-lg">
+      <div class="w-full mx-auto px-4 py-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-3">
+            <svg class="w-7 h-7" style="color:var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg>
+            <div>
+              <h1 class="text-lg font-semibold tracking-tight">AI-Helper</h1>
+            </div>
+          </div>
+
+          <!-- Onglets principaux -->
+          <nav class="flex items-center gap-1 bg-black/20 rounded-lg p-1">
+            <button id="tab-btn-prompt" onclick="switchMainTab('prompt')" class="px-3 py-1.5 text-xs font-medium rounded-md bg-white/20 text-white transition">
+              Prompt Helper
+            </button>
+            <button id="tab-btn-style" onclick="switchMainTab('style')" class="px-3 py-1.5 text-xs font-medium rounded-md text-white/70 hover:text-white hover:bg-white/10 transition">
+              Style
+            </button>
+            <button id="tab-btn-template" onclick="switchMainTab('template')" class="px-3 py-1.5 text-xs font-medium rounded-md text-white/70 hover:text-white hover:bg-white/10 transition">
+              Template
+            </button>
+            <button id="tab-btn-keywords" onclick="switchMainTab('keywords')" class="px-3 py-1.5 text-xs font-medium rounded-md text-white/70 hover:text-white hover:bg-white/10 transition">
+              Keywords Manager
+            </button>
+            <button id="tab-btn-preview" onclick="switchMainTab('preview')" class="px-3 py-1.5 text-xs font-medium rounded-md text-white/70 hover:text-white hover:bg-white/10 transition">
+              Preview
+            </button>
+          </nav>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Theme dropdown -->
+          <select id="theme-select" onchange="setTheme(this.value)"
+                  class="text-xs px-2 py-1.5 rounded-md border-0 bg-black/20 hover:bg-black/30 text-white cursor-pointer transition outline-none">
+            <option value="solarized">Solarized</option>
+            <option value="nord">Nord</option>
+            <option value="catppuccin">Catppuccin</option>
+            <option value="gruvbox">Gruvbox</option>
+            <option value="material">Material</option>
+          </select>
+          <!-- Dark/Light toggle -->
+          <button id="btn-theme" onclick="toggleThemeMode()"
+                  class="inline-flex items-center justify-center w-9 h-9 text-sm rounded-md bg-black/20 hover:bg-black/30 transition">
+            <span id="theme-icon" class="text-lg leading-none">🌙</span>
+          </button>
+          <!-- Connexion / Utilisateur -->
+          <div id="user-area" class="flex items-center gap-2">
+            <a id="btn-login" href="#" onclick="discordLogin();return false"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blurple hover:bg-blurple/80 transition rounded-md"
+               style="background:#5865F2">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+              Connexion Discord
+            </a>
+            <div id="user-info" class="hidden items-center gap-2">
+              <img id="user-avatar" class="w-8 h-8 rounded-full" src="" alt="Avatar">
+              <span id="user-name" class="text-sm font-medium"></span>
+              <button id="btn-admin" onclick="toggleAdmin()" class="hidden text-xs font-medium text-indigo-400 bg-indigo-900/20 border border-indigo-800/30 px-2.5 py-1 rounded-md hover:bg-indigo-900/40 transition">Admin</button>
+              <button id="btn-members" onclick="toggleMembers()" class="hidden text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Membres</button>
+              <button onclick="toggleMergedSettings()" class="text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Paramètres</button>
+              <button onclick="logout()" class="text-xs font-medium text-red-400 bg-red-900/20 border border-red-800/30 px-2.5 py-1 rounded-md hover:bg-red-900/40 transition">Déconnexion</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+
+      <div id="main-content" class="w-full flex-1 flex flex-col overflow-hidden relative" style="display: none;">
+      <!-- Empty state : centre sur l'ecran -->
+      <div id="tab-prompt-helper" class="w-full flex-1 flex flex-col overflow-hidden relative">
+      <div id="empty-state" class="flex flex-col items-center justify-center text-center" style="position:absolute;inset:0;z-index:20;">
+        <div id="empty-icon" class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5 dark:bg-slate-800">
+          <svg id="empty-svg" class="w-10 h-10 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <h2 id="empty-title" class="text-xl font-semibold text-slate-800 mb-2 dark:text-slate-200"></h2>
+        <p id="empty-desc" class="text-slate-500 max-w-sm mb-6 dark:text-slate-400"></p>
+        <a id="empty-btn" href="#" onclick="discordLogin();return false" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-md transition" style="background:#5865F2">Connexion avec Discord</a>
+        <button id="empty-import-btn" onclick="openImport()" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">Importer un fichier</button>
+      </div>      <div id="panels-container" class="flex flex-1 overflow-hidden min-h-0">
+
+          <!-- PANEL GAUCHE : Keywords -->
+          <div id="panel-left" class="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" style="width: 50%; min-width: 200px;">
+            <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200/60 dark:border-slate-700/60 shrink-0">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Mots-clés</span>
+                <span id="keywords-loading" class="hidden">
+                  <svg class="w-3.5 h-3.5 text-indigo-500 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 1 0 10 10" stroke-linecap="round"/></svg>
+                </span>
+              </div>
+              <button onclick="resetFilters()" title="Reinitialiser les filtres" class="text-xs text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400 transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto" id="panel-left-content">
+              <!-- Filters -->
+              <div id="filters-bar" class="hidden sticky top-0 z-10 border-b border-slate-200 bg-white dark:bg-slate-800 dark:border-slate-700 px-2 py-2">
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative flex-[2] min-w-[10rem]">
+                      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                      <input type="text" id="search-input" placeholder="Recherche (+)"
+                             class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400">
+                    </div>
+                    <div class="relative flex-1 min-w-[6rem]">
+                      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65" transform="rotate(45 18 18)"/></svg>
+                      <input type="text" id="search-neg-input" placeholder="Exclure (-)"
+                             class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400">
+                    </div>
+                    <div class="relative flex-[2] min-w-[10rem]">
+                      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm">🧠</span>
+                      <input type="text" id="search-semantic-input" placeholder="Recherche semantique..."
+                             class="w-full pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400">
+                      <span id="semantic-loading" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-500 animate-pulse">...</span>
+                    </div>
+                  </div>
+                  <div class="flex flex-row items-stretch gap-2">
+                    <!-- Colonne gauche : section / sous-section / radios + confiance -->
+                    <div class="flex flex-col gap-2 flex-1 min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <!-- Multi-select : sections -->
+                        <div class="relative" id="section-multiselect">
+                          <button type="button" id="section-btn" onclick="toggleSectionDropdown()"
+                                  class="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 text-left flex items-center justify-between gap-1 min-w-[8rem]">
+                            <span id="section-btn-label" class="truncate">Toutes sections</span>
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                          <div id="section-dropdown" class="hidden absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg">
+                            <!-- Checkboxes générées dynamiquement -->
+                          </div>
+                        </div>
+                        <!-- Multi-select : sous-sections -->
+                        <div class="relative" id="subsection-multiselect">
+                          <button type="button" id="subsection-btn" onclick="toggleSubsectionDropdown()"
+                                  class="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 text-left flex items-center justify-between gap-1 min-w-[8rem]">
+                            <span id="subsection-btn-label" class="truncate">Toutes sous-sections</span>
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                          <div id="subsection-dropdown" class="hidden absolute z-20 mt-1 w-full max-h-60 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg">
+                            <!-- Checkboxes générées dynamiquement -->
+                          </div>
+                        </div>
+                        <label class="inline-flex items-center gap-1.5 px-2 py-1 text-sm select-none cursor-pointer rounded border border-slate-200 dark:border-slate-600">
+                          <input type="radio" name="nsfw-filter" value="" checked class="accent-indigo-600">
+                          <span class="text-slate-600 dark:text-slate-400">Tout</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1.5 px-2 py-1 text-sm select-none cursor-pointer rounded border border-slate-200 dark:border-slate-600">
+                          <input type="radio" name="nsfw-filter" value="0" class="accent-emerald-600">
+                          <span class="text-emerald-600 dark:text-emerald-400">SFW</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1.5 px-2 py-1 text-sm select-none cursor-pointer rounded border border-rose-200 dark:border-rose-900/50">
+                          <input type="radio" name="nsfw-filter" value="1" class="accent-rose-600">
+                          <span class="text-rose-600 dark:text-rose-400">NSFW</span>
+                        </label>
+                      </div>
+
+                      <!-- Ligne confiance + filtre chargé -->
+                      <div class="flex flex-wrap items-center gap-3" id="filter-actions-row">
+                        <label class="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <span>Confiance:</span>
+                          <input type="range" id="filter-confidence" min="0" max="100" value="0" step="1"
+                                 class="w-20 h-1 accent-indigo-500">
+                          <input type="number" id="filter-confidence-num" min="0" max="100" value="0"
+                                 class="w-12 text-xs text-center border border-slate-300 rounded px-1 py-0.5 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                          <span>%</span>
+                        </label>
+
+                        <span class="text-slate-300 dark:text-slate-600">|</span>
+
+                        <span id="filter-loaded-name" class="hidden text-xs text-indigo-600 dark:text-indigo-400 font-medium truncate max-w-[160px]"></span>
+                        <button id="btn-filter-save" onclick="saveCurrentFilter()" class="hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800/50 dark:hover:bg-emerald-900/50">
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                          Enregistrer
+                        </button>
+                        <button id="btn-filter-discard" onclick="discardFilter()" class="hidden text-slate-400 hover:text-rose-500 transition p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20" title="Fermer le filtre chargé">
+                          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Colonne droite : encadre filtres sous la recherche sémantique -->
+                    <div class="flex flex-col gap-3 bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 min-w-[8.5rem] items-start justify-start">
+                      <span class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold">Filtres</span>
+
+                      <div class="flex flex-row gap-1.5 w-full">
+                        <button onclick="openFilterListModal()" title="Charger un filtre enregistré" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-medium rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 transition dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800/50 dark:hover:bg-indigo-900/50">
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+                          Charger
+                        </button>
+
+                        <button id="btn-filter-saveas" onclick="openSaveFilter()" title="Enregistrer sous un nouveau nom" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800/50 dark:hover:bg-emerald-900/50">
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+                          Sauver
+                        </button>
+
+                        <button onclick="openManageFilters()" title="Gérer les filtres enregistrés" class="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-medium rounded-md bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 hover:border-violet-300 transition dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800/50 dark:hover:bg-violet-900/50">
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                          Gérer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Modale gestion filtres -->
+              <div id="modal-manage-filters" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+                <div id="mf-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 480px; max-height: 70vh; position: relative;">
+                  <div id="mf-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+                    <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Gerer les filtres</h2>
+                    <button onclick="closeManageFilters()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+                  </div>
+                  <div class="modal-body space-y-2" style="max-height: calc(70vh - 52px);">
+                    <div id="mf-list" class="space-y-1 max-h-80 overflow-y-auto"><p class="text-xs text-slate-400">Chargement...</p></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Modale Save Filter -->
+              <div id="modal-save-filter" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+                <div id="save-filter-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 340px; position: relative;">
+                  <div id="save-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+                    <span class="text-sm font-semibold text-slate-800 dark:text-slate-200">Sauvegarder ce filtre</span>
+                    <button onclick="closeSaveFilter()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+                  </div>
+                  <div class="modal-body">
+                  <div class="space-y-2">
+                    <input type="text" id="save-filter-name" placeholder="Nom du filtre..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <input type="text" id="save-filter-cat" placeholder="Categorie (optionnel)..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <div class="flex gap-2">
+                      <label class="flex items-center gap-1 text-xs"><input type="radio" name="save-filter-nsfw" value="0" checked> SFW</label>
+                      <label class="flex items-center gap-1 text-xs"><input type="radio" name="save-filter-nsfw" value="1"> NSFW</label>
+                    </div>
+                    <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                      <input type="checkbox" id="save-filter-public"> Public (visible par tous)
+                    </label>
+                  </div>
+                  <div class="flex justify-end gap-2 mt-3">
+                    <button onclick="closeSaveFilter()" class="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Annuler</button>
+                    <button onclick="saveFilter()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Enregistrer</button>
+                  </div>
+                  </div>
+                </div>
+              </div>
+              <div id="results-area" class="hidden">
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden dark:bg-slate-800 dark:border-slate-700">
+                  <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 flex items-center justify-between dark:border-slate-700 dark:bg-slate-800/80">
+                    <p class="text-sm text-slate-600 dark:text-slate-400">
+                      <span id="count-display" class="font-semibold text-slate-900 dark:text-slate-100">0</span>
+                      <span id="count-label">resultats</span>
+                    </p>
+                  </div>
+                  <div class="overflow-x-auto scrollbar-thin">
+                    <table class="text-sm" style="table-layout:fixed;min-width:100%">
+                      <thead class="bg-slate-50 sticky top-0 shadow-sm dark:bg-slate-800 dark:shadow-slate-700/30">
+                        <tr id="table-header-row">
+                          <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 w-44 dark:text-slate-400 dark:border-slate-700">Mot-cle</th>
+                          <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 dark:text-slate-400 dark:border-slate-700">Description</th>
+                          <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 w-36 dark:text-slate-400 dark:border-slate-700">Section</th>
+                          <th id="score-header" class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 w-20 hidden dark:text-slate-400 dark:border-slate-700">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody id="table-body" class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              </div>
+            </div>
+
+          <!-- SEPARATEUR VERTICAL -->
+          <div id="divider-v" class="shrink-0 cursor-col-resize transition-colors" style="width: 6px;"></div>
+
+          <!-- PANEL DROIT -->
+          <div id="panel-right" class="flex flex-col overflow-hidden" style="flex: 1; min-width: 200px;">
+
+            <!-- Elements Picker -->
+            <div id="panel-right-top" class="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" style="height: 50%; min-height: 100px;">
+              <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Elements Picker</span>
+                <div class="flex items-center gap-1">
+                  <button onclick="resetElementsPicker()" title="Vider" class="text-xs text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400 transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                  </button>
+                  <span id="gen-count" class="text-xs text-slate-400">0</span>
+                </div>
+              </div>
+              <div class="flex flex-col flex-1 overflow-hidden">
+                <div class="flex gap-1.5 px-2 pt-2 pb-1 shrink-0">
+                  <button onclick="genAddElement('filter')" class="flex-1 text-xs font-medium py-1.5 rounded-md border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/30">
+                    <svg class="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    Add saved filter
+                  </button>
+                  <button onclick="genAddElement('text')" class="flex-1 text-xs font-medium py-1.5 rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/30">
+                    <svg class="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    Add semantic filter
+                  </button>
+                </div>
+                <div id="gen-elements" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
+                <div class="border-t border-slate-200 dark:border-slate-700 p-2 space-y-2 shrink-0">
+                  <button onclick="genGenerate()" class="w-full px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Generer</button>
+                  <textarea id="gen-output" readonly rows="3" placeholder="Le prompt..." class="w-full px-3 py-2 text-xs border border-slate-300 rounded-md resize-none bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400 font-mono"></textarea>
+                  <button onclick="genCopy()" class="w-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-500 rounded-md hover:bg-slate-200 transition dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600">Copier</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modale picker filtres -->
+            <div id="modal-filter-pick" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+              <div id="fp-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 384px; max-height: 70vh; position: relative;">
+                <div id="fp-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+                  <span class="text-sm font-semibold text-slate-800 dark:text-slate-200">Choisir un filtre</span>
+                  <button onclick="closeFilterPick()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+                </div>
+                <div class="flex gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-700 text-xs">
+                  <select id="fp-owner" onchange="loadFilterList()" class="flex-1 border border-slate-200 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="mine">Mes filtres</option>
+                    <option value="all">Mes filtres + publics</option>
+                  </select>
+                  <select id="fp-nsfw" onchange="loadFilterList()" class="flex-1 border border-slate-200 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="">Tout</option>
+                    <option value="0">SFW</option>
+                    <option value="1">NSFW</option>
+                  </select>
+                </div>
+                <div id="fp-list" class="flex-1 overflow-y-auto p-2 space-y-1 text-xs">
+                  <p class="text-slate-400">Chargement...</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- SEPARATEUR HORIZONTAL -->
+            <div id="divider-h" class="shrink-0 cursor-row-resize transition-colors" style="height: 6px;"></div>
+
+            <!-- Prompt Generator/Enhancer -->
+            <div id="panel-right-bottom" class="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" style="flex: 1; min-height: 100px;">
+              <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Prompt Generator/Enhancer</span>
+                <div class="flex items-center gap-1">
+                  <button onclick="resetEnhancer()" title="Reinitialiser" class="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                  </button>
+
+                </div>
+              </div>
+              <div class="flex-1 flex flex-col p-3 gap-2 overflow-hidden bg-white dark:bg-slate-800">
+                <!-- Preset + type + style row -->
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                  <select id="enhance-preset" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 min-w-[120px]">
+                    <option value="">-- Preset IA --</option>
+                  </select>
+                  <select id="enhance-format" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="rich" selected>Format: rich</option>
+                    <option value="basic">Format: basic</option>
+                  </select>
+                  <select id="enhance-type" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="">-- Template --</option>
+                  </select>
+                  <select id="enhance-style" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 min-w-[100px]">
+                    <option value="">-- Style --</option>
+                  </select>
+                </div>
+                <!-- Input textarea -->
+                <textarea id="enhance-input" rows="4" placeholder="Colle ou tape ton prompt ici..."
+                  class="w-full text-sm border border-slate-300 rounded-md px-3 py-2 resize-none bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 placeholder-slate-400 shrink-0 focus:outline-none focus:border-indigo-400"></textarea>
+                <!-- Checkboxes Elements Picker -->
+                <div class="flex flex-wrap items-center gap-3 shrink-0">
+                  <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                    <input type="checkbox" id="enhance-ep" class="rounded accent-indigo-500"> Use Elements Picker
+                  </label>
+                  <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                    <input type="checkbox" id="enhance-random" class="rounded accent-indigo-500"> Add random
+                    <input type="number" id="enhance-random-count" value="3" min="1" max="10"
+                      class="w-10 text-xs text-center border border-slate-300 rounded px-1 py-0.5 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 disabled:opacity-30">
+                  </label>
+                </div>
+                <!-- Actions -->
+                <div class="flex items-center gap-2 shrink-0">
+                  <button onclick="doEnhance()" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Generer
+                  </button>
+                  <span id="enhance-status" class="text-xs text-slate-400 hidden"></span>
+                </div>
+                <!-- Output (redimensionnable) -->
+                  <textarea id="enhance-output" readonly placeholder="Resultat..."
+                    class="w-full text-sm border border-slate-200 rounded-md px-3 py-2 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200 text-slate-600 focus:outline-none"
+                    style="resize:vertical; min-height:60px; height:100px; max-height:70vh;"></textarea>
+                  <div id="enhance-output-rendered" class="hidden w-full text-sm border border-slate-200 rounded-md px-3 py-2 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 overflow-auto" style="min-height:60px; height:100px; max-height:70vh;"></div>
+                  <div class="flex items-center gap-2 mt-1">
+                    <button onclick="toggleEnhanceView()" id="btn-toggle-view" class="hidden text-xs text-slate-400 hover:text-indigo-500 transition">Rendu</button>
+                    <div class="flex-1"></div>
+                    <button onclick="copyEnhanceOutput()" id="btn-copy-enhance" class="hidden text-xs text-indigo-500 hover:text-indigo-700 transition">Copier</button>
+                  </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      <!-- Panneau Admin : modale flottante -->
+    <div id="admin-panel" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="admin-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700"
+           style="width: 600px; max-height: 80vh; position: relative;">
+        <div id="admin-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Panneau d'administration</h2>
+          <button onclick="toggleAdmin()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height: calc(80vh - 52px); overflow-y: auto;">
+          <!-- Onglets admin -->
+          <div class="flex border-b border-slate-200 dark:border-slate-700">
+            <button id="admin-tab-btn-global" onclick="switchAdminTab('global')" class="px-4 py-2 text-xs font-medium border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400">🌐 Global</button>
+            <button id="admin-tab-btn-embedding" onclick="switchAdminTab('embedding')" class="px-4 py-2 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400">🧠 Embedding</button>
+            <button id="admin-tab-btn-users" onclick="switchAdminTab('users')" class="px-4 py-2 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400">👥 Users</button>
+            <button id="admin-tab-btn-backup" onclick="switchAdminTab('backup')" class="px-4 py-2 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400">💾 Backup</button>
+          </div>
+
+          <!-- Tab: Global -->
+          <div id="admin-tab-global" class="p-4 space-y-5">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Import / Export</h3>
+              <div class="flex flex-wrap gap-2">
+                <button onclick="openImport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Importer .md</button>
+                <button onclick="doExport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-slate-700 text-white rounded-md hover:bg-slate-600 transition">Exporter .md</button>
+              </div>
+            </div>
+            <hr class="border-slate-200 dark:border-slate-700">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Stockage externe (SFTP)</h3>
+              <p class="text-xs text-slate-400 mb-2">Configure un serveur SFTP pour stocker les gros fichiers (models, custom nodes, backups). Sans config, le stockage reste local.</p>
+              <div class="space-y-2">
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-20 shrink-0">Hôte</label>
+                  <input type="text" id="admin-sftp-host" placeholder="storage.example.fr" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-20 shrink-0">Port</label>
+                  <input type="text" id="admin-sftp-port" value="22" class="w-20 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-20 shrink-0">Utilisateur</label>
+                  <input type="text" id="admin-sftp-user" placeholder="aih" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-20 shrink-0">Mot de passe</label>
+                  <input type="password" id="admin-sftp-password" placeholder="••••••" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-20 shrink-0">Dossier</label>
+                  <input type="text" id="admin-sftp-basepath" value="/aih" placeholder="/aih" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="saveSftpConfig()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Sauvegarder</button>
+                  <button onclick="testSftpConfig()" class="px-3 py-1.5 text-sm font-medium bg-slate-700 text-white rounded-md hover:bg-slate-600 transition">Tester</button>
+                  <span id="admin-sftp-status" class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Embedding -->
+          <div id="admin-tab-embedding" class="hidden p-4 space-y-5">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Modèle d'embedding</h3>
+              <div class="space-y-2">
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-16 shrink-0">URL</label>
+                  <input type="text" id="admin-ollama-url" value="http://localhost:11434" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-16 shrink-0">Modèle</label>
+                  <input type="text" id="admin-ollama-model" value="nomic-embed-text" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="saveOllamaConfig()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Sauvegarder</button>
+                  <span id="admin-ollama-status" class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Users -->
+          <div id="admin-tab-users" class="hidden p-4 space-y-5">
+            <div>
+              <!-- Whitelist Discord -->
+              <div class="mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700">
+                <h4 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Whitelist Discord</h4>
+                <p class="text-xs text-slate-500 mb-3">Ajoute l'UID Discord d'une personne pour l'autoriser à se connecter. Elle devra ensuite cliquer sur "Connexion Discord".</p>
+                <div class="flex gap-2 mb-3">
+                  <input type="text" id="admin-whitelist-uid" placeholder="UID Discord" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" />
+                  <button onclick="addWhitelist()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Ajouter</button>
+                </div>
+                <div id="admin-whitelist-list" class="space-y-1">
+                  <!-- Rempli dynamiquement -->
+                </div>
+              </div>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Utilisateurs</h3>
+              <div class="space-y-2" id="admin-users-list">
+                <p class="text-sm text-slate-400">Chargement...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Backup -->
+          <div id="admin-tab-backup" class="hidden p-4 space-y-5">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sauvegarde automatique</h3>
+              <p class="text-xs text-slate-400 mb-3">Backup de la base de données vers le stockage externe (SFTP ou local).</p>
+              <div class="space-y-3">
+                <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                  <input type="checkbox" id="admin-backup-enabled" class="rounded accent-indigo-500"> Activer les backups automatiques
+                </label>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-28 shrink-0">Intervalle</label>
+                  <select id="admin-backup-interval" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="6">Toutes les 6h</option>
+                    <option value="12">Toutes les 12h</option>
+                    <option value="24" selected>Toutes les 24h</option>
+                    <option value="48">Toutes les 48h</option>
+                    <option value="168">Hebdomadaire</option>
+                  </select>
+                </div>
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 w-28 shrink-0">Garder (jours)</label>
+                  <input type="number" id="admin-backup-retain" value="7" min="1" max="90" class="w-20 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                  <button onclick="saveBackupConfig()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Sauvegarder</button>
+                  <button onclick="triggerBackupNow()" class="px-3 py-1.5 text-sm font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition">💾 Backup maintenant</button>
+                  <span id="admin-backup-status" class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">...</span>
+                </div>
+                <div id="admin-backup-history" class="text-xs text-slate-400 mt-2"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>    </div>
+
+      
+    <!-- Modale Membres -->
+    <div id="members-panel" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="members-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 420px; max-height: 70vh; position: relative;">
+        <div id="members-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Membres</h2>
+          <button onclick="closeMembers()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="p-4 overflow-y-auto" style="max-height: calc(70vh - 52px);">
+          <div id="members-list" class="space-y-2">
+            <p class="text-sm text-slate-400">Chargement...</p>
+          </div>
+        </div>
+      </div>
+    </div>    <!-- Modale detail membre -->
+    <div id="modal-member-detail" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="member-detail-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 480px; max-height: 80vh; position: relative;">
+        <div id="member-detail-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200" id="member-detail-name">Membre</h2>
+          <button onclick="closeMemberDetail()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div id="member-detail-body" class="p-4 overflow-y-auto space-y-3" style="max-height: calc(80vh - 52px);">
+          <p class="text-xs text-slate-400">Chargement...</p>
+        </div>
+      </div>
+    </div>    <!-- Modale generique -->
+    <div id="modal-generic" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 380px;">
+        <div id="modal-generic-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <span id="modal-generic-title" class="text-sm font-semibold text-slate-800 dark:text-slate-200"></span>
+          <button onclick="closeModal()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="p-5">
+          <p id="modal-generic-body" class="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap"></p>
+          <div id="modal-generic-input-area" class="hidden mt-2">
+            <input type="text" id="modal-generic-input" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" placeholder="">
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button id="modal-generic-cancel" onclick="closeModal()" class="hidden px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">Annuler</button>
+            <button id="modal-generic-ok" onclick="modalOK()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>    <!-- Modale Settings AI-Helper -->
+
+    <div id="modal-user-settings" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="usettings-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 560px; max-height: 80vh; position: relative;">
+        <div id="usettings-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Paramètres AI-Helper</h2>
+          <button onclick="closeMergedSettings()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height: calc(80vh - 52px);">
+          <!-- Tabs -->
+          <div class="flex border-b border-slate-200 dark:border-slate-700 mb-3">
+            <button onclick="switchSettingsTab('provider', this)" class="tab-btn px-3 py-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-500 dark:border-indigo-400" data-tab="provider">Provider LLM</button>
+            <button onclick="switchSettingsTab('account', this)" class="tab-btn px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-700 dark:hover:text-slate-300" data-tab="account">Compte</button>
+            <button onclick="switchSettingsTab('blobby', this)" class="tab-btn px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-700 dark:hover:text-slate-300" data-tab="blobby">🧡 Blobby</button>
+          </div>
+
+          <!-- Tab: Provider LLM -->
+          <div id="tab-provider" class="tab-content space-y-3">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">MES PRESETS</h3>
+              <div id="presets-list" class="space-y-1 max-h-32 overflow-y-auto">
+                <p class="text-xs text-slate-400">Chargement...</p>
+              </div>
+            </div>
+            <hr class="border-slate-200 dark:border-slate-700">
+            <div class="space-y-2">
+              <input type="text" id="preset-form-name" placeholder="Nom du preset" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              <input type="url" id="preset-form-url" placeholder="URL du serveur (ex: http://localhost:11434/v1)" oninput="checkPresetUrl()" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              <p id="preset-url-warning" class="hidden text-xs text-amber-600 dark:text-amber-400">⚠️ URL locale detectee.</p>
+              <input type="password" id="preset-form-key" placeholder="API Key (optionnel)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              <div class="flex items-center gap-2">
+                <input type="text" id="preset-form-model" list="preset-models-datalist" placeholder="Modele (ex: llama3)" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <button onclick="fetchModelsForForm()" class="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 border border-indigo-200 rounded-md">Lister</button>
+              </div>
+              <datalist id="preset-models-datalist"></datalist>
+              <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400" id="preset-global-label" style="display:none;">
+                <input type="checkbox" id="preset-form-global" class="rounded"> Global (visible par tous)
+              </label>
+              <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <input type="checkbox" id="preset-form-client" class="rounded"> Client-side
+              </label>
+              <div class="flex gap-2">
+                <button onclick="savePreset()" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Sauvegarder</button>
+                <button onclick="clearPresetForm()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Nouveau</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Compte -->
+          <div id="tab-account" class="tab-content hidden space-y-4">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Connexion</h3>
+              <p class="text-sm text-slate-700 dark:text-slate-300" id="settings-user-info">Connecte en tant que <span id="settings-username" class="font-medium"></span></p>
+            </div>
+            <hr class="border-slate-200 dark:border-slate-700">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Cle API</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">Utilisez cette cle pour connecter ComfyUI & autres outils a votre compte.</p>
+              <div class="flex gap-2">
+                <input type="text" id="settings-api-key" readonly
+                       class="flex-1 px-3 py-2 text-xs font-mono border border-slate-300 rounded-md bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <button onclick="copyApiKey()" class="px-3 py-2 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Copier</button>
+                <button onclick="regenerateApiKey()" class="px-3 py-2 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition">Regenerer</button>
+              </div>
+              <p id="settings-key-status" class="hidden text-xs mt-2"></p>
+            </div>
+          </div>
+
+          <!-- Tab: Blobby -->
+          <div id="tab-blobby" class="tab-content hidden space-y-3">
+            <div id="blobby-settings-container"></div>
+          </div>
+        </div>
+      </div>
+    </div>    <!-- Modale Import -->
+    <div id="modal-import" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="import-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; position: relative;">
+        <div id="import-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Importer un fichier Markdown</h3>
+          <button onclick="closeImport()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="drop-zone"
+               onclick="document.getElementById('file-input').click()"
+               ondragover="event.preventDefault(); this.classList.add('border-indigo-400','bg-indigo-50/30');"
+               ondragleave="this.classList.remove('border-indigo-400','bg-indigo-50/30');"
+               ondrop="handleDrop(event)"
+               class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center transition cursor-pointer">
+            <svg class="w-10 h-10 mx-auto text-slate-400 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <p class="text-sm text-slate-600 font-medium mb-1">Glissez un fichier ici ou cliquez pour parcourir</p>
+            <p class="text-xs text-slate-400">Fichier .md uniquement</p>
+            <input type="file" id="file-input" accept=".md" onchange="handleFile(event)" class="hidden">
+          </div>
+          <div id="import-status" class="hidden mt-4 text-sm rounded-md p-3 border"></div>
+          <div id="import-loading" class="hidden mt-4 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+            <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            Importation en cours...
+          </div>
+        </div>
+
+      </div>
+      </div>
+
+      <!-- Style tab -->
+      <div id="tab-styles" class="hidden w-full flex-1 flex flex-row overflow-hidden relative">
+        <!-- Gauche : liste des styles -->
+        <div id="styles-left" class="flex flex-col overflow-hidden" style="width: 35%; min-width: 200px;">
+          <div class="px-4 pt-4 pb-2 shrink-0 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Styles</h2>
+            <button onclick="newStyleTab()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+ Add Style</button>
+          </div>
+          <div id="styles-tab-list" class="flex-1 overflow-y-auto space-y-1 px-4 pb-4">
+            <p class="text-xs text-slate-400">Chargement...</p>
+          </div>
+        </div>
+        <!-- Divider -->
+        <div id="styles-divider" class="shrink-0 cursor-col-resize hover:bg-indigo-500/50 transition-colors" style="width: 6px; background: transparent;"></div>
+        <!-- Droite : edition -->
+        <div id="styles-right" class="flex flex-col overflow-hidden p-4" style="flex: 1; min-width: 250px;">
+          <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Édition</h3>
+          <div class="space-y-2">
+            <input type="text" id="t-style-form-name" placeholder="Nom du style" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <textarea id="t-style-form-text" rows="6" placeholder="Texte du style (ex: Hyper realistic, 1970 vintage photography)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="resize: vertical;"></textarea>
+            <textarea id="t-style-form-neg" rows="3" placeholder="Prompt negatif (optionnel)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="resize: vertical;"></textarea>
+            <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <input type="checkbox" id="t-style-form-public" class="rounded"> Public
+            </label>
+            <div class="flex gap-2">
+              <button onclick="saveStyleTab()" id="btn-t-style-save" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Ajouter</button>
+              <button onclick="clearStyleFormTab()" id="btn-t-style-clear" class="hidden px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Annuler edit</button>
+              <button onclick="exportStyle()" class="px-3 py-1.5 text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded-md ml-auto transition">📥 Exporter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Template tab -->
+      <div id="tab-templates" class="hidden w-full flex-1 flex flex-row overflow-hidden relative">
+        <!-- Gauche : liste des templates -->
+        <div id="templates-left" class="flex flex-col overflow-hidden" style="width: 30%; min-width: 200px;">
+          <div class="px-4 pt-4 pb-2 shrink-0 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Templates</h2>
+            <button onclick="newTemplateTab()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+ Add Template</button>
+          </div>
+          <div id="templates-tab-list" class="flex-1 overflow-y-auto space-y-1 px-4 pb-4">
+            <p class="text-xs text-slate-400">Chargement...</p>
+          </div>
+        </div>
+        <!-- Divider -->
+        <div id="templates-divider" class="shrink-0 cursor-col-resize hover:bg-indigo-500/50 transition-colors" style="width: 6px; background: transparent;"></div>
+        <!-- Droite : edition -->
+        <div id="templates-right" class="flex flex-col overflow-hidden p-4" style="flex: 1; min-width: 350px;">
+          <input type="text" id="tmpl-name" placeholder="Nom du template" class="w-full text-sm border border-slate-300 rounded-md px-2 py-1 mb-2 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+          <div class="flex gap-3 flex-1 min-h-0">
+            <!-- Left: Instructions -->
+            <div class="flex-1 flex flex-col min-h-0">
+              <p class="text-xs text-slate-500 mb-1 font-semibold">Instructions</p>
+              <textarea id="tmpl-system-prompt" rows="10"
+                class="w-full flex-1 text-xs font-mono border border-slate-300 rounded-md px-2 py-1 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="resize: vertical;"
+                placeholder="System prompt pour le LLM..."></textarea>
+            </div>
+            <!-- Right: Examples -->
+            <div class="flex-1 flex flex-col min-h-0">
+              <p class="text-xs text-slate-500 mb-1 font-semibold">Prompts d'exemple</p>
+              <div id="tmpl-examples-list" class="flex-1 border border-slate-200 dark:border-slate-600 rounded-md p-1.5 space-y-1 overflow-y-auto bg-slate-50/50 dark:bg-slate-700/20" style="min-height: 180px;">
+                <p class="text-xs text-slate-400 italic">Aucun exemple</p>
+              </div>
+              <div class="flex gap-1 mt-1">
+                <input type="text" id="tmpl-example-input" placeholder="Nouvel exemple"
+                  class="flex-1 text-xs border border-slate-300 rounded-md px-2 py-1 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="min-height: 90px;">
+                <button onclick="addTemplateExample()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+</button>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 mt-2">
+            <select id="tmpl-format" class="text-xs border border-slate-300 rounded-md px-2 py-1 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              <option value="text">Texte brut</option>
+              <option value="markdown">Markdown</option>
+              <option value="json">JSON</option>
+            </select>
+            <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
+              <input type="checkbox" id="tmpl-public" class="rounded"> Public
+            </label>
+            <div class="flex gap-2 ml-auto">
+              <button onclick="saveTemplateTab()" id="btn-tmpl-save" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Sauvegarder</button>
+              <button onclick="clearTemplateFormTab()" id="btn-tmpl-clear" class="hidden px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md transition">Annuler</button>
+              <button onclick="exportTemplate()" class="px-3 py-1.5 text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded-md transition">📥 Exporter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keywords Manager tab -->
+      <div id="tab-keywords-manager" class="hidden w-full flex-1 flex flex-col overflow-hidden relative">
+        <!-- Header -->
+        <div class="px-4 pt-4 pb-2 shrink-0 flex items-center gap-2">
+            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-1">Keywords</h2>
+            <button onclick="kwOpenAddModal()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+ Add</button>
+            <button onclick="kwOpenBulkImport()" class="px-2 py-1 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition" title="Import en masse">📥 Bulk</button>
+            <button onclick="kwOpenDuplicateScan()" class="px-2 py-1 text-xs font-medium bg-violet-600 text-white rounded-md hover:bg-violet-500 transition" title="Rechercher des doublons">🔍 Doublons</button>
+            <button onclick="kwExport()" class="px-2 py-1 text-xs font-medium bg-cyan-600 text-white rounded-md hover:bg-cyan-500 transition" title="Export">📤</button>
+        </div>
+        <!-- Progression scan doublons -->
+        <div id="kw-scan-progress" class="hidden mx-4 mb-2 p-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded text-xs">
+            <div class="flex items-center gap-2">
+                <span class="animate-spin inline-block w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full"></span>
+                <span id="kw-scan-status" class="flex-1">Scan en cours...</span>
+                <button id="kw-scan-cancel" class="px-2 py-0.5 text-[10px] font-medium bg-rose-500 text-white rounded hover:bg-rose-400 transition">✕ Annuler</button>
+            </div>
+            <div class="mt-1 h-1.5 bg-indigo-200 dark:bg-indigo-800 rounded overflow-hidden">
+                <div id="kw-scan-bar" class="h-full bg-indigo-500 rounded transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div class="mt-1 text-[10px] text-slate-400 text-right" id="kw-scan-timer">0s</div>
+        </div>
+        <!-- Filtres -->
+        <div class="px-4 pb-2 space-y-1.5 shrink-0">
+            <input type="text" id="kw-filter-search" placeholder="🔍 Recherche dans les keywords..." oninput="kwLoadList()" class="w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <div class="flex gap-1.5 flex-wrap items-center">
+              <select id="kw-filter-author" onchange="kwLoadList()" class="text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="">Tous auteurs</option>
+              </select>
+              <select id="kw-filter-section" onchange="kwLoadList()" class="text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="">Toutes sections</option>
+              </select>
+              <!-- Checkboxes NSFW -->
+              <div class="flex items-center gap-2 px-2 py-0.5 text-xs">
+                <label class="inline-flex items-center gap-0.5 cursor-pointer text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" id="kw-filter-sfw" checked onchange="kwLoadList()" class="rounded"> SFW
+                </label>
+                <label class="inline-flex items-center gap-0.5 cursor-pointer text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" id="kw-filter-nsfw" checked onchange="kwLoadList()" class="rounded"> NSFW
+                </label>
+              </div>
+            </div>
+            <!-- Checkboxes scope/privacy -->
+            <div class="flex gap-2 flex-wrap items-center px-1 py-0.5 text-xs">
+              <label class="inline-flex items-center gap-0.5 cursor-pointer text-slate-600 dark:text-slate-300">
+                <input type="checkbox" id="kw-filter-public" checked onchange="kwLoadList()" class="rounded"> 🌐 Public
+              </label>
+              <label class="inline-flex items-center gap-0.5 cursor-pointer text-slate-600 dark:text-slate-300">
+                <input type="checkbox" id="kw-filter-private" checked onchange="kwLoadList()" class="rounded"> 🔒 Privé
+              </label>
+              <label class="inline-flex items-center gap-0.5 cursor-pointer text-slate-600 dark:text-slate-300">
+                <input type="checkbox" id="kw-filter-pending" checked onchange="kwLoadList()" class="rounded"> 🟡 En attente
+              </label>
+              <label class="inline-flex items-center gap-0.5 cursor-pointer text-slate-600 dark:text-slate-300 ml-2">
+                <input type="checkbox" id="kw-filter-mine" onchange="kwLoadList()" class="rounded"> 👤 Mes keywords
+              </label>
+            </div>
+        </div>
+        <!-- Toolbar sélection multiple -->
+        <div id="kw-select-toolbar" class="hidden px-4 py-1.5 shrink-0 flex items-center gap-1.5 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+            <button onclick="kwSelectAll()" class="px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition">Tout</button>
+            <button onclick="kwSelectNone()" class="px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition">Aucun</button>
+            <button onclick="kwSelectInverse()" class="px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition">Inverser</button>
+            <span id="kw-select-count" class="text-[10px] text-slate-400 ml-1">0 sélectionné(s)</span>
+            <button onclick="kwBulkValidate()" id="kw-btn-bulk-validate" class="ml-2 px-2 py-0.5 text-[10px] font-medium bg-emerald-600 text-white rounded hover:bg-emerald-500 transition hidden">✅ Valider (0)</button>
+            <button onclick="kwBulkDelete()" id="kw-btn-bulk-delete" class="ml-auto px-2 py-0.5 text-[10px] font-medium bg-rose-600 text-white rounded hover:bg-rose-500 transition">🗑 Supprimer (0)</button>
+        </div>
+        <!-- Liste principale (pleine largeur, tableau redimensionnable) -->
+        <div id="kw-list" class="flex-1 overflow-auto pb-4">
+          <table id="kw-table" class="w-full text-xs border-collapse table-fixed">
+            <thead class="sticky top-0 z-10">
+              <tr id="kw-table-header-row" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shadow-sm">
+                <th class="px-1 py-1.5 text-center w-8 relative" style="width:32px">☐</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:160px">Keyword</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:280px">Description</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:120px">Section</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:120px">Sous-section</th>
+                <th class="px-1 py-1.5 text-center relative" style="width:50px">NSFW</th>
+                <th class="px-1 py-1.5 text-center relative" style="width:60px">Statut</th>
+                <th class="px-1 py-1.5 text-center relative" style="width:90px">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="kw-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Modale création/édition de keyword -->
+      <div id="modal-kw-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+        <div id="kw-edit-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl dark:bg-slate-800 dark:border-slate-700" style="width: 480px; max-width: 90vw; position: relative;">
+          <div id="kw-edit-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+            <span class="text-sm font-semibold text-slate-800 dark:text-slate-200" id="kw-edit-modal-title">Nouveau mot-clé</span>
+            <button onclick="kwCloseAddModal()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+          </div>
+          <div class="p-5 space-y-3">
+            <input type="text" id="kw-modal-keyword" placeholder="Mot-clé" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <textarea id="kw-modal-desc" rows="3" placeholder="Description" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="resize: vertical;"></textarea>
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="text-xs text-slate-500 dark:text-slate-400">Section</label>
+                <input type="text" id="kw-modal-section" list="kw-section-combo" placeholder="Nom de la section" class="w-full px-3 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" onchange="kwModalOnSectionChange()">
+              </div>
+              <div class="flex-1">
+                <label class="text-xs text-slate-500 dark:text-slate-400">Sous-section</label>
+                <input type="text" id="kw-modal-subsection" list="kw-subsection-combo" placeholder="Nom de la sous-section" class="w-full px-3 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" onchange="kwModalOnSubsectionChange()">
+              </div>
+            </div>
+            <input type="hidden" id="kw-modal-section-id">
+            <input type="hidden" id="kw-modal-section-title">
+            <input type="hidden" id="kw-modal-subsection-id">
+            <input type="hidden" id="kw-modal-subsection-title">
+            <input type="hidden" id="kw-modal-editing-id">
+            <div class="flex items-center gap-4">
+              <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <input type="checkbox" id="kw-modal-nsfw" class="rounded"> NSFW
+              </label>
+              <select id="kw-modal-privacy" class="text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="private">🔒 Privé</option>
+                <option value="public_pending">🟡 Public (pending)</option>
+                <option value="public" id="kw-modal-privacy-public" disabled>🌐 Public</option>
+              </select>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button onclick="kwModalSave()" class="px-4 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition" id="kw-modal-save-btn">Ajouter</button>
+              <button onclick="kwCloseAddModal()" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md transition">Annuler</button>
+              <button onclick="kwModalDelete()" id="kw-modal-delete-btn" class="hidden ml-auto px-4 py-1.5 text-xs font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500 transition">🗑 Supprimer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Datalists partagés (section + sous-section combobox) -->
+      <datalist id="kw-section-combo"></datalist>
+      <datalist id="kw-subsection-combo"></datalist>
+
+      <!-- Preview tab -->
+      <div id="tab-preview" class="hidden w-full flex-1 flex flex-col overflow-hidden relative">
+        <div class="px-4 pt-4 pb-2 shrink-0 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Preview</h2>
+          <div class="flex items-center gap-2">
+            <span id="preview-count" class="text-xs text-slate-400"></span>
+            <button onclick="previewRefreshNow()" title="Rafraîchir" class="text-xs text-slate-400 hover:text-indigo-500 transition p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="preview-container" class="flex-1 overflow-y-auto p-4">
+          <div id="preview-loading" class="flex items-center justify-center gap-2 text-sm text-slate-400 dark:text-slate-500 py-12">
+            <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            Chargement...
+          </div>
+          <div id="preview-empty" class="hidden flex flex-col items-center justify-center text-center py-16">
+            <div class="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+              <svg class="w-8 h-8 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+            </div>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Aucune image pour l'instant</p>
+          </div>
+          <div id="preview-gallery" class="hidden"></div>
+          <div id="preview-error" class="hidden text-sm text-rose-500 dark:text-rose-400 text-center py-12"></div>
+        </div>
+      </div>
+
+    </div>
+
+  <!-- Bulk import modal (tabs: Import / Generation IA) -->
+  <div id="modal-bulk-import" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+    <div id="bi-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl dark:bg-slate-800 dark:border-slate-700" style="width: 560px; min-width: 400px; min-height: 300px; max-height: 90vh; position: relative; resize: both; overflow: hidden; display: flex; flex-direction: column;">
+      <div id="bi-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+        <span class="text-sm font-semibold text-slate-800 dark:text-slate-200">📥 Mots-clés</span>
+        <button onclick="closeBulkImport()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+      </div>
+
+      <!-- Tabs bar -->
+      <div class="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+        <button id="bi-tab-import" class="bi-tab-btn flex-1 px-3 py-2 text-xs font-medium border-b-2 transition"
+                style="border-color: #6366f1; color: #fff; background: transparent;"
+                onclick="switchBiTab('import')">📥 Import</button>
+        <button id="bi-tab-generate" class="bi-tab-btn flex-1 px-3 py-2 text-xs font-medium border-b-2 transition"
+                style="border-color: transparent; color: #888; background: transparent;"
+                onclick="switchBiTab('generate')">🤖 Génération IA</button>
+      </div>
+
+      <!-- Tab: Import -->
+      <div id="bi-tab-content-import" class="p-4 space-y-3 flex flex-col min-h-0" style="flex: 1 1 auto;">
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Importe un fichier texte. Format attendu : <code class="text-indigo-600 dark:text-indigo-400">keyword | description | section | subsection | nsfw(0/1)</code>
+        </p>
+        <div class="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition"
+             id="bi-dropzone" onclick="document.getElementById('bi-file').click()">
+          <input type="file" id="bi-file" accept=".txt,.csv,.md,.json" class="hidden" onchange="kwBulkFileSelected(event)">
+          <svg class="w-8 h-8 mx-auto mb-2 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p id="bi-dropzone-text" class="text-xs text-slate-500 dark:text-slate-400">Clique pour choisir un fichier</p>
+          <p id="bi-filename" class="hidden text-xs text-indigo-600 dark:text-indigo-400 font-medium mt-1"></p>
+        </div>
+        <div id="bi-preview" class="hidden overflow-y-auto border border-slate-200 dark:border-slate-600 rounded text-xs mb-2" style="flex: 1 1 auto; min-height: 60px;"></div>
+        <!-- LLM conversion option -->
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+            <input type="checkbox" id="bi-llm-convert" onchange="biToggleLLM()">
+            Convertir via LLM
+          </label>
+          <select id="bi-llm-preset" class="hidden text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 flex-1">
+            <option value="">-- Provider LLM --</option>
+          </select>
+          <select id="bi-llm-nsfw" class="hidden text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <option value="sfw">🔵 SFW</option>
+            <option value="sexy">🟡 Sexy</option>
+            <option value="erotic">🟠 Érotique</option>
+            <option value="porno">🔴 Porno</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-4">
+          <select id="bi-privacy" class="text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <option value="private">🔒 Privé</option>
+            <option value="public_pending">🟡 Public (pending)</option>
+          </select>
+          <button onclick="kwBulkConfirm()" id="btn-bi-confirm" class="hidden px-4 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">✅ Confirmer l'import</button>
+          <button onclick="closeBulkImport()" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md transition ml-auto">Fermer</button>
+        </div>
+        <div id="bi-result" class="hidden text-xs p-2 rounded border"></div>
+      </div>
+
+      <!-- Tab: Generation IA -->
+      <div id="bi-tab-content-generate" class="hidden p-4 space-y-3 flex flex-col min-h-0" style="flex: 1 1 auto;">
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Donne des instructions à l'IA pour générer une liste de mots-clés au format
+          <code class="text-indigo-600 dark:text-indigo-400">keyword | description | section | subsection | nsfw(0/1)</code>
+        </p>
+        <textarea id="bi-gen-instruction" rows="4"
+                  class="w-full px-3 py-2 text-xs border border-slate-300 rounded-md resize-y dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"
+                  placeholder="ex: Genere 20 mots-cles sur le theme des creatures fantastiques, avec description..."></textarea>
+        <div class="flex items-center gap-3">
+          <select id="bi-gen-preset" class="flex-1 text-xs px-2 py-1.5 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <option value="">-- Provider LLM --</option>
+          </select>
+          <select id="bi-gen-nsfw" class="text-xs px-2 py-1.5 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <option value="sfw">🔵 SFW</option>
+            <option value="sexy">🟡 Sexy</option>
+            <option value="erotic">🟠 Érotique</option>
+            <option value="porno">🔴 Porno</option>
+          </select>
+          <button onclick="biGenerateKeywords()" id="btn-bi-generate"
+                  class="px-4 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">🤖 Générer</button>
+        </div>
+        <div id="bi-gen-status" class="hidden text-xs text-slate-500 dark:text-slate-400">...</div>
+        <div id="bi-gen-preview" class="hidden max-h-72 overflow-y-auto border border-slate-200 dark:border-slate-600 rounded text-xs"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer class="shrink-0 bg-slate-900 text-slate-400 text-xs border-t border-slate-800 dark:bg-slate-950 dark:border-slate-800">
+    <div class="w-full mx-auto px-4 py-2 flex items-center justify-center gap-6">
+      <p id="footer-stats">Chargement...</p>
+    </div>
+  </footer>
+
+  </div>
+
+  <script src="/js/app-core.js"></script>
+  <script src="/js/app-keywords.js"></script>
+  <script src="/js/app-filters.js"></script>
+  <script src="/js/app-admin.js" id="script-admin"></script>
+  <script src="/js/app-preview.js" id="script-preview"></script>
+</body>
+</html>

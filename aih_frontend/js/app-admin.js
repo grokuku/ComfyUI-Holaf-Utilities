@@ -1,0 +1,1168 @@
+
+    function copyEnhanceOutput() {
+      var el = document.getElementById('enhance-output');
+      el.select();
+      document.execCommand('copy');
+      showModal('Copie', 'Prompt copie !', 'success');
+    }
+
+    function toggleEnhanceView() {
+      var ta = document.getElementById('enhance-output');
+      var div = document.getElementById('enhance-output-rendered');
+      var btn = document.getElementById('btn-toggle-view');
+      if (div.classList.contains('hidden')) {
+        // Passer en mode rendu (texte brut, sauts de ligne)
+        var raw = ta.value;
+        div.innerHTML = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        ta.classList.add('hidden');
+        div.classList.remove('hidden');
+        btn.textContent = 'Brut';
+      } else {
+        div.classList.add('hidden');
+        ta.classList.remove('hidden');
+        btn.textContent = 'Rendu';
+      }
+    }
+
+    // Charger presets et styles au demarrage
+    // Charger les types depuis les templates disponibles
+    async function loadTemplateTypes() {
+      var sel = document.getElementById('enhance-type');
+      if (!sel) return;
+      var currentVal = sel.value;
+      sel.innerHTML = '<option value="">-- Chargement --</option>';
+      try {
+        var res = await fetch(API + '/prompts/templates');
+        var list = await safeJson(res);
+        if (!Array.isArray(list) || list.length === 0) {
+          sel.innerHTML = '<option value="">-- Template --</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">-- Template --</option>';
+        var found = false;
+        list.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = t.name || ('Template ' + t.id);
+          sel.appendChild(opt);
+          if (String(t.id) === currentVal) found = true;
+        });
+        if (found) sel.value = currentVal;
+      } catch {
+        sel.innerHTML = '<option value="">-- Template --</option>';
+      }
+    }
+
+    async function loadEnhancerConfig() {
+      await loadPresets();
+      await loadStyles();
+      await loadTemplateTypes();
+      // Restaurer les autres preferences sauvegardees
+      if (currentUser && currentUser.settings) {
+        var s = currentUser.settings;
+        if (s.enhanceType) document.getElementById('enhance-type').value = s.enhanceType;
+        if (s.enhanceInput) document.getElementById('enhance-input').value = s.enhanceInput;
+        if (s.enhanceEP) document.getElementById('enhance-ep').checked = s.enhanceEP;
+        if (s.enhanceRandom) {
+          document.getElementById('enhance-random').checked = s.enhanceRandom;
+          document.getElementById('enhance-random-count').disabled = !s.enhanceRandom;
+          if (s.enhanceRandomCount) document.getElementById('enhance-random-count').value = s.enhanceRandomCount;
+        }
+        if (s.enhanceOutput) {
+          document.getElementById('enhance-output').value = s.enhanceOutput;
+          document.getElementById('btn-copy-enhance').classList.remove('hidden');
+          document.getElementById('btn-toggle-view').classList.remove('hidden');
+        }
+      }
+      // Sauvegarde auto au changement
+      var elPreset = document.getElementById('enhance-preset');
+      var elType = document.getElementById('enhance-type');
+      var elStyle = document.getElementById('enhance-style');
+      var elInput = document.getElementById('enhance-input');
+      elPreset.onchange = saveEnhancerSettings;
+      elType.onchange = saveEnhancerSettings;
+      elType.addEventListener('mousedown', loadTemplateTypes);
+      elStyle.onchange = saveEnhancerSettings;
+      elInput.oninput = function() { clearTimeout(elInput._saveTimer); elInput._saveTimer = setTimeout(saveEnhancerSettings, 800); };
+      // Toggle random count
+      var randCb = document.getElementById('enhance-random');
+      var randNum = document.getElementById('enhance-random-count');
+      if (randCb && randNum) {
+        randCb.onchange = function() { randNum.disabled = !this.checked; };
+        randNum.disabled = !randCb.checked;
+      }
+    }
+
+    var _saveSettingsBusy = false;
+    async function saveEnhancerSettings() {
+      if (_saveSettingsBusy || !currentUser) return;
+      _saveSettingsBusy = true;
+      var settings = currentUser.settings || {};
+      settings.enhancePresetId = document.getElementById('enhance-preset').value || null;
+      settings.enhanceStyleId = document.getElementById('enhance-style').value || null;
+      settings.enhanceType = document.getElementById('enhance-type').value;
+      settings.enhanceEP = document.getElementById('enhance-ep').checked;
+      settings.enhanceRandom = document.getElementById('enhance-random').checked;
+      settings.enhanceRandomCount = document.getElementById('enhance-random-count').value;
+      settings.enhanceInput = document.getElementById('enhance-input').value;
+      settings.enhanceOutput = document.getElementById('enhance-output').value || null;
+      try {
+        var r = await fetch(API + '/settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(settings)
+        });
+        if (r.ok) currentUser.settings = settings;
+      } catch (e) {}
+      _saveSettingsBusy = false;
+    }
+
+
+    // === Modale generique ===
+    var modalCallback = null;
+    var modalType = '';
+
+    function showModal(title, msg, type) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.add('hidden');
+      document.getElementById('modal-generic-cancel').classList.add('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'OK';
+      var header = document.getElementById('modal-generic-header');
+      if (type === 'error') {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500';
+        header.className = header.className.replace('bg-slate-50','bg-rose-50').replace('dark:bg-slate-800/80','dark:bg-rose-900/20');
+      } else if (type === 'success') {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500';
+        header.className = header.className.replace('bg-slate-50','bg-emerald-50').replace('dark:bg-slate-800/80','dark:bg-emerald-900/20');
+      } else {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500';
+      }
+      modalType = type || '';
+      modalCallback = null;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function showConfirm(title, msg, cb) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.add('hidden');
+      document.getElementById('modal-generic-cancel').classList.remove('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'Oui';
+      document.getElementById('modal-generic-ok').className = 'px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500';
+      modalType = 'confirm';
+      modalCallback = cb;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function showPrompt(title, msg, placeholder, cb) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.remove('hidden');
+      document.getElementById('modal-generic-input').value = '';
+      document.getElementById('modal-generic-input').placeholder = placeholder || '';
+      document.getElementById('modal-generic-input').focus();
+      document.getElementById('modal-generic-cancel').classList.remove('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'OK';
+      document.getElementById('modal-generic-ok').className = 'px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500';
+      modalType = 'prompt';
+      modalCallback = cb;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-generic').classList.add('hidden');
+      document.getElementById('modal-generic').classList.remove('flex');
+      var header = document.getElementById('modal-generic-header');
+      header.className = 'border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none';
+      modalCallback = null;
+    }
+
+    function modalOK() {
+      var result = null;
+      if (modalType === 'confirm') result = true;
+      if (modalType === 'prompt') result = document.getElementById('modal-generic-input').value.trim() || null;
+      var cb = modalCallback;
+      closeModal();
+      if (cb && result !== null) cb(result);
+    }
+
+    // Drag pour la modale generique
+    document.addEventListener('DOMContentLoaded', function() {
+      makeModalDraggable('modal-generic-header', 'modal-generic');
+    });
+
+    // === Panneau Admin ===
+    function toggleAdmin() {
+      if (LOCAL_MODE) { showModal('Admin', 'Indisponible en mode local', 'error'); return; }
+      var panel = document.getElementById('admin-panel');
+      var isOpen = !panel.classList.contains('hidden');
+      panel.classList.toggle('hidden');
+      if (!isOpen) {
+        switchAdminTab('global');
+      }
+    }
+
+    function switchAdminTab(tab) {
+      ['global', 'embedding', 'users', 'backup'].forEach(function(t) {
+        var content = document.getElementById('admin-tab-' + t);
+        var btn = document.getElementById('admin-tab-btn-' + t);
+        if (content) content.classList.add('hidden');
+        if (btn) {
+          btn.classList.remove('border-indigo-500', 'text-indigo-600', 'dark:text-indigo-400');
+          btn.classList.add('border-transparent', 'text-slate-500', 'dark:text-slate-400');
+        }
+      });
+      var content = document.getElementById('admin-tab-' + tab);
+      var btn = document.getElementById('admin-tab-btn-' + tab);
+      if (content) content.classList.remove('hidden');
+      if (btn) {
+        btn.classList.add('border-indigo-500', 'text-indigo-600', 'dark:text-indigo-400');
+        btn.classList.remove('border-transparent', 'text-slate-500', 'dark:text-slate-400');
+      }
+      if (tab === 'users') { loadAdminUsers(); loadWhitelist(); }
+      if (tab === 'embedding') loadOllamaConfig();
+      if (tab === 'global') loadSftpConfig();
+      if (tab === 'backup') loadBackupConfig();
+    }
+
+    function toggleMembers() {
+      if (LOCAL_MODE) { showModal('Membres', 'Indisponible en mode local', 'error'); return; }
+      var panel = document.getElementById('members-panel');
+      panel.classList.remove('hidden');
+      loadMembersList();
+    }
+
+    function closeMembers() {
+      document.getElementById('members-panel').classList.add('hidden');
+    }
+
+    function closeMemberDetail() {
+      document.getElementById('modal-member-detail').classList.add('hidden');
+      document.getElementById('modal-member-detail').classList.remove('flex');
+    }
+
+    async function openMemberDetail(userId) {
+      var modal = document.getElementById('modal-member-detail');
+      var body = document.getElementById('member-detail-body');
+      var nameEl = document.getElementById('member-detail-name');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      makeModalDraggable('member-detail-header', 'member-detail-modal');
+      body.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+      try {
+        var res = await fetch(API + '/members/' + userId);
+        if (!res.ok) { body.innerHTML = '<p class="text-xs text-red-400">Erreur</p>'; return; }
+        var m = await safeJson(res);
+        nameEl.textContent = m.display_name || m.username || 'Membre';
+        var avatarHtml = m.avatar_url
+          ? '<img src="' + m.avatar_url + '" class="w-20 h-20 rounded-full mx-auto border-2 border-slate-300 dark:border-slate-600">'
+          : '<div class="w-20 h-20 rounded-full bg-slate-500 mx-auto flex items-center justify-center text-2xl text-white">' + escapeHtml((m.display_name || m.username || '?')[0]) + '</div>';
+        var statsHtml = '<div class="grid grid-cols-2 gap-2 text-center text-xs">'
+          + '<div class="bg-slate-50 dark:bg-slate-700/50 rounded p-2"><span class="block text-lg font-bold text-indigo-600 dark:text-indigo-400">' + (m.filter_count || 0) + '</span><span class="text-slate-500">filtres</span></div>'
+          + '<div class="bg-slate-50 dark:bg-slate-700/50 rounded p-2"><span class="block text-lg font-bold text-indigo-600 dark:text-indigo-400">' + (m.prompt_count || 0) + '</span><span class="text-slate-500">prompts</span></div>'
+          + '</div>';
+        var favHtml = '';
+        if (m.favorite_type || m.favorite_style) {
+          favHtml = '<div class="text-xs space-y-1"><p class="text-slate-500 font-semibold mb-1">Preferes</p>';
+          if (m.favorite_type) favHtml += '<p><span class="text-slate-400">Type :</span> <span class="text-slate-700 dark:text-slate-300">' + m.favorite_type.toUpperCase() + '</span></p>';
+          if (m.favorite_style) favHtml += '<p><span class="text-slate-400">Style :</span> <span class="text-slate-700 dark:text-slate-300">' + escapeHtml(m.favorite_style) + '</span></p>';
+          favHtml += '</div>';
+        }
+        var promptsHtml = '<p class="text-xs text-slate-500 font-semibold">Derniers prompts</p>';
+        if (m.recent_prompts && m.recent_prompts.length > 0) {
+          promptsHtml += '<div class="space-y-1 max-h-80 overflow-y-auto">';
+          m.recent_prompts.forEach(function(p) {
+            var text = p.output_text || '';
+            var date = p.created_at ? new Date(p.created_at).toLocaleDateString('fr-FR') : '';
+            promptsHtml += '<div class="text-xs p-2 rounded bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-700">'
+              + '<span class="text-indigo-500 font-medium">' + escapeHtml(p.template_name || '') + '</span>'
+              + ' <span class="text-slate-400">' + date + '</span><br>'
+              + '<span class="text-slate-600 dark:text-slate-400" style="word-break:break-word;">' + escapeHtml(text) + '</span></div>';
+          });
+          promptsHtml += '</div>';
+        } else {
+          promptsHtml += '<p class="text-xs text-slate-400 italic">Aucun prompt genere</p>';
+        }
+        body.innerHTML = '<div class="space-y-3">'
+          + '<div class="text-center">' + avatarHtml + '</div>'
+          + '<div class="text-center text-xs text-slate-500">' + (m.role === 'admin' ? 'Admin' : m.role === 'kw_editor' ? 'KW Editor' : 'Membre') + '</div>'
+          + statsHtml
+          + (favHtml ? '<hr class="border-slate-200 dark:border-slate-700">' + favHtml : '')
+          + '<hr class="border-slate-200 dark:border-slate-700">'
+          + promptsHtml
+          + '</div>';
+      } catch (err) {
+        body.innerHTML = '<p class="text-xs text-red-400">Erreur : ' + err.message + '</p>';
+      }
+    }
+
+    // === Settings (API Key) ===
+
+    function toggleSettings() {
+      toggleMergedSettings();
+    }
+
+    function closeSettings() {
+      closeMergedSettings();
+    }
+
+    async function loadApiKey() {
+      if (LOCAL_MODE) return;
+      var nameEl = document.getElementById('settings-username');
+      if (currentUser) nameEl.textContent = currentUser.display_name || currentUser.username;
+      var input = document.getElementById('settings-api-key');
+      input.value = 'Chargement...';
+      try {
+        var res = await fetch(API + '/auth/token');
+        if (!res.ok) throw new Error('Erreur ' + res.status);
+        var data = await res.json();
+        if (data.token) {
+          input.value = data.token;
+        } else {
+          input.value = 'Erreur : pas de token';
+        }
+      } catch (err) {
+        input.value = 'Erreur : ' + err.message;
+      }
+    }
+
+    async function regenerateApiKey() {
+      if (LOCAL_MODE) { showModal('API Key', 'Indisponible en mode local', 'error'); return; }
+      if (!confirm('Regénérer la clé API ? L\'ancienne clé ne fonctionnera plus.')) return;
+      var statusEl = document.getElementById('settings-key-status');
+      statusEl.className = 'text-xs mt-2 text-amber-500';
+      statusEl.textContent = 'Regénération...';
+      statusEl.classList.remove('hidden');
+      try {
+        var res = await fetch(API + '/auth/token', { method: 'POST' });
+        if (!res.ok) throw new Error('Erreur ' + res.status);
+        var data = await res.json();
+        document.getElementById('settings-api-key').value = data.token || '';
+        statusEl.className = 'text-xs mt-2 text-emerald-500';
+        statusEl.textContent = 'Nouvelle clé générée !';
+      } catch (err) {
+        statusEl.className = 'text-xs mt-2 text-rose-500';
+        statusEl.textContent = 'Erreur : ' + err.message;
+      }
+    }
+
+    function copyApiKey() {
+      var input = document.getElementById('settings-api-key');
+      input.select();
+      input.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(input.value).then(function() {
+        var statusEl = document.getElementById('settings-key-status');
+        statusEl.className = 'text-xs mt-2 text-emerald-500';
+        statusEl.textContent = 'Copié !';
+        statusEl.classList.remove('hidden');
+        setTimeout(function() { statusEl.classList.add('hidden'); }, 2000);
+      }).catch(function() {
+        document.execCommand('copy');
+      });
+    }
+
+    async function loadMembersList() {
+      var container = document.getElementById('members-list');
+      container.innerHTML = '<p class="text-sm text-slate-400">Chargement...</p>';
+      try {
+        var res = await fetch(API + '/members');
+        if (!res.ok) {
+          container.innerHTML = '<p class="text-sm text-rose-500">Erreur ' + res.status + '</p>';
+          return;
+        }
+        var users = await res.json();
+        container.innerHTML = users.map(function(u) {
+          var avatar = u.avatar
+            ? '<img src="https://cdn.discordapp.com/avatars/' + u.id + '/' + u.avatar + '.png?size=32" class="w-6 h-6 rounded-full inline-block">'
+            : '<span class="w-6 h-6 rounded-full bg-slate-500 inline-flex items-center justify-center text-xs text-white">' + escapeHtml((u.display_name || u.username)[0]) + '</span>';
+          var badge = u.role === 'admin'
+            ? '<span class="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">admin</span>'
+            : u.role === 'kw_editor'
+              ? '<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">kw_editor</span>'
+              : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
+          return '<div class="flex items-center gap-2.5 p-2 rounded bg-slate-50 dark:bg-slate-700/30 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition" onclick="openMemberDetail(\'' + u.id + '\')">'
+            + avatar + ' '
+            + '<span class="flex-1 text-sm text-slate-700 dark:text-slate-300">' + escapeHtml(u.display_name || u.username) + '</span>'
+            + ' ' + badge
+            + '</div>';
+        }).join('');
+      } catch (err) {
+        container.innerHTML = '<p class="text-sm text-rose-500">Erreur reseau</p>';
+      }
+    }
+
+    async function loadAdminUsers() {
+      var container = document.getElementById('admin-users-list');
+      container.innerHTML = '<p class="text-sm text-slate-400">Chargement...</p>';
+      try {
+        var res = await fetch(API + '/admin/users');
+        if (!res.ok) {
+          var err = await res.json().catch(function(){ return {}; });
+          container.innerHTML = '<p class="text-sm text-rose-500">Erreur ' + res.status + ' : ' + (err.error || 'Acces refuse') + '</p>';
+          return;
+        }
+        var users = await res.json();
+        container.innerHTML = users.map(function(u) {
+          var isYou = currentUser && u.id === currentUser.id;
+          var badge = u.role === 'admin'
+            ? '<span class="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">admin</span>'
+            : u.role === 'kw_editor'
+              ? '<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">kw_editor</span>'
+              : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
+          var avatar = u.avatar
+            ? '<img src="https://cdn.discordapp.com/avatars/' + u.id + '/' + u.avatar + '.png?size=32" class="w-6 h-6 rounded-full inline-block">'
+            : '<span class="w-6 h-6 rounded-full bg-slate-500 inline-flex items-center justify-center text-xs text-white">' + escapeHtml((u.display_name || u.username)[0]) + '</span>';
+          var actions = '';
+          if (u.role === 'user') {
+            actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'kw_editor\')">+ KW Editor</button> ';
+            actions += '<button class="text-xs text-indigo-500 hover:text-indigo-400 transition" onclick="changeRole(\'' + u.id + '\',\'admin\')">+ Admin</button>';
+          } else if (u.role === 'kw_editor') {
+            actions += '<button class="text-xs text-indigo-500 hover:text-indigo-400 transition" onclick="changeRole(\'' + u.id + '\',\'admin\')">+ Admin</button> ';
+            if (!isYou) actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'user\')">- KW Editor</button>';
+          } else if (!isYou) {
+            actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'kw_editor\')">Rétrograder (KW Editor)</button> ';
+            actions += '<button class="text-xs text-rose-500 hover:text-rose-400 transition" onclick="changeRole(\'' + u.id + '\',\'user\')">Rétrograder (user)</button>';
+          }
+          if (!isYou) {
+            actions += ' <button class="text-xs text-rose-500 hover:text-rose-400 transition" onclick="deleteUser(\'' + u.id + '\')">Supprimer</button>';
+          }
+          var youTag = isYou ? ' <span class="text-xs text-slate-400">(toi)</span>' : '';
+          return '<div class="flex items-center gap-2.5 p-2 rounded bg-slate-50 dark:bg-slate-700/30">'
+            + avatar + ' '
+            + '<span class="flex-1 text-sm text-slate-700 dark:text-slate-300">' + escapeHtml(u.display_name || u.username) + youTag + '</span>'
+            + ' ' + badge
+            + (actions ? ' <span class="text-xs text-slate-400">|</span> ' + actions : '')
+            + '</div>';
+        }).join('');
+      } catch (err) {
+        container.innerHTML = '<p class="text-sm text-rose-500">Erreur reseau : ' + (err.message || 'impossible') + '</p>';
+      }
+    }
+
+    async function loadWhitelist() {
+      try {
+        var res = await fetch(API + '/admin/whitelist');
+        if (!res.ok) return;
+        var data = await res.json();
+        var list = document.getElementById('admin-whitelist-list');
+        list.innerHTML = '';
+        if (data.length === 0) {
+          list.innerHTML = '<p class="text-xs text-slate-400">Aucun UID dans la whitelist</p>';
+          return;
+        }
+        data.forEach(function(item) {
+          var div = document.createElement('div');
+          div.className = 'flex items-center justify-between px-2 py-1.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700';
+          var span = document.createElement('span');
+          span.className = 'text-sm font-mono text-slate-600 dark:text-slate-300';
+          span.textContent = item.discord_uid;
+          div.appendChild(span);
+          var delBtn = document.createElement('button');
+          delBtn.textContent = 'Supprimer';
+          delBtn.className = 'text-xs text-rose-500 hover:text-rose-400 transition';
+          delBtn.onclick = function() { deleteWhitelist(item.discord_uid); };
+          div.appendChild(delBtn);
+          list.appendChild(div);
+        });
+      } catch (err) {
+        console.error('loadWhitelist:', err);
+      }
+    }
+
+    async function addWhitelist() {
+      var uid = document.getElementById('admin-whitelist-uid').value.trim();
+      if (!uid) return;
+      try {
+        var res = await fetch(API + '/admin/whitelist', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({discord_uid: uid})
+        });
+        if (res.ok) {
+          document.getElementById('admin-whitelist-uid').value = '';
+          loadWhitelist();
+        } else {
+          var data = await res.json().catch(function(){ return {}; });
+          showModal('Erreur', (data.error || 'Échec de l\'ajout'), 'error');
+        }
+      } catch (err) {
+        showModal('Erreur', 'Erreur réseau : ' + (err.message || 'impossible'), 'error');
+      }
+    }
+
+    async function deleteWhitelist(uid) {
+      showConfirm('Whitelist', 'Retirer cet UID de la whitelist ?', async function(ok) {
+        if (!ok) return;
+        try {
+          var res = await fetch(API + '/admin/whitelist/' + encodeURIComponent(uid), {method: 'DELETE'});
+          if (res.ok) loadWhitelist();
+        } catch (err) {
+          showModal('Erreur', err.message || 'Action impossible', 'error');
+        }
+      });
+    }
+
+    async function changeRole(userId, role) {
+      try {
+        var res = await fetch(API + '/admin/users/' + encodeURIComponent(userId) + '/role', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({role: role})
+        });
+        if (res.ok) loadAdminUsers();
+      } catch (err) {
+        showModal('Erreur', err.message || 'Action impossible', 'error');
+      }
+    }
+
+    async function deleteUser(userId) {
+      showConfirm('Suppression', 'Supprimer cet utilisateur et tous ses mots-cles ?', async function(ok) {
+        if (!ok) return;
+        try {
+          var res = await fetch(API + '/admin/users/' + encodeURIComponent(userId), {method: 'DELETE'});
+          if (res.ok) loadAdminUsers();
+        } catch (err) {
+          showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
+        }
+      });
+    }
+
+    async function loadOllamaConfig() {
+      try {
+        var res = await fetch(API + '/admin/settings/ollama');
+        if (!res.ok) return;
+        var data = await res.json();
+        document.getElementById('admin-ollama-url').value = data.url || 'http://localhost:11434';
+        document.getElementById('admin-ollama-model').value = data.model || 'nomic-embed-text';
+        var st = document.getElementById('admin-ollama-status');
+        st.textContent = 'OK';
+        st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+      } catch (err) {
+        var st = document.getElementById('admin-ollama-status');
+        st.textContent = 'Erreur';
+        st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+      }
+    }
+
+    async function saveOllamaConfig() {
+      var url = document.getElementById('admin-ollama-url').value.trim();
+      var model = document.getElementById('admin-ollama-model').value.trim();
+      if (!url || !model) { showModal('Config', 'URL et modele requis', 'error'); return; }
+      try {
+        var res = await fetch(API + '/admin/settings/ollama', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({url: url, model: model})
+        });
+        if (res.ok) {
+          var st = document.getElementById('admin-ollama-status');
+          st.textContent = 'Sauvegarde OK';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+        } else {
+          var err = await res.json();
+          showModal('Erreur', err.error || '', 'error');
+        }
+      } catch (err) {
+        showModal('Erreur', err.message || '', 'error');
+      }
+    }
+
+    async function adminClearDb() {
+      showConfirm('Vider la BDD', 'Vider la base de donnees ? Cette action est irreversible.', async function(ok) {
+        if (!ok) return;
+        try {
+          var res = await fetch(API + '/admin/db/clear', {method: 'POST'});
+          if (res.ok) {
+            toggleAdmin();
+            await checkAuth();
+            await checkData();
+          }
+        } catch (err) {
+          showModal('Erreur', err.message || 'Action impossible', 'error');
+        }
+      });
+    }
+
+    // === SFTP Config ===
+
+    async function loadSftpConfig() {
+      try {
+        var res = await fetch(API + '/admin/settings/sftp');
+        if (!res.ok) return;
+        var data = await res.json();
+        document.getElementById('admin-sftp-host').value = data.host || '';
+        document.getElementById('admin-sftp-port').value = data.port || 22;
+        document.getElementById('admin-sftp-user').value = data.user || '';
+        document.getElementById('admin-sftp-password').value = '';  // jamais afficher le mot de passe
+        document.getElementById('admin-sftp-basepath').value = data.base_path || '/aih';
+        var st = document.getElementById('admin-sftp-status');
+        if (data.host) {
+          st.textContent = 'Configuré';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+        } else {
+          st.textContent = 'Non configuré (stockage local)';
+          st.className = 'text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400';
+        }
+      } catch (err) {
+        console.error('loadSftpConfig:', err);
+      }
+    }
+
+    async function saveSftpConfig() {
+      var host = document.getElementById('admin-sftp-host').value.trim();
+      var port = parseInt(document.getElementById('admin-sftp-port').value) || 22;
+      var user = document.getElementById('admin-sftp-user').value.trim();
+      var password = document.getElementById('admin-sftp-password').value;  // pas de trim (peut avoir des espaces)
+      var base_path = document.getElementById('admin-sftp-basepath').value.trim() || '/aih';
+
+      var body = { host: host, port: port, user: user, base_path: base_path };
+      // Ne pas envoyer le mot de passe s'il est vide (garder l'ancien)
+      if (password) body.password = password;
+
+      try {
+        var res = await fetch(API + '/admin/settings/sftp', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)
+        });
+        if (res.ok) {
+          var st = document.getElementById('admin-sftp-status');
+          st.textContent = 'Sauvegardé !';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+          document.getElementById('admin-sftp-password').value = '';
+          setTimeout(function() { loadSftpConfig(); }, 1500);
+        } else {
+          var err = await res.json().catch(function(){ return {}; });
+          showModal('Erreur', err.error || 'Sauvegarde impossible', 'error');
+        }
+      } catch (err) {
+        showModal('Erreur', err.message, 'error');
+      }
+    }
+
+    async function testSftpConfig() {
+      var st = document.getElementById('admin-sftp-status');
+      st.textContent = 'Test en cours...';
+      st.className = 'text-xs px-2 py-1 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400';
+      try {
+        var res = await fetch(API + '/admin/settings/sftp/test', { method: 'POST' });
+        var data = await res.json();
+        if (res.ok && data.ok) {
+          st.textContent = '✅ Connexion réussie (' + data.backend + ')';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+        } else {
+          st.textContent = '❌ ' + (data.error || 'Échec de connexion');
+          st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+        }
+      } catch (err) {
+        st.textContent = '❌ ' + err.message;
+        st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+      }
+    }
+
+    // === Backup Config ===
+
+    async function loadBackupConfig() {
+      try {
+        var res = await fetch(API + '/admin/settings/backup');
+        if (!res.ok) return;
+        var data = await res.json();
+        document.getElementById('admin-backup-enabled').checked = !!data.enabled;
+        document.getElementById('admin-backup-interval').value = String(data.interval_hours || 24);
+        document.getElementById('admin-backup-retain').value = data.max_backups || 7;
+        if (data.last_backup) {
+          var hist = document.getElementById('admin-backup-history');
+          hist.innerHTML = '<p>Dernier backup : <strong>' + esc(data.last_backup) + '</strong></p>';
+        }
+      } catch (err) {
+        console.error('loadBackupConfig:', err);
+      }
+    }
+
+    async function saveBackupConfig() {
+      var enabled = document.getElementById('admin-backup-enabled').checked;
+      var interval = parseInt(document.getElementById('admin-backup-interval').value) || 24;
+      var retain = parseInt(document.getElementById('admin-backup-retain').value) || 7;
+
+      try {
+        var res = await fetch(API + '/admin/settings/backup', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ enabled: enabled, interval_hours: interval, max_backups: retain })
+        });
+        if (res.ok) {
+          var st = document.getElementById('admin-backup-status');
+          st.textContent = 'Sauvegardé !';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+          setTimeout(function() { st.textContent = '...'; st.className = 'text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'; }, 2000);
+        }
+      } catch (err) {
+        showModal('Erreur', err.message, 'error');
+      }
+    }
+
+    async function triggerBackupNow() {
+      var st = document.getElementById('admin-backup-status');
+      st.textContent = 'Backup en cours...';
+      st.className = 'text-xs px-2 py-1 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400';
+      try {
+        var res = await fetch(API + '/admin/settings/backup/now', { method: 'POST' });
+        var data = await res.json();
+        if (res.ok && data.ok) {
+          st.textContent = '✅ Backup terminé';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+          loadBackupConfig();
+        } else {
+          st.textContent = '❌ ' + (data.error || 'Échec');
+          st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+        }
+      } catch (err) {
+        st.textContent = '❌ ' + err.message;
+        st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+      }
+    }
+
+    // === Layout panneaux redimensionnables ===
+    function makeColResizable(dividerId, leftId, rightId, minPct) {
+      var divider = document.getElementById(dividerId);
+      var left = document.getElementById(leftId);
+      if (!divider || !left) return;
+      minPct = minPct || 20;
+
+      divider.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        var startX = e.clientX;
+        var startW = left.offsetWidth;
+        var parentW = left.parentElement.offsetWidth;
+
+        function onMove(ev) {
+          var dx = ev.clientX - startX;
+          var pct = Math.max(minPct, Math.min(80, (startW + dx) / parentW * 100));
+          left.style.width = pct + '%';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
+    function initResizablePanels() {
+      var dividerV = document.getElementById('divider-v');
+      var dividerH = document.getElementById('divider-h');
+      var panelLeft = document.getElementById('panel-left');
+      var panelRightTop = document.getElementById('panel-right-top');
+
+      if (dividerV) {
+        dividerV.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          var startX = e.clientX;
+          var startW = panelLeft.offsetWidth;
+          var parentW = document.getElementById('panels-container').offsetWidth;
+
+          function onMove(ev) {
+            var dx = ev.clientX - startX;
+            var pct = Math.max(15, Math.min(85, (startW + dx) / parentW * 100));
+            panelLeft.style.width = pct + '%';
+          }
+          function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            saveLayout();
+          }
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+      }
+
+      if (dividerH) {
+        dividerH.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          var startY = e.clientY;
+          var startH = panelRightTop.offsetHeight;
+          var parentH = panelRightTop.parentElement.offsetHeight;
+
+          function onMove(ev) {
+            var dy = ev.clientY - startY;
+            var pct = Math.max(10, Math.min(90, (startH + dy) / parentH * 100));
+            panelRightTop.style.height = pct + '%';
+          }
+          function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            saveLayout();
+          }
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+      }
+    }
+
+    function saveLayout() {
+      if (!currentUser) return;
+      var leftPct = Math.round(parseFloat(document.getElementById('panel-left').style.width) || 50);
+      var topPct = Math.round(parseFloat(document.getElementById('panel-right-top').style.height) || 50);
+      var settings = (currentUser.settings || {});
+      settings.layout = { left_width: leftPct, right_top_height: topPct };
+      // Save to server (fire and forget)
+      fetch(API + '/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(settings)
+      }).catch(function(){});
+    }
+
+    function loadLayout() {
+      if (!currentUser || !currentUser.settings) return;
+      var layout = currentUser.settings.layout;
+      if (!layout) return;
+      var panelLeft = document.getElementById('panel-left');
+      var panelRightTop = document.getElementById('panel-right-top');
+      if (layout.left_width && panelLeft) panelLeft.style.width = layout.left_width + '%';
+      if (layout.right_top_height && panelRightTop) panelRightTop.style.height = layout.right_top_height + '%';
+    }
+
+    // === Enregistrement des hauteurs de textarea ===
+    function initStyleTextareaResize() {
+      var taText = document.getElementById('t-style-form-text');
+      var taNeg = document.getElementById('t-style-form-neg');
+      if (!taText && !taNeg) return;
+
+      // Restaurer les hauteurs sauvegardees
+      if (currentUser && currentUser.settings && currentUser.settings.style_textarea) {
+        var saved = currentUser.settings.style_textarea;
+        if (saved.text_h && taText) taText.style.height = saved.text_h + 'px';
+        if (saved.neg_h && taNeg) taNeg.style.height = saved.neg_h + 'px';
+      }
+
+      var _saveTimer = null;
+      function saveHeights() {
+        clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(function() {
+          if (!currentUser) return;
+          var settings = currentUser.settings || {};
+          settings.style_textarea = {
+            text_h: taText ? taText.offsetHeight : null,
+            neg_h: taNeg ? taNeg.offsetHeight : null
+          };
+          fetch(API + '/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(settings)
+          }).catch(function(){});
+        }, 500);
+      }
+
+      [taText, taNeg].forEach(function(ta) {
+        if (!ta) return;
+        // Ecouter mouseup (lache du handle de resize natif)
+        ta.addEventListener('mouseup', saveHeights);
+        // ResizeObserver comme fallback
+        if (window.ResizeObserver) {
+          new ResizeObserver(function() { saveHeights(); }).observe(ta);
+        }
+      });
+    }
+
+    // === Colonnes redimensionnables ===
+    var colResizeActive = null;
+
+    function initColResize() {
+      var headers = document.querySelectorAll('#table-header-row th');
+      // Initialiser les largeurs si pas encore fait (en px explicite)
+      if (!headers[0] || headers[0].style.width) return;
+      var widths = [200, 400, 180, 100]; // valeurs par defaut
+      for (var i = 0; i < headers.length; i++) {
+        var w = headers[i].offsetWidth || widths[i] || 150;
+        headers[i].style.width = w + 'px';
+      }
+
+      headers.forEach(function(th, idx) {
+        if (idx === headers.length - 1) return;
+        if (th.querySelector('.col-resize-handle')) return;
+        var handle = document.createElement('div');
+        handle.className = 'col-resize-handle';
+        handle.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();  // empecher le drag des modales
+          var next = headers[idx + 1];
+          colResizeActive = {
+            th: th, nextTh: next,
+            startX: e.clientX,
+            w: th.offsetWidth,
+            wNext: next.offsetWidth,
+            idx: idx
+          };
+          document.body.classList.add('col-resizing');
+        }, true);  // capturer en phase de capture
+        th.appendChild(handle);
+      });
+    }
+
+    document.addEventListener('mousemove', function(e) {
+      if (!colResizeActive) return;
+      var dx = e.clientX - colResizeActive.startX;
+      var w = Math.max(50, colResizeActive.w + dx);
+      var wNext = Math.max(50, colResizeActive.wNext - dx);
+      var i = colResizeActive.idx;
+      colResizeActive.th.style.width = w + 'px';
+      colResizeActive.nextTh.style.width = wNext + 'px';
+      // Appliquer aux cellules
+      var rows = document.querySelectorAll('#table-body tr');
+      for (var r = 0; r < rows.length; r++) {
+        var tds = rows[r].children;
+        if (tds[i]) tds[i].style.width = w + 'px';
+        if (tds[i+1]) tds[i+1].style.width = wNext + 'px';
+      }
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (colResizeActive) {
+        colResizeActive = null;
+        document.body.classList.remove('col-resizing');
+        saveColWidths();
+      }
+    });
+
+    function saveColWidths() {
+      if (!currentUser) return;
+      var headers = document.querySelectorAll('#table-header-row th');
+      var widths = {};
+      headers.forEach(function(th, idx) {
+        var txt = th.textContent.trim().toLowerCase().replace(/[^a-z]/g, '') || 'col' + idx;
+        widths[txt] = th.offsetWidth;
+      });
+      var settings = (currentUser.settings || {});
+      settings.columns = widths;
+      fetch(API + '/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(settings)
+      }).catch(function(){});
+    }
+
+    function loadColWidths() {
+      if (!currentUser || !currentUser.settings || !currentUser.settings.columns) return;
+      var headers = document.querySelectorAll('#table-header-row th');
+      var cols = currentUser.settings.columns;
+      headers.forEach(function(th, idx) {
+        var txt = th.textContent.trim().toLowerCase().replace(/[^a-z]/g, '') || 'col' + idx;
+        var w = cols[txt];
+        if (w && w > 50) {
+          th.style.width = w + 'px';
+          var rows = document.querySelectorAll('#table-body tr');
+          for (var r = 0; r < rows.length; r++) {
+            var td = rows[r].children[idx];
+            if (td) td.style.width = w + 'px';
+          }
+        }
+      });
+    }
+
+    // Drag unifie pour toutes les modales
+    function makeModalDraggable(headerId, modalId) {
+      var drag = { active: false, startX: 0, startY: 0, origX: 0, origY: 0 };
+      var header = document.getElementById(headerId);
+      var modal = document.getElementById(modalId);
+      if (!header || !modal) return;
+      header.addEventListener('mousedown', function(e) {
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A' || e.target.tagName === 'INPUT') return;
+        drag.active = true;
+        var rect = modal.getBoundingClientRect();
+        drag.startX = e.clientX;
+        drag.startY = e.clientY;
+        drag.origX = rect.left;
+        drag.origY = rect.top;
+        modal.style.position = 'fixed';
+        modal.style.left = rect.left + 'px';
+        modal.style.top = rect.top + 'px';
+        modal.style.transform = 'none';
+        modal.style.margin = '0';
+        header.style.cursor = 'grabbing';
+        e.preventDefault();
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (!drag.active) return;
+        var dx = e.clientX - drag.startX;
+        var dy = e.clientY - drag.startY;
+        modal.style.left = (drag.origX + dx) + 'px';
+        modal.style.top = (drag.origY + dy) + 'px';
+      });
+      document.addEventListener('mouseup', function() {
+        if (drag.active) {
+          drag.active = false;
+          header.style.cursor = 'grab';
+        }
+      });
+    }
+
+    function makeModalResizable(modalId, opts) {
+      opts = opts || {};
+      var minW = opts.minW || 400;
+      var minH = opts.minH || 300;
+      var maxW = opts.maxW || window.innerWidth * 0.9;
+      var maxH = opts.maxH || window.innerHeight * 0.9;
+      var modal = document.getElementById(modalId);
+      if (!modal) return;
+      var directions = ['n','s','e','w','ne','nw','se','sw'];
+      var handles = {};
+      directions.forEach(function(dir) {
+        var h = document.createElement('div');
+        h.className = 'modal-resize-handle ' + dir;
+        modal.appendChild(h);
+        handles[dir] = h;
+      });
+      var resize = { active: false, dir: '', startX: 0, startY: 0, startW: 0, startH: 0, startL: 0, startT: 0 };
+      function getStyle(name) { return parseFloat(modal.style[name]) || 0; }
+      directions.forEach(function(dir) {
+        handles[dir].addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          var rect = modal.getBoundingClientRect();
+          resize.active = true;
+          resize.dir = dir;
+          resize.startX = e.clientX;
+          resize.startY = e.clientY;
+          resize.startW = rect.width;
+          resize.startH = rect.height;
+          resize.startL = rect.left;
+          resize.startT = rect.top;
+          modal.classList.add('modal-resizing');
+        });
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (!resize.active) return;
+        var dir = resize.dir;
+        var dx = e.clientX - resize.startX;
+        var dy = e.clientY - resize.startY;
+        var newW = resize.startW;
+        var newH = resize.startH;
+        var newL = resize.startL;
+        var newT = resize.startT;
+        if (dir.indexOf('e') >= 0) newW = Math.min(maxW, Math.max(minW, resize.startW + dx));
+        if (dir.indexOf('w') >= 0) {
+          newW = Math.min(maxW, Math.max(minW, resize.startW - dx));
+          newL = resize.startL + (resize.startW - newW);
+        }
+        if (dir.indexOf('s') >= 0) newH = Math.min(maxH, Math.max(minH, resize.startH + dy));
+        if (dir.indexOf('n') >= 0) {
+          newH = Math.min(maxH, Math.max(minH, resize.startH - dy));
+          newT = resize.startT + (resize.startH - newH);
+        }
+        modal.style.width = newW + 'px';
+        modal.style.height = newH + 'px';
+        modal.style.left = newL + 'px';
+        modal.style.top = newT + 'px';
+        // Update max-height on modal-body if present
+        var body = modal.querySelector('.modal-body');
+        if (body) {
+          var header = modal.querySelector('[id$="-header"]') || modal.querySelector('[class*="header"]');
+          var headerH = header ? header.offsetHeight : 0;
+          body.style.maxHeight = (newH - headerH - 2) + 'px';
+        }
+      });
+      document.addEventListener('mouseup', function() {
+        if (resize.active) {
+          resize.active = false;
+          modal.classList.remove('modal-resizing');
+        }
+      });
+    }
+
+    // Initialiser le drag pour toutes les modales + panneaux
+    document.addEventListener('DOMContentLoaded', function() {
+      makeModalDraggable('admin-modal-header', 'admin-modal');
+      makeModalDraggable('import-modal-header', 'import-modal');
+      makeModalDraggable('members-modal-header', 'members-modal');
+      makeModalResizable('usettings-modal', { minW: 480, minH: 400 });
+      initResizablePanels();
+      makeColResizable('styles-divider', 'styles-left', 'styles-right', 25);
+      makeColResizable('templates-divider', 'templates-left', 'templates-right', 25);
+      makeColResizable('kw-divider', 'kw-left', 'kw-right', 25);
+      initStyleTextareaResize();
+    });
+    // === Import / Export ===
+    function openImport() {
+      if (LOCAL_MODE) { showModal('Import', 'Indisponible en mode local', 'error'); return; }
+      var el = document.getElementById('modal-import');
+      el.classList.remove('hidden');
+      el.classList.add('flex');
+      document.getElementById('import-status').classList.add('hidden');
+      document.getElementById('import-loading').classList.add('hidden');
+    }
+    function closeImport() {
+      var el = document.getElementById('modal-import');
+      el.classList.add('hidden');
+      el.classList.remove('flex');
+      document.getElementById('import-status').classList.add('hidden');
+    }
+
+    function handleFile(e) {
+      const file = e.target.files?.[0];
+      if (file) sendImport(file);
+    }
+    function handleDrop(e) {
+      e.preventDefault();
+      $('drop-zone').classList.remove('border-indigo-400','bg-indigo-50/30');
+      const file = e.dataTransfer.files?.[0];
+      if (file && file.name.endsWith('.md')) {
+        sendImport(file);
+      } else {
+        showImportStatus(false, 'Déposez un fichier .md uniquement.');
+      }
+    }
+
+    async function sendImport(file) {
+      if (LOCAL_MODE) { showImportStatus(false, 'Indisponible en mode local'); return; }
+      $('import-loading').classList.remove('hidden');
+      $('import-status').classList.add('hidden');
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch(`${API}/import`, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `Erreur ${res.status}`);
+        showImportStatus(true, data.message || `${data.imported} importes` + (data.updated ? `, ${data.updated} mis a jour` : '') + (data.duplicates_skipped ? `, ${data.duplicates_skipped} ignores` : '') + '.');
+        await checkData();
+      } catch (err) {
+        showImportStatus(false, err.message || 'Erreur lors de l\'import');
+      } finally {
+        $('import-loading').classList.add('hidden');
+      }
+    }
+
+    function showImportStatus(ok, message) {
+      const el = $('import-status');
+      el.classList.remove('hidden');
+      el.className = 'mt-4 text-sm rounded-md p-3 border ' + (ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200');
+      el.textContent = message;
+    }
+
+    async function doExport() {
+      if (LOCAL_MODE) { showModal('Export', 'Indisponible en mode local', 'error'); return; }
+      try {
+        const res = await fetch(`${API}/export`);
+        if (!res.ok) throw new Error(await res.text());
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Keywords-Export.md';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showModal('Erreur', 'Export impossible : ' + err.message, 'error');
+      }
+    }
+  
