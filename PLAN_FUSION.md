@@ -359,4 +359,6 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 4 | Confirmer la licence spandrel avant release (`pip show spandrel`) | À faire |
 | 4 | Checklist licence complète passée avant publication | À faire |
 
-> **Note — Phases 0 et 1** : réalisées sur la branche `fusion/consolidation-aih` (Phase 0 : commits 629028c, 438008a, 95e477d ; Phase 1 : commits e544d36 — chantier A nodes, 23c1e11 — chantier A requirements, 2ce784b — chantier B widgets JS) — en attente de merge vers main et de validation en conditions réelles avant de démarrer la Phase 2.
+> **Note — Phases 0 et 1** : réalisées sur la branche `fusion/consolidation-aih` (Phase 0 : commits 629028c, 438008a, 95e477d ; Phase 1 : commits e544d36 — chantier A nodes, 23c1e11 — chantier A requirements, 2ce784b — chantier B widgets JS), puis **intégrées à `main`** (merge complet, incluant le fix du menu).
+>
+> **Note — Évolution de workflow** : abandon du travail sur branche dédiée — **toutes les modifications se font désormais directement sur `main`**. La branche `fusion/consolidation-aih`, entièrement mergée, a été supprimée. La sécurité est assurée par des **commits conventionnels fins et révertibles** (chaque changement atomique peut être annulé individuellement via revert).

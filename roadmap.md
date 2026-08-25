@@ -108,6 +108,13 @@ Branche `fusion/consolidation-aih` mergée dans **main** en fast-forward (**→ 
 * **Widgets JS** — matching dual-forme `AIH*`/`Holaf*` et ids `registerExtension` normalisés (`2ce784b`)
 * **Validation** — simulation loader : 50 mappings résolus ; `py_compile` : 26 fichiers OK ; `node --check` : 5/5 JS OK
 
+#### 🔀 Fusion — Fix menu
+
+Branche `fusion/consolidation-aih` mergée dans **main** en merge `--no-ff` (**→ `b55d3c7`**) :
+
+* **Cause** — `WEB_DIRECTORY` monté directement sous `/extensions/<pack>/` sans segment `js/` → l'ancien helper produisait des URL en 404 (CSS/xterm), menu sans style (`45fd9d8`)
+* **Correctif** — helper `holaf_ext_base.js` durci par chaîne de fallbacks + terminal aligné, simulation 47/47 (`45fd9d8`)
+
 ---
 
 ### FONCTIONNALITÉS IMPLÉMENTÉES
