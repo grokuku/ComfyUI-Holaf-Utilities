@@ -12,7 +12,15 @@ routes ``/aih/*`` :
 - ``credentials``      : lecture/écriture de ``user/default/aih/credentials.json``
                          (api_key + server_url, cache mémoire) ;
 - ``llm_helper``       : appels LLM unifiés (LM Studio SDK, API compatible
-                         OpenAI, Ollama ; vision multimodale incluse).
+                         OpenAI, Ollama ; vision multimodale incluse) ;
+- ``music_prompts``    : system prompts & builders du pipeline Music 3.0
+                         (miroir du backend kw.holaf.fr, consommé par la node
+                         Music en mode local).
+
+Le dossier ``templates/`` héberge les prompts maîtres de référence MiniMax
+Music 3.0 (``minimax_music3_music_template.txt``,
+``minimax_music3_lyrics_template.txt``) — matériel de référence rapatrié de la
+racine du monorepo AI-Helper, non lu au runtime.
 
 Importation : la racine du pack est ajoutée au ``sys.path`` par le
 ``__init__.py`` racine de l'extension (bootstrap unique — voir le bloc
@@ -41,4 +49,5 @@ __all__ = [
     "local_source",
     "credentials",
     "llm_helper",
+    "music_prompts",
 ]
