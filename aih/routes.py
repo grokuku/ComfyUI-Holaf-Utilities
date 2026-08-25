@@ -542,6 +542,208 @@ def _register_blobby_group(r, require_auth):
 
 
 
+# GROUPE 4 — Models SFTP chunked + fingerprint & Custom Nodes
+
+def _register_models_group(r):
+    """Routes /api/aih/models/* (via aih.model_manager) et /api/aih/custom-nodes*
+    (via aih.custom_nodes_manager). Contrats identiques à la source AI-Helper ;
+    les transferts SFTP (paramiko) et HTTP sont lancés dans un executor pour ne
+    jamais bloquer l'event loop aiohttp."""
+
+    from aih import model_manager as _model_mgr
+    from aih import custom_nodes_manager as _custom_nodes_mgr
+
+    # ── Custom nodes (workflow sharing : liste + install) ──────────────
+
+    @r.get("/api/aih/custom-nodes")
+    async def aih_list_custom_nodes(request):
+        try:
+            nodes = _custom_nodes_mgr._get_installed_custom_nodes()
+            return web.json_response({"nodes": nodes})
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] custom-nodes error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @r.post("/api/aih/custom-nodes/install")
+    async def aih_install_node(request):
+        try:
+            body = await request.json()
+            git_url = body.get("git_url", "").strip()
+            name = body.get("name", "").strip()
+            if not git_url:
+                return web.json_response({"error": "git_url required"}, status=400)
+            import asyncio as _aio
+            import functools as _ft
+            loop = _aio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, _ft.partial(_custom_nodes_mgr._install_custom_node, git_url, name)
+            )
+            status = 200 if result["success"] else 400
+            return web.json_response(result, status=status)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] install-node error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ── Models : listes locale / distante ──────────────────────────────
+
+    @r.get("/api/aih/models/list")
+    async def aih_list_models(request):
+        try:
+            import asyncio as _aio
+            import functools as _ft
+            loop = _aio.get_event_loop()
+            models = await loop.run_in_executor(None, _model_mgr.list_local_models)
+            return web.json_response(models)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] models-list error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @r.get("/api/aih/models/remote")
+    async def aih_list_remote_models(request):
+        """Proxy : liste les modèles distants depuis le backend AIH."""
+        try:
+            page = int(request.query.get('page', 1))
+            limit = int(request.query.get('limit', 50))
+            type_filter = request.query.get('type', '') or None
+            search = request.query.get('search', '') or None
+            sort = request.query.get('sort', 'created_at')
+            order = request.query.get('order', 'desc')
+        except (ValueError, TypeError):
+            return web.json_response({'error': 'Paramètres invalides'}, status=400)
+
+        import asyncio as _aio
+        import functools as _ft
+        loop = _aio.get_event_loop()
+        data = await loop.run_in_executor(
+            None, _ft.partial(
+                _model_mgr.list_remote_models,
+                page, limit, type_filter, search, sort, order
+            )
+        )
+        return web.json_response(data)
+
+    @r.get("/api/aih/models/local")
+    async def aih_list_local_models(request):
+        """Liste les modèles locaux (scan du dossier models/ de ComfyUI)."""
+        try:
+            type_filter = request.query.get('type', '') or None
+            search = request.query.get('search', '') or None
+        except (ValueError, TypeError):
+            return web.json_response({'error': 'Paramètres invalides'}, status=400)
+
+        import asyncio as _aio
+        import functools as _ft
+        loop = _aio.get_event_loop()
+        models = await loop.run_in_executor(
+            None, _ft.partial(
+                _model_mgr.list_local_models,
+                type_filter=type_filter, search=search
+            )
+        )
+        return web.json_response({'items': models, 'total': len(models)})
+
+    # ── Models : upload (chunked ou SFTP direct) + progression ─────────
+
+    @r.post("/api/aih/models/upload")
+    async def aih_upload_model(request):
+        try:
+            body = await request.json()
+            filepath = body.get("path", "")
+            file_type = body.get("type", "model")
+            if not filepath or not os.path.isfile(filepath):
+                return web.json_response({"error": "path required and must exist"}, status=400)
+            # Lancer l'upload dans un thread pour ne pas bloquer l'event loop
+            import asyncio as _aio
+            import functools as _ft
+            loop = _aio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, _ft.partial(_model_mgr.upload_model_to_server, filepath, file_type)
+            )
+            status = 200 if result["success"] else 400
+            return web.json_response(result, status=status)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] upload-model error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @r.get("/api/aih/models/upload/progress")
+    async def aih_upload_progress(request):
+        try:
+            filepath = request.query.get("path", "")
+            if not filepath:
+                return web.json_response({"error": "path required"}, status=400)
+            p = _model_mgr.get_upload_progress(filepath)
+            if p is None:
+                return web.json_response(None, status=200)
+            return web.json_response(p)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] upload-progress error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ── Models : fingerprint (déduplication head/tail) ─────────────────
+
+    @r.post("/api/aih/models/fingerprint")
+    async def aih_fingerprint_model(request):
+        try:
+            body = await request.json()
+            filepath = body.get("path", "")
+            if not filepath or not os.path.isfile(filepath):
+                return web.json_response({"error": "path required and must exist"}, status=400)
+            fp = _model_mgr._compute_fingerprint(filepath)
+            if fp:
+                return web.json_response(fp)
+            return web.json_response({"error": "fingerprint failed"}, status=500)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] fingerprint error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ── Models : download (SFTP direct ou HTTP fallback) + progression ──
+
+    @r.get("/api/aih/models/download/progress")
+    async def aih_download_progress(request):
+        try:
+            upload_id = request.query.get("upload_id", "")
+            if not upload_id:
+                return web.json_response({"error": "upload_id required"}, status=400)
+            p = _model_mgr.get_download_progress(upload_id)
+            if p is None:
+                return web.json_response(None, status=200)
+            return web.json_response(p)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] download-progress error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @r.post("/api/aih/models/download")
+    async def aih_download_model(request):
+        try:
+            body = await request.json()
+            upload_id = body.get("upload_id", "")
+            filename = body.get("filename", "")
+            file_type = body.get("type", "model")
+            dest_path = body.get("dest_path", None)
+            if not upload_id or not filename:
+                return web.json_response({"error": "upload_id and filename required"}, status=400)
+            import asyncio as _aio
+            import functools as _ft
+            loop = _aio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, _ft.partial(_model_mgr.download_model_from_server, upload_id, filename, file_type, dest_path)
+            )
+            status = 200 if result["success"] else 400
+            return web.json_response(result, status=status)
+        except Exception as e:
+            import logging as _log
+            _log.exception(f"[AIH] download-model error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+
+
 # POINT D'ENTRÉE — appelé une fois par le __init__.py racine
 # ══════════════════════════════════════════════════════════════════════
 
@@ -581,10 +783,6 @@ def register(server_routes, require_auth=None):
     return len(log)
 
 
-# Groupes models/local — remplis par les commits incrémentaux suivants :
-def _register_models_group(r):
-    return 0
-
-
+# Groupe local — rempli au commit « feat(aih-local) » :
 def _register_local_group(r):
     return 0
