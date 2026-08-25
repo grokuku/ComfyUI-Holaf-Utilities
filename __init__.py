@@ -1192,6 +1192,22 @@ if nodes_manager_helper:
             return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 
+# --- AIH HTTP Routes (/aih/* and /api/aih/*) ---
+# Phase 2 chantier C (PLAN_FUSION.md §3.5) : toutes les routes AIH vivent
+# dans le sous-package 'aih' (aih/routes.py) et sont enregistrées d'un bloc
+# ici, après le bootstrap sys.path du package. Le décorateur d'authentification
+# partagé Holaf est passé explicitement : il sécurise POST /aih/blobby/exec
+# (même vérification par mot de passe que GET /holaf/terminal). L'enregistrement
+# est défensif : un échec n'empêche pas le chargement du reste du pack.
+try:
+    from aih import routes as aih_routes
+    _AIH_ROUTE_COUNT = aih_routes.register(routes, require_auth=holaf_auth.require_auth)
+    if not _AIH_ROUTE_COUNT:
+        print("🟡 [Holaf-Init] No AIH routes were registered.")
+except Exception as _aih_routes_err:
+    print(f"🔴 [Holaf-Init] AIH routes registration failed: {_aih_routes_err}")
+    traceback.print_exc()
+
 # --- Dynamic Node Loading from 'nodes/' directory ---
 NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = {}, {}
 nodes_dir_path = os.path.join(os.path.dirname(__file__), "nodes")
