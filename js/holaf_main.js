@@ -14,6 +14,7 @@ import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";
 import "./holaf_image_viewer.js";
 import "./holaf_settings_manager.js";
+import "./holaf_wip_settings.js";
 import "./holaf_layout_tools.js";
 import "./holaf_shortcuts.js";
 import "./holaf_remote_comparer.js";
@@ -206,40 +207,56 @@ const HolafUtilitiesMenu = {
         if (!this.dropdownMenuEl) return;
         this.dropdownMenuEl.innerHTML = '';
 
-        const showWip = localStorage.getItem("Holaf_ShowWIP") === "true";
+        // A WIP item is shown if and only if its own feature is enabled. A
+        // dependent item (e.g. Chat) additionally requires its parent feature.
+        const isWipItemVisible = (item) => {
+            if (!item.wipFeature) return true;
+            const wipMgr = window.holaf?.wipManager;
+            if (!wipMgr || typeof wipMgr.isEnabled !== 'function') return false;
+            if (!wipMgr.isEnabled(item.wipFeature)) return false;
+            if (item.wipParent && !wipMgr.isEnabled(item.wipParent)) return false;
+            return true;
+        };
 
-        const menuItems =[
-            { label: "Terminal", handlerName: "holafTerminal" },
-            { label: "Model Manager (WIP)", handlerName: "holafModelManager", isWip: true },
-            { label: "Custom Nodes Manager (WIP)", handlerName: "holafNodesManager", isWip: true },
+        // ── Structure du menu, regroupée en sections logiques lisibles. ──
+        // Chaque entrée WIP porte un identifiant de feature stable (wipFeature)
+        // piloté individuellement dans Settings → Applications WIP.
+        const menuItems = [
+            // Groupe « Galerie & Visualisation »
+            { type: 'subtitle', label: 'Galerie & Visualisation' },
             { label: "Image Viewer", handlerName: "holafImageViewer" },
-            { label: "Workflow Profiler (WIP)", special: "profiler_standalone", isWip: true },
-            { type: 'separator' },
-            { label: "Compact Menu Bar", special: "toggle_compact_menu" },
-            { type: 'separator' },
-            { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
-            { label: "Toggle Shortcuts", special: "toggle_shortcuts" },
-            { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" },
-            { type: 'separator' },
-            { label: "Settings", handlerName: "holafSettingsManager" },
-            { type: 'separator' },
-            // ── Groupe AIH (fonctions portées de AI-Helper/web/js/aih_menu.js,
-            //    exposées par js/aih_menu.js sur window.AIHMenu) ──
+
+            // Groupe « AIH / Distant »
+            { type: 'subtitle', label: 'AIH / Distant' },
             { label: "🌐 Open Webpage", special: 'aih_webpage' },
             { label: "📤 Workflows", special: 'aih_workflows' },
             { label: "📦 Models", special: 'aih_models' },
             { label: "👥 Membres", special: 'aih_members' },
-            // Blobby + Chat : groupe WIP — masqués par défaut, visibles
-            // uniquement si l'option « Show WIP » est cochée (même mécanisme
-            // que les autres items WIP du menu).
-            { special: 'aih_blobby_toggle', isWip: true },
-            { label: "💬 Chat", special: 'aih_chat', isWip: true },
-            { type: 'separator' },
+
+            // Groupe « Outils & Dev » (items WIP pilotés individuellement)
+            { type: 'subtitle', label: 'Outils & Dev' },
+            { label: "Model Manager (WIP)", handlerName: "holafModelManager", wipFeature: 'model_manager' },
+            { label: "Custom Nodes Manager (WIP)", handlerName: "holafNodesManager", wipFeature: 'custom_nodes_manager' },
+            { label: "Workflow Profiler (WIP)", special: "profiler_standalone", wipFeature: 'workflow_profiler' },
+            { special: 'aih_blobby_toggle', wipFeature: 'blobby' },
+            { label: "💬 Chat", special: 'aih_chat', wipFeature: 'chat', wipParent: 'blobby' },
+
+            // Groupe « Utilitaires »
+            { type: 'subtitle', label: 'Utilitaires' },
+            { label: "Terminal", handlerName: "holafTerminal" },
+            { label: "Compact Menu Bar", special: "toggle_compact_menu" },
+            { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
+            { label: "Toggle Shortcuts", special: "toggle_shortcuts" },
+            { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" },
+
+            // Groupe « Système »
+            { type: 'subtitle', label: 'Système' },
+            { label: "Settings", handlerName: "holafSettingsManager" },
             { label: "🔄 AIH Update", special: 'aih_update' },
             { label: "Restart ComfyUI", special: 'restart' }
         ];
 
-        const filteredItems = menuItems.filter(item => !item.isWip || showWip);
+        const filteredItems = menuItems.filter(isWipItemVisible);
 
         filteredItems.forEach(itemInfo => {
             if (itemInfo.type === 'separator') {
@@ -249,6 +266,26 @@ const HolafUtilitiesMenu = {
                 separator.style.margin = "5px 0";
                 separator.style.padding = "0";
                 this.dropdownMenuEl.appendChild(separator);
+                return;
+            }
+
+            if (itemInfo.type === 'subtitle') {
+                const subtitle = document.createElement("li");
+                subtitle.className = "holaf-menu-subtitle";
+                subtitle.textContent = itemInfo.label;
+                Object.assign(subtitle.style, {
+                    margin: "10px 0 2px 0",
+                    padding: "2px 6px",
+                    fontSize: "10px",
+                    fontWeight: "700",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--holaf-accent-color, #ff8c00)",
+                    borderBottom: "1px solid var(--holaf-border-color, #3F3F3F)",
+                    cursor: "default",
+                    pointerEvents: "none"
+                });
+                this.dropdownMenuEl.appendChild(subtitle);
                 return;
             }
 

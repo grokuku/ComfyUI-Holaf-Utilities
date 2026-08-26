@@ -5,7 +5,7 @@
  * This script creates and manages the main settings panel for Holaf utilities.
  *
  * Since the AIH UI fusion, the panel is tabbed:
- *   - "General"             : native Holaf settings (theme, WIP modules toggle).
+ *   - "General"             : native Holaf settings (theme, per-app WIP toggles).
  *   - "AIH · Compte"        : AIH account (server URL + API key), rendered by
  *                             window.AIHMenu.renderAccountTab() (js/aih_menu.js).
  *   - "AIH · Provider LLM"  : AIH LLM presets CRUD, rendered by
@@ -16,6 +16,7 @@
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
+import { HolafWipManager, WIP_FEATURES } from "./holaf_wip_settings.js";
 
 const HolafSettingsManager = {
     name: "Holaf.SettingsManager",
@@ -156,12 +157,28 @@ const HolafSettingsManager = {
 
     renderGeneralTab(container) {
         const currentTheme = localStorage.getItem("Holaf_Theme") || "holaf-theme-graphite-orange";
-        const showWip = localStorage.getItem("Holaf_ShowWIP") === "true";
 
         // Build Theme Options HTML
         const themeOptionsHtml = HOLAF_THEMES.map(theme => {
             const isSelected = theme.className === currentTheme ? "selected" : "";
             return `<option value="${theme.className}" ${isSelected}>${theme.name}</option>`;
+        }).join('');
+
+        // Build the per-feature WIP checkboxes.
+        const wipRowsHtml = HolafWipManager.getFeatureList().map(feature => {
+            const isChecked = HolafWipManager.isEnabled(feature.id) ? "checked" : "";
+            const parentNote = feature.parent
+                ? `<span class="holaf-settings-field-description" style="display:block;margin-left:26px;font-size:11px;opacity:.75;">Nécessite « ${WIP_FEATURES[feature.parent]?.label ?? feature.parent} » activé.</span>`
+                : "";
+            return `
+                <div class="holaf-settings-field" style="display:flex;align-items:flex-start;gap:10px;margin-top:6px;">
+                    <input type="checkbox" id="holaf-wip-${feature.id}" data-wip-feature="${feature.id}" ${isChecked} style="cursor:pointer;width:16px;height:16px;margin-top:1px;">
+                    <div style="display:flex;flex-direction:column;gap:1px;">
+                        <label for="holaf-wip-${feature.id}" style="font-size:12px;cursor:pointer;">${feature.label}</label>
+                        ${feature.description ? `<span class="holaf-settings-field-description" style="font-size:11px;opacity:.8;">${feature.description}</span>` : ""}
+                        ${parentNote}
+                    </div>
+                </div>`;
         }).join('');
 
         container.innerHTML = `
@@ -179,14 +196,16 @@ const HolafSettingsManager = {
                     </div>
                 </div>
 
-                <!-- Features Toggle -->
+                <!-- Applications WIP -->
                 <div class="holaf-settings-group">
-                    <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Features</h3>
-                    <div class="holaf-settings-field" style="display: flex; align-items: center; gap: 10px;">
-                        <input type="checkbox" id="holaf-wip-checkbox" ${showWip ? "checked" : ""} style="cursor: pointer; width: 16px; height: 16px;">
-                        <label for="holaf-wip-checkbox" style="font-size: 12px; cursor: pointer;">Show Work-In-Progress (WIP) Modules</label>
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <h3 style="margin: 0 0 10px 0; font-size: 14px;">Applications WIP</h3>
+                        <button type="button" id="holaf-wip-reset" style="font-size:11px;padding:2px 8px;cursor:pointer;background:transparent;border:1px solid var(--holaf-accent-color,#ff8c00);color:var(--holaf-accent-color,#ff8c00);border-radius:4px;">Réinitialiser</button>
                     </div>
-                    <span class="holaf-settings-field-description" style="display: block; margin-top: 5px;">Displays in-development tools (Model Manager, Nodes Manager, Profiler, Blobby & Chat) in the main menu.</span>
+                    <div class="holaf-settings-field" style="font-size:12px;">
+                        Affiche ou masque chaque application en développement, indépendamment, dans le menu principal.
+                    </div>
+                    ${wipRowsHtml}
                 </div>
 
             </div>
@@ -215,13 +234,26 @@ const HolafSettingsManager = {
             }
         });
 
-        // 2. WIP Checkbox Auto-Apply
-        const wipCheckbox = container.querySelector("#holaf-wip-checkbox");
-        wipCheckbox.addEventListener("change", (e) => {
-            const isChecked = e.target.checked;
-            localStorage.setItem("Holaf_ShowWIP", isChecked);
+        // 2. Per-feature WIP checkboxes: persist each choice independently.
+        const applyWipChange = (checkbox) => {
+            const featureId = checkbox.dataset.wipFeature;
+            if (!featureId) return;
+            HolafWipManager.setEnabled(featureId, checkbox.checked);
 
-            // Dynamically rebuild the main menu to show/hide items
+            // Dynamically rebuild the main menu to show/hide items.
+            if (window.holaf && typeof window.holaf.rebuildMenu === "function") {
+                window.holaf.rebuildMenu();
+            }
+        };
+        container.querySelectorAll("input[data-wip-feature]").forEach(cb => {
+            cb.addEventListener("change", (e) => applyWipChange(e.target));
+        });
+
+        // 3. Reset: re-enable every WIP feature and refresh the panel + menu.
+        const resetBtn = container.querySelector("#holaf-wip-reset");
+        resetBtn.addEventListener("click", () => {
+            HolafWipManager.resetAll();
+            this.renderActiveTab();
             if (window.holaf && typeof window.holaf.rebuildMenu === "function") {
                 window.holaf.rebuildMenu();
             }
