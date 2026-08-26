@@ -1,3 +1,10 @@
+# Copyright (C) Holaf / grokuku — CUI-Holaf-Utils.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License, version 3 or any later
+# version. <https://www.gnu.org/licenses/>
+
 """
 sync_engine.py — Moteur de synchronisation locale AIH (ComfyUI).
 

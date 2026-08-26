@@ -1,3 +1,10 @@
+# Copyright (C) Holaf / grokuku — CUI-Holaf-Utils.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License, version 3 or any later
+# version. <https://www.gnu.org/licenses/>
+
 """model_manager.py — List, upload et download de models/loras (Phase 2 chantier C).
 
 Porté depuis AIH_ComfyUI/nodes/model_manager.py (fusion PLAN_FUSION.md,

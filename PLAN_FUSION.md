@@ -270,14 +270,14 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 
 | Statut | Action |
 |---|---|
-| 🔴 | Ajouter un fichier `LICENSE` (texte GPLv3 intégral) à la racine de `CUI-Holaf-Utils`. |
-| 🔴 | Créer `THIRD-PARTY-NOTICES.md` avec notice MIT + crédit xterm.js authors pour les builds vendored `xterm.js` / `xterm-addon-fit`. |
-| 🟠 | Conserver intacts le `LICENSE` et les en-têtes GPLv3 de CUI-Holaf ainsi que toutes notices Copyright. |
-| 🟠 | Apposer des en-têtes GPLv3 sur les fichiers AIH fusionnés. |
-| 🟡 | Confirmer la licence de spandrel avant release (`pip show spandrel`). |
-| ⚪ | Harmoniser copyright 2026 vs 2025 dans `js/holaf_main.js`. |
+| ✅ | Ajouter un fichier `LICENSE` (texte GPLv3 intégral) à la racine de `CUI-Holaf-Utils`. *(Fait — commit 629028c.)* |
+| ✅ | Créer `THIRD-PARTY-NOTICES.md` avec notice MIT + crédit xterm.js authors pour les builds vendored `xterm.js` / `xterm-addon-fit`. *(Fait — commit 629028c ; enrichi depuis des licences des dépendances pip.)* |
+| ✅ | Conserver intacts le `LICENSE` et les en-têtes GPLv3 de CUI-Holaf ainsi que toutes notices Copyright. *(Vérifié lors de la revue de clôture puis re-vérifié à la passe finale : aucune mention Copyright retirée ni modifiée.)* |
+| ✅ | Apposer des en-têtes GPLv3 sur les fichiers AIH fusionnés. *(Fait — passe finale : 20 fichiers Python portés en-têtés, soit les 12 modules `aih/*.py` + les 8 nodes AIH de `nodes/`, avec en-tête compact « Copyright (C) Holaf / grokuku » + `SPDX-License-Identifier: GPL-3.0-or-later`. Scope raisonné : seuls les fichiers Python portés ; le frontend servi (`aih_frontend/`) reste hors scope — assets statiques servis, pas du code source distribué modifiable. Aucune mention Copyright préexistante n'existait dans ces fichiers (vérifié par grep avant apposition).)* |
+| 🟡 | Confirmer la licence de spandrel avant release (`pip show spandrel`). *(Ouvert — à confirmer au déploiement via `pip show spandrel` : aucun dist-info/METADATA spandrel trouvé dans l'environnement de développement local. `THIRD-PARTY-NOTICES.md` le liste provisoirement comme MIT.)* |
+| ✅ | Harmoniser copyright 2026 vs 2025 dans `js/holaf_main.js`. *(Fait — constaté lors de la revue de clôture : une seule mention « Copyright (C) 2026 Holaf », plus aucune occurrence 2025.)* |
 
-*(🔴 bloquant · 🟠 important · 🟡 recommandé · ⚪ mineur)*
+*(🔴 bloquant · 🟠 important · 🟡 recommandé · ⚪ mineur — priorités d'origine ; seul l'item spandrel reste ouvert, dépendant du déploiement.)*
 
 ---
 
@@ -356,10 +356,10 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 4 | Valider les routes `/holaf/*` | ✅ Terminé (routes Utils historiques inchangées par la fusion ; terminal Utils, Update et Restart exercés en conditions réelles) |
 | 4 | Valider les routes `/aih/*` | 🟠 Partiel — harnais hors-ComfyUI du chantier C (inventaire 43/43 routes, handlers clés exécutés réellement) ; restent à confirmer en conditions réelles : SFTP models (`/api/aih/models/*`), frontend local `/aih/local/*`, auth Blobby en prod (cf. « Reste à faire (hors code) ») |
 | 4 | Vérifier l'absence de double installation des anciens packs | À faire (côté utilisateurs finaux — opération externe, cf. « Reste à faire (hors code) ») |
-| 4 | Apposer les en-têtes GPLv3 sur les fichiers AIH fusionnés | À faire (constaté lors de la revue de clôture : aucun en-tête GPL sur `aih/` ni sur les nodes AIH actuellement) |
-| 4 | Vérifier que LICENSE/en-têtes/notices Copyright de CUI-Holaf sont intacts | ✅ Terminé (revue de clôture : en-têtes GPLv3 d'origine « Copyright (C) 2025 Holaf » intacts sur les nodes ex-CUI-Holaf échantillonnées ; `LICENSE` + `THIRD-PARTY-NOTICES.md` présents à la racine) |
-| 4 | Confirmer la licence spandrel avant release (`pip show spandrel`) | À faire |
-| 4 | Checklist licence complète passée avant publication | À faire |
+| 4 | Apposer les en-têtes GPLv3 sur les fichiers AIH fusionnés | ✅ Terminé (passe finale licence — 20 fichiers Python portés en-têtés : 12 modules `aih/*.py` + 8 nodes AIH de `nodes/` ; en-tête compact « Copyright (C) Holaf / grokuku » + `SPDX-License-Identifier: GPL-3.0-or-later` ; py_compile 20/20 ; `aih_frontend/` hors scope, assets servis) |
+| 4 | Vérifier que LICENSE/en-têtes/notices Copyright de CUI-Holaf sont intacts | ✅ Terminé (revue de clôture : en-têtes GPLv3 d'origine « Copyright (C) 2025 Holaf » intacts sur les nodes ex-CUI-Holaf échantillonnées ; `LICENSE` + `THIRD-PARTY-NOTICES.md` présents à la racine ; re-vérifié à la passe finale : aucune mention retirée par l'apposition des en-têtes AIH) |
+| 4 | Confirmer la licence spandrel avant release (`pip show spandrel`) | 🟠 Ouvert — à confirmer au déploiement via `pip show spandrel` (aucun dist-info/METADATA spandrel dans l'env de dev local ; `THIRD-PARTY-NOTICES.md` le liste provisoirement MIT — cf. §4 Licence et « Reste à faire (hors code) ») |
+| 4 | Checklist licence complète passée avant publication | 🟠 Presque — passe finale effectuée (§4 Licence) : tous les items ✅ sauf la confirmation spandrel, seule dépendance du déploiement restante |
 
 > **Note — Phases 0 et 1** : réalisées sur la branche `fusion/consolidation-aih` (Phase 0 : commits 629028c, 438008a, 95e477d ; Phase 1 : commits e544d36 — chantier A nodes, 23c1e11 — chantier A requirements, 2ce784b — chantier B widgets JS), puis **intégrées à `main`** (merge complet, incluant le fix du menu).
 >
@@ -392,3 +392,6 @@ Le harnais hors-ComfyUI du chantier C couvre déjà ces chemins théoriquement ;
 - **Test SFTP models** : transfert chunked + fingerprint via `/api/aih/models/*` vers un serveur réel ;
 - **Test frontend local** : navigation du site servi sous `/aih/local/*` dans un navigateur ;
 - **Test auth Blobby** : en conditions réelles, appel exec sans session terminal → 401 + invitation au login.
+
+### 4. Confirmation de la licence spandrel au déploiement
+- **À confirmer au déploiement via `pip show spandrel`** : aucun dist-info/METADATA de spandrel n'est présent dans l'environnement de développement local, la vérification n'a donc pas pu être faite ici. `THIRD-PARTY-NOTICES.md` le liste provisoirement comme **MIT** — vérifier que la version effectivement installée porte bien cette licence (metadata `License:` / fichier `LICENSE` du paquet) et corriger la notice le cas échéant. Seul item restant ouvert de la checklist licence (§4).

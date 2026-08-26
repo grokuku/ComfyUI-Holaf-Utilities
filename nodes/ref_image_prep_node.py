@@ -1,3 +1,10 @@
+# Copyright (C) Holaf / grokuku — CUI-Holaf-Utils.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License, version 3 or any later
+# version. <https://www.gnu.org/licenses/>
+
 """
 AIH Ref Image Prep Node — Combine jusqu'à 4 images de référence en une
 seule image composite (grille dynamique 1×1, 1×2, 2+1 ou 2×2).

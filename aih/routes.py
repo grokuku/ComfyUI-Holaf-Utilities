@@ -1,3 +1,10 @@
+# Copyright (C) Holaf / grokuku — CUI-Holaf-Utils.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License, version 3 or any later
+# version. <https://www.gnu.org/licenses/>
+
 """routes.py — Routes HTTP AIH du pack fusionné (Phase 2 chantier C).
 
 Ce module porte les ~35 routes inline qui vivaient dans le ``__init__.py``
