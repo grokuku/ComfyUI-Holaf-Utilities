@@ -9,6 +9,7 @@
     */
 
 import { app, api } from "./holaf_api_compat.js";
+import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
 
 const COMPARER_CHANNEL = 'holaf_comparer_bridge';
 const COMPARER_STANDALONE_HEARTBEAT_MS = 2500;
@@ -1181,25 +1182,16 @@ const HolafRemoteComparer = {
     },
 
     enableWindowDragging(dragTarget) {
-        let isDragging = false, startX, startY, dragStartRight, dragStartBottom;
-        dragTarget.addEventListener('mousedown', (e) => {
-            if (e.target.tagName === "BUTTON" || e.target.closest("button") || this.isFullscreen) return;
-            isDragging = true; startX = e.clientX; startY = e.clientY;
-            const rect = this.rootElement.getBoundingClientRect();
-            dragStartRight = window.innerWidth - rect.right; dragStartBottom = window.innerHeight - rect.bottom;
-            this.rootElement.style.cursor = "move"; e.preventDefault();
-
-            const onMouseMove = (ev) => {
-                if (!isDragging) return;
-                this.storedPos.right = dragStartRight - (ev.clientX - startX);
-                this.storedPos.bottom = dragStartBottom - (ev.clientY - startY);
-                this.updateVisualPosition();
-            };
-
-            const onMouseUp = () => {
-                if (isDragging) { isDragging = false; this.rootElement.style.cursor = "default"; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); this.saveState(); }
-            };
-            document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+        makeDraggable(this.rootElement, {
+            handle: dragTarget,
+            anchor: 'right-bottom',
+            ignore: 'button',
+            isIgnored: () => this.isFullscreen,
+            state: this.storedPos,
+            updateVisualPosition: () => this.updateVisualPosition(),
+            saveState: () => this.saveState(),
+            onDragStart: () => { this.rootElement.style.cursor = "move"; },
+            onDragEnd: () => { this.rootElement.style.cursor = "default"; },
         });
     },
 
@@ -1209,67 +1201,17 @@ const HolafRemoteComparer = {
             const handle = document.createElement("div");
             handle.className = `holaf-resize-handle holaf-resize-${dir}`;
             handle.dataset.dir = dir;
-
-            handle.addEventListener('mousedown', (e) => {
-                if (this.isFullscreen) return;
-                e.stopPropagation();
-                e.preventDefault();
-
-                const resizeN = dir.includes('n');
-                const resizeS = dir.includes('s');
-                const resizeE = dir.includes('e');
-                const resizeW = dir.includes('w');
-
-                const startX = e.clientX;
-                const startY = e.clientY;
-                const rect = this.rootElement.getBoundingClientRect();
-                const startW = rect.width;
-                const startH = rect.height;
-                const startRight = window.innerWidth - rect.right;
-                const startBottom = window.innerHeight - rect.bottom;
-
-                const onMouseMove = (ev) => {
-                    const dx = ev.clientX - startX;
-                    const dy = ev.clientY - startY;
-
-                    let newW = startW;
-                    let newH = startH;
-                    let newRight = startRight;
-                    let newBottom = startBottom;
-
-                    if (resizeE) {
-                        newW = Math.max(300, startW + dx);
-                        newRight = startRight - (newW - startW);
-                    }
-                    if (resizeW) {
-                        newW = Math.max(300, startW - dx);
-                    }
-                    if (resizeS) {
-                        newH = Math.max(200, startH + dy);
-                        newBottom = startBottom - (newH - startH);
-                    }
-                    if (resizeN) {
-                        newH = Math.max(200, startH - dy);
-                    }
-
-                    this.storedPos.width = newW;
-                    this.storedPos.height = newH;
-                    this.storedPos.right = newRight;
-                    this.storedPos.bottom = newBottom;
-                    this.updateVisualPosition();
-                };
-
-                const onMouseUp = () => {
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                    this.saveState();
-                };
-
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            });
-
             this.rootElement.appendChild(handle);
+        });
+
+        makeResizable(this.rootElement, {
+            anchor: 'right-bottom',
+            minWidth: 300,
+            minHeight: 200,
+            isIgnored: () => this.isFullscreen,
+            state: this.storedPos,
+            updateVisualPosition: () => this.updateVisualPosition(),
+            saveState: () => this.saveState(),
         });
     },
 

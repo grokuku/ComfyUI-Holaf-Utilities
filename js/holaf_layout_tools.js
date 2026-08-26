@@ -1,6 +1,7 @@
 /* holaf_layout_tools.js */
     import { app } from "./holaf_api_compat.js";
     import { HolafPanelManager } from "./holaf_panel_manager.js";
+    import { makeDraggable } from "./holaf_window_utils.js";
     
     const HolafLayoutTools = {
         coordDisplay: null,
@@ -127,52 +128,19 @@
             const handle = document.createElement("div");
             Object.assign(handle.style, { width: "12px", height: "24px", cursor: "grab", display: "flex", alignItems: "center", opacity: "0.5", marginRight: "4px" });
             handle.innerHTML = `<svg viewBox="0 0 6 14" width="6" height="14" fill="currentColor"><circle cx="1" cy="1" r="1"/><circle cx="1" cy="7" r="1"/><circle cx="1" cy="13" r="1"/><circle cx="5" cy="1" r="1"/><circle cx="5" cy="7" r="1"/><circle cx="5" cy="13" r="1"/></svg>`;
-    
-            let isDragging = false;
-            let startX, startY, dragStartRight, dragStartBottom;
-    
-            const onMouseDown = (e) => {
-                isDragging = true;
-                handle.style.cursor = "grabbing";
-                
-                // We start dragging from the CURRENT visual position
-                const rect = container.getBoundingClientRect();
-                dragStartRight = window.innerWidth - rect.right;
-                dragStartBottom = window.innerHeight - rect.bottom;
-                
-                startX = e.clientX;
-                startY = e.clientY;
-    
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-                e.preventDefault(); 
-            };
-    
-            const onMouseMove = (e) => {
-                if (!isDragging) return;
-                const dx = e.clientX - startX;
-                const dy = e.clientY - startY;
-                
-                // During drag, we update the STORED position directly
-                this.storedPos.right = dragStartRight - dx;
-                this.storedPos.bottom = dragStartBottom - dy;
-                
-                // And we refresh the visual clamping
-                this.updateVisualPosition();
-            };
-    
-            const onMouseUp = () => {
-                if (isDragging) {
-                    // Save the new IDEAL position (even if it's currently clamped)
-                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.storedPos));
-                }
-                isDragging = false;
-                handle.style.cursor = "grab";
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            };
-    
-            handle.addEventListener('mousedown', onMouseDown);
+
+            makeDraggable(container, {
+                handle,
+                anchor: 'right-bottom',
+                state: this.storedPos,
+                updateVisualPosition: () => this.updateVisualPosition(),
+                saveState: () => {
+                    try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.storedPos)); } catch (e) {}
+                },
+                cursor: 'grabbing',
+                cursorRestore: 'grab',
+            });
+
             container.appendChild(handle);
         },
     

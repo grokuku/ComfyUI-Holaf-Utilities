@@ -142,7 +142,7 @@ const HolafUtilitiesMenu = {
 
         const mainButton = document.createElement("button");
         mainButton.id = "holaf-utilities-menu-button";
-        mainButton.textContent = "Holaf's Utilities";
+        mainButton.textContent = "AI Helper";
 
         this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";

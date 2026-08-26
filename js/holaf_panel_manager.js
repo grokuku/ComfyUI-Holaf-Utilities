@@ -13,6 +13,7 @@
  */
 
 import { HOLAF_THEMES } from "./holaf_themes.js";
+import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
 
 // MODIFICATION: Track open dialog count instead of boolean for proper stacking
 export const dialogState = {
@@ -182,116 +183,29 @@ export const HolafPanelManager = {
     },
 
     makeDraggable(panel, handle, onStateChange) {
-        handle.addEventListener("mousedown", (e) => {
-            if (panel.classList.contains("holaf-panel-fullscreen") || e.target.closest("button, input, select, textarea, a")) {
-                return;
-            }
-            e.preventDefault();
-
-            this.bringToFront(panel);
-            this._bakePosition(panel);
-
-            const offsetX = e.clientX - panel.offsetLeft;
-            const offsetY = e.clientY - panel.offsetTop;
-
-            const onMouseMove = (moveEvent) => {
-                let newLeft = moveEvent.clientX - offsetX;
-                let newTop = moveEvent.clientY - offsetY;
-                const margin = 10;
-                const panelRect = panel.getBoundingClientRect();
-
-                if (newTop < margin) newTop = margin;
-                if (newLeft < margin) newLeft = margin;
-                if (newLeft + panelRect.width > window.innerWidth - margin) newLeft = window.innerWidth - panelRect.width - margin;
-                if (newTop + panelRect.height > window.innerHeight - margin) newTop = window.innerHeight - panelRect.height - margin;
-
-                panel.style.left = `${newLeft}px`;
-                panel.style.top = `${newTop}px`;
-            };
-
-            const onMouseUp = () => {
-                document.removeEventListener("mousemove", onMouseMove);
-                document.removeEventListener("mouseup", onMouseUp);
-                if (onStateChange) {
-                    onStateChange({ x: panel.offsetLeft, y: panel.offsetTop, width: panel.offsetWidth, height: panel.offsetHeight });
-                }
-            };
-
-            document.addEventListener("mousemove", onMouseMove);
-            document.addEventListener("mouseup", onMouseUp);
+        makeDraggable(panel, {
+            handle,
+            anchor: 'left-top',
+            clamp: true,
+            margin: 10,
+            ignore: 'button, input, select, textarea, a',
+            bringToFront: (el) => this.bringToFront(el),
+            bakeTransform: (el) => this._bakePosition(el),
+            onStateChange,
         });
     },
 
     makeResizable(panel, onStateChange, onResize) {
-        const handles = panel.querySelectorAll('.holaf-resize-handle');
-        handles.forEach(handle => {
-            handle.addEventListener("mousedown", (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                const dir = handle.dataset.dir;
-                const resizeN = dir.includes('n');
-                const resizeS = dir.includes('s');
-                const resizeE = dir.includes('e');
-                const resizeW = dir.includes('w');
-
-                this.bringToFront(panel);
-                this._bakePosition(panel);
-
-                const initialX = e.clientX;
-                const initialY = e.clientY;
-                const initialWidth = panel.offsetWidth;
-                const initialHeight = panel.offsetHeight;
-                const initialLeft = panel.offsetLeft;
-                const initialTop = panel.offsetTop;
-                const minWidth = parseInt(getComputedStyle(panel).minWidth) || 100;
-                const minHeight = parseInt(getComputedStyle(panel).minHeight) || 50;
-
-                const onResizeMove = (moveEvent) => {
-                    const deltaX = moveEvent.clientX - initialX;
-                    const deltaY = moveEvent.clientY - initialY;
-
-                    let newWidth = initialWidth;
-                    let newHeight = initialHeight;
-                    let newLeft = initialLeft;
-                    let newTop = initialTop;
-
-                    // Horizontal resize
-                    if (resizeE) {
-                        newWidth = Math.max(minWidth, initialWidth + deltaX);
-                    }
-                    if (resizeW) {
-                        newWidth = Math.max(minWidth, initialWidth - deltaX);
-                        newLeft = initialLeft + initialWidth - newWidth;
-                    }
-
-                    // Vertical resize
-                    if (resizeS) {
-                        newHeight = Math.max(minHeight, initialHeight + deltaY);
-                    }
-                    if (resizeN) {
-                        newHeight = Math.max(minHeight, initialHeight - deltaY);
-                        newTop = initialTop + initialHeight - newHeight;
-                    }
-
-                    panel.style.width = `${newWidth}px`;
-                    panel.style.height = `${newHeight}px`;
-                    panel.style.left = `${newLeft}px`;
-                    panel.style.top = `${newTop}px`;
-                    if (onResize) onResize();
-                };
-
-                const onResizeUp = () => {
-                    document.removeEventListener("mousemove", onResizeMove);
-                    document.removeEventListener("mouseup", onResizeUp);
-                    if (onStateChange) {
-                        onStateChange({ x: panel.offsetLeft, y: panel.offsetTop, width: panel.offsetWidth, height: panel.offsetHeight });
-                    }
-                };
-
-                document.addEventListener("mousemove", onResizeMove);
-                document.addEventListener("mouseup", onResizeUp);
-            });
+        const minWidth = parseInt(getComputedStyle(panel).minWidth) || 100;
+        const minHeight = parseInt(getComputedStyle(panel).minHeight) || 50;
+        makeResizable(panel, {
+            anchor: 'left-top',
+            minWidth,
+            minHeight,
+            bringToFront: (el) => this.bringToFront(el),
+            bakeTransform: (el) => this._bakePosition(el),
+            onStateChange,
+            onResize: () => { if (onResize) onResize(); },
         });
     },
 
