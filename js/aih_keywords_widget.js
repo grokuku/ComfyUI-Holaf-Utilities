@@ -459,7 +459,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                 confSlider.step = "1";
                 Object.assign(confSlider.style, {
                     flex: "1", minWidth: "60px", height: "16px",
-                    cursor: "pointer", accentColor: "#6366f1",
+                    cursor: "pointer", accentColor: "var(--aih-accent, #D8700D)",
                 });
 
                 // Confidence value display
@@ -603,16 +603,16 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                         flex: "1", padding: "4px 8px", borderRadius: "4px",
                         border: primary ? "none" : "1px solid #555",
                         fontSize: "11px", cursor: "pointer",
-                        background: primary ? "#6366f1" : "#3a3a3e",
+                        background: primary ? "var(--aih-accent, #D8700D)" : "#3a3a3e",
                         color: primary ? "white" : "#ccc",
                         fontWeight: primary ? "600" : "normal",
                     });
                     b.onmouseenter = () => {
-                        if (primary) b.style.background = "#5558e8";
+                        if (primary) b.style.background = "var(--aih-accent-hover, #F08020)";
                         else b.style.background = "#4a4a4e";
                     };
                     b.onmouseleave = () => {
-                        if (primary) b.style.background = "#6366f1";
+                        if (primary) b.style.background = "var(--aih-accent, #D8700D)";
                         else b.style.background = "#3a3a3e";
                     };
                     return b;

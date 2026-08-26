@@ -250,11 +250,11 @@
                 enhanceBtn.textContent = "🔄  Test enhance";
                 Object.assign(enhanceBtn.style, {
                     width: "100%", padding: "6px", borderRadius: "4px",
-                    border: "none", background: "#6366f1", color: "white",
+                    border: "none", background: "var(--holaf-accent-color, #D8700D)", color: "white",
                     fontSize: "11px", fontWeight: "600", cursor: "pointer",
                 });
-                enhanceBtn.onmouseenter = () => enhanceBtn.style.background = "#5558e8";
-                enhanceBtn.onmouseleave = () => enhanceBtn.style.background = "#6366f1";
+                enhanceBtn.onmouseenter = () => enhanceBtn.style.background = "var(--holaf-accent-color, #D8700D)";
+                enhanceBtn.onmouseleave = () => enhanceBtn.style.background = "var(--holaf-accent-color, #D8700D)";
                 container.appendChild(enhanceBtn);
 
                 // ---- Textarea resultat ----

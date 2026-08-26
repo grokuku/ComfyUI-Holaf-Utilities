@@ -97,7 +97,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         var bar = document.createElement("div");
         bar.style.cssText = "flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;";
         var fill = document.createElement("div");
-        fill.style.cssText = "height:100%;width:0%;background:#6366f1;border-radius:3px;transition:width 0.5s ease;";
+        fill.style.cssText = "height:100%;width:0%;background:var(--aih-accent, #D8700D);border-radius:3px;transition:width 0.5s ease;";
         bar.appendChild(fill);
         // Name
         var nameEl = document.createElement("span");
@@ -569,12 +569,12 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       var shareBtn = body.querySelector("#wf-tab-share");
       var browseBtn = body.querySelector("#wf-tab-browse");
       if (shareBtn) {
-        shareBtn.style.borderBottomColor = currentTab === "share" ? "#6366f1" : "transparent";
+        shareBtn.style.borderBottomColor = currentTab === "share" ? "var(--aih-accent, #D8700D)" : "transparent";
         shareBtn.style.color = currentTab === "share" ? "#e2e8f0" : "#888";
         shareBtn.style.fontWeight = currentTab === "share" ? "600" : "400";
       }
       if (browseBtn) {
-        browseBtn.style.borderBottomColor = currentTab === "browse" ? "#6366f1" : "transparent";
+        browseBtn.style.borderBottomColor = currentTab === "browse" ? "var(--aih-accent, #D8700D)" : "transparent";
         browseBtn.style.color = currentTab === "browse" ? "#e2e8f0" : "#888";
         browseBtn.style.fontWeight = currentTab === "browse" ? "600" : "400";
       }
@@ -586,11 +586,11 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         // Tab bar
         '<div style="display:flex;gap:0;border-bottom:1px solid #444;">' +
         '<button id="wf-tab-share" style="flex:1;padding:8px;border:none;border-bottom:2px solid ' +
-        (currentTab === "share" ? "#6366f1" : "transparent") + ';background:transparent;color:' +
+        (currentTab === "share" ? "var(--aih-accent, #D8700D)" : "transparent") + ';background:transparent;color:' +
         (currentTab === "share" ? "#e2e8f0" : "#888") + ';font-size:13px;font-weight:' +
         (currentTab === "share" ? "600" : "400") + ';cursor:pointer;">📤 Partager</button>' +
         '<button id="wf-tab-browse" style="flex:1;padding:8px;border:none;border-bottom:2px solid ' +
-        (currentTab === "browse" ? "#6366f1" : "transparent") + ';background:transparent;color:' +
+        (currentTab === "browse" ? "var(--aih-accent, #D8700D)" : "transparent") + ';background:transparent;color:' +
         (currentTab === "browse" ? "#e2e8f0" : "#888") + ';font-size:13px;font-weight:' +
         (currentTab === "browse" ? "600" : "400") + ';cursor:pointer;">🌐 Parcourir</button>' +
         '</div>' +
@@ -629,7 +629,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         return;
       }
 
-      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:#888;font-size:13px;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #555;border-top-color:#6366f1;border-radius:50%;animation:aih-spin 0.8s linear infinite;"></span> Analyse des dépendances...</div>';
+      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:#888;font-size:13px;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #555;border-top-color:var(--aih-accent, #D8700D);border-radius:50%;animation:aih-spin 0.8s linear infinite;"></span> Analyse des dépendances...</div>';
       var deps = await detectDependencies(workflowJSON);
       var existingId = null;
 
@@ -663,7 +663,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Tags (virgules)</label>' +
         '<input id="wf-tags" type="text" style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:13px;box-sizing:border-box;"></div>' +
         '<div id="wf-deps" style="font-size:12px;color:#bbb;border-top:1px solid #444;padding-top:8px;"></div>' +
-        '<button id="wf-publish-btn" style="padding:8px;border:none;border-radius:6px;background:#6366f1;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📤 Publier</button>' +
+        '<button id="wf-publish-btn" style="padding:8px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📤 Publier</button>' +
         '<div id="wf-status" style="font-size:11px;color:#888;display:none;"></div>' +
         '</div>';
 
@@ -686,11 +686,11 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           depsHtml += '</div>';
         }
         if (deps.models.length) {
-          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#60a5fa;">🧠 Modèles</span>';
+          depsHtml += '<div style="margin-bottom:4px;"><span style="color:var(--aih-accent, #D8700D);">🧠 Modèles</span>';
           for (var i = 0; i < deps.models.length; i++) {
             var m = deps.models[i];
             depsHtml += '<label style="display:flex;align-items:center;gap:6px;margin-left:12px;color:#ccc;cursor:pointer;font-size:11px;">' +
-              '<input type="checkbox" class="wf-upload-cb" checked data-type="' + esc(m.type || 'model') + '" data-name="' + esc(m.name) + '" style="accent-color:#6366f1;">' +
+              '<input type="checkbox" class="wf-upload-cb" checked data-type="' + esc(m.type || 'model') + '" data-name="' + esc(m.name) + '" style="accent-color:var(--aih-accent, #D8700D);">' +
               '<span style="flex:1;">' + esc(m.name) + '</span></label>';
           }
           depsHtml += '</div>';
@@ -700,7 +700,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           for (var i = 0; i < deps.loras.length; i++) {
             var l = deps.loras[i];
             depsHtml += '<label style="display:flex;align-items:center;gap:6px;margin-left:12px;color:#ccc;cursor:pointer;font-size:11px;">' +
-              '<input type="checkbox" class="wf-upload-cb" checked data-type="lora" data-name="' + esc(l.name) + '" style="accent-color:#6366f1;">' +
+              '<input type="checkbox" class="wf-upload-cb" checked data-type="lora" data-name="' + esc(l.name) + '" style="accent-color:var(--aih-accent, #D8700D);">' +
               '<span style="flex:1;">' + esc(l.name) + '</span></label>';
           }
           depsHtml += '</div>';
@@ -730,7 +730,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                 existingId = null;
                 var btn = container.querySelector("#wf-publish-btn");
                 btn.textContent = "📤 Publier";
-                btn.style.background = "#6366f1";
+                btn.style.background = "var(--aih-accent, #D8700D)";
               });
           });
       }
@@ -1020,7 +1020,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
             '</div>' +
             '<div id="wf-install-deps" style="margin-bottom:12px;"></div>' +
             '<div style="display:flex;gap:8px;">' +
-            '<button id="wf-load-btn" style="flex:1;padding:10px;border:none;border-radius:6px;background:#6366f1;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📥 Charger le workflow</button>' +
+            '<button id="wf-load-btn" style="flex:1;padding:10px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📥 Charger le workflow</button>' +
             '<button id="wf-close-btn" style="padding:10px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">Fermer</button></div>' +
             '<div id="wf-load-status" style="font-size:11px;color:#888;display:none;margin-top:8px;"></div>';
 
@@ -1064,25 +1064,25 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   var nodeCount = n.node_types ? n.node_types.length : 1;
                   var installed = n.url && installedUrls[n.url];
                   depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
-                    '<input type="checkbox" class="wf-dep-cb" checked data-type="node" data-name="' + esc(n.name) + '" data-url="' + esc(n.url || '') + '" style="accent-color:#6366f1;">' +
+                    '<input type="checkbox" class="wf-dep-cb" checked data-type="node" data-name="' + esc(n.name) + '" data-url="' + esc(n.url || '') + '" style="accent-color:var(--aih-accent, #D8700D);">' +
                     '<span style="flex:1;">' + esc(n.name) +
                     (nodeCount > 1 ? ' <span style="color:#888;font-size:10px;">(' + nodeCount + ' nodes)</span>' : '') +
                     (installed ? ' ✅ déjà installé' : '') + '</span>' +
                     (n.url && !installed ? '<button onclick="window._wfInstallNode(\'' + esc(n.url) + '\', \'' + esc(n.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">📥 Installer</button>' : '') +
-                    (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +
+                    (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:var(--aih-accent, #D8700D);text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +
                     '</label>';
                 }
               }
               if (allDeps.models.length) {
                 if (allDeps.nodes.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
-                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#60a5fa;font-weight:600;">🧠 Modèles</span></div>';
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:var(--aih-accent, #D8700D);font-weight:600;">🧠 Modèles</span></div>';
                 for (var i = 0; i < allDeps.models.length; i++) {
                   var m = allDeps.models[i];
                   var installed = localModels.indexOf(m.name) >= 0;
                   var hasFile = !!m.upload_id;
                   depHtml += '<div style="padding:6px 10px;border-bottom:1px solid #3a3a3e;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
-                    '<input type="checkbox" class="wf-dep-cb"' + (installed ? '' : ' checked') + ' data-type="model" data-model-type="' + esc(m.type || 'model') + '" data-name="' + esc(m.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(m.upload_id) + '"' : '') + ' style="accent-color:#6366f1;">' +
+                    '<input type="checkbox" class="wf-dep-cb"' + (installed ? '' : ' checked') + ' data-type="model" data-model-type="' + esc(m.type || 'model') + '" data-name="' + esc(m.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(m.upload_id) + '"' : '') + ' style="accent-color:var(--aih-accent, #D8700D);">' +
                     '<span style="flex:1;">' + esc(m.name) + (installed ? ' ✅ déjà installé' : '') + '</span>' +
                     '<span style="font-size:10px;color:#666;">' + (m.type || 'modèle') + '</span></label>';
                   if (!installed && hasFile) {
@@ -1105,7 +1105,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   var hasFile = !!l.upload_id;
                   depHtml += '<div style="padding:6px 10px;border-bottom:1px solid #3a3a3e;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
-                    '<input type="checkbox" class="wf-dep-cb"' + (installed ? '' : ' checked') + ' data-type="lora" data-name="' + esc(l.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(l.upload_id) + '"' : '') + ' style="accent-color:#6366f1;">' +
+                    '<input type="checkbox" class="wf-dep-cb"' + (installed ? '' : ' checked') + ' data-type="lora" data-name="' + esc(l.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(l.upload_id) + '"' : '') + ' style="accent-color:var(--aih-accent, #D8700D);">' +
                     '<span style="flex:1;">' + esc(l.name) + (installed ? ' ✅ déjà installé' : '') + '</span></label>';
                   if (!installed && hasFile) {
                     depHtml += '<div style="display:flex;align-items:center;gap:4px;margin-top:4px;">' +
@@ -1191,7 +1191,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                 var bar = document.createElement("div");
                 bar.style.cssText = "flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;";
                 var fill = document.createElement("div");
-                fill.style.cssText = "height:100%;width:0%;background:#6366f1;border-radius:3px;transition:width 0.5s ease;";
+                fill.style.cssText = "height:100%;width:0%;background:var(--aih-accent, #D8700D);border-radius:3px;transition:width 0.5s ease;";
                 bar.appendChild(fill);
                 var nameEl = document.createElement("span");
                 nameEl.style.cssText = "font-size:12px;color:#ccc;min-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;";
@@ -1275,7 +1275,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
               content: '<p style="color:#aaa;font-size:13px;margin-bottom:16px;text-align:center;">Nouveaux custom nodes installés.<br>ComfyUI doit redémarrer pour les charger.</p>' +
                 '<div style="display:flex;gap:8px;justify-content:center;">' +
                 '<button id="reboot-cancel" style="padding:8px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">Plus tard</button>' +
-                '<button id="reboot-now" style="padding:8px 16px;border:none;border-radius:6px;background:#6366f1;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Redémarrer</button>' +
+                '<button id="reboot-now" style="padding:8px 16px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Redémarrer</button>' +
                 '</div>',
             });
             m.modal.querySelector("#reboot-cancel").onclick = function() { m.close(); };
@@ -1302,7 +1302,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   '<div>Server: ' + (remoteInfo.size/1048576).toFixed(1) + ' MB</div></div>' +
                   '<div style="display:flex;flex-direction:column;gap:8px;">' +
                   '<button id="conflict-overwrite" class="aih-btn-warning" style="padding:10px;border:1px solid #f59e0b;border-radius:6px;background:transparent;color:#f59e0b;font-size:13px;cursor:pointer;">✅ Écraser le fichier local</button>' +
-                  '<button id="conflict-suffix" class="aih-btn-primary" style="padding:10px;border:1px solid #6366f1;border-radius:6px;background:transparent;color:#6366f1;font-size:13px;cursor:pointer;">➕ Télécharger avec un autre nom</button>' +
+                  '<button id="conflict-suffix" class="aih-btn-primary" style="padding:10px;border:1px solid var(--aih-accent, #D8700D);border-radius:6px;background:transparent;color:var(--aih-accent, #D8700D);font-size:13px;cursor:pointer;">➕ Télécharger avec un autre nom</button>' +
                   '<button id="conflict-keep" class="aih-btn-success" style="padding:10px;border:1px solid #34d399;border-radius:6px;background:transparent;color:#34d399;font-size:13px;cursor:pointer;">🔍 Garder le modèle local (skip)</button></div>',
               });
               m.modal.querySelector("#conflict-overwrite").onclick = function() {

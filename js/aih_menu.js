@@ -168,7 +168,7 @@ import "./aih_dialog.js";
                 const name = m.display_name || m.username || m.id?.substring(0, 8) || "?";
                 const avatarUrl = m.avatar_url || (m.avatar && m.id ? `https://cdn.discordapp.com/avatars/${m.id}/${m.avatar}.png?size=32` : null);
                 const roleBadge = m.role === "admin"
-                    ? '<span style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">admin</span>'
+                    ? '<span style="background:var(--aih-accent, #D8700D);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">admin</span>'
                     : m.role === "kw_editor"
                       ? '<span style="background:#d97706;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">kw_editor</span>'
                       : '<span style="color:#888;font-size:11px;">membre</span>';

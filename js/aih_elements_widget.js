@@ -530,7 +530,7 @@ function _parseConceptSyntax(text, defaultCount) {
                         '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
                         '<button id="ep-preset-delete" style="padding:6px 12px;border-radius:4px;border:1px solid #f87171;background:transparent;color:#f87171;font-size:11px;cursor:pointer;">🗑 Delete</button>' +
                         '<button id="ep-preset-cancel" style="padding:6px 12px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:11px;cursor:pointer;">Cancel</button>' +
-                        '<button id="ep-preset-save" style="padding:6px 12px;border-radius:4px;border:none;background:#6366f1;color:white;font-size:11px;cursor:pointer;font-weight:600;">Save</button>' +
+                        '<button id="ep-preset-save" style="padding:6px 12px;border-radius:4px;border:none;background:var(--aih-accent, #D8700D);color:white;font-size:11px;cursor:pointer;font-weight:600;">Save</button>' +
                         '</div></div>';
 
                     var m = aihOpenModalV2({
@@ -701,16 +701,16 @@ function _parseConceptSyntax(text, defaultCount) {
                         flex: "1", padding: "4px 8px", borderRadius: "4px",
                         border: primary ? "none" : "1px solid #555",
                         fontSize: "11px", cursor: "pointer",
-                        background: primary ? "#6366f1" : "#3a3a3e",
+                        background: primary ? "var(--aih-accent, #D8700D)" : "#3a3a3e",
                         color: primary ? "white" : "#ccc",
                         fontWeight: primary ? "600" : "normal",
                     });
                     b.onmouseenter = () => {
-                        if (primary) b.style.background = "#5558e8";
+                        if (primary) b.style.background = "var(--aih-accent-hover, #F08020)";
                         else b.style.background = "#4a4a4e";
                     };
                     b.onmouseleave = () => {
-                        if (primary) b.style.background = "#6366f1";
+                        if (primary) b.style.background = "var(--aih-accent, #D8700D)";
                         else b.style.background = "#3a3a3e";
                     };
                     return b;
@@ -810,7 +810,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             cursor: "pointer", fontSize: "12px", padding: "0 2px",
                             flexShrink: "0",
                             filter: brainOn ? "none" : "grayscale(1) opacity(0.4)",
-                            color: brainOn ? "#818cf8" : "#666",
+                            color: brainOn ? "var(--aih-accent, #D8700D)" : "#666",
                         });
                         brainBtn.title = brainOn ? "Mode intelligent ON" : "Mode intelligent OFF";
                         brainBtn.onclick = () => {
@@ -841,7 +841,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             // Badge montrant le nombre de choix par bloc {}
                             const choiceBadge = document.createElement("span");
                             Object.assign(choiceBadge.style, {
-                                fontSize: "9px", color: "#818cf8", whiteSpace: "nowrap",
+                                fontSize: "9px", color: "var(--aih-accent, #D8700D)", whiteSpace: "nowrap",
                                 flexShrink: "0", padding: "0 2px",
                             });
                             function updateChoiceBadge() {
@@ -953,8 +953,8 @@ function _parseConceptSyntax(text, defaultCount) {
                     placeholder.className = "aih-drag-placeholder";
                     Object.assign(placeholder.style, {
                         height: `${rowHeight / 2}px`,
-                        border: "2px dashed #60a5fa", borderRadius: "4px",
-                        background: "rgba(96,165,250,0.10)",
+                        border: "2px dashed var(--aih-accent, #D8700D)", borderRadius: "4px",
+                        background: "rgba(216,112,13,0.10)",
                         marginBottom: "2px", pointerEvents: "none",
                         transition: "transform 0.12s ease-out",
                     });

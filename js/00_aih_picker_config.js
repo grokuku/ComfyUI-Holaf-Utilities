@@ -321,7 +321,7 @@ import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
                 // Footer : boutons
                 '<div style="padding:6px 12px;border-top:1px solid #444;display:flex;justify-content:flex-end;gap:6px;flex-shrink:0;">' +
                     '<button id="aih-picker-cancel" style="padding:4px 12px;border-radius:4px;border:1px solid #555;background:transparent;color:#888;cursor:pointer;font-size:11px;">Annuler</button>' +
-                    '<button id="aih-picker-save" style="padding:4px 16px;border-radius:4px;border:none;background:#6366f1;color:white;cursor:pointer;font-size:11px;font-weight:600;">Valider</button>' +
+                    '<button id="aih-picker-save" style="padding:4px 16px;border-radius:4px;border:none;background:var(--aih-accent, #D8700D);color:white;cursor:pointer;font-size:11px;font-weight:600;">Valider</button>' +
                 '</div>';
             document.body.appendChild(modal);
 
@@ -519,8 +519,8 @@ import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
                 Object.assign(div.style, {
                     padding: '3px 6px', margin: '1px 0', borderRadius: '3px',
                     cursor: 'pointer', fontSize: '11px',
-                    border: isDescShown ? '1px solid #6366f1' : '1px solid transparent',
-                    background: isSelected ? '#4a4a6e' : (isDescShown ? '#2a2a4e' : 'transparent'),
+                    border: isDescShown ? '1px solid var(--aih-accent, #D8700D)' : '1px solid transparent',
+                    background: isSelected ? 'rgba(216,112,13,0.30)' : (isDescShown ? 'rgba(216,112,13,0.12)' : 'transparent'),
                     color: '#ddd',
                 });
                 div.onmouseenter = function() {

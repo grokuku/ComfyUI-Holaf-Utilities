@@ -286,7 +286,7 @@ function _blobbyMarkdownToHtml(md) {
     s = s.replace(/^##\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:14px;color:#FF8F00;">$1</h3>');
     s = s.replace(/^#\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:15px;color:#FF8F00;">$1</h3>');
     // Links [text](url)
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#6366f1;text-decoration:underline;">$1</a>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--aih-accent, #D8700D);text-decoration:underline;">$1</a>');
     // Unordered lists (- text or * text)
     s = s.replace(/(?:^|\n)[-\*]\s+(.+)/g, function(m, line) {
         return '\n<li style="margin-left:16px;list-style:disc;">' + line + '</li>';
@@ -1617,7 +1617,7 @@ const Blobby = {
                 whiteSpace: 'pre-wrap',
             });
             if (msg.role === 'user') {
-                div.style.background = '#6366f1'; div.style.color = '#fff';
+                div.style.background = 'var(--aih-accent, #D8700D)'; div.style.color = '#fff';
                 div.style.alignSelf = 'flex-end';
                 div.textContent = msg.text;
             } else if (msg.role === 'blobby') {
@@ -1685,11 +1685,11 @@ const Blobby = {
         sendBtn.textContent = '➤';
         Object.assign(sendBtn.style, {
             padding: '6px 12px', borderRadius: '6px', border: 'none',
-            background: '#6366f1', color: '#fff', cursor: 'pointer',
+            background: 'var(--aih-accent, #D8700D)', color: '#fff', cursor: 'pointer',
             fontSize: '14px', fontWeight: '600',
         });
-        sendBtn.onmouseenter = () => sendBtn.style.background = '#4f46e5';
-        sendBtn.onmouseleave = () => sendBtn.style.background = '#6366f1';
+        sendBtn.onmouseenter = () => sendBtn.style.background = 'var(--aih-accent-hover, #F08020)';
+        sendBtn.onmouseleave = () => sendBtn.style.background = 'var(--aih-accent, #D8700D)';
 
         function sendMessage() {
             var text = input.value.trim();
@@ -1865,7 +1865,7 @@ const Blobby = {
             whiteSpace: 'pre-wrap',
         });
         if (role === 'user') {
-            div.style.background = '#6366f1';
+            div.style.background = 'var(--aih-accent, #D8700D)';
             div.style.color = '#fff';
             div.style.alignSelf = 'flex-end';
             div.textContent = text;
