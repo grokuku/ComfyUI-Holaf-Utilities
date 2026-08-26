@@ -20,12 +20,14 @@
  *                          renderProviderTab(), appelés par le gestionnaire
  *                          Settings Holaf comme ses propres onglets.
  *   - openUpdate         : modale spinner + log git de POST /aih/update ;
- *                          si updated → proposition de redémarrage via
- *                          POST /holaf/utilities/restart (adaptation fusion :
- *                          la source appelait /aih/restart, supprimé) puis
- *                          boucle de reconnexion 2 s jusqu'à ce que le serveur
- *                          réponde (sonde légère GET /aih/credentials), enfin
- *                          location.reload().
+ *                          si updated → confirmation utilisateur puis
+ *                          redémarrage via le flux COMMUN du menu
+ *                          (window.holaf.startRestartFlow de holaf_main.js :
+ *                          POST /holaf/utilities/restart + compteur à rebours
+ *                          + reconnexion). C'est l'unique façon de redémarrer.
+ *                          Si ce flux commun n'est pas disponible, fallback
+ *                          propre (toast + reload manuel) — pas de double
+ *                          polling/reload local.
  *   - checkServerStatus  : GET {serverUrl}/api/stats + /api/auth/me en
  *                          parallèle (timeout 5 s, Bearer apiKey) → ligne de
  *                          statut du pied de menu.
@@ -707,13 +709,14 @@
 
     // ── Update (git pull sur le repo local) ──────────────────────────────
     // Adaptation fusion : POST /aih/update renvoie {status, log, updated} et
-    // ne redémarre JAMAIS seule ; le redémarrage passe par l'endpoint Utils
-    // POST /holaf/utilities/restart (la source appelait /aih/restart,
-    // volontairement non recréé, cf. aih/routes.py groupe 2). Après le
-    // redémarrage : boucle de reconnexion toutes les 2 s — sonde légère
-    // GET /aih/credentials jusqu'à ce que le serveur réponde, puis
-    // location.reload(). Le bouton « AIH Restart » autonome du menu garde
-    // son propre flux (startRestartFlow dans holaf_main.js).
+    // ne redémarre JAMAIS seule. Après un update réussi et la confirmation
+    // utilisateur, le redémarrage délègue au flux COMMUN du menu
+    // (startRestartFlow de holaf_main.js, exposé sous window.holaf.
+    // startRestartFlow) : POST /holaf/utilities/restart + compteur à rebours
+    // + reconnexion — l'unique façon de redémarrer, aucun polling/reload
+    // dupliqué ici. Si ce flux commun n'est pas disponible (module aih_menu
+    // chargé avant holaf_main), un fallback propre (toast + reload manuel)
+    // est utilisé à la place.
 
     async function openUpdate() {
         // Modale d'attente
@@ -763,46 +766,33 @@
                 modal.body.appendChild(restartSection);
 
                 modal.body.querySelector("#aih-update-later").onclick = () => modal.close();
-                modal.body.querySelector("#aih-update-restart").onclick = async () => {
-                    const btn = modal.body.querySelector("#aih-update-restart");
-                    btn.disabled = true;
-                    btn.textContent = "Redémarrage...";
-                    // Remplacer le contenu de la modale par un message d'attente
-                    modal.body.innerHTML = `
-                        <div style="text-align:center; padding:40px 20px;">
-                            <div style="font-size:32px; margin-bottom:12px;">🔄</div>
-                            <p style="color:#fff; font-size:14px; margin:0 0 6px; font-weight:600;">ComfyUI redémarre...</p>
-                            <p style="color:#888; font-size:12px; margin:0;">Cette page se reconnectera automatiquement dans quelques secondes.</p>
-                        </div>
-                    `;
-                    try {
-                        await fetch("/holaf/utilities/restart", { method: "POST" });
-                    } catch (e) {
-                        // Normal : la connexion est coupée pendant le restart
+                modal.body.querySelector("#aih-update-restart").onclick = () => {
+                    // Ferme la modale AIH puis délègue au flux de redémarrage
+                    // COMMUN (startRestartFlow de holaf_main.js) : même mécanique
+                    // avec compteur à rebours que le bouton « Restart ComfyUI »
+                    // du menu. C'est l'unique façon de redémarrer (pas de double
+                    // polling/reload ici).
+                    modal.close();
+                    const restart = window.holaf && typeof window.holaf.startRestartFlow === "function"
+                        ? window.holaf.startRestartFlow
+                        : null;
+                    if (restart) {
+                        restart();
+                        return;
                     }
-                    // Tenter de reconnecter toutes les 2s (sonde légère locale)
-                    let attempts = 0;
-                    const reconnectInterval = setInterval(() => {
-                        attempts++;
-                        if (attempts > 30) {
-                            clearInterval(reconnectInterval);
-                            modal.body.innerHTML = `
-                                <div style="text-align:center; padding:40px 20px;">
-                                    <p style="color:#f87171; font-size:14px;">Le redémarrage prend plus longtemps que prévu.</p>
-                                    <p style="color:#888; font-size:12px;">Rechargez manuellement la page ComfyUI.</p>
-                                </div>
-                            `;
-                            return;
-                        }
-                        fetch("/aih/credentials", { cache: "no-store" })
-                            .then(r => {
-                                if (r.status < 500) {
-                                    clearInterval(reconnectInterval);
-                                    location.reload();
-                                }
-                            })
-                            .catch(() => {});
-                    }, 2000);
+                    // Fallback propre : flux commun indisponible (module aih_menu
+                    // chargé avant holaf_main). Toast + lien de reload manuel —
+                    // on ne recrée PAS de polling/reload local.
+                    if (window.holaf && window.holaf.toastManager) {
+                        window.holaf.toastManager.show({
+                            message: "Redémarrage commun indisponible pour l'instant. " +
+                                "<a href='#' onclick='event.preventDefault(); location.reload(); " +
+                                "return false;' style='color:inherit;'>Recharger manuellement</a>",
+                            type: "error"
+                        });
+                    } else {
+                        location.reload();
+                    }
                 };
             } else if (data.status === "ok" && !data.updated) {
                 // Déjà à jour

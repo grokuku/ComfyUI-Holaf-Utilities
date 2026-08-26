@@ -128,6 +128,10 @@ const HolafUtilitiesMenu = {
         window.holaf.toastManager = new HolafToastManager();
         
         window.holaf.rebuildMenu = () => this.buildMenu();
+        // Expose le flux de redémarrage partagé (compteur à rebours) pour que
+        // js/aih_menu.js (chargé AVANT holaf_main.js) puisse le réutiliser pour
+        // le redémarrage post-update. Accessible via window.holaf.startRestartFlow.
+        window.holaf.startRestartFlow = () => this.startRestartFlow();
 
         let menuContainer = document.getElementById("holaf-utilities-menu-container");
         if (menuContainer) {
@@ -142,7 +146,7 @@ const HolafUtilitiesMenu = {
 
         const mainButton = document.createElement("button");
         mainButton.id = "holaf-utilities-menu-button";
-        mainButton.textContent = "AI Helper";
+        mainButton.textContent = "AI Helper ▾";
 
         this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
