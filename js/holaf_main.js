@@ -233,7 +233,6 @@ const HolafUtilitiesMenu = {
             { label: "💬 Chat", special: 'aih_chat' },
             { type: 'separator' },
             { label: "🔄 AIH Update", special: 'aih_update' },
-            { label: "AIH Restart", special: 'aih_restart' },
             { label: "Restart ComfyUI", special: 'restart' }
         ];
 
@@ -311,7 +310,7 @@ const HolafUtilitiesMenu = {
             setTimeout(updateCheckboxUI, 50);
 
             menuItem.onclick = (e) => {
-                if (itemInfo.special === 'restart' || itemInfo.special === 'aih_restart') {
+                if (itemInfo.special === 'restart') {
                     this.startRestartFlow();
                 }
                 else if (itemInfo.special === "toggle_layout_tools") {
@@ -525,8 +524,9 @@ const HolafUtilitiesMenu = {
             });
     },
 
-    // ── Shared restart flow (used by both "Restart ComfyUI" and "AIH Restart",
-    //    and by the post-update prompt) ──
+    // ── Shared restart flow (used by "Restart ComfyUI" — the only restart
+    //    entry, the separate AIH one having been removed — and by the
+    //    post-update prompt) ──
     startRestartFlow() {
         const restartDiv = document.createElement("div");
         const restartMsg = document.createElement("p");
