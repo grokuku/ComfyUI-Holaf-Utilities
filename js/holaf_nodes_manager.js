@@ -1193,11 +1193,11 @@ const holafNodesManager = {
         if (this.isActionInProgress) return;
 
         // Simple prompt for now, could be improved with a custom dialog later
-        let url = prompt("Enter the Git URL of the node to install:");
+        let url = await window.AIH.prompt("Enter the Git URL of the node to install:");
         if (!url) return;
         url = url.trim();
         if (!url.startsWith("http")) {
-            alert("Please enter a valid URL starting with http/https");
+            await window.AIH.alert("Install via URL", "Please enter a valid URL starting with http/https", "warning");
             return;
         }
 

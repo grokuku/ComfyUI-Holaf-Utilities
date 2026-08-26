@@ -473,7 +473,7 @@ export async function initProfiler() {
         btnDeleteSelected.addEventListener('click', async () => {
             if (!selectedRunIds.size) return;
             const ids = [...selectedRunIds];
-            if (!confirm(`Delete ${ids.length} run(s)? This cannot be undone.`)) return;
+            if (!(await window.AIH.confirm(`Delete ${ids.length} run(s)? This cannot be undone.`))) return;
             for (const id of ids) {
                 try {
                     await fetch(`/holaf/profiler/run/${id}`, { method: 'DELETE' });
@@ -977,7 +977,7 @@ export async function initProfiler() {
     const btnRun = document.getElementById('btn-run-profile');
     if (btnRun) {
         btnRun.addEventListener('click', async () => {
-            const runName = prompt("Enter a name for this run (Optional):", "Run " + new Date().toLocaleTimeString());
+            const runName = await window.AIH.prompt("Enter a name for this run (Optional):", "", "Run " + new Date().toLocaleTimeString());
             executionCounter = 0;
             nodesMap.forEach(node => {
                 node.vram_max = 0;

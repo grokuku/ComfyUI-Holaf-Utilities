@@ -588,7 +588,7 @@ function _parseConceptSyntax(text, defaultCount) {
                     deleteBtn.onclick = async () => {
                         const name = input.value.trim();
                         if (!name || !_epPresetNames.includes(name)) return;
-                        if (!confirm('Delete preset "' + name + '"?')) return;
+                        if (!(await window.AIH.confirm('Delete preset "' + name + '"?'))) return;
                         try {
                             await apiCall("DELETE", "elements-presets/" + encodeURIComponent(name));
                             _epPresetNames = _epPresetNames.filter(n => n !== name);

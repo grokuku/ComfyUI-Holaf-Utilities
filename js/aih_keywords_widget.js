@@ -657,7 +657,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                 // ---- Save button ----
                 saveBtn.onclick = () => {
                     const promptFn = window.aihShowPrompt || function (title, message, placeholder) {
-                        return Promise.resolve(prompt(message + " (" + placeholder + ")"));
+                        return window.AIH.prompt(title, message, placeholder);
                     };
                     promptFn("Sauvegarder le filtre", "Nom du filtre :", "").then(function (name) {
                         if (!name) return;

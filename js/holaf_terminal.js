@@ -143,7 +143,7 @@ const holafTerminal = {
         // Initialization is minimal as the menu is handled centrally.
     },
 
-    createPanel() {
+    async createPanel() {
         if (this.panelElements && this.panelElements.panelEl) {
             return;
         }
@@ -206,7 +206,7 @@ const holafTerminal = {
             });
         } catch (e) {
             console.error("[Holaf Terminal] Error during HolafPanelManager.createPanel:", e);
-            alert("[Holaf Terminal] Error creating panel. Check console.");
+            await window.AIH.alert("[Holaf Terminal]", "Error creating panel. Check console.", "error");
             return;
         }
 
@@ -242,7 +242,7 @@ const holafTerminal = {
     },
     async show() {
         if (!this.panelElements || !this.panelElements.panelEl) {
-            this.createPanel();
+            await this.createPanel();
             if (!this.panelElements || !this.panelElements.panelEl) {
                 console.error("[Holaf Terminal] Panel creation FAILED in show(). Aborting.");
                 return;

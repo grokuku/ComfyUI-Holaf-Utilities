@@ -23,10 +23,10 @@ async function uploadFileAndSetWidget(node, file, uploadButton) {
             widget.value = data.name;
             widget.callback?.(data.name);
         } else {
-            alert(`Upload failed: ${resp.status}`);
+            await window.AIH.alert("Upload", `Upload failed: ${resp.status}`, "error");
         }
     } catch (err) {
-        alert(`Error: ${err.message}`);
+        await window.AIH.alert("Upload", `Error: ${err.message}`, "error");
     } finally {
         if (uploadButton) uploadButton.textContent = "📤 Upload Image/Video";
     }
