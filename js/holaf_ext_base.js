@@ -87,9 +87,16 @@ function _baseFromWindow() {
         // Origin-relative values (e.g. "/extensions/pack" injected by
         // PROFILER_HTML in __init__.py) throw when passed to new URL()
         // alone: resolve them against the current document base first.
+        // NOTE: there is deliberately NO "file:///" fallback here. A file://
+        // base on an https page is blocked by the browser as a security error
+        // ("not allowed to load local resource"). If no document base is
+        // available this strategy simply yields nothing and resolution moves
+        // to the next strategy (import.meta.url).
+        const docBase = (typeof document !== "undefined" && document.baseURI) || "";
+        if (!docBase || !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(docBase)) return null;
         const href = /^https?:\/\//i.test(injected)
             ? injected
-            : new URL(injected, (typeof document !== "undefined" && document.baseURI) || "file:///").href;
+            : new URL(injected, docBase).href;
         return _normalizeCandidateBase(href);
     } catch {
         return null;

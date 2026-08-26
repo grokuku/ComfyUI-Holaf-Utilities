@@ -19,16 +19,30 @@
 /**
  * Resolves a pack asset URL from the base injected by the host page.
  * @param {string} relativePath e.g. "aih_dialog.js" (no "js/" segment —
- *   WEB_DIRECTORY="js" is mounted directly at /extensions/<pack>/)
+ *   WEB_DIRECTORY="js" is mounted directly at /extensions/<pack>/, so the
+ *   browser URL never contains the "js/" segment).
  */
 function holafPackUrl(relativePath) {
     const rel = String(relativePath).replace(/^\/+/, "");
     const base = (typeof window !== "undefined" && window.HOLAF_EXT_BASE) || null;
-    if (!base) {
-        console.warn("[Holaf Profiler] window.HOLAF_EXT_BASE is not set; cannot resolve pack asset:", rel);
-        return rel;
+    if (base) {
+        return `${base.replace(/\/+$/, "")}/${rel}`;
     }
-    return `${base.replace(/\/+$/, "")}/${rel}`;
+    // No explicit base injected. Anchor the specifier to the current document
+    // origin so the dynamic import is ALWAYS an absolute http(s) URL and can
+    // never resolve to a bare relative path that — when the module route and
+    // the page origin differ — could fall back to file:// (blocked by the
+    // browser with a security error on https pages).
+    const docBase = (typeof document !== "undefined" && document.baseURI) || "";
+    if (docBase && /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(docBase)) {
+        try {
+            return new URL(rel, docBase).href;
+        } catch (e) {
+            /* malformed base; fall through to the loud warning below */
+        }
+    }
+    console.warn("[Holaf Profiler] window.HOLAF_EXT_BASE is not set and no valid document origin; cannot resolve pack asset absolutely:", rel);
+    return rel;
 }
 
 /**
@@ -64,11 +78,19 @@ async function loadAihFoundation() {
  */
 async function loadHolafComfyBridge() {
     try {
-        const mod = await import(holafPackUrl("js/holaf_comfy_bridge.js"));
+        // NOTE: no "js/" prefix — WEB_DIRECTORY="js" is mounted directly at
+        // /extensions/<pack>/, so the module lives at
+        // <HOLAF_EXT_BASE>/holaf_comfy_bridge.js (a "js/" segment would 404 and
+        // be served as application/octet-stream, blocking the MIME type).
+        const mod = await import(holafPackUrl("holaf_comfy_bridge.js"));
         return mod.HolafComfyBridge;
     } catch (err) {
         console.warn("[Holaf Profiler] Could not load holaf_comfy_bridge.js; live group-sync disabled.", err);
-        return class InertBridge { listen() {} send() {} };
+        const InertBridge = class InertBridge { listen() {} send() {} };
+        // Marker so callers can degrade gracefully (e.g. "Update Nodes") when
+        // the real bridge is unavailable instead of silently doing nothing.
+        InertBridge.isInert = true;
+        return InertBridge;
     }
 }
 
@@ -81,6 +103,7 @@ export async function initProfiler() {
 
     const HolafComfyBridge = await loadHolafComfyBridge();
     const bridge = new HolafComfyBridge();
+    const comfyBridgeActive = !(HolafComfyBridge.isInert === true);
 
     // Safe AIH helpers: use the unified AIH dialogs when the foundation loaded,
     // otherwise fall back to native browser dialogs so the profiler never breaks.
@@ -1014,6 +1037,17 @@ export async function initProfiler() {
     if (btnUpdate) {
         btnUpdate.addEventListener('click', async () => {
             const originalText = btnUpdate.innerText;
+
+            // Update-nodes relies on the live group-sync bridge talking to the
+            // main ComfyUI tab. If the bridge could not be loaded (inert stub),
+            // degrade clearly instead of silently doing nothing.
+            if (!comfyBridgeActive) {
+                console.warn("[Holaf Profiler] Update Nodes skipped: holaf_comfy_bridge.js is not available (live group-sync disabled).");
+                await aihConfirm("Live group-sync is disabled because holaf_comfy_bridge.js could not be loaded.\n\nNodes can still be fetched from the server context, but group assignments won't sync from the ComfyUI graph.");
+                await refreshContextView();
+                return;
+            }
+
             btnUpdate.innerText = "Syncing...";
             btnUpdate.disabled = true;
 
