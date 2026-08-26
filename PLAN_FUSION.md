@@ -307,6 +307,8 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 
 ## Tableau de suivi
 
+**FUSION TERMINÉE — validée en production par l'utilisateur le 26/08/2026.**
+
 | Phase | Élément | Statut |
 |---|---|---|
 | 0 | Créer une branche dédiée à la fusion | ✅ Terminé (branche `fusion/consolidation-aih`, commit 629028c) |
@@ -318,9 +320,9 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 0 | Auditer toutes les occurrences de `ComfyUI-Holaf-Utilities` en Python/JS (grep complet) et classer chaque occurrence : stockage utilisateur (couvert par la migration automatique) vs assets servi (à dynamiser) | ✅ Terminé (couvert par le commit 438008a) |
 | 0 | Dynamiser les chemins d'assets servis identifiés par l'audit (§3.11) | ✅ Terminé (commit 438008a) |
 | 0 | Implémenter la logique de migration automatique des données (Zones A et B — §3.11) | ✅ Terminé (commit 95e477d) |
-| 0+ (post-Phase 0) | Renommer le repo sur GitHub : `ComfyUI-Holaf-Utils` → `ComfyUI-AI-Helper` (redirections automatiques des anciennes URLs) | À faire |
-| 0+ (post-Phase 0) | Mettre à jour les remotes git locaux vers le nouveau nom | À faire |
-| 0+ (post-Phase 0) | Communiquer aux utilisateurs : réinstaller l'extension sous le nouveau nom (données migrées automatiquement au premier démarrage, §3.11) | À faire |
+| 0+ (post-Phase 0) | Renommer le repo sur GitHub : `ComfyUI-Holaf-Utils` → `ComfyUI-AI-Helper` (redirections automatiques des anciennes URLs) | À faire — reporté (décision utilisateur : plus tard), cf. « Reste à faire (hors code) » |
+| 0+ (post-Phase 0) | Mettre à jour les remotes git locaux vers le nouveau nom | À faire — reporté (décision utilisateur : plus tard), cf. « Reste à faire (hors code) » |
+| 0+ (post-Phase 0) | Communiquer aux utilisateurs : réinstaller l'extension sous le nouveau nom (données migrées automatiquement au premier démarrage, §3.11) | À faire — reporté (décision utilisateur : plus tard), cf. « Reste à faire (hors code) » |
 | 1 | Intégrer les 24 nodes CUI-Holaf dans `nodes/` | ✅ Terminé (commit e544d36 — clés `AIH*` canoniques + alias legacy) |
 | 1 | Adapter l'enregistrement des nodes CUI-Holaf au loader par-fichier d'Utils (ou intégrer leur registre central — choix à documenter) | ✅ Terminé (couvert par le commit e544d36) |
 | 1 | Intégrer les widgets JS associés aux 24 nodes | ✅ Terminé (commit 2ce784b — ids `registerExtension` `AIH.*`, matching dual-forme `AIH*`/legacy sur toutes les comparaisons de clés, fixes window.holaf clobbering + LogLevel) |
@@ -339,23 +341,23 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 | 2 | Intégrer les widgets JS transverses (Model Browser, Workflow Share, Modal v2) | ✅ Terminé (chantier D, commit fb0ca38 — + loaders ordonnés 00_-04_, Elements/Keywords/Enhance widgets, matching dual-forme des clés renommées) |
 | 2 | Servir le frontend local via `/aih/local/*` | ✅ Terminé (chantier C, commit c43370a — site copié dans `<pack>/aih_frontend/`, index.html réécrit à la volée `/css//js/` → `/aih/local/css//aih/local/js/`, même logique que la source ; anti path-traversal realpath containment) |
 | 2 | Tester incrémentalement chaque route refactorée | ✅ Terminé (chantier C — harnais hors-ComfyUI : inventaire exact des 43 routes vs source, exécution réelle des handlers clés status/embeddings/outbox/conflicts/search/index+réécriture/traversal-bloqué/auth blobby 401+fail-closed, update_repo() sur repos jetables, py_compile 5 fichiers) |
-| 3 | Unifier AnyType (une seule implémentation partagée) | À faire |
-| 3 | Renommer `holaf_utils.py` (venant de CUI-Holaf) en `holaf_node_helpers.py` et mettre à jour les imports | À faire |
+| 3 | Unifier AnyType (une seule implémentation partagée) | ✅ Terminé (absorbé en Phase 1 — commit e544d36 : implémentation unique partagée dans `holaf_node_helpers.py`) |
+| 3 | Renommer `holaf_utils.py` (venant de CUI-Holaf) en `holaf_node_helpers.py` et mettre à jour les imports | ✅ Terminé (absorbé en Phase 1 — commit e544d36 : fichier renommé, imports mis à jour) |
 | 3 | Unifier les boutons Update et Restart (Update = git pull → proposition de redémarrage via restart sécurisé d'Utils ; Restart autonome) | ✅ Terminé (backend : chantier C, commit 8051c7d — POST `/aih/update` renvoie `{updated: bool, detail}` via fetch+reset --hard FETCH_HEAD SANS auto-execv ; redémarrage délégué à POST `/holaf/utilities/restart` existant ; boutons « AIH Update » / « AIH Restart » dans le menu principal Holaf Utilities (`js/holaf_main.js`) : chantier D, commit 4b9660e — flux restart existant extrait tel quel en `startRestartFlow()` partagé) |
 | 3 | Remplacer les anciennes routes `/aih/update` et `/aih/restart` par la mécanique unifiée | ✅ Terminé côté backend (chantier C, commit 8051c7d — `/aih/update` nouvelle mécanique ; `/aih/restart` volontairement non recréée) |
-| 3 | Supprimer le terminal AIH et conserver le terminal Utils avec sa logique de session actuelle (auth par mot de passe hashé ; reconnexion Ctrl+D → login → session fraîche déjà implémentée et validée — ne pas régresser sur `holaf_terminal.py` / `js/holaf_terminal.js`) | ✅ Terminé côté pack fusionné (chantier C — GET `/aih/terminal` WebSocket non authentifié volontairement NON porté, aucun résidu `.py/.js` ; seul GET `/holaf/terminal` existe) |
-| 3 | Normaliser les clés de mapping en `AIH<PascalCase>` sans suffixe `Node` (table de renommage §3.7) | À faire |
-| 3 | Préfixer tous les labels affichés par « AIH » | À faire |
-| 3 | Réorganiser l'arbre de catégories sous la racine `AIH/` (couleur orange historique + style de menu AI Helper) | À faire |
-| 3 | Mettre en place la table d'alias legacy dans `NODE_CLASS_MAPPINGS` (chaque ancienne clé → même classe, jamais purgée) | À faire |
-| 3 | Harmoniser copyright 2026 vs 2025 dans `js/holaf_main.js` | À faire |
-| 4 | Valider le chargement complet de ComfyUI sans erreur | À faire |
-| 4 | Valider que les workflows existants ne sont pas cassés (anciennes clés toutes résolues via les alias legacy) | À faire |
-| 4 | Valider les routes `/holaf/*` | À faire |
-| 4 | Valider les routes `/aih/*` | À faire |
-| 4 | Vérifier l'absence de double installation des anciens packs | À faire |
-| 4 | Apposer les en-têtes GPLv3 sur les fichiers AIH fusionnés | À faire |
-| 4 | Vérifier que LICENSE/en-têtes/notices Copyright de CUI-Holaf sont intacts | À faire |
+| 3 | Supprimer le terminal AIH et conserver le terminal Utils avec sa logique de session actuelle (auth par mot de passe hashé ; reconnexion Ctrl+D → login → session fraîche déjà implémentée et validée — ne pas régresser sur `holaf_terminal.py` / `js/holaf_terminal.js`) | ✅ Terminé côté pack fusionné (chantier C — GET `/aih/terminal` WebSocket non authentifié volontairement NON porté, aucun résidu `.py/.js` ; seul GET `/holaf/terminal` existe ; terminal unique Utils confirmé, session Ctrl+D → login → session fraîche validée en conditions réelles — fixes 994a27a + 45fd9d8) |
+| 3 | Normaliser les clés de mapping en `AIH<PascalCase>` sans suffixe `Node` (table de renommage §3.7) | ✅ Terminé (commits e544d36 + c65841f — clés canoniques appliquées aux 32 nodes gardées ; validé en production) |
+| 3 | Préfixer tous les labels affichés par « AIH » | ✅ Terminé (commits e544d36 + c65841f — labels préfixés « AIH », style menu orange AI Helper conservé) |
+| 3 | Réorganiser l'arbre de catégories sous la racine `AIH/` (couleur orange historique + style de menu AI Helper) | ✅ Terminé (commits e544d36 + c65841f — arbre unique racine `AIH/` conforme au tableau §3.7) |
+| 3 | Mettre en place la table d'alias legacy dans `NODE_CLASS_MAPPINGS` (chaque ancienne clé → même classe, jamais purgée) | ✅ Terminé (commit e544d36 — alias legacy en place, table jamais purgée ; compatibilité vieux workflows validée par l'utilisateur en production) |
+| 3 | Harmoniser copyright 2026 vs 2025 dans `js/holaf_main.js` | ✅ Terminé (constaté lors de la revue de clôture : le fichier courant ne contient plus qu'une seule mention « Copyright (C) 2026 Holaf », aucune occurrence 2025 restante) |
+| 4 | Valider le chargement complet de ComfyUI sans erreur | ✅ Terminé (validé en production par l'utilisateur : nodes ex-CUI-Holaf visibles/fonctionnelles après Phase 1, nodes AIH présentes après Phase 2) |
+| 4 | Valider que les workflows existants ne sont pas cassés (anciennes clés toutes résolues via les alias legacy) | ✅ Terminé (validé par l'utilisateur en production — anciennes clés toutes résolues via les alias legacy) |
+| 4 | Valider les routes `/holaf/*` | ✅ Terminé (routes Utils historiques inchangées par la fusion ; terminal Utils, Update et Restart exercés en conditions réelles) |
+| 4 | Valider les routes `/aih/*` | 🟠 Partiel — harnais hors-ComfyUI du chantier C (inventaire 43/43 routes, handlers clés exécutés réellement) ; restent à confirmer en conditions réelles : SFTP models (`/api/aih/models/*`), frontend local `/aih/local/*`, auth Blobby en prod (cf. « Reste à faire (hors code) ») |
+| 4 | Vérifier l'absence de double installation des anciens packs | À faire (côté utilisateurs finaux — opération externe, cf. « Reste à faire (hors code) ») |
+| 4 | Apposer les en-têtes GPLv3 sur les fichiers AIH fusionnés | À faire (constaté lors de la revue de clôture : aucun en-tête GPL sur `aih/` ni sur les nodes AIH actuellement) |
+| 4 | Vérifier que LICENSE/en-têtes/notices Copyright de CUI-Holaf sont intacts | ✅ Terminé (revue de clôture : en-têtes GPLv3 d'origine « Copyright (C) 2025 Holaf » intacts sur les nodes ex-CUI-Holaf échantillonnées ; `LICENSE` + `THIRD-PARTY-NOTICES.md` présents à la racine) |
 | 4 | Confirmer la licence spandrel avant release (`pip show spandrel`) | À faire |
 | 4 | Checklist licence complète passée avant publication | À faire |
 
@@ -369,3 +371,24 @@ Justification : code CUI-Holaf déjà GPL, auteur unique des trois projets (= dr
 > **Note — Phase 2 chantier B (nodes)** : les 8 nodes AIH vivent dans `nodes/` aux noms de fichiers d'origine (`elements_node.py`, …), chacune exposant son propre `NODE_CLASS_MAPPINGS` + `NODE_DISPLAY_NAME_MAPPINGS` (clé canonique `AIH<PascalCase>` + alias legacy pointant vers la même classe), conformément au loader par-fichier d'Utils et au pattern des nodes Holaf (Phase 1). Tous les imports passent par le socle partagé (`from aih import credentials, llm_helper, …`) grâce au bootstrap sys.path du `__init__.py` racine ; le module `music_prompts` (miroir backend du pipeline Music) est porté dans le package `aih/` pour être importable indépendamment de l'ordre de chargement des fichiers de nodes, et les prompts maîtres MiniMax Music 3.0 sont rapatriés en `aih/templates/`. Nodes diagnostic et preview volontairement NON portées (abandonnées, §2.1). Validations : py_compile (11 fichiers), simulation du loader par-fichier (16 entrées de mapping, alias ≡ même classe, displays/catégories conformes, ordre de chargement inversé inclus), grep sans référence résiduelle à `_credentials`/`_llm_helper` ni au chargement exotique.
 >
 > **Note — Phase 2 chantier A (socle partagé)** : le socle backend AIH vit dans le sous-package `aih/` à la racine du pack (`store`, `sync_engine`, `embedding_engine`, `local_source`, `credentials`, `llm_helper`), importé par imports absolus standards grâce à un bootstrap unique du sys.path dans le `__init__.py` racine (ComfyUI ne met pas le dossier du pack sur sys.path). Le chargement exotique d'origine (pré-enregistrement `sys.modules` + chargement par chemin via importlib) est supprimé. `update_manager.py` n'est volontairement PAS porté à ce stade : il sera adapté au chantier C (boutons Update/Restart) depuis la source AI-Helper. Les nodes, routes `/aih/*` et `templates/` Music restent aux chantiers B/C.
+
+---
+
+## Reste à faire (hors code)
+
+*Aucun chantier de code du plan initial ne reste ouvert. Ne figurent ici que les opérations externes et validations terrain pendantes.*
+
+### 1. Renommage GitHub & communication — reportés volontairement
+- Rename du repo sur GitHub : `ComfyUI-Holaf-Utils` → `ComfyUI-AI-Helper` (redirections automatiques des anciennes URLs).
+- Mise à jour des remotes git locaux (`git remote set-url …`) sur chaque clone.
+- Communication aux utilisateurs : réinstaller l'extension sous le nouveau nom (données migrées automatiquement au premier démarrage, §3.11).
+- **Décision utilisateur : plus tard.** Aucun blocage technique — le dé-hardcodage (Phase 0, commit 438008a) rend le rename sûr à tout moment.
+
+### 2. Désinstallation des anciens packs séparés chez les utilisateurs finaux
+- `CUI-Holaf` et l'ancien pack AIH (`AIH_Tools` / copie `AIH_ComfyUI`) ne doivent plus rester installés en parallèle du pack fusionné dans `custom_nodes/` — risque de double enregistrement des nodes et des routes (§3.10, §6).
+
+### 3. Confirmation en conditions réelles des derniers tests non couverts
+Le harnais hors-ComfyUI du chantier C couvre déjà ces chemins théoriquement ; restent à confirmer en production :
+- **Test SFTP models** : transfert chunked + fingerprint via `/api/aih/models/*` vers un serveur réel ;
+- **Test frontend local** : navigation du site servi sous `/aih/local/*` dans un navigateur ;
+- **Test auth Blobby** : en conditions réelles, appel exec sans session terminal → 401 + invitation au login.
