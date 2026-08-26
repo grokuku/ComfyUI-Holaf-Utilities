@@ -182,6 +182,9 @@ const holafTerminal = {
 
         try {
             this.panelElements = HolafPanelManager.createPanel({
+                // CRITIQUE : l'id `holaf-terminal-panel` est requis — tout le CSS
+                // terminal (holaf_terminal_styles.css) est scopé sous cet id.
+                id: "holaf-terminal-panel",
                 title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode("AIH Terminal")); return f; })(),
                 headerContent: terminalHeaderControlsGroup,
                 zoom: {

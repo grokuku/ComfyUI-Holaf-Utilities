@@ -77,6 +77,13 @@
     --aih-resize-handle-active: var(--aih-accent-active);
 }
 
+/* Neutralisation du halo (case « Halo » des Settings) : posée sur body ou un
+   ancêtre, elle coupe la lueur des fenêtres actives — dialogues AIH inclus. */
+.aih-halo-off {
+    --aih-halo: 0 0 0 0 transparent;
+    --aih-shadow-active: var(--aih-shadow);
+}
+
 /* ─── Fenêtre racine ──────────────────────────────────────────────────────── */
 .aih-dialog-root {
     position: fixed;
@@ -97,7 +104,7 @@
 
 .aih-dialog-root.active {
     border-color: var(--aih-accent-active);
-    box-shadow: var(--aih-halo);
+    box-shadow: var(--aih-shadow-active);
 }
 
 /* ─── En-tête ─────────────────────────────────────────────────────────────── */
@@ -124,6 +131,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Groupe de contrôles à DROITE du header (boutons custom, zoom −/+, ✕). */
+.aih-dialog-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
 .aih-dialog-close {

@@ -93,6 +93,7 @@ import "./aih_dialog.js";
             el: ctrl.el,
             body: ctrl.body,
             header: ctrl.header,
+            headerRight: ctrl.headerRight,
             close: function () { ctrl.close(); },
             setTitle: ctrl.setTitle,
             setContent: ctrl.setContent,

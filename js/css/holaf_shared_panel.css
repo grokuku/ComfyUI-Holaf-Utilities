@@ -50,6 +50,14 @@
        contenu par le mécanisme de zoom unifié (boutons standard dans le header). */
 }
 
+/* Fenêtre ACTIVE : halo piloté par la variable canonique --aih-halo.
+   La classe .aih-halo-off (posée sur body ou un ancêtre) neutralise le halo. */
+.holaf-utility-panel.active,
+.holaf-floating-window.active {
+    border-color: var(--aih-accent-active, var(--holaf-accent-color, #D8700D)) !important;
+    box-shadow: var(--aih-halo, var(--holaf-box-shadow, 0 10px 40px rgba(0, 0, 0, 0.7))) !important;
+}
+
 /* ==========================================================================
    Header — glass overlay, compact, draggable
    ========================================================================== */

@@ -123,8 +123,11 @@ import {
 
     // Fallback inline : garantit centrage (position:fixed), overlay, thème
     // (variables --aih-*) et classes .aih-dialog-* même en cas de 404 du lien.
+    // IMPORTANT : les variables sont définies sur :root UNIQUEMENT (jamais sur
+    // .aih-dialog-theme au niveau élément) pour que `.aih-halo-off` posé sur un
+    // ancêtre (body) puisse neutraliser --aih-halo par héritage.
     const FALLBACK_DIALOG_CSS = `
-.aih-dialog-theme, :root {
+:root {
     --aih-accent: #D8700D; --aih-accent-hover: #F08020; --aih-accent-light: #B45A08; --aih-accent-light-hover: #9A4D06; --aih-accent-text: #FFFFFF;
     --aih-accent-active: var(--aih-accent); --aih-accent-hover-active: var(--aih-accent-hover);
     --aih-halo-color: rgba(216,112,13,0.5); --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
@@ -141,12 +144,16 @@ import {
     --aih-resize-handle: #555555; --aih-resize-handle-active: var(--aih-accent-active);
 }
 .aih-dialog-root { position: fixed; display: flex; flex-direction: column; background: var(--aih-bg); border: 1px solid var(--aih-border); border-radius: var(--aih-radius); box-shadow: var(--aih-shadow); overflow: hidden; min-width: 280px; min-height: 120px; color: var(--aih-text); font-size: var(--aih-font-size); line-height: 1.5; box-sizing: border-box; }
-.aih-dialog-root.active { border-color: var(--aih-accent-active); box-shadow: var(--aih-halo); }
+.aih-dialog-root.active { border-color: var(--aih-accent-active); box-shadow: var(--aih-shadow-active); }
 .aih-dialog-overlay { position: fixed; inset: 0; background: var(--aih-overlay-bg); z-index: 90000; }
 .aih-dialog-header { display: flex; align-items: center; padding: 10px 16px; cursor: grab; user-select: none; border-bottom: 1px solid var(--aih-border); background: var(--aih-bg-secondary); flex-shrink: 0; }
 .aih-dialog-title { flex: 1; font-size: var(--aih-title-size); font-weight: var(--aih-title-weight); color: var(--aih-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aih-dialog-header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
 .aih-dialog-close { background: none; border: none; color: var(--aih-close-color); cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1; flex-shrink: 0; transition: color 0.15s; }
 .aih-dialog-close:hover { color: var(--aih-close-hover); }
+.aih-zoom-controls { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; margin-right: 4px; }
+.aih-dialog-zoom { background: none; border: 1px solid var(--aih-border); color: var(--aih-close-color); cursor: pointer; font-size: 14px; line-height: 1; width: 22px; height: 22px; padding: 0; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.aih-dialog-zoom:hover { color: var(--aih-text); border-color: var(--aih-accent-active); }
 .aih-dialog-body { flex: 1; padding: 16px; overflow-y: auto; overflow-x: hidden; color: var(--aih-text); font-size: var(--aih-font-size); }
 .aih-dialog-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--aih-border); background: var(--aih-bg-secondary); border-radius: 0 0 var(--aih-radius-footer) var(--aih-radius-footer); flex-shrink: 0; }
 .aih-dialog-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--aih-btn-border); background: var(--aih-btn-bg); color: var(--aih-text); cursor: pointer; font-size: var(--aih-font-size); transition: background 0.15s, border-color 0.15s; }
@@ -472,9 +479,16 @@ import {
         closeBtn.textContent = "✕";
         closeBtn.title = L("dialog.close", null, "Close");
         closeBtn.style.display = busy ? "none" : "";
-        if (!busy) header.appendChild(closeBtn);
 
+        // Ordre DOM : [titre (flex:1)] [contrôles à droite : customs, zoom, ✕].
+        // Le groupe `.aih-dialog-header-right` est le point d'extension stable
+        // (ex. blobby chat y ajoute ses boutons ⚙️/🧹/…).
         header.appendChild(titleEl);
+        const headerRight = document.createElement("div");
+        headerRight.className = "aih-dialog-header-right";
+        header.appendChild(headerRight);
+        if (!busy) headerRight.appendChild(closeBtn);
+
         el.appendChild(header);
 
         // ── Body ────────────────────────────────────────────────────────────
@@ -516,7 +530,7 @@ import {
                     if (zoomKey) saveZoomLevel(zoomKey, level);
                 },
             });
-            header.insertBefore(zoomControls, closeBtn);
+            headerRight.insertBefore(zoomControls, closeBtn);
         }
 
         // ── Footer / boutons ────────────────────────────────────────────────
@@ -767,6 +781,7 @@ import {
             el: el,
             body: body,
             header: header,
+            headerRight: headerRight,
             close: close,
             setTitle: setTitle,
             setContent: setContent,
@@ -989,6 +1004,7 @@ import {
             el: ctrl.el,
             body: ctrl.body,
             header: ctrl.header,
+            headerRight: ctrl.headerRight,
             close: () => ctrl.close(),
             setTitle: ctrl.setTitle,
             setBody: ctrl.setContent,

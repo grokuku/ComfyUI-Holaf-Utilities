@@ -1523,6 +1523,8 @@ const Blobby = {
         });
         // Supprimer le padding par défaut du body v2 car on gère le layout nous-mêmes
         m.body.style.padding = '0';
+        // Zoom de contenu via --aih-zoom-factor (posé sur le body par AIH.Dialog).
+        m.body.style.zoom = 'var(--aih-zoom-factor, 1)';
 
         // Activer le premier onglet
         switchTab('provider');
@@ -1733,22 +1735,34 @@ const Blobby = {
         // Supprimer le padding du body v2 (on a notre propre padding dans les enfants)
         m.body.style.padding = '0';
         m.body.style.overflow = 'hidden';
+        // Zoom de contenu : le mécanisme unifié pose --aih-zoom-factor sur le body
+        // (exclut le header). La propriété CSS `zoom` reflow correctement tout le
+        // contenu (même les tailles inline en px) — supporté Chromium/Firefox ≥126.
+        m.body.style.zoom = 'var(--aih-zoom-factor, 1)';
 
         // Transparence (persistée à part, non incluse dans le schéma rect unifié)
         m.modal.style.opacity = (savedAlpha || 100) / 100;
 
-        // SyncDot dans le titre
-        var titleEl = m.header.querySelector('.aih-modal-title');
-        titleEl.innerHTML = '🧡 <b>Blobby</b>';
-        titleEl.style.color = '#FF8F00';
-        var syncDot = document.createElement('span');
-        syncDot.id = 'blobby-sync-status';
-        Object.assign(syncDot.style, { fontSize: '9px', marginLeft: '4px', cursor: 'help' });
-        titleEl.appendChild(syncDot);
+        // SyncDot dans le titre (classe AIH.Dialog : .aih-dialog-title)
+        var titleEl = m.header.querySelector('.aih-dialog-title');
+        if (titleEl) {
+            titleEl.innerHTML = '🧡 <b>Blobby</b>';
+            titleEl.style.color = '#FF8F00';
+            var syncDot = document.createElement('span');
+            syncDot.id = 'blobby-sync-status';
+            Object.assign(syncDot.style, { fontSize: '9px', marginLeft: '4px', cursor: 'help' });
+            titleEl.appendChild(syncDot);
+        }
         setTimeout(function() { _blobbySyncIndicator(); }, 100);
 
-        // ── Header right buttons ──
-        var headerRight = m.header.querySelector('.aih-modal-header-right');
+        // ── Header right buttons (groupe AIH.Dialog .aih-dialog-header-right) ──
+        var headerRight = (m.headerRight) || m.header.querySelector('.aih-dialog-header-right');
+        // Insère les boutons custom AVANT les contrôles standard (zoom −/+, ✕)
+        // qui occupent déjà la fin de .aih-dialog-header-right.
+        function _appendHeaderBtn(btn) {
+            if (!headerRight) return;
+            headerRight.insertBefore(btn, headerRight.firstChild);
+        }
 
         // Settings button
         var settingsBtn = document.createElement('button');
@@ -1757,7 +1771,7 @@ const Blobby = {
         settingsBtn.onmouseenter = () => settingsBtn.style.color = '#fff';
         settingsBtn.onmouseleave = () => settingsBtn.style.color = '#888';
         settingsBtn.onclick = (e) => { e.stopPropagation(); _self._openChatSettings(); };
-        headerRight.appendChild(settingsBtn);
+        _appendHeaderBtn(settingsBtn);
 
         // Clear button
         var clearBtn = document.createElement('button');
@@ -1775,7 +1789,7 @@ const Blobby = {
                 Blobby._addChatMessage(msgs, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
             }
         };
-        headerRight.appendChild(clearBtn);
+        _appendHeaderBtn(clearBtn);
 
         // Forget button (confirmation via v2)
         var forgetBtn = document.createElement('button');
@@ -1796,7 +1810,7 @@ const Blobby = {
                 _self._addChatMessage(document.getElementById('blobby-chat-msgs'), 'system', '🧹 Blobby a tout oublié. C\'est reparti !');
             }
         };
-        headerRight.appendChild(forgetBtn);
+        _appendHeaderBtn(forgetBtn);
 
         // Compact button
         var compactBtn = document.createElement('button');
@@ -1835,7 +1849,7 @@ const Blobby = {
             }
         };
         compactBtn.dataset.compact = '0';
-        headerRight.appendChild(compactBtn);
+        _appendHeaderBtn(compactBtn);
 
         // ── Sauvegarde de la transparence (rect géré par le store unifié) ──
         function _saveChatState() {

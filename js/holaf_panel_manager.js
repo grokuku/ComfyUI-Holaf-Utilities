@@ -118,6 +118,7 @@ export const HolafPanelManager = {
         closeButton.onclick = (e) => {
             e.stopPropagation();
             panel.style.display = "none";
+            panel.classList.remove("active");
             openPanels.delete(panel);
             if (parseInt(panel.style.zIndex) === currentMaxZIndex && openPanels.size > 0) {
                 currentMaxZIndex = BASE_Z_INDEX;
@@ -166,6 +167,10 @@ export const HolafPanelManager = {
         if (!openPanels.has(panelEl)) {
             openPanels.add(panelEl);
         }
+
+        // Marque la fenêtre ACTIVE (halo --aih-halo) : une seule à la fois.
+        openPanels.forEach(p => { if (p !== panelEl) p.classList.remove("active"); });
+        panelEl.classList.add("active");
 
         // Find the current max z-index among all tracked panels
         let maxZ = BASE_Z_INDEX;
