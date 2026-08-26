@@ -137,6 +137,15 @@ Clôture du chantier réalisée directement sur **main** en commits conventionne
 * **Pied de statut serveur 4 états** — 🟢 connecté / 🟢 en ligne / 🟡 HTTP x / 🔴 hors ligne via `/api/stats` + `/api/auth/me` en parallèle (timeout 5 s Bearer) (`9b92cc8`)
 * **Validation** — simulation du flux Update hors ComfyUI 11/11 ; `node --check` OK sur les JS touchés
 
+#### 🔀 Fusion — Ajustements menu & paramètres
+
+Quatre ajustements post-fusion réalisés directement sur **main** en commits conventionnels fins et révertibles (**`558e127` → `f4facb1`**) :
+
+* **Settings Holaf à onglets** — la fenêtre Settings intègre désormais les paramètres AIH : General + AIH · Compte + AIH · Provider LLM ; l'entrée « Paramètres » séparée est supprimée du menu (`558e127`)
+* **Retour à un seul bouton restart** — une unique entrée de redémarrage dans le menu, via le restart sécurisé existant (`657e03e`)
+* **Purge kw.holaf.fr** — suppression complète des références codées en dur `kw.holaf.fr` (15 fichiers), remplacées par la configuration serveur avec dégradation propre et invitation à configurer (`62ed5c8`)
+* **Blobby / Chat en WIP** — entrées Blobby et Chat déplacées dans le groupe WIP, masquées par défaut (`f4facb1`)
+
 ---
 
 ### FONCTIONNALITÉS IMPLÉMENTÉES
