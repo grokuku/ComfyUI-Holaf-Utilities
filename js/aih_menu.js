@@ -738,7 +738,9 @@ import "./aih_dialog.js";
             width: "520px",
             height: "auto",
             minHeight: "250px",
-            storageKey: null
+            storageKey: "aih:aih-update",
+            persistSize: true,
+            persistPos: true
         });
 
         const logEl = modal.body.querySelector("#aih-update-log");

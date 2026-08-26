@@ -13,6 +13,7 @@
  */
 
 import "./aih_dialog.js";
+import { saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
 
 var _blobbyDefaultCharacter = 'Tu es Blobby, une petite creature orange toute mignonne qui vit dans ComfyUI. Tu es curieux, enthousiaste, et tu as un acces terminal complet ! Tu peux executer n\'importe quelle commande shell (ls, dir, git, python, pip, cat, grep, etc.) sur la machine ou ComfyUI tourne. Tu n\'es pas un assistant robotique : tu es un petit compagnon vivant et attachant qui parle simplement mais correctement. Quand on te demande de faire quelque chose, tu reflechis aux commandes necessaires et tu les executes avec [SHELL commande]. Tu peux aussi creer des skills : quand tu reussis une tache interessante, tu la sauvegardes avec [SKILL_SAVE] pour la refaire plus tard. Tu peux lister tes skills avec [SKILL_LIST] et les rejouer avec [SKILL_RUN nom]. Tu es toujours content d\'aider ! Et si tu ne sais pas faire, tu le dis simplement.';
 
@@ -1556,6 +1557,38 @@ const Blobby = {
         var savedState = {};
         try { var scfg = JSON.parse(localStorage.getItem('AIH_config')) || {}; savedState = scfg.blobbyChatState || {}; } catch {}
 
+        // ── Migration : ancien AIH_config.blobbyChatState → store unifié ──
+        // Convertit x/y (y = distance au bas du viewport) /w/h/alpha. Ne s'exécute
+        // qu'une seule fois, si `aih:blobby-chat` n'existe pas encore dans
+        // `aih_window_rects`. La transparence (alpha) est persistée à part.
+        try {
+            var unifiedStore = JSON.parse(localStorage.getItem('aih_window_rects') || '{}');
+            if (!unifiedStore['aih:blobby-chat'] && (savedState.w !== undefined || savedState.x !== undefined)) {
+                var mw = savedState.w || 360;
+                var mh = savedState.h || 420;
+                var left = (typeof savedState.x === 'number') ? savedState.x : Math.max(20, (window.innerWidth - mw) / 2);
+                var top = (typeof savedState.y === 'number')
+                    ? (window.innerHeight - savedState.y - mh)
+                    : Math.max(20, (window.innerHeight - mh) / 3);
+                saveWindowRect('aih:blobby-chat', {
+                    left: Math.round(left),
+                    top: Math.round(top),
+                    width: Math.round(mw),
+                    height: Math.round(mh),
+                });
+            }
+        } catch {}
+
+        // Transparence persistée à part (alpha non inclus dans le schéma rect)
+        var savedAlpha = (function () {
+            try {
+                var a = parseInt(localStorage.getItem('aih:blobby-chat-alpha'), 10);
+                if (!isNaN(a)) return a;
+            } catch {}
+            return (savedState.alpha || 100);
+        })();
+
+
         var _self = this;
 
         // ── Contenu interne : messages + ctx + input ──
@@ -1676,12 +1709,12 @@ const Blobby = {
         bodyWrapper.appendChild(ctxBar);
         bodyWrapper.appendChild(inputArea);
 
-        // ── Créer la modale via v2 ──
+        // ── Créer la modale via v2 (store unifié `aih:blobby-chat`) ──
         var m = window.aihOpenModalV2({
             title: '🧡 Blobby',
             content: bodyWrapper,
-            width: (savedState.w || '360') + 'px',
-            height: (savedState.h || '420') + 'px',
+            width: '360px',
+            height: '420px',
             minWidth: '280px',
             minHeight: '200px',
             maxWidth: '90vw',
@@ -1689,6 +1722,9 @@ const Blobby = {
             className: 'blobby-chat-modal',
             resizable: true,
             draggable: true,
+            storageKey: 'aih:blobby-chat',
+            persistSize: true,
+            persistPos: true,
             closeOnEscape: false, // Le chat a son propre handling via l'input
             onClose: function() {
                 _saveChatState();
@@ -1698,14 +1734,8 @@ const Blobby = {
         m.body.style.padding = '0';
         m.body.style.overflow = 'hidden';
 
-        // Restaurer la position bottom-relative depuis l'ancien système
-        if (savedState.x) m.modal.style.left = savedState.x + 'px';
-        if (savedState.y) {
-            var modalH = parseInt(m.modal.style.height) || 420;
-            m.modal.style.top = (window.innerHeight - savedState.y - modalH) + 'px';
-        }
-        // Transparence
-        m.modal.style.opacity = (savedState.alpha || 100) / 100;
+        // Transparence (persistée à part, non incluse dans le schéma rect unifié)
+        m.modal.style.opacity = (savedAlpha || 100) / 100;
 
         // SyncDot dans le titre
         var titleEl = m.header.querySelector('.aih-modal-title');
@@ -1807,21 +1837,17 @@ const Blobby = {
         compactBtn.dataset.compact = '0';
         headerRight.appendChild(compactBtn);
 
-        // ── Sauvegarde d'état via l'ancien système (AIH_config.blobbyChatState) ──
+        // ── Sauvegarde de la transparence (rect géré par le store unifié) ──
         function _saveChatState() {
             try {
-                var r = m.modal.getBoundingClientRect();
-                var state = {
-                    x: Math.round(r.left),
-                    y: Math.round(window.innerHeight - r.top - r.height),
-                    w: Math.round(r.width),
-                    h: Math.round(r.height),
-                    alpha: parseInt((m.modal.style.opacity || 1) * 100),
-                };
-                _blobbySaveChatState(state);
+                var alpha = parseInt((m.modal.style.opacity || 1) * 100);
+                if (isNaN(alpha)) alpha = 100;
+                localStorage.setItem('aih:blobby-chat-alpha', String(alpha));
             } catch {}
         }
-        // ResizeObserver pour sauvegarder via l'ancien système
+        // ResizeObserver : sauvegarde la transparence quand l'opacité est ajustée.
+        // La taille/position du chat est désormais persistée via aih_window_rects
+        // (drag/resize/close de la modale v2 avec storageKey `aih:blobby-chat`).
         var ro = new ResizeObserver(_saveChatState);
         ro.observe(m.modal);
 

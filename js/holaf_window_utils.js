@@ -16,6 +16,118 @@
  * custom `saveState` callback.
  */
 
+// ─── Persistance unifiée position / taille ──────────────────────────────────────
+// UN SEUL store localStorage `aih_window_rects` (schéma { [storageKey]:
+// {left, top, width, height} }). Centralise aussi le clamp au viewport pour la
+// restauration. Migration : à la première lecture, si `aih_window_rects` est
+// vide, on lit les anciens stores `aih_modal_rects` et `aih_dialog_rects` et on
+// les reporte dans le store unifié.
+
+const WINDOW_RECTS_KEY = "aih_window_rects";
+const LEGACY_RECT_KEYS = ["aih_modal_rects", "aih_dialog_rects"];
+let _rectsMigrated = false;
+
+function _readRectsStore() {
+    try {
+        return JSON.parse(localStorage.getItem(WINDOW_RECTS_KEY) || "{}");
+    } catch (e) {
+        return {};
+    }
+}
+
+function _writeRectsStore(store) {
+    try {
+        localStorage.setItem(WINDOW_RECTS_KEY, JSON.stringify(store));
+    } catch (e) {
+        /* localStorage indisponible — silencieux */
+    }
+}
+
+// Migration one-shot : ne se déclenche que si le store unifié est vide.
+function _ensureRectMigration() {
+    if (_rectsMigrated) return;
+    _rectsMigrated = true;
+    try {
+        const unified = _readRectsStore();
+        if (Object.keys(unified).length > 0) return;
+        const merged = {};
+        for (const legacyKey of LEGACY_RECT_KEYS) {
+            try {
+                const raw = localStorage.getItem(legacyKey);
+                if (raw) Object.assign(merged, JSON.parse(raw));
+            } catch (e) { /* silencieux */ }
+        }
+        if (Object.keys(merged).length > 0) {
+            _writeRectsStore(merged);
+        }
+    } catch (e) { /* silencieux */ }
+}
+
+/**
+ * Clampe un rect {left, top, width, height} dans le viewport.
+ * @param {object} rect
+ * @param {number} [margin=20]
+ * @returns {object|null} rect clamppé (left/top arrondis) ou null.
+ */
+export function clampWindowRect(rect, margin = 20) {
+    if (!rect) return null;
+    if (typeof rect.left !== "number" || typeof rect.top !== "number") return rect;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const w = rect.width || 0;
+    const h = rect.height || 0;
+    let left = rect.left;
+    let top = rect.top;
+    if (w <= vw - margin * 2) {
+        left = Math.max(margin, Math.min(left, vw - w - margin));
+    } else {
+        left = margin;
+    }
+    if (h <= vh - margin * 2) {
+        top = Math.max(margin, Math.min(top, vh - h - margin));
+    } else {
+        top = margin;
+    }
+    return { left: Math.round(left), top: Math.round(top), width: w, height: h };
+}
+
+/**
+ * Charge un rect persisté (clampé au viewport) depuis le store unifié.
+ * @param {string} storageKey
+ * @returns {object|null} {left, top, width, height} clamppé ou null.
+ */
+export function loadWindowRect(storageKey, margin = 20) {
+    if (!storageKey) return null;
+    _ensureRectMigration();
+    const store = _readRectsStore();
+    const raw = store[storageKey];
+    if (!raw) return null;
+    return clampWindowRect({
+        left: raw.left,
+        top: raw.top,
+        width: raw.width,
+        height: raw.height,
+    }, margin);
+}
+
+/**
+ * Sauvegarde un rect {left, top, width, height} dans le store unifié.
+ * @param {string} storageKey
+ * @param {object} rect
+ */
+export function saveWindowRect(storageKey, rect) {
+    if (!storageKey || !rect) return;
+    _ensureRectMigration();
+    const store = _readRectsStore();
+    store[storageKey] = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+    };
+    _writeRectsStore(store);
+}
+
 // ─── makeDraggable ────────────────────────────────────────────────────────────
 /**
  * Makes an element draggable by a handle.

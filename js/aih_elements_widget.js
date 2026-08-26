@@ -1790,7 +1790,9 @@ function showFilterPicker(filters, currentUserId, onSelect) {
         minHeight: "150px",
         maxHeight: "70vh",
         resizable: false,
-        storageKey: null
+        storageKey: "aih:elements-filter",
+        persistPos: true,
+        persistSize: true
     });
 
     // Attacher les événements aux items

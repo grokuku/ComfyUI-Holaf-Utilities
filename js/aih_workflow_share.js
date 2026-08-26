@@ -66,6 +66,8 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       maxHeight: "70vh",
       minHeight: "200px",
       storageKey: "aih-modal-upload",
+      persistSize: true,
+      persistPos: true,
       content: '<div id="aih-upload-body" style="display:flex;flex-direction:column;gap:8px;padding:0;"></div>',
     });
     var body = m.modal.querySelector("#aih-upload-body");

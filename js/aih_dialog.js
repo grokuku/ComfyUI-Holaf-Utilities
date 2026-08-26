@@ -24,7 +24,7 @@
  */
 
 import "./aih_i18n.js";
-import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { holafExtUrl } from "./holaf_ext_base.js";
 
@@ -84,6 +84,17 @@ import { holafExtUrl } from "./holaf_ext_base.js";
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
+    }
+
+    function slugifyTitle(str) {
+        const s = String(str || "")
+            .trim()
+            .toLowerCase()
+            .replace(/<[^>]*>/g, "")
+            .replace(/&[a-z0-9#]+;/g, "")
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+        return s || "window";
     }
 
     // ─── Auto-injection CSS (module auto-suffisant) ──────────────────────────
@@ -205,40 +216,20 @@ import { holafExtUrl } from "./holaf_ext_base.js";
         return fallback;
     }
 
-    // ─── Persistance position / taille ───────────────────────────────────────
-    const STORE_KEY = "aih_dialog_rects";
+    // ─── Persistance position / taille (store unifié `aih_window_rects`) ────
     let _saveTimer = null;
-
-    function getStore() {
-        try {
-            return JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
-        } catch (e) {
-            return {};
-        }
-    }
-
-    function writeStore(store) {
-        try {
-            localStorage.setItem(STORE_KEY, JSON.stringify(store));
-        } catch (e) {
-            /* localStorage indisponible — silencieux */
-        }
-    }
 
     function saveRect(key, rect) {
         if (!key) return;
         if (_saveTimer) clearTimeout(_saveTimer);
         _saveTimer = setTimeout(() => {
             _saveTimer = null;
-            const store = getStore();
-            store[key] = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-            writeStore(store);
+            saveWindowRect(key, rect);
         }, 300);
     }
 
     function loadRect(key) {
-        if (!key) return null;
-        return getStore()[key] || null;
+        return loadWindowRect(key);
     }
 
     // ─── Thème (AIH.Theme) ───────────────────────────────────────────────────
@@ -347,9 +338,22 @@ import { holafExtUrl } from "./holaf_ext_base.js";
         const maxWidth = toPx(opts.maxWidth || opts.max) || "90vw";
         const maxHeight = toPx(opts.maxHeight || opts.max) || "85vh";
 
-        const storageKey = opts.storageKey || null;
-        const persistSize = !!opts.persistSize;
-        const persistPos = !!opts.persistPos;
+        const storageKey = opts.storageKey === undefined ? null : opts.storageKey;
+        let persistSize = opts.persistSize;
+        let persistPos = opts.persistPos;
+
+        // ── Persistance par défaut pour les vraies fenêtres ───────────────────
+        // Quand le dialogue est draggable ET/OU resizable ET non-modal, et qu'un
+        // id ou un title est fourni, on dérive une clé stable et on active
+        // persistPos/persistSize par défaut (sauf opt-out explicite `false`).
+        // Les helpers transitoires (alert/confirm/prompt/choose/busy) sont
+        // modaux et non draggable → exclus (restent centrés, non persistés).
+        const isRealWindow = (draggable || resizable) && !modal && (opts.id || opts.title);
+        if (isRealWindow && storageKey === null) {
+            storageKey = opts.id ? ("aih:" + opts.id) : ("aih:" + slugifyTitle(opts.title));
+            if (persistSize !== false) persistSize = true;
+            if (persistPos !== false) persistPos = true;
+        }
 
         // ── Overlay (mode modal) ────────────────────────────────────────────
         let overlay = null;

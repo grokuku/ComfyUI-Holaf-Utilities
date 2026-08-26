@@ -1,5 +1,5 @@
 import "./aih_dialog.js";
-import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
 
 /**
  * AIH Modal v2 — Système de fenêtres flottantes pour extensions ComfyUI.
@@ -213,51 +213,32 @@ import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
         return _BASE_Z + window._aihModalZCounter;
     }
 
-    // ─── Persistance localStorage ────────────────────────────────────────────────
-    var _STORAGE_KEY = "aih_modal_rects";
+    // ─── Persistance localStorage (store unifié `aih_window_rects`) ───────────
     var _saveTimeout = null;
-
-    function _aihModalGetStore() {
-        try {
-            var raw = localStorage.getItem(_STORAGE_KEY);
-            return raw ? JSON.parse(raw) : {};
-        } catch (e) {
-            return {};
-        }
-    }
-
-    function _aihModalWriteStore(store) {
-        try {
-            localStorage.setItem(_STORAGE_KEY, JSON.stringify(store));
-        } catch (e) {
-            // localStorage plein ou désactivé — silencieux
-        }
-    }
 
     function _aihModalSaveRect(key, rect) {
         if (!key) return;
         if (_saveTimeout) clearTimeout(_saveTimeout);
         _saveTimeout = setTimeout(function () {
             _saveTimeout = null;
-            var store = _aihModalGetStore();
-            store[key] = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-            _aihModalWriteStore(store);
+            saveWindowRect(key, rect);
         }, 300);
     }
 
     function _aihModalLoadRect(key) {
         if (!key) return null;
-        var store = _aihModalGetStore();
-        return store[key] || null;
+        return loadWindowRect(key);
     }
 
     function _aihModalRemoveRect(key) {
         if (!key) return;
-        var store = _aihModalGetStore();
-        if (store[key]) {
-            delete store[key];
-            _aihModalWriteStore(store);
-        }
+        try {
+            var store = JSON.parse(localStorage.getItem("aih_window_rects") || "{}");
+            if (store[key]) {
+                delete store[key];
+                localStorage.setItem("aih_window_rects", JSON.stringify(store));
+            }
+        } catch (e) { /* silencieux */ }
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────────

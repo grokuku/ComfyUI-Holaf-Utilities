@@ -17,6 +17,9 @@ import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
 import { HolafWipManager, WIP_FEATURES } from "./holaf_wip_settings.js";
+import { saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
+
+const SETTINGS_RECT_KEY = "aih:settings-panel";
 
 const HolafSettingsManager = {
     name: "Holaf.SettingsManager",
@@ -62,6 +65,15 @@ const HolafSettingsManager = {
             id: "holaf-settings-panel",
             title: "Holaf Utilities - Settings",
             defaultSize: { width: 560, height: 480 }, // Roomy enough for the AIH tabs
+            // Persistance position/taille via le store unifié (clamp viewport).
+            onStateChange: (rect) => {
+                saveWindowRect(SETTINGS_RECT_KEY, {
+                    left: rect.x,
+                    top: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                });
+            },
             onClose: () => {
                 this.panelEl = null;
                 this.contentEl = null;
@@ -70,6 +82,16 @@ const HolafSettingsManager = {
 
         this.panelEl = panelEl;
         this.contentEl = contentEl;
+
+        // Restaure la position/taille persistée (avec clamp au viewport).
+        const saved = loadWindowRect(SETTINGS_RECT_KEY);
+        if (saved) {
+            panelEl.style.transform = "none";
+            panelEl.style.left = saved.left + "px";
+            panelEl.style.top = saved.top + "px";
+            panelEl.style.width = saved.width + "px";
+            panelEl.style.height = saved.height + "px";
+        }
 
         // Ensure the panel itself has the correct theme class initially
         const currentTheme = localStorage.getItem("Holaf_Theme") || "holaf-theme-graphite-orange";

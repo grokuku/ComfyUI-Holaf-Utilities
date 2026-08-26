@@ -1079,7 +1079,9 @@ function showFilterPicker(filters, onSelect) {
         minHeight: "150px",
         maxHeight: "70vh",
         resizable: false,
-        storageKey: null,
+        storageKey: "aih:keywords-filter",
+        persistPos: true,
+        persistSize: true,
     });
 
     m.modal.querySelectorAll(".aih-filter-item").forEach(function(el) {
