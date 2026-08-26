@@ -2406,9 +2406,9 @@ window.BlobbyCompanion = {
         return newState;
     },
     openChat: () => {
-        if (Blobby.isActive()) {
-            Blobby._openChatModal();
-        }
+        // Ouvre le chat indépendamment de l'état d'activation de Blobby
+        // (découplage : le chat est accessible même quand Blobby est fermé).
+        Blobby._openChatModal();
     },
     chatVisible: () => {
         var m = document.querySelector('.aih-modal.blobby-chat-modal');

@@ -39,8 +39,7 @@ export const WIP_FEATURES = {
     chat: {
         id: "chat",
         label: "Chat",
-        description: "Chat avec Blobby (nécessite Blobby activé).",
-        parent: "blobby",
+        description: "Chat avec Blobby (indépendant de l'activation de Blobby).",
     },
 };
 

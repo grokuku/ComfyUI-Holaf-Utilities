@@ -211,15 +211,13 @@ const HolafUtilitiesMenu = {
         if (!this.dropdownMenuEl) return;
         this.dropdownMenuEl.innerHTML = '';
 
-        // A WIP item is shown if and only if its own feature is enabled. A
-        // dependent item (e.g. Chat) additionally requires its parent feature.
+        // A WIP item is shown if and only if its own feature is enabled. The
+        // Chat feature is independent of Blobby's activation state.
         const isWipItemVisible = (item) => {
             if (!item.wipFeature) return true;
             const wipMgr = window.holaf?.wipManager;
             if (!wipMgr || typeof wipMgr.isEnabled !== 'function') return false;
-            if (!wipMgr.isEnabled(item.wipFeature)) return false;
-            if (item.wipParent && !wipMgr.isEnabled(item.wipParent)) return false;
-            return true;
+            return wipMgr.isEnabled(item.wipFeature);
         };
 
         // ── Structure du menu, regroupée en sections logiques lisibles. ──
@@ -243,7 +241,7 @@ const HolafUtilitiesMenu = {
             { label: "Custom Nodes Manager (WIP)", handlerName: "holafNodesManager", wipFeature: 'custom_nodes_manager' },
             { label: "Workflow Profiler (WIP)", special: "profiler_standalone", wipFeature: 'workflow_profiler' },
             { special: 'aih_blobby_toggle', wipFeature: 'blobby' },
-            { label: "💬 Chat", special: 'aih_chat', wipFeature: 'chat', wipParent: 'blobby' },
+            { label: "💬 Chat", special: 'aih_chat', wipFeature: 'chat' },
 
             // Groupe « Utilitaires »
             { type: 'subtitle', label: 'Utilitaires' },
@@ -333,11 +331,11 @@ const HolafUtilitiesMenu = {
             labelSpan.textContent = itemInfo.label;
             menuItem.appendChild(labelSpan);
 
-            // « 💬 Chat » : caché par défaut, révélé par updateAihDynamicItems
-            // uniquement quand Blobby est actif.
+            // « 💬 Chat » : identifié pour updateAihDynamicItems (indépendant
+            // de l'état d'activation de Blobby ; sa visibilité est pilotée par
+            // sa propre feature WIP via isWipItemVisible).
             if (itemInfo.special === 'aih_chat') {
                 menuItem.id = "holaf-menu-aih-chat";
-                menuItem.style.display = "none";
             }
 
             let checkbox = null;
@@ -413,8 +411,8 @@ const HolafUtilitiesMenu = {
                     window.open('/holaf/profiler/view', '_blank');
                 }
                 else if (itemInfo.special === 'aih_chat') {
-                    // Visible uniquement quand Blobby est actif (géré par
-                    // updateAihDynamicItems) ; ne ferme pas le menu.
+                    // Ouvre le chat indépendamment de l'état d'activation de
+                    // Blobby ; ne ferme pas le menu.
                     if (window.AIHMenu && typeof window.AIHMenu.openChat === "function") {
                         window.AIHMenu.openChat();
                     }
@@ -468,7 +466,7 @@ const HolafUtilitiesMenu = {
         this.dropdownMenuEl.appendChild(statusLi);
         this.aihStatusEl = statusLi;
 
-        // État dynamique initial (Blobby actif ? → pastille + visibilité Chat).
+        // État dynamique initial (pastille/libellé Blobby + sonde serveur).
         setTimeout(() => this.updateAihDynamicItems(), 50);
     },
 
@@ -530,12 +528,12 @@ const HolafUtilitiesMenu = {
         return li;
     },
 
-    // État dynamique des entrées AIH : libellé/pastille Blobby, visibilité
-    // de « 💬 Chat » (uniquement si Blobby actif) et sonde de statut serveur
-    // pour le pied de menu. Appelé à chaque construction ET ouverture du menu.
+    // État dynamique des entrées AIH : libellé/pastille Blobby et sonde de
+    // statut serveur pour le pied de menu. La visibilité de « 💬 Chat » est
+    // indépendante de l'état de Blobby (pilotée par sa feature WIP dans
+    // buildMenu). Appelé à chaque construction ET ouverture du menu.
     updateAihDynamicItems() {
         const blobbyLi = document.getElementById("holaf-menu-aih-blobby");
-        const chatLi = document.getElementById("holaf-menu-aih-chat");
         let active = false;
         try {
             active = !!(window.AIHMenu && window.AIHMenu.getBlobbyState && window.AIHMenu.getBlobbyState());
@@ -552,9 +550,6 @@ const HolafUtilitiesMenu = {
                 pill.style.background = active ? "#166534" : "#555";
                 pill.style.color = active ? "#86efac" : "#aaa";
             }
-        }
-        if (chatLi) {
-            chatLi.style.display = active ? "flex" : "none";
         }
 
         if (this.aihStatusEl && window.AIHMenu && typeof window.AIHMenu.checkServerStatus === "function") {
