@@ -229,8 +229,11 @@ const HolafUtilitiesMenu = {
             { label: "📤 Workflows", special: 'aih_workflows' },
             { label: "📦 Models", special: 'aih_models' },
             { label: "👥 Membres", special: 'aih_members' },
-            { special: 'aih_blobby_toggle' },
-            { label: "💬 Chat", special: 'aih_chat' },
+            // Blobby + Chat : groupe WIP — masqués par défaut, visibles
+            // uniquement si l'option « Show WIP » est cochée (même mécanisme
+            // que les autres items WIP du menu).
+            { special: 'aih_blobby_toggle', isWip: true },
+            { label: "💬 Chat", special: 'aih_chat', isWip: true },
             { type: 'separator' },
             { label: "🔄 AIH Update", special: 'aih_update' },
             { label: "Restart ComfyUI", special: 'restart' }
