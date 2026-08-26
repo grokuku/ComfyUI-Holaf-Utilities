@@ -172,6 +172,10 @@ const HolafUtilitiesMenu = {
                         check.style.borderColor = isActive ? "var(--holaf-accent-color, #ff8c00)" : "var(--border-color, #888)";
                     }
                 });
+
+                // Entrées AIH dynamiques : pastille Blobby, visibilité Chat et
+                // statut serveur du pied de menu rafraîchis à chaque ouverture.
+                this.updateAihDynamicItems();
             }
         };
 
@@ -219,7 +223,17 @@ const HolafUtilitiesMenu = {
             { type: 'separator' },
             { label: "Settings", handlerName: "holafSettingsManager" },
             { type: 'separator' },
-            { label: "AIH Update", special: 'aih_update' },
+            // ── Groupe AIH (fonctions portées de AI-Helper/web/js/aih_menu.js,
+            //    exposées par js/aih_menu.js sur window.AIHMenu) ──
+            { label: "🌐 Open Webpage", special: 'aih_webpage' },
+            { label: "📤 Workflows", special: 'aih_workflows' },
+            { label: "📦 Models", special: 'aih_models' },
+            { label: "👥 Membres", special: 'aih_members' },
+            { label: "⚙️ Paramètres", special: 'aih_settings' },
+            { special: 'aih_blobby_toggle' },
+            { label: "💬 Chat", special: 'aih_chat' },
+            { type: 'separator' },
+            { label: "🔄 AIH Update", special: 'aih_update' },
             { label: "AIH Restart", special: 'aih_restart' },
             { label: "Restart ComfyUI", special: 'restart' }
         ];
@@ -237,6 +251,13 @@ const HolafUtilitiesMenu = {
                 return;
             }
 
+            // Ligne Blobby toggle : structure dédiée (icône + libellé dynamique
+            // + pastille ON/OFF), ne ferme pas le menu au clic.
+            if (itemInfo.special === 'aih_blobby_toggle') {
+                this.dropdownMenuEl.appendChild(this.buildAihBlobbyToggleItem());
+                return;
+            }
+
             const menuItem = document.createElement("li");
             menuItem.style.display = "flex";
             menuItem.style.justifyContent = "space-between";
@@ -245,6 +266,13 @@ const HolafUtilitiesMenu = {
             const labelSpan = document.createElement("span");
             labelSpan.textContent = itemInfo.label;
             menuItem.appendChild(labelSpan);
+
+            // « 💬 Chat » : caché par défaut, révélé par updateAihDynamicItems
+            // uniquement quand Blobby est actif.
+            if (itemInfo.special === 'aih_chat') {
+                menuItem.id = "holaf-menu-aih-chat";
+                menuItem.style.display = "none";
+            }
 
             let checkbox = null;
             if (["toggle_layout_tools", "toggle_shortcuts", "toggle_compact_menu", "toggle_remote_comparer"].includes(itemInfo.special)) {
@@ -287,9 +315,6 @@ const HolafUtilitiesMenu = {
                 if (itemInfo.special === 'restart' || itemInfo.special === 'aih_restart') {
                     this.startRestartFlow();
                 }
-                else if (itemInfo.special === 'aih_update') {
-                    this.checkForAIHUpdate();
-                }
                 else if (itemInfo.special === "toggle_layout_tools") {
                     if (window.holaf && window.holaf.layoutTools) {
                         window.holaf.layoutTools.toggle();
@@ -321,6 +346,26 @@ const HolafUtilitiesMenu = {
                 else if (itemInfo.special === "profiler_standalone") {
                     window.open('/holaf/profiler/view', '_blank');
                 }
+                else if (itemInfo.special === 'aih_chat') {
+                    // Visible uniquement quand Blobby est actif (géré par
+                    // updateAihDynamicItems) ; ne ferme pas le menu.
+                    if (window.AIHMenu && typeof window.AIHMenu.openChat === "function") {
+                        window.AIHMenu.openChat();
+                    }
+                }
+                else if (itemInfo.special === 'aih_update') {
+                    // Modale enrichie portée de la source (spinner + log git +
+                    // proposition de redémarrage). Fallback : ancien flux toast
+                    // si js/aih_menu.js n'est pas encore chargé.
+                    if (window.AIHMenu && typeof window.AIHMenu.openUpdate === "function") {
+                        window.AIHMenu.openUpdate();
+                    } else {
+                        this.checkForAIHUpdate();
+                    }
+                }
+                else if (itemInfo.special && itemInfo.special.startsWith('aih_')) {
+                    this.callAihMenuFn(itemInfo.special);
+                }
                 else {
                     const handler = app[itemInfo.handlerName];
                     if (handler && typeof handler.show === 'function') {
@@ -330,12 +375,122 @@ const HolafUtilitiesMenu = {
                     }
                 }
 
-                if (!checkbox) {
+                // Le toggle Blobby et le Chat ne ferment pas le menu
+                // (comportement de la source aih_menu.js).
+                if (!checkbox && itemInfo.special !== 'aih_chat') {
                     this.hideDropdown();
                 }
             };
             this.dropdownMenuEl.appendChild(menuItem);
         });
+
+        // Pied de menu : statut du serveur AIH distant. Ligne passive,
+        // rafraîchie à chaque ouverture du menu (voir updateAihDynamicItems).
+        const statusLi = document.createElement("li");
+        statusLi.id = "holaf-menu-aih-status";
+        statusLi.textContent = "Statut : vérification...";
+        Object.assign(statusLi.style, {
+            borderTop: "1px solid var(--holaf-border-color, #3F3F3F)",
+            marginTop: "5px",
+            paddingTop: "8px",
+            paddingBottom: "8px",
+            fontSize: "11px",
+            cursor: "default",
+            pointerEvents: "none"
+        });
+        this.dropdownMenuEl.appendChild(statusLi);
+        this.aihStatusEl = statusLi;
+
+        // État dynamique initial (Blobby actif ? → pastille + visibilité Chat).
+        setTimeout(() => this.updateAihDynamicItems(), 50);
+    },
+
+    // ── Groupe AIH ──
+    // Délègue aux helpers portés dans js/aih_menu.js (window.AIHMenu).
+    callAihMenuFn(special) {
+        const map = {
+            aih_webpage: "openWebpage",
+            aih_workflows: "openWorkflows",
+            aih_models: "openModels",
+            aih_members: "openMembers",
+            aih_settings: "openSettings"
+        };
+        const fnName = map[special];
+        if (fnName && window.AIHMenu && typeof window.AIHMenu[fnName] === "function") {
+            window.AIHMenu[fnName]();
+        } else {
+            HolafPanelManager.createDialog({ title: "AIH", message: `The AIH module entry "${special}" is not available yet (js/aih_menu.js not loaded?).`, buttons: [{ text: "OK", value: true }] });
+        }
+    },
+
+    // Ligne « 🧡 Activer Blobby ↔ Blobby (test) » avec pastille ON/OFF.
+    // Le clic appelle window.BlobbyCompanion.toggle() via AIHMenu et NE
+    // ferme PAS le menu (comportement de la source).
+    buildAihBlobbyToggleItem() {
+        const li = document.createElement("li");
+        li.id = "holaf-menu-aih-blobby";
+        li.style.display = "flex";
+        li.style.alignItems = "center";
+        li.style.gap = "8px";
+
+        const icon = document.createElement("span");
+        icon.textContent = "🧡";
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "holaf-aih-blobby-label";
+        labelSpan.style.flex = "1";
+        const pill = document.createElement("span");
+        pill.className = "holaf-aih-blobby-pill";
+        Object.assign(pill.style, {
+            fontSize: "10px",
+            padding: "1px 6px",
+            borderRadius: "4px",
+            fontWeight: "600"
+        });
+
+        li.appendChild(icon);
+        li.appendChild(labelSpan);
+        li.appendChild(pill);
+
+        li.onclick = () => {
+            if (window.AIHMenu && typeof window.AIHMenu.toggleBlobby === "function") {
+                window.AIHMenu.toggleBlobby();
+                this.updateAihDynamicItems();
+            }
+            // Pas de hideDropdown() ici
+        };
+        return li;
+    },
+
+    // État dynamique des entrées AIH : libellé/pastille Blobby, visibilité
+    // de « 💬 Chat » (uniquement si Blobby actif) et sonde de statut serveur
+    // pour le pied de menu. Appelé à chaque construction ET ouverture du menu.
+    updateAihDynamicItems() {
+        const blobbyLi = document.getElementById("holaf-menu-aih-blobby");
+        const chatLi = document.getElementById("holaf-menu-aih-chat");
+        let active = false;
+        try {
+            active = !!(window.AIHMenu && window.AIHMenu.getBlobbyState && window.AIHMenu.getBlobbyState());
+        } catch (e) {
+            active = false;
+        }
+
+        if (blobbyLi) {
+            const labelSpan = blobbyLi.querySelector(".holaf-aih-blobby-label");
+            const pill = blobbyLi.querySelector(".holaf-aih-blobby-pill");
+            if (labelSpan) labelSpan.textContent = active ? "Blobby (test)" : "Activer Blobby";
+            if (pill) {
+                pill.textContent = active ? "ON" : "OFF";
+                pill.style.background = active ? "#166534" : "#555";
+                pill.style.color = active ? "#86efac" : "#aaa";
+            }
+        }
+        if (chatLi) {
+            chatLi.style.display = active ? "flex" : "none";
+        }
+
+        if (this.aihStatusEl && window.AIHMenu && typeof window.AIHMenu.checkServerStatus === "function") {
+            window.AIHMenu.checkServerStatus(this.aihStatusEl);
+        }
     },
 
     // ── AIH Update ──
