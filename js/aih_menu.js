@@ -40,6 +40,7 @@
  * (window.BlobbyCompanion). Endpoints locaux : /aih/update,
  * /aih/credentials, /holaf/utilities/restart (cf. aih/routes.py).
  */
+import "./aih_dialog.js";
 (function () {
     "use strict";
 

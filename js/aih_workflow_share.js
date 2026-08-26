@@ -1,3 +1,4 @@
+import "./aih_dialog.js";
 import { makeDraggable } from "./holaf_window_utils.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 

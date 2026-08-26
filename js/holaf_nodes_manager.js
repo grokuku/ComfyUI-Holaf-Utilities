@@ -29,6 +29,7 @@
  * MODIFICATION: Added "Search GitHub" and "Install via URL" buttons with associated logic and UI dialogs.
  */
 
+import "./aih_dialog.js";
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";

@@ -1,3 +1,4 @@
+import "./aih_dialog.js";
 import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
 
 /**

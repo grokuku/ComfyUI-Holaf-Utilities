@@ -17,6 +17,7 @@
  * CSS : js/css/aih_dialog.css (auto-chargé par ComfyUI, thème centralisé --aih-*).
  */
 
+import "./aih_i18n.js";
 import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 

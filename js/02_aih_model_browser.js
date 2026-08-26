@@ -8,6 +8,8 @@
  *   - openModelBrowser()    → ouvre la fenêtre Model Browser
  */
 
+import "./aih_dialog.js";
+
 (function () {
     "use strict";
 

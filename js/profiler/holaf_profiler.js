@@ -9,6 +9,8 @@
  * before calling initProfiler(); pack modules are imported dynamically from it.
  */
 
+import "../aih_dialog.js";
+
 /**
  * Resolves a pack asset URL from the base injected by the host page.
  * @param {string} relativePath e.g. "js/holaf_comfy_bridge.js"
