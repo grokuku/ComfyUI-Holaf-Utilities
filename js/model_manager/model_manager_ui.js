@@ -34,25 +34,26 @@ export function createPanel(manager) {
     document.addEventListener('click', () => { if (themeMenu) themeMenu.style.display = 'none' });
     themeButtonContainer.append(themeButton, themeMenu);
 
-    const zoomOutButton = document.createElement("button");
-    zoomOutButton.className = "holaf-header-button";
-    zoomOutButton.title = "Zoom Out";
-    zoomOutButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-    zoomOutButton.onclick = () => manager.decreaseZoom();
-
-    const zoomInButton = document.createElement("button");
-    zoomInButton.className = "holaf-header-button";
-    zoomInButton.title = "Zoom In";
-    zoomInButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-    zoomInButton.onclick = () => manager.increaseZoom();
-
-    managerHeaderControls.append(themeButtonContainer, zoomOutButton, zoomInButton);
+    // Boutons zoom standard gérés par HolafPanelManager.createPanel (options.zoom)
+    managerHeaderControls.append(themeButtonContainer);
 
     try {
         manager.panelElements = HolafPanelManager.createPanel({
             id: "holaf-manager-panel",
-            title: "Holaf Model Manager",
+            title: "AIH Model Manager",
             headerContent: managerHeaderControls,
+            zoom: {
+                key: "holaf-manager-panel",
+                min: manager.MIN_ZOOM,
+                max: manager.MAX_ZOOM,
+                step: manager.ZOOM_STEP,
+                getLevel: () => manager.settings.zoom_level,
+                setLevel: (level) => {
+                    manager.settings.zoom_level = level;
+                    manager.applyZoom();
+                    manager.saveSettings();
+                },
+            },
             defaultSize: { width: manager.settings.panel_width, height: manager.settings.panel_height },
             defaultPosition: { x: manager.settings.panel_x, y: manager.settings.panel_y },
             onClose: () => {
@@ -180,7 +181,7 @@ export function createUploadDialog(manager) {
         width: 500px; height: auto; max-height: 70vh; display: none; 
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         z-index: 1005; flex-direction: column;
-        font-size: calc(1em * var(--holaf-mm-zoom-factor));
+        font-size: calc(1em * var(--aih-zoom-factor));
     `;
 
     const header = document.createElement("div");
@@ -359,10 +360,11 @@ export function setTheme(manager, themeName) {
  * @param {object} manager - The main model manager instance.
  */
 export function applyZoom(manager) {
-    const elementsToZoom = [manager.panelElements?.panelEl, manager.uploadDialog?.dialogEl];
-    elementsToZoom.forEach(el => {
-        if(el) {
-            el.style.setProperty('--holaf-mm-zoom-factor', manager.settings.zoom_level);
-        }
-    });
+    const container = manager.panelElements?.contentEl;
+    if (container) {
+        container.style.setProperty('--aih-zoom-factor', manager.settings.zoom_level);
+    }
+    if (manager.uploadDialog && manager.uploadDialog.dialogEl) {
+        manager.uploadDialog.dialogEl.style.setProperty('--aih-zoom-factor', manager.settings.zoom_level);
+    }
 }

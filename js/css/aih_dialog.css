@@ -12,13 +12,25 @@
  * Aucune couleur en dur hors des définitions --aih-* (grep des hex vérifié).
  * ========================================================================== */
 
-/* ─── Palette & variables de thème (DÉFAUT) ───────────────────────────────── */
-.aih-dialog-theme,
+/* ─── Palette & variables de thème (DÉFAUTS globaux, surchargés par les
+   classes body `aih-mode-*` / `aih-accent-*` de holaf_themes.css) ────────
+   `.aih-dialog-theme` n'est PAS utilisé comme source de vars : le dialogue
+   hérite des variables définies sur <body> (mode + accent + halo), ce qui
+   unifie --aih-* et --holaf-* vers la même palette. */
 :root {
     /* Accent (orange AIH) */
     --aih-accent: #D8700D;
     --aih-accent-hover: #F08020;
+    --aih-accent-light: #B45A08;
+    --aih-accent-light-hover: #9A4D06;
     --aih-accent-text: #FFFFFF;
+    --aih-accent-active: var(--aih-accent);
+    --aih-accent-hover-active: var(--aih-accent-hover);
+    --aih-input-focus: var(--aih-accent);
+
+    /* HALO : lueur des fenêtres actives (neutralisée par .aih-halo-off) */
+    --aih-halo-color: rgba(216, 112, 13, 0.5);
+    --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
 
     /* Surfaces */
     --aih-bg: #1E1E1E;
@@ -44,7 +56,7 @@
     --aih-radius: 10px;
     --aih-radius-footer: 8px;
     --aih-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
-    --aih-shadow-active: 0 16px 48px rgba(216, 112, 13, 0.18);
+    --aih-shadow-active: var(--aih-halo);
     --aih-overlay-bg: rgba(0, 0, 0, 0.55);
     --aih-busy-bg: rgba(30, 30, 30, 0.72);
 
@@ -61,9 +73,8 @@
     /* Éléments divers */
     --aih-close-color: #999999;
     --aih-close-hover: #F87171;
-    --aih-input-focus: #D8700D;
     --aih-resize-handle: #555555;
-    --aih-resize-handle-active: #D8700D;
+    --aih-resize-handle-active: var(--aih-accent-active);
 }
 
 /* ─── Fenêtre racine ──────────────────────────────────────────────────────── */
@@ -85,8 +96,8 @@
 }
 
 .aih-dialog-root.active {
-    border-color: var(--aih-accent);
-    box-shadow: var(--aih-shadow-active);
+    border-color: var(--aih-accent-active);
+    box-shadow: var(--aih-halo);
 }
 
 /* ─── En-tête ─────────────────────────────────────────────────────────────── */
@@ -131,6 +142,41 @@
     color: var(--aih-close-hover);
 }
 
+/* ─── Boutons zoom standard (− / +) ───────────────────────────────────────── */
+/* Classe uniforme `.aih-dialog-zoom` dans un groupe `.aih-zoom-controls`. Les
+   boutons restent à taille fixe (le zoom s'applique sur le contenu, pas le
+   header). */
+.aih-zoom-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+.aih-dialog-zoom {
+    background: none;
+    border: 1px solid var(--aih-border);
+    color: var(--aih-close-color);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.aih-dialog-zoom:hover {
+    color: var(--aih-text);
+    border-color: var(--aih-border-strong);
+}
+
 /* ─── Corps ───────────────────────────────────────────────────────────────── */
 .aih-dialog-body {
     flex: 1;
@@ -171,14 +217,14 @@
 }
 
 .aih-dialog-btn-primary {
-    background: var(--aih-accent);
-    border-color: var(--aih-accent);
+    background: var(--aih-accent-active);
+    border-color: var(--aih-accent-active);
     color: var(--aih-accent-text);
 }
 
 .aih-dialog-btn-primary:hover {
-    background: var(--aih-accent-hover);
-    border-color: var(--aih-accent-hover);
+    background: var(--aih-accent-hover-active);
+    border-color: var(--aih-accent-hover-active);
 }
 
 .aih-dialog-btn-danger {
@@ -243,10 +289,10 @@
     text-align: center;
 }
 
-.aih-dialog-icon-info { color: var(--aih-accent); }
+.aih-dialog-icon-info { color: var(--aih-accent-active); }
 .aih-dialog-icon-success { color: var(--aih-success); }
 .aih-dialog-icon-error { color: var(--aih-danger); }
-.aih-dialog-icon-warning { color: var(--aih-accent-hover); }
+.aih-dialog-icon-warning { color: var(--aih-accent-hover-active); }
 
 /* ─── Actions (rangée de boutons dans le body, ex. alert/confirm) ─────────── */
 .aih-dialog-actions {
@@ -277,7 +323,7 @@
     width: 28px;
     height: 28px;
     border: 3px solid var(--aih-border-strong);
-    border-top-color: var(--aih-accent);
+    border-top-color: var(--aih-accent-active);
     border-radius: 50%;
     animation: aih-dialog-spin 0.8s linear infinite;
 }

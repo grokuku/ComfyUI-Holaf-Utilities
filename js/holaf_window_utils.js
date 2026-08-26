@@ -436,3 +436,172 @@ export function makeResizable(el, opts = {}) {
         });
     });
 }
+
+
+// ─── Zoom unifié (taille du CONTENU) ────────────────────────────────────────
+// UN SEUL mécanisme de zoom : une variable canonique `--aih-zoom-factor`
+// (défaut 1.0) appliquée sur un CONTENEUR DE CONTENU qui exclut le header.
+// Le header et les boutons restent à taille fixe ; seul le contenu (body) est
+// mis à l'échelle via `calc(n * var(--aih-zoom-factor))` ou transform scale.
+//
+// Persistance : un store localStorage dédié `aih_zoom_levels` indexé par
+// id/storageKey de la fenêtre ({ [key]: level }).
+
+const ZOOM_FACTOR_VAR = "--aih-zoom-factor";
+const ZOOM_LEVELS_KEY = "aih_zoom_levels";
+
+export const ZOOM_DEFAULTS = Object.freeze({ min: 0.5, max: 2.5, step: 0.1 });
+
+function _readZoomStore() {
+    try {
+        return JSON.parse(localStorage.getItem(ZOOM_LEVELS_KEY) || "{}");
+    } catch (e) {
+        return {};
+    }
+}
+
+function _writeZoomStore(store) {
+    try {
+        localStorage.setItem(ZOOM_LEVELS_KEY, JSON.stringify(store));
+    } catch (e) { /* localStorage indisponible — silencieux */ }
+}
+
+/**
+ * Charge le niveau de zoom persisté pour une clé de fenêtre.
+ * @param {string} key - id / storageKey de la fenêtre.
+ * @returns {number|null} niveau persisté ou null.
+ */
+export function loadZoomLevel(key) {
+    if (!key) return null;
+    const store = _readZoomStore();
+    const v = store[key];
+    return (v !== undefined && v !== null && Number.isFinite(Number(v))) ? Number(v) : null;
+}
+
+/**
+ * Sauvegarde le niveau de zoom d'une fenêtre dans le store unifié.
+ * @param {string} key
+ * @param {number} level
+ */
+export function saveZoomLevel(key, level) {
+    if (!key) return;
+    const store = _readZoomStore();
+    store[key] = level;
+    _writeZoomStore(store);
+}
+
+/**
+ * Clampe un niveau de zoom dans [min, max] et l'arrondit au pas (step).
+ * @param {number} level
+ * @param {object} [opts]
+ * @param {number} [opts.min=0.5]
+ * @param {number} [opts.max=2.5]
+ * @param {number} [opts.step=0.1]
+ * @returns {number}
+ */
+export function clampZoom(level, opts = {}) {
+    const min = (opts.min !== undefined && opts.min !== null) ? opts.min : ZOOM_DEFAULTS.min;
+    const max = (opts.max !== undefined && opts.max !== null) ? opts.max : ZOOM_DEFAULTS.max;
+    const step = (opts.step !== undefined && opts.step !== null) ? opts.step : ZOOM_DEFAULTS.step;
+    let v = Number.isFinite(Number(level)) ? Number(level) : 1;
+    v = Math.max(min, Math.min(max, v));
+    if (step > 0) {
+        v = min + Math.round((v - min) / step) * step;
+    }
+    v = Math.min(max, Math.max(min, v));
+    return Math.round(v * 100) / 100;
+}
+
+/**
+ * Applique un niveau de zoom sur un conteneur de CONTENU via la variable
+ * canonique `--aih-zoom-factor`. Le header (hors de ce conteneur) n'est pas
+ * touché : il reste à taille fixe.
+ * @param {HTMLElement} contentEl - conteneur de contenu (exclut le header).
+ * @param {number} level
+ * @returns {number} niveau finalement appliqué (clamppé).
+ */
+export function applyContentZoom(contentEl, level) {
+    if (!contentEl) return level;
+    const v = clampZoom(level);
+    contentEl.style.setProperty(ZOOM_FACTOR_VAR, String(v));
+    return v;
+}
+
+/**
+ * Crée les boutons zoom standard − / + (classe uniforme `aih-dialog-zoom`,
+ * titre Zoom Out/In) et les câble sur un conteneur de CONTENU.
+ *
+ * @param {HTMLElement} contentEl - conteneur de contenu à zoomer (exclut header).
+ * @param {object} [opts]
+ * @param {string} [opts.key] - clé de persistance (id/storageKey). Si fournie,
+ *   le niveau est restauré à l'appel et persisté à chaque changement.
+ * @param {HTMLElement} [opts.container=contentEl] - élément recevant la var.
+ * @param {Function} [opts.getLevel] - ()=>niveau courant (défaut: store key).
+ * @param {Function} [opts.setLevel] - hook appelé après application/persistance.
+ * @param {number} [opts.min]
+ * @param {number} [opts.max]
+ * @param {number} [opts.step]
+ * @returns {HTMLElement} le groupe de boutons (à insérer dans le header).
+ */
+export function makeContentZoomable(contentEl, opts = {}) {
+    const {
+        key = null,
+        container = contentEl,
+        getLevel = null,
+        setLevel = null,
+        min, max, step,
+    } = opts;
+
+    const config = { min, max, step };
+
+    const current = () => {
+        if (typeof getLevel === "function") return clampZoom(getLevel(), config);
+        const persisted = key ? loadZoomLevel(key) : null;
+        return clampZoom(persisted !== null ? persisted : 1, config);
+    };
+
+    const apply = (level) => {
+        const v = clampZoom(level, config);
+        applyContentZoom(container, v);
+        if (key) saveZoomLevel(key, v);
+        if (typeof setLevel === "function") setLevel(v);
+        return v;
+    };
+
+    const stepVal = (step !== undefined && step !== null) ? step : ZOOM_DEFAULTS.step;
+
+    const group = document.createElement("span");
+    group.className = "aih-zoom-controls";
+    group.setAttribute("role", "group");
+
+    const outBtn = document.createElement("button");
+    outBtn.type = "button";
+    outBtn.className = "aih-dialog-zoom aih-zoom-out";
+    outBtn.title = "Zoom Out";
+    outBtn.setAttribute("aria-label", "Zoom Out");
+    outBtn.innerHTML = "−";
+    outBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        apply(current() - stepVal);
+    });
+
+    const inBtn = document.createElement("button");
+    inBtn.type = "button";
+    inBtn.className = "aih-dialog-zoom aih-zoom-in";
+    inBtn.title = "Zoom In";
+    inBtn.setAttribute("aria-label", "Zoom In");
+    inBtn.innerHTML = "+";
+    inBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        apply(current() + stepVal);
+    });
+
+    group.append(outBtn, inBtn);
+
+    // Restauration à l'ouverture : applique le niveau persisté (clamppé selon
+    // la config de la fenêtre) sur le conteneur de contenu.
+    const restored = key ? loadZoomLevel(key) : null;
+    if (restored != null) applyContentZoom(container, clampZoom(restored, config));
+
+    return group;
+}

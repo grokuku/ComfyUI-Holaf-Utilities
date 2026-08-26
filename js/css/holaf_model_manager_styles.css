@@ -4,27 +4,28 @@
  */
 
 #holaf-manager-panel { /* Main panel for Model Manager */
-    /* --holaf-mm-zoom-factor is set here by JS */
+    /* --aih-zoom-factor (taille du contenu) est appliqué sur le conteneur de
+       contenu par le mécanisme de zoom unifié (boutons standard du header). */
 }
 
 #holaf-manager-panel .holaf-manager-toolbar {
-    font-size: calc(1em * var(--holaf-mm-zoom-factor));
+    font-size: calc(1em * var(--aih-zoom-factor));
     background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
     border-bottom: 1px solid var(--holaf-border-color);
-    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.8em * var(--holaf-mm-zoom-factor));
+    padding: calc(0.4em * var(--aih-zoom-factor)) calc(0.8em * var(--aih-zoom-factor));
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: calc(0.5em * var(--holaf-mm-zoom-factor));
+    gap: calc(0.5em * var(--aih-zoom-factor));
 }
 
 #holaf-manager-panel .holaf-manager-search {
-    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.6em * var(--holaf-mm-zoom-factor));
+    padding: calc(0.4em * var(--aih-zoom-factor)) calc(0.6em * var(--aih-zoom-factor));
     background-color: var(--holaf-input-background);
     border: 1px solid var(--holaf-border-color);
     border-radius: 3px;
     color: var(--holaf-text-primary);
-    font-size: calc(13px * var(--holaf-mm-zoom-factor));
+    font-size: calc(13px * var(--aih-zoom-factor));
     outline: none;
 }
 
@@ -35,11 +36,11 @@
 #holaf-manager-panel .holaf-manager-list-header {
     display: flex;
     align-items: center;
-    padding: calc(0.3em * var(--holaf-mm-zoom-factor)) calc(15px * var(--holaf-mm-zoom-factor));
+    padding: calc(0.3em * var(--aih-zoom-factor)) calc(15px * var(--aih-zoom-factor));
     background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
     border-bottom: 1px solid var(--holaf-border-color);
     font-weight: bold;
-    font-size: calc(0.8em * var(--holaf-mm-zoom-factor));
+    font-size: calc(0.8em * var(--aih-zoom-factor));
     color: var(--holaf-text-secondary);
     user-select: none;
     flex-shrink: 0;
@@ -47,7 +48,7 @@
 
 #holaf-manager-panel .holaf-manager-header-col {
     cursor: pointer;
-    padding: 0 calc(5px * var(--holaf-mm-zoom-factor));
+    padding: 0 calc(5px * var(--aih-zoom-factor));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -65,23 +66,23 @@
     display: inline-block;
     width: 0;
     height: 0;
-    border-left: calc(4px * var(--holaf-mm-zoom-factor)) solid transparent;
-    border-right: calc(4px * var(--holaf-mm-zoom-factor)) solid transparent;
-    margin-left: calc(6px * var(--holaf-mm-zoom-factor));
+    border-left: calc(4px * var(--aih-zoom-factor)) solid transparent;
+    border-right: calc(4px * var(--aih-zoom-factor)) solid transparent;
+    margin-left: calc(6px * var(--aih-zoom-factor));
     vertical-align: middle;
 }
 
 #holaf-manager-panel .holaf-manager-header-col.sort-asc::after {
-    border-bottom: calc(5px * var(--holaf-mm-zoom-factor)) solid var(--holaf-text-primary);
+    border-bottom: calc(5px * var(--aih-zoom-factor)) solid var(--holaf-text-primary);
 }
 
 #holaf-manager-panel .holaf-manager-header-col.sort-desc::after {
-    border-top: calc(5px * var(--holaf-mm-zoom-factor)) solid var(--holaf-text-primary);
+    border-top: calc(5px * var(--aih-zoom-factor)) solid var(--holaf-text-primary);
 }
 
 /* Column Widths for Header */
 #holaf-manager-panel .holaf-header-checkbox {
-    flex: 0 0 calc(30px * var(--holaf-mm-zoom-factor));
+    flex: 0 0 calc(30px * var(--aih-zoom-factor));
     cursor: default;
     display: flex;
     align-items: center;
@@ -90,16 +91,16 @@
 
 #holaf-manager-panel .holaf-header-name { flex: 1 1 25%; }
 #holaf-manager-panel .holaf-header-path { flex: 1 1 30%; }
-#holaf-manager-panel .holaf-header-type { flex: 0 0 calc(110px * var(--holaf-mm-zoom-factor)); text-align: center; }
-#holaf-manager-panel .holaf-header-family { flex: 0 0 calc(110px * var(--holaf-mm-zoom-factor)); text-align: center; }
-#holaf-manager-panel .holaf-header-size { flex: 0 0 calc(80px * var(--holaf-mm-zoom-factor)); text-align: left; }
+#holaf-manager-panel .holaf-header-type { flex: 0 0 calc(110px * var(--aih-zoom-factor)); text-align: center; }
+#holaf-manager-panel .holaf-header-family { flex: 0 0 calc(110px * var(--aih-zoom-factor)); text-align: center; }
+#holaf-manager-panel .holaf-header-size { flex: 0 0 calc(80px * var(--aih-zoom-factor)); text-align: left; }
 
 /* Model List Area */
 #holaf-manager-panel .holaf-manager-content {
     flex-grow: 1;
     overflow-y: auto;
-    font-size: calc(1em * var(--holaf-mm-zoom-factor));
-    padding: calc(0.2em * var(--holaf-mm-zoom-factor)) 0px;
+    font-size: calc(1em * var(--aih-zoom-factor));
+    padding: calc(0.2em * var(--aih-zoom-factor)) 0px;
     background-color: color-mix(in srgb, var(--holaf-background-primary) 50%, black);
     color: var(--holaf-text-primary);
 }
@@ -120,11 +121,11 @@
 #holaf-manager-panel .holaf-model-card {
     background-color: color-mix(in srgb, var(--holaf-background-secondary) 50%, transparent);
     border-bottom: 1px solid color-mix(in srgb, var(--holaf-border-color) 50%, transparent);
-    padding: calc(0.25em * var(--holaf-mm-zoom-factor)) calc(10px * var(--holaf-mm-zoom-factor));
+    padding: calc(0.25em * var(--aih-zoom-factor)) calc(10px * var(--aih-zoom-factor));
     display: flex;
     align-items: center;
     transition: background-color 0.15s;
-    font-size: calc(0.85em * var(--holaf-mm-zoom-factor));
+    font-size: calc(0.85em * var(--aih-zoom-factor));
     min-height: 0;
 }
 
@@ -138,17 +139,17 @@
 
 /* Columns within a model card */
 #holaf-manager-panel .holaf-model-col {
-    padding: 0 calc(5px * var(--holaf-mm-zoom-factor));
+    padding: 0 calc(5px * var(--aih-zoom-factor));
     overflow: hidden;
     display: flex;
     align-items: center;
 }
 
-#holaf-manager-panel .holaf-col-checkbox { flex: 0 0 calc(30px * var(--holaf-mm-zoom-factor)); justify-content: center; }
-#holaf-manager-panel .holaf-col-name { flex: 1 1 25%; flex-direction: column; align-items: flex-start; justify-content: center; padding: calc(0.1em * var(--holaf-mm-zoom-factor)) 0; }
-#holaf-manager-panel .holaf-col-type { flex: 0 0 calc(100px * var(--holaf-mm-zoom-factor)); justify-content: center; }
-#holaf-manager-panel .holaf-col-family { flex: 0 0 calc(100px * var(--holaf-mm-zoom-factor)); justify-content: center; }
-#holaf-manager-panel .holaf-col-size { flex: 0 0 calc(70px * var(--holaf-mm-zoom-factor)); justify-content: flex-end; }
+#holaf-manager-panel .holaf-col-checkbox { flex: 0 0 calc(30px * var(--aih-zoom-factor)); justify-content: center; }
+#holaf-manager-panel .holaf-col-name { flex: 1 1 25%; flex-direction: column; align-items: flex-start; justify-content: center; padding: calc(0.1em * var(--aih-zoom-factor)) 0; }
+#holaf-manager-panel .holaf-col-type { flex: 0 0 calc(100px * var(--aih-zoom-factor)); justify-content: center; }
+#holaf-manager-panel .holaf-col-family { flex: 0 0 calc(100px * var(--aih-zoom-factor)); justify-content: center; }
+#holaf-manager-panel .holaf-col-size { flex: 0 0 calc(70px * var(--aih-zoom-factor)); justify-content: flex-end; }
 
 #holaf-manager-panel .holaf-model-name,
 #holaf-manager-panel .holaf-model-path {
@@ -174,9 +175,9 @@
 /* Model Type Tag & Family Tag */
 #holaf-manager-panel .holaf-model-type-tag {
     background-color: var(--holaf-tag-background);
-    padding: calc(0.15em * var(--holaf-mm-zoom-factor)) calc(0.4em * var(--holaf-mm-zoom-factor));
+    padding: calc(0.15em * var(--aih-zoom-factor)) calc(0.4em * var(--aih-zoom-factor));
     border-radius: 3px;
-    font-size: calc(0.8em * var(--holaf-mm-zoom-factor));
+    font-size: calc(0.8em * var(--aih-zoom-factor));
     color: var(--holaf-tag-text);
     display: inline-block;
     white-space: nowrap;
@@ -189,9 +190,9 @@
 #holaf-manager-panel .holaf-model-family-tag {
     background-color: var(--holaf-family-tag-background);
     color: var(--holaf-family-tag-text);
-    padding: calc(0.15em * var(--holaf-mm-zoom-factor)) calc(0.4em * var(--holaf-mm-zoom-factor));
+    padding: calc(0.15em * var(--aih-zoom-factor)) calc(0.4em * var(--aih-zoom-factor));
     border-radius: 3px;
-    font-size: calc(0.8em * var(--holaf-mm-zoom-factor));
+    font-size: calc(0.8em * var(--aih-zoom-factor));
     display: inline-block;
     white-space: nowrap;
     overflow: hidden;
@@ -206,7 +207,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
-    font-size: calc(0.9em * var(--holaf-mm-zoom-factor));
+    font-size: calc(0.9em * var(--aih-zoom-factor));
     color: var(--holaf-text-secondary);
     line-height: 1.2;
 }
@@ -215,17 +216,17 @@
 #holaf-manager-panel #holaf-manager-select-all-checkbox {
     margin: 0;
     cursor: pointer;
-    transform: scale(calc(0.85 * var(--holaf-mm-zoom-factor)));
+    transform: scale(calc(0.85 * var(--aih-zoom-factor)));
     accent-color: var(--holaf-accent-color);
     vertical-align: middle;
 }
 
 /* Status Bar */
 #holaf-manager-panel .holaf-manager-statusbar {
-    padding: calc(0.4em * var(--holaf-mm-zoom-factor)) calc(0.8em * var(--holaf-mm-zoom-factor));
+    padding: calc(0.4em * var(--aih-zoom-factor)) calc(0.8em * var(--aih-zoom-factor));
     background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
     border-top: 1px solid var(--holaf-border-color);
-    font-size: calc(0.75em * var(--holaf-mm-zoom-factor));
+    font-size: calc(0.75em * var(--aih-zoom-factor));
     color: var(--holaf-text-secondary);
     text-align: left;
     white-space: nowrap;
@@ -236,7 +237,7 @@
 
 /* Custom scrollbar for Model Manager list */
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar {
-    width: calc(10px * var(--holaf-mm-zoom-factor, 1));
+    width: calc(10px * var(--aih-zoom-factor, 1));
 }
 
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-track {
@@ -245,8 +246,8 @@
 
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb {
     background-color: var(--holaf-scrollbar-thumb);
-    border-radius: calc(5px * var(--holaf-mm-zoom-factor, 1));
-    border: calc(2px * var(--holaf-mm-zoom-factor, 1)) solid var(--holaf-scrollbar-track);
+    border-radius: calc(5px * var(--aih-zoom-factor, 1));
+    border: calc(2px * var(--aih-zoom-factor, 1)) solid var(--holaf-scrollbar-track);
 }
 
 #holaf-manager-panel .holaf-manager-content::-webkit-scrollbar-thumb:hover {

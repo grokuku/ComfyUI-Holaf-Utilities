@@ -9,7 +9,7 @@
  *
  * Note pack fusionné : POST /aih/blobby/exec est sécurisé derrière l'auth
  * terminal Holaf (cookie holaf_session). Un 401 est affiché à l'utilisateur
- * avec une invitation au login via le Terminal Holaf (jamais d'erreur muette).
+ * avec une invitation au login via le Terminal AIH (jamais d'erreur muette).
  */
 
 import "./aih_dialog.js";
@@ -1981,7 +1981,7 @@ const Blobby = {
                 var thinkingEl = container.querySelector('div:last-child');
                 if (thinkingEl && thinkingEl.textContent.indexOf('Blobby') >= 0) thinkingEl.remove();
                 this._addChatMessage(container, 'blobby',
-                    '⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ».');
+                    '⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ».');
                 return;
             }
             var headers = { 'Content-Type': 'application/json' };
@@ -2258,7 +2258,7 @@ const Blobby = {
                 // L'exec est protégé par l'auth terminal Holaf (cookie holaf_session).
                 // Un 401 doit se voir : on invite au login au lieu d'une erreur muette.
                 if (r.status === 401) {
-                    results.push({ command: commands[i], output: '⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal Holaf (menu Holaf Utilities → Terminal), puis réessaie.' });
+                    results.push({ command: commands[i], output: '⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal AIH (menu AIH Utilities → Terminal), puis réessaie.' });
                     continue;
                 }
                 var data = await r.json().catch(() => ({}));
@@ -2363,7 +2363,7 @@ const Blobby = {
                 // L'exec est protégé par l'auth terminal Holaf (cookie holaf_session).
                 // Un 401 doit se voir : on invite au login au lieu d'une erreur muette.
                 if (r.status === 401) {
-                    output = output.replace('⏳', '\n\n⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal Holaf (menu Holaf Utilities → Terminal), puis réessaie.');
+                    output = output.replace('⏳', '\n\n⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal AIH (menu AIH Utilities → Terminal), puis réessaie.');
                     idx++;
                     runNext();
                     return null;

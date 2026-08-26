@@ -7,6 +7,7 @@ import { app } from "./holaf_api_compat.js";
 import { holafExtUrl } from "./holaf_ext_base.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
+import { applyPersistedTheme } from "./holaf_themes.js";
 
 import "./holaf_themes.js";
 import "./holaf_terminal.js";
@@ -121,6 +122,10 @@ const HolafUtilitiesMenu = {
         if (!document.body.className.includes("holaf-theme-")) {
             document.body.classList.add("holaf-theme-graphite-orange");
         }
+
+        // THEMING 3-axes (mode/accent/halo) : applique l'état persisté sur <body>.
+        // Les panneaux et dialogues héritent des variables via CSS.
+        try { applyPersistedTheme(document.body); } catch (e) { /* silencieux */ }
 
         if (!window.holaf) {
             window.holaf = {};

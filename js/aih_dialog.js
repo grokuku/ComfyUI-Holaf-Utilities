@@ -24,9 +24,18 @@
  */
 
 import "./aih_i18n.js";
-import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel } from "./holaf_window_utils.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { holafExtUrl } from "./holaf_ext_base.js";
+import {
+    AIH_MODES,
+    AIH_ACCENTS,
+    AIH_THEME_DEFAULT,
+    applyThemeState,
+    loadThemeState,
+    saveThemeState,
+    applyPersistedTheme,
+} from "./holaf_themes.js";
 
 (function () {
     "use strict";
@@ -116,21 +125,23 @@ import { holafExtUrl } from "./holaf_ext_base.js";
     // (variables --aih-*) et classes .aih-dialog-* même en cas de 404 du lien.
     const FALLBACK_DIALOG_CSS = `
 .aih-dialog-theme, :root {
-    --aih-accent: #D8700D; --aih-accent-hover: #F08020; --aih-accent-text: #FFFFFF;
+    --aih-accent: #D8700D; --aih-accent-hover: #F08020; --aih-accent-light: #B45A08; --aih-accent-light-hover: #9A4D06; --aih-accent-text: #FFFFFF;
+    --aih-accent-active: var(--aih-accent); --aih-accent-hover-active: var(--aih-accent-hover);
+    --aih-halo-color: rgba(216,112,13,0.5); --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
     --aih-bg: #1E1E1E; --aih-bg-secondary: #2B2B2B; --aih-bg-input: #1A1A1A; --aih-bg-hover: #353535;
     --aih-text: #E0E0E0; --aih-text-secondary: #A0A0A0;
     --aih-border: #3F3F3F; --aih-border-strong: #555555;
     --aih-danger: #F44336; --aih-danger-hover: #E53935; --aih-danger-text: #FFFFFF; --aih-success: #4CAF50;
     --aih-radius: 10px; --aih-radius-footer: 8px;
-    --aih-shadow: 0 16px 48px rgba(0,0,0,0.6); --aih-shadow-active: 0 16px 48px rgba(216,112,13,0.18);
+    --aih-shadow: 0 16px 48px rgba(0,0,0,0.6); --aih-shadow-active: var(--aih-halo);
     --aih-overlay-bg: rgba(0,0,0,0.55); --aih-busy-bg: rgba(30,30,30,0.72);
     --aih-font-size: 13px; --aih-title-size: 14px; --aih-title-weight: 600;
     --aih-btn-bg: #3A3A3E; --aih-btn-bg-hover: #4A4A4E; --aih-btn-border: #555555;
     --aih-close-color: #999999; --aih-close-hover: #F87171; --aih-input-focus: #D8700D;
-    --aih-resize-handle: #555555; --aih-resize-handle-active: #D8700D;
+    --aih-resize-handle: #555555; --aih-resize-handle-active: var(--aih-accent-active);
 }
 .aih-dialog-root { position: fixed; display: flex; flex-direction: column; background: var(--aih-bg); border: 1px solid var(--aih-border); border-radius: var(--aih-radius); box-shadow: var(--aih-shadow); overflow: hidden; min-width: 280px; min-height: 120px; color: var(--aih-text); font-size: var(--aih-font-size); line-height: 1.5; box-sizing: border-box; }
-.aih-dialog-root.active { border-color: var(--aih-accent); box-shadow: var(--aih-shadow-active); }
+.aih-dialog-root.active { border-color: var(--aih-accent-active); box-shadow: var(--aih-halo); }
 .aih-dialog-overlay { position: fixed; inset: 0; background: var(--aih-overlay-bg); z-index: 90000; }
 .aih-dialog-header { display: flex; align-items: center; padding: 10px 16px; cursor: grab; user-select: none; border-bottom: 1px solid var(--aih-border); background: var(--aih-bg-secondary); flex-shrink: 0; }
 .aih-dialog-title { flex: 1; font-size: var(--aih-title-size); font-weight: var(--aih-title-weight); color: var(--aih-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -140,8 +151,8 @@ import { holafExtUrl } from "./holaf_ext_base.js";
 .aih-dialog-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--aih-border); background: var(--aih-bg-secondary); border-radius: 0 0 var(--aih-radius-footer) var(--aih-radius-footer); flex-shrink: 0; }
 .aih-dialog-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--aih-btn-border); background: var(--aih-btn-bg); color: var(--aih-text); cursor: pointer; font-size: var(--aih-font-size); transition: background 0.15s, border-color 0.15s; }
 .aih-dialog-btn:hover { background: var(--aih-btn-bg-hover); border-color: var(--aih-border-strong); }
-.aih-dialog-btn-primary { background: var(--aih-accent); border-color: var(--aih-accent); color: var(--aih-accent-text); }
-.aih-dialog-btn-primary:hover { background: var(--aih-accent-hover); border-color: var(--aih-accent-hover); }
+.aih-dialog-btn-primary { background: var(--aih-accent-active); border-color: var(--aih-accent-active); color: var(--aih-accent-text); }
+.aih-dialog-btn-primary:hover { background: var(--aih-accent-hover-active); border-color: var(--aih-accent-hover-active); }
 .aih-dialog-btn-danger { background: var(--aih-danger); border-color: var(--aih-danger); color: var(--aih-danger-text); }
 .aih-dialog-btn-danger:hover { background: var(--aih-danger-hover); border-color: var(--aih-danger-hover); }
 .aih-dialog-btn-cancel { background: var(--aih-btn-bg); border-color: var(--aih-btn-border); color: var(--aih-text); }
@@ -150,10 +161,10 @@ import { holafExtUrl } from "./holaf_ext_base.js";
 .aih-dialog-input:focus { border-color: var(--aih-input-focus); }
 .aih-dialog-message { color: var(--aih-text-secondary); font-size: var(--aih-font-size); line-height: 1.5; }
 .aih-dialog-icon { font-size: 24px; margin-bottom: 8px; text-align: center; }
-.aih-dialog-icon-info { color: var(--aih-accent); } .aih-dialog-icon-success { color: var(--aih-success); } .aih-dialog-icon-error { color: var(--aih-danger); } .aih-dialog-icon-warning { color: var(--aih-accent-hover); }
+.aih-dialog-icon-info { color: var(--aih-accent-active); } .aih-dialog-icon-success { color: var(--aih-success); } .aih-dialog-icon-error { color: var(--aih-danger); } .aih-dialog-icon-warning { color: var(--aih-accent-hover-active); }
 .aih-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .aih-dialog-busy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--aih-busy-bg); color: var(--aih-text); font-size: var(--aih-font-size); z-index: 4; text-align: center; padding: 16px; }
-.aih-dialog-spinner { width: 28px; height: 28px; border: 3px solid var(--aih-border-strong); border-top-color: var(--aih-accent); border-radius: 50%; animation: aih-dialog-spin 0.8s linear infinite; }
+.aih-dialog-spinner { width: 28px; height: 28px; border: 3px solid var(--aih-border-strong); border-top-color: var(--aih-accent-active); border-radius: 50%; animation: aih-dialog-spin 0.8s linear infinite; }
 @keyframes aih-dialog-spin { to { transform: rotate(360deg); } }
 .aih-dialog-resize-handle { position: absolute; z-index: 3; }
 .aih-dialog-resize-nw { top: -4px; left: -4px; width: 12px; height: 12px; cursor: nw-resize; }
@@ -271,9 +282,19 @@ import { holafExtUrl } from "./holaf_ext_base.js";
         },
 
         setTheme(overrides, target) {
+            // Support du nouvel état 3-axes {mode, accent, halo}.
+            if (overrides && (overrides.mode !== undefined || overrides.accent !== undefined || overrides.halo !== undefined)) {
+                const el = target || document.body;
+                const merged = this.applyState(overrides, el);
+                if (overrides.mode !== undefined || overrides.accent !== undefined || overrides.halo !== undefined) {
+                    saveThemeState(overrides);
+                }
+                return merged;
+            }
+
+            // Comportement historique : surcharges de variables --aih-*.
             const el = target || this.target;
             const merged = {};
-            // Base = valeurs actuelles (défauts CSS déjà posés sur :root)
             const current = this.getTheme(el);
             Object.assign(merged, current, overrides || {});
             applyVars(el, merged);
@@ -283,6 +304,55 @@ import { holafExtUrl } from "./holaf_ext_base.js";
                 } catch (e) { /* silencieux */ }
             }
             return merged;
+        },
+
+        // État courant {mode, accent, halo}.
+        getState(target) {
+            const el = target || (typeof document !== "undefined" ? document.body : null);
+            let mode = AIH_THEME_DEFAULT.mode;
+            let accent = AIH_THEME_DEFAULT.accent;
+            let halo = true;
+            if (el) {
+                if (el.classList.contains(AIH_MODES.light.className)) mode = "light";
+                else mode = "dark";
+                Object.keys(AIH_ACCENTS).forEach((k) => {
+                    if (el.classList.contains(AIH_ACCENTS[k].className)) accent = k;
+                });
+                halo = !el.classList.contains("aih-halo-off");
+            }
+            return { mode, accent, halo };
+        },
+
+        // Applique {mode, accent, halo} sur un élément (souvent body).
+        applyState(state, target) {
+            const el = target || (typeof document !== "undefined" ? document.body : null);
+            return applyThemeState(el, state);
+        },
+
+        setMode(mode, target) {
+            const el = target || (typeof document !== "undefined" ? document.body : null);
+            const state = this.getState(el);
+            const m = (mode && AIH_MODES[mode]) ? mode : AIH_THEME_DEFAULT.mode;
+            const applied = applyThemeState(el, { mode: m, accent: state.accent, halo: state.halo });
+            saveThemeState({ mode: m });
+            return applied;
+        },
+
+        setAccent(accent, target) {
+            const el = target || (typeof document !== "undefined" ? document.body : null);
+            const state = this.getState(el);
+            const a = (accent && AIH_ACCENTS[accent]) ? accent : AIH_THEME_DEFAULT.accent;
+            const applied = applyThemeState({ mode: state.mode, accent: a, halo: state.halo }, el);
+            saveThemeState({ accent: a });
+            return applied;
+        },
+
+        setHalo(on, target) {
+            const el = target || (typeof document !== "undefined" ? document.body : null);
+            const state = this.getState(el);
+            const applied = applyThemeState({ mode: state.mode, accent: state.accent, halo: !!on }, el);
+            saveThemeState({ halo: !!on });
+            return applied;
         },
 
         getTheme(target) {
@@ -309,6 +379,13 @@ import { holafExtUrl } from "./holaf_ext_base.js";
             try {
                 const raw = localStorage.getItem(THEME_STORAGE_KEY);
                 if (raw) applyVars(defaultTarget(), JSON.parse(raw));
+            } catch (e) { /* silencieux */ }
+        },
+
+        // Restaure le thème 3-axes persisté (mode/accent/halo) sur <body>.
+        _restoreAxis() {
+            try {
+                applyPersistedTheme(document.body);
             } catch (e) { /* silencieux */ }
         },
     };
@@ -418,6 +495,29 @@ import { holafExtUrl } from "./holaf_ext_base.js";
         }
         renderContent(body);
         el.appendChild(body);
+
+        // ── Zoom standard dans la barre de titre (taille du contenu) ────────
+        // Boutons − / + appliqués sur le body (exclut le header) via la
+        // variable canonique --aih-zoom-factor, mémorisés par fenêtre dans le
+        // store unifié `aih_zoom_levels` (clé = storageKey). On les insère à
+        // droite avant le bouton fermer. Les dialogues transitoires (alert,
+        // confirm, prompt, choose, busy) gardent aussi les boutons mais sans
+        // persistance (pas de storageKey) — sauf busy (fermé, pas de header).
+        if (!busy) {
+            const zoomKey = storageKey || (opts.id ? ("aih:" + opts.id) : null);
+            const zoomControls = makeContentZoomable(body, {
+                key: zoomKey || undefined,
+                getLevel: () => {
+                    const v = loadZoomLevel(zoomKey);
+                    return v !== null ? v : 1;
+                },
+                setLevel: (level) => {
+                    applyContentZoom(body, level);
+                    if (zoomKey) saveZoomLevel(zoomKey, level);
+                },
+            });
+            header.insertBefore(zoomControls, closeBtn);
+        }
 
         // ── Footer / boutons ────────────────────────────────────────────────
         let footer = null;
@@ -871,6 +971,9 @@ import { holafExtUrl } from "./holaf_ext_base.js";
 
     // Restaure les surcharges de thème persistées au chargement.
     try { Theme._restorePersisted(); } catch (e) { /* silencieux */ }
+
+    // Restaure le thème 3-axes (mode/accent/halo) persisté sur <body>.
+    try { Theme._restoreAxis(); } catch (e) { /* silencieux */ }
 
     // Auto-injection de la feuille de style au chargement du module (idempotent).
     ensureDialogCss();

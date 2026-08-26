@@ -2,38 +2,282 @@
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Theme Definitions
  *
- * Single source of truth for all CSS theme variables.
- * Each theme defines a complete set of variables used by all panels.
- * Glass/semi-transparent values are derived via color-mix() in the shared panel CSS.
+ * THEMING en 3 AXES orthogonaux (Étape A) :
+ *   1. MODE   (clair / foncé)  → classes `aih-mode-dark` / `aih-mode-light`
+ *      définies sur <body> : variables de SURFACE en GRIS (fond principal,
+ *      secondaire, textes, bordures, input, scrollbar) indépendantes de
+ *      l'accent. Fenêtres & dialogues restent grises selon le mode.
+ *   2. ACCENT (couleur de marque) → classes `aih-accent-{orange,blue,green,
+ *      purple}` sur <body> : `--aih-accent` (variante dark) + `--aih-accent-light`
+ *      (variante light, plus sombre pour rester lisible). La variable résolue
+ *      `--aih-accent-active` est dérivée du mode.
+ *   3. HALO   (lueur activable) → `--aih-halo` (box-shadow des fenêtres actives)
+ *      + classe `.aih-halo-off` qui la neutralise.
+ *
+ * UNIFICATION --holaf-* / --aih-* : les classes body définissent `--aih-*`
+ * (source de vérité) ET aliassent `--holaf-*` vers les mêmes valeurs. Les
+ * panneaux holaf et les dialogues AIH partagent ainsi la même palette.
+ *
+ * Les anciennes classes combinées `.holaf-theme-*` sont conservées (backward
+ * compat) pour les consommateurs qui choisissent encore un thème par composant.
  */
 
 :root {
-    /* Fallback values matching Graphite Orange (default theme).
-       Overridden by .holaf-theme-* class on <body> once JS applies it. */
-    --holaf-accent-color: #D8700D;
-    --holaf-background-primary: #1E1E1E;
-    --holaf-background-secondary: #2B2B2B;
-    --holaf-text-primary: #E0E0E0;
-    --holaf-text-secondary: #A0A0A0;
-    --holaf-border-color: #3F3F3F;
-    --holaf-button-background: #D8700D;
-    --holaf-button-text: #FFFFFF;
-    --holaf-input-background: #1A1A1A;
-    --holaf-tag-background: #4F4F4F;
-    --holaf-tag-text: #DADADA;
-    --holaf-family-tag-background: #5A3E1E;
-    --holaf-family-tag-text: #E8D8C8;
-    --holaf-header-button-bg: rgba(255, 255, 255, 0.08);
-    --holaf-header-button-hover-bg: rgba(255, 255, 255, 0.15);
-    --holaf-header-button-text: #B0B0B0;
-    --holaf-header-button-hover-text: #E0E0E0;
-    --holaf-scrollbar-thumb: #555555;
-    --holaf-scrollbar-track: #2B2B2B;
+    /* ───────────── MODE par défaut : FONCÉ (surface en GRIS) ───────────── */
+    --aih-bg: #1E1E1E;
+    --aih-bg-secondary: #2B2B2B;
+    --aih-bg-input: #1A1A1A;
+    --aih-bg-hover: #353535;
+    --aih-text: #E0E0E0;
+    --aih-text-secondary: #A0A0A0;
+    --aih-border: #3F3F3F;
+    --aih-border-strong: #555555;
+    --aih-overlay-bg: rgba(0, 0, 0, 0.55);
+    --aih-busy-bg: rgba(30, 30, 30, 0.72);
+    --aih-btn-bg: #3A3A3E;
+    --aih-btn-bg-hover: #4A4A4E;
+    --aih-btn-border: #555555;
+    --aih-close-color: #999999;
+    --aih-close-hover: #F87171;
+    --aih-resize-handle: #555555;
+    --aih-scrollbar-thumb: #555555;
+    --aih-scrollbar-track: #2B2B2B;
+    --aih-tag-background: #4F4F4F;
+    --aih-tag-text: #DADADA;
+    --aih-family-tag-background: #5A3E1E;
+    --aih-family-tag-text: #E8D8C8;
+    --aih-header-button-bg: rgba(255, 255, 255, 0.08);
+    --aih-header-button-hover-bg: rgba(255, 255, 255, 0.15);
+    --aih-header-button-text: #B0B0B0;
+    --aih-header-button-hover-text: #E0E0E0;
+
+    /* ───────────── ACCENT par défaut : ORANGE ───────────── */
+    --aih-accent: #D8700D;              /* variante dark */
+    --aih-accent-hover: #F08020;
+    --aih-accent-light: #B45A08;        /* variante light (plus sombre) */
+    --aih-accent-light-hover: #9A4D06;
+    --aih-accent-text: #FFFFFF;
+    --aih-halo-color: rgba(216, 112, 13, 0.5);
+
+    /* Accent résolu selon le mode (dérivé par .aih-mode-*) */
+    --aih-accent-active: var(--aih-accent);
+    --aih-accent-hover-active: var(--aih-accent-hover);
+    --aih-input-focus: var(--aih-accent);
+
+    /* ───────────── HALO (lueur des fenêtres actives) ───────────── */
+    --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
+
+    /* ───────────── Formes & ombres ───────────── */
+    --aih-radius: 10px;
+    --aih-radius-footer: 8px;
+    --aih-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+    --aih-shadow-active: var(--aih-halo);
+
+    /* ───────────── Sémantique ───────────── */
+    --aih-danger: #F44336;
+    --aih-danger-hover: #E53935;
+    --aih-danger-text: #FFFFFF;
+    --aih-success: #4CAF50;
+
+    /* ───────────── Typographie ───────────── */
+    --aih-font-size: 13px;
+    --aih-title-size: 14px;
+    --aih-title-weight: 600;
+
+    /* ───────────── Aliases --holaf-* (même source de vérité) ───────────── */
+    --holaf-background-primary: var(--aih-bg);
+    --holaf-background-secondary: var(--aih-bg-secondary);
+    --holaf-text-primary: var(--aih-text);
+    --holaf-text-secondary: var(--aih-text-secondary);
+    --holaf-border-color: var(--aih-border);
+    --holaf-input-background: var(--aih-bg-input);
+    --holaf-button-text: var(--aih-accent-text);
+    --holaf-accent-color: var(--aih-accent-active);
+    --holaf-button-background: var(--aih-accent-active);
+    --holaf-scrollbar-thumb: var(--aih-scrollbar-thumb);
+    --holaf-scrollbar-track: var(--aih-scrollbar-track);
+    --holaf-tag-background: var(--aih-tag-background);
+    --holaf-tag-text: var(--aih-tag-text);
+    --holaf-family-tag-background: var(--aih-family-tag-background);
+    --holaf-family-tag-text: var(--aih-family-tag-text);
+    --holaf-header-button-bg: var(--aih-header-button-bg);
+    --holaf-header-button-hover-bg: var(--aih-header-button-hover-bg);
+    --holaf-header-button-text: var(--aih-header-button-text);
+    --holaf-header-button-hover-text: var(--aih-header-button-hover-text);
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
     --holaf-success-color: #4CAF50;
     --holaf-error-color: #F44336;
-    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
-    --holaf-border-radius: 4px;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   AXE 1 — MODE (surfaces GRISES, indépendantes de l'accent)
+   ════════════════════════════════════════════════════════════════════════ */
+.aih-mode-dark {
+    --aih-bg: #1E1E1E;
+    --aih-bg-secondary: #2B2B2B;
+    --aih-bg-input: #1A1A1A;
+    --aih-bg-hover: #353535;
+    --aih-text: #E0E0E0;
+    --aih-text-secondary: #A0A0A0;
+    --aih-border: #3F3F3F;
+    --aih-border-strong: #555555;
+    --aih-overlay-bg: rgba(0, 0, 0, 0.55);
+    --aih-busy-bg: rgba(30, 30, 30, 0.72);
+    --aih-btn-bg: #3A3A3E;
+    --aih-btn-bg-hover: #4A4A4E;
+    --aih-btn-border: #555555;
+    --aih-close-color: #999999;
+    --aih-close-hover: #F87171;
+    --aih-resize-handle: #555555;
+    --aih-scrollbar-thumb: #555555;
+    --aih-scrollbar-track: #2B2B2B;
+    --aih-tag-background: #4F4F4F;
+    --aih-tag-text: #D9D9D9;
+    --aih-family-tag-background: #5A3E1E;
+    --aih-family-tag-text: #E8D8C8;
+    --aih-header-button-bg: rgba(255, 255, 255, 0.08);
+    --aih-header-button-hover-bg: rgba(255, 255, 255, 0.15);
+    --aih-header-button-text: #B0B0B0;
+    --aih-header-button-hover-text: #E0E0E0;
+
+    --aih-accent-active: var(--aih-accent);
+    --aih-accent-hover-active: var(--aih-accent-hover);
+    --aih-input-focus: var(--aih-accent);
+    --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
+
+    --holaf-background-primary: var(--aih-bg);
+    --holaf-background-secondary: var(--aih-bg-secondary);
+    --holaf-text-primary: var(--aih-text);
+    --holaf-text-secondary: var(--aih-text-secondary);
+    --holaf-border-color: var(--aih-border);
+    --holaf-input-background: var(--aih-bg-input);
+    --holaf-button-text: var(--aih-accent-text);
+    --holaf-accent-color: var(--aih-accent-active);
+    --holaf-button-background: var(--aih-accent-active);
+    --holaf-scrollbar-thumb: var(--aih-scrollbar-thumb);
+    --holaf-scrollbar-track: var(--aih-scrollbar-track);
+    --holaf-tag-background: var(--aih-tag-background);
+    --holaf-tag-text: var(--aih-tag-text);
+    --holaf-family-tag-background: var(--aih-family-tag-background);
+    --holaf-family-tag-text: var(--aih-family-tag-text);
+    --holaf-header-button-bg: var(--aih-header-button-bg);
+    --holaf-header-button-hover-bg: var(--aih-header-button-hover-bg);
+    --holaf-header-button-text: var(--aih-header-button-text);
+    --holaf-header-button-hover-text: var(--aih-header-button-hover-text);
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+    --holaf-success-color: #4CAF50;
+    --holaf-error-color: #F44336;
+}
+
+.aih-mode-light {
+    --aih-bg: #EAEAEA;
+    --aih-bg-secondary: #F0F0F0;
+    --aih-bg-input: #FFFFFF;
+    --aih-bg-hover: #E0E0E0;
+    --aih-text: #263238;
+    --aih-text-secondary: #546E7A;
+    --aih-border: #CDCDCD;
+    --aih-border-strong: #9AA5AD;
+    --aih-overlay-bg: rgba(0, 0, 0, 0.35);
+    --aih-busy-bg: rgba(240, 240, 240, 0.78);
+    --aih-btn-bg: #E4E4E4;
+    --aih-btn-bg-hover: #D6D6D6;
+    --aih-btn-border: #B0B8BE;
+    --aih-close-color: #6B7680;
+    --aih-close-hover: #C62828;
+    --aih-resize-handle: #9AA5AD;
+    --aih-scrollbar-thumb: #B0BEC5;
+    --aih-scrollbar-track: var(--aih-bg-secondary);
+    --aih-tag-background: #E0E0E0;
+    --aih-tag-text: #37474F;
+    --aih-family-tag-background: #CFD8DC;
+    --aih-family-tag-text: #37474F;
+    --aih-header-button-bg: rgba(0, 0, 0, 0.05);
+    --aih-header-button-hover-bg: rgba(0, 0, 0, 0.1);
+    --aih-header-button-text: #546E7A;
+    --aih-header-button-hover-text: #263238;
+
+    --aih-accent-active: var(--aih-accent-light);
+    --aih-accent-hover-active: var(--aih-accent-light-hover);
+    --aih-input-focus: var(--aih-accent-light);
+    --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 16px 1px var(--aih-halo-color);
+
+    --holaf-background-primary: var(--aih-bg);
+    --holaf-background-secondary: var(--aih-bg-secondary);
+    --holaf-text-primary: var(--aih-text);
+    --holaf-text-secondary: var(--aih-text-secondary);
+    --holaf-border-color: var(--aih-border);
+    --holaf-input-background: var(--aih-bg-input);
+    --holaf-button-text: var(--aih-accent-text);
+    --holaf-accent-color: var(--aih-accent-active);
+    --holaf-button-background: var(--aih-accent-active);
+    --holaf-scrollbar-thumb: var(--aih-scrollbar-thumb);
+    --holaf-scrollbar-track: var(--aih-scrollbar-track);
+    --holaf-tag-background: var(--aih-tag-background);
+    --holaf-tag-text: var(--aih-tag-text);
+    --holaf-family-tag-background: var(--aih-family-tag-background);
+    --holaf-family-tag-text: var(--aih-family-tag-text);
+    --holaf-header-button-bg: var(--aih-header-button-bg);
+    --holaf-header-button-hover-bg: var(--aih-header-button-hover-bg);
+    --holaf-header-button-text: var(--aih-header-button-text);
+    --holaf-header-button-hover-text: var(--aih-header-button-hover-text);
+    --holaf-box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    --holaf-success-color: #2E7D32;
+    --holaf-error-color: #C62828;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AXE 2 — ACCENT (couleur de marque ; 2 variantes par accent : dark + light)
+   ════════════════════════════════════════════════════════════════════════ */
+.aih-accent-orange {
+    --aih-accent: #D8700D;
+    --aih-accent-hover: #F08020;
+    --aih-accent-light: #B45A08;
+    --aih-accent-light-hover: #9A4D06;
+    --aih-accent-text: #FFFFFF;
+    --aih-halo-color: rgba(216, 112, 13, 0.5);
+}
+
+.aih-accent-blue {
+    --aih-accent: #4682B4;
+    --aih-accent-hover: #5A96C8;
+    --aih-accent-light: #2F6B96;
+    --aih-accent-light-hover: #285C80;
+    --aih-accent-text: #FFFFFF;
+    --aih-halo-color: rgba(70, 130, 180, 0.5);
+}
+
+.aih-accent-green {
+    --aih-accent: #228B22;
+    --aih-accent-hover: #2EA52E;
+    --aih-accent-light: #1B6E1B;
+    --aih-accent-light-hover: #165C16;
+    --aih-accent-text: #FFFFFF;
+    --aih-halo-color: rgba(34, 139, 34, 0.5);
+}
+
+.aih-accent-purple {
+    --aih-accent: #8A2BE2;
+    --aih-accent-hover: #A64BEE;
+    --aih-accent-light: #6A1FB0;
+    --aih-accent-light-hover: #591B99;
+    --aih-accent-text: #FFFFFF;
+    --aih-halo-color: rgba(138, 43, 226, 0.5);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AXE 3 — HALO (lueur activable autour des fenêtres actives)
+   ════════════════════════════════════════════════════════════════════════ */
+.aih-halo-off {
+    --aih-halo: 0 0 0 0 transparent;
+    --aih-shadow-active: var(--aih-shadow);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   LÉGACY — classes combinées `.holaf-theme-*` (backward compat)
+   Conservées pour les consommateurs qui choisissent encore un thème complet
+   par composant (terminal, model manager, image viewer, nodes manager…).
+   ════════════════════════════════════════════════════════════════════════ */
 
 /* Graphite Orange Theme (Dark) - BASE THEME */
 .holaf-theme-graphite-orange {

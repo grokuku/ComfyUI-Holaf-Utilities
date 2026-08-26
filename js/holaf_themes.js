@@ -108,3 +108,129 @@ export const HOLAF_THEMES = [
         }
     }
 ];
+
+/* ════════════════════════════════════════════════════════════════════════
+   THEMING 3 AXES orthogonaux : MODE / ACCENT / HALO
+   Source de vérité partagée (CSS holaf_themes.css + API JS).
+   ════════════════════════════════════════════════════════════════════════ */
+
+// AXE 1 — MODE (clair/foncé, fenêtres GRISES)
+export const AIH_MODES = {
+    dark:  { className: "aih-mode-dark",  label: "Dark",  base: "dark"  },
+    light: { className: "aih-mode-light", label: "Light", base: "light" },
+};
+
+export const AIH_DEFAULT_MODE = "dark";
+
+// AXE 2 — ACCENT (couleur de marque, adaptée au mode)
+export const AIH_ACCENTS = {
+    orange: { className: "aih-accent-orange", label: "Orange" },
+    blue:   { className: "aih-accent-blue",   label: "Blue"   },
+    green:  { className: "aih-accent-green",  label: "Green"  },
+    purple: { className: "aih-accent-purple", label: "Purple" },
+};
+
+export const AIH_DEFAULT_ACCENT = "orange";
+
+// Clés de persistance (localStorage)
+export const THEME_STORAGE = {
+    mode: "AIH_Mode",
+    accent: "AIH_Accent",
+    halo: "AIH_Halo",
+};
+
+// Migration depuis l'ancienne clé combinée `Holaf_Theme` (désormais obsolète).
+const LEGACY_THEME_MAP = {
+    "holaf-theme-graphite-orange":  { mode: "dark",  accent: "orange" },
+    "holaf-theme-midnight-purple":  { mode: "dark",  accent: "purple" },
+    "holaf-theme-forest-green":     { mode: "dark",  accent: "green"  },
+    "holaf-theme-steel-blue":       { mode: "dark",  accent: "blue"   },
+    "holaf-theme-ashy-light":       { mode: "light", accent: "blue"   },
+};
+
+export const AIH_THEME_DEFAULT = { mode: AIH_DEFAULT_MODE, accent: AIH_DEFAULT_ACCENT, halo: true };
+
+/**
+ * Applique l'état {mode, accent, halo} sur un élément cible (généralement
+ * <body>). Retire les classes d'axes précédentes puis ajoute les nouvelles.
+ * Les panneaux et dialogues descendants héritent des variables via CSS.
+ */
+export function applyThemeState(target, state) {
+    const el = target || (typeof document !== "undefined" ? document.body : null);
+    if (!el) return state || AIH_THEME_DEFAULT;
+    const s = state || {};
+
+    const mode = (s.mode && AIH_MODES[s.mode]) ? s.mode : AIH_DEFAULT_MODE;
+    const accent = (s.accent && AIH_ACCENTS[s.accent]) ? s.accent : AIH_DEFAULT_ACCENT;
+    const halo = s.halo !== false;
+
+    // Mode : retire les deux classes, garde celle active.
+    Object.keys(AIH_MODES).forEach((k) => el.classList.remove(AIH_MODES[k].className));
+    el.classList.add(AIH_MODES[mode].className);
+
+    // Accent : idem.
+    Object.keys(AIH_ACCENTS).forEach((k) => el.classList.remove(AIH_ACCENTS[k].className));
+    el.classList.add(AIH_ACCENTS[accent].className);
+
+    // Halo : classe neutralisante toggle.
+    el.classList.toggle("aih-halo-off", !halo);
+
+    return { mode, accent, halo };
+}
+
+/**
+ * Lit l'état persisté depuis localStorage, avec migration depuis l'ancienne
+ * clé Holaf_Theme le cas échéant.
+ */
+export function loadThemeState() {
+    let mode = AIH_DEFAULT_MODE;
+    let accent = AIH_DEFAULT_ACCENT;
+    let halo = true;
+
+    try {
+        const m = localStorage.getItem(THEME_STORAGE.mode);
+        if (m && AIH_MODES[m]) mode = m;
+        const a = localStorage.getItem(THEME_STORAGE.accent);
+        if (a && AIH_ACCENTS[a]) accent = a;
+        const h = localStorage.getItem(THEME_STORAGE.halo);
+        if (h !== null) halo = h !== "0" && h !== "false";
+    } catch (e) { /* silencieux */ }
+
+    // Migration d'une ancienne clé Holaf_Theme (si rien n'est encore persisté).
+    try {
+        const hasNew = localStorage.getItem(THEME_STORAGE.mode) !== null ||
+            localStorage.getItem(THEME_STORAGE.accent) !== null;
+        if (!hasNew) {
+            const legacy = localStorage.getItem("Holaf_Theme");
+            const mapped = legacy && LEGACY_THEME_MAP[legacy];
+            if (mapped) {
+                mode = mapped.mode;
+                accent = mapped.accent;
+            }
+        }
+    } catch (e) { /* silencieux */ }
+
+    return { mode, accent, halo };
+}
+
+/**
+ * Persiste l'état {mode, accent, halo}.
+ */
+export function saveThemeState(state) {
+    const s = state || {};
+    try {
+        if (s.mode !== undefined) localStorage.setItem(THEME_STORAGE.mode, s.mode);
+        if (s.accent !== undefined) localStorage.setItem(THEME_STORAGE.accent, s.accent);
+        if (s.halo !== undefined) localStorage.setItem(THEME_STORAGE.halo, s.halo ? "1" : "0");
+    } catch (e) { /* silencieux */ }
+}
+
+/**
+ * Applique l'état persisté sur <body> (appelé au chargement).
+ */
+export function applyPersistedTheme(target) {
+    const el = target || (typeof document !== "undefined" ? document.body : null);
+    const state = loadThemeState();
+    applyThemeState(el, state);
+    return state;
+}

@@ -323,7 +323,7 @@ export async function initProfiler() {
 
         <header class="profiler-header">
             <div class="header-title">
-                <h1>Holaf Workflow Profiler</h1>
+                <h1>AIH Workflow Profiler</h1>
             </div>
             <div class="header-actions">
                 <button id="btn-update-nodes" class="btn btn-secondary">Update Nodes</button>

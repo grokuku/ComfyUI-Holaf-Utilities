@@ -10,7 +10,7 @@
  *   - openWebpage / openWorkflows / openModels : raccourcis du menu source.
  *   - openMembers        : modale draggable aihOpenModalV2 (key
  *                          "aih-modal-members"), GET {serverUrl}/api/members.
- *   - openSettings       : ouvre la fenêtre Settings Holaf unifiée (panel
+ *   - openSettings       : ouvre la fenêtre Settings AIH unifiée (panel
  *                          #holaf-settings-panel de js/holaf_settings_manager.js)
  *                          sur l'onglet AIH demandé. Les onglets eux-mêmes
  *                          (« Compte » : GET/POST /aih/credentials + migration
@@ -18,7 +18,7 @@
  *                          CRUD distant api/presets + list-models + mode
  *                          Client-side) sont rendus par renderAccountTab() /
  *                          renderProviderTab(), appelés par le gestionnaire
- *                          Settings Holaf comme ses propres onglets.
+ *                          Settings AIH comme ses propres onglets.
  *   - openUpdate         : modale spinner + log git de POST /aih/update ;
  *                          si updated → confirmation utilisateur puis
  *                          redémarrage via le flux COMMUN du menu
@@ -66,7 +66,7 @@ import "./aih_dialog.js";
         // configuré, on invite l'utilisateur à le faire dans Settings.
         const baseUrl = (getConfig().serverUrl || "").replace(/\/+$/, "");
         if (!baseUrl) {
-            const msg = "Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte » (champ « URL du serveur »).";
+            const msg = "Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte » (champ « URL du serveur »).";
             if (window.holaf?.toastManager) {
                 window.holaf.toastManager.show({ message: msg, type: "info", duration: 8000 });
             } else if (window.aihShowAlert) {
@@ -135,7 +135,7 @@ import "./aih_dialog.js";
         // Comportement dégradé : pas d'URL configurée → invitation au lieu
         // d'une requête vers une destination arbitraire.
         if (!baseUrl) {
-            modal.body.innerHTML = `<div style="padding:16px;color:#facc15;font-size:12px;line-height:1.6;">⚠️ Aucune URL de serveur AIH configurée.<br>Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ».</div>`;
+            modal.body.innerHTML = `<div style="padding:16px;color:#facc15;font-size:12px;line-height:1.6;">⚠️ Aucune URL de serveur AIH configurée.<br>Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ».</div>`;
             return;
         }
 
@@ -278,9 +278,9 @@ import "./aih_dialog.js";
         }
     }
 
-    // ── Paramètres (délégué à la fenêtre Settings Holaf unifiée) ─────────
+    // ── Paramètres (délégué à la fenêtre Settings AIH unifiée) ─────────
     // Les onglets « Compte » et « Provider LLM » vivent désormais dans la
-    // fenêtre Settings de Holaf Utilities (panel #holaf-settings-panel,
+    // fenêtre Settings de AIH Utilities (panel #holaf-settings-panel,
     // js/holaf_settings_manager.js), au même niveau que ses onglets natifs.
     // Ce gestionnaire appelle directement renderCompteTab() /
     // renderProvidersTab() exposés plus bas sur window.AIHMenu ; ici, on se
@@ -293,9 +293,9 @@ import "./aih_dialog.js";
             mgr.show({ tab: tabId });
             return;
         }
-        // Fallback : le panneau Settings Holaf n'est pas disponible
+        // Fallback : le panneau Settings AIH n'est pas disponible
         // (holaf_settings_manager.js pas encore chargé).
-        const msg = "Le panneau Settings Holaf n'est pas disponible. Ouvre Holaf Utilities ▸ Settings pour configurer le compte AIH.";
+        const msg = "Le panneau Settings AIH n'est pas disponible. Ouvre AIH Utilities ▸ Settings pour configurer le compte AIH.";
         if (window.holaf?.toastManager) {
             window.holaf.toastManager.show({ message: msg, type: "info", duration: 6000 });
         } else if (window.aihShowAlert) {
@@ -320,7 +320,7 @@ import "./aih_dialog.js";
         // automatiquement. Sans URL configurée : erreur explicite.
         const baseUrl = (cfg.serverUrl || "").replace(/\/+$/, "");
         if (!baseUrl) {
-            throw new Error("Serveur AIH non configuré — Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+            throw new Error("Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »");
         }
         const headers = { "Content-Type": "application/json" };
         if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
@@ -838,7 +838,7 @@ import "./aih_dialog.js";
         openMembers,
         openSettings,
         // Renderers d'onglets consommés par holaf_settings_manager.js :
-        // chaque onglet de la fenêtre Settings Holaf délègue ici.
+        // chaque onglet de la fenêtre Settings AIH délègue ici.
         renderAccountTab: renderCompteTab,
         renderCompteTab,
         renderProviderTab: renderProvidersTab,

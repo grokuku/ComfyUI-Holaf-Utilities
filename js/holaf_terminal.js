@@ -182,9 +182,19 @@ const holafTerminal = {
 
         try {
             this.panelElements = HolafPanelManager.createPanel({
-                id: "holaf-terminal-panel",
                 title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode("AIH Terminal")); return f; })(),
                 headerContent: terminalHeaderControlsGroup,
+                zoom: {
+                    key: "holaf-terminal-panel",
+                    min: 0.5,
+                    max: 2.0,
+                    step: 0.1,
+                    setLevel: () => {
+                        // Standard zoom de contenu (var --aih-zoom-factor) ;
+                        // les boutons fontSize gèrent la taille de police xterm.
+                        if (this.fitTerminal) setTimeout(() => this.fitTerminal(), 0);
+                    },
+                },
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
                 onClose: () => { },

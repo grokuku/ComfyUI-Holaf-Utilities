@@ -175,11 +175,10 @@ const holafNodesManager = {
         const zoomLevel = Math.max(0.5, Math.min(2.5, newZoom));
         this.settings.zoom_level = zoomLevel;
 
-        if (this.panelElements && this.panelElements.panelEl) {
-            const container = this.panelElements.panelEl.querySelector('.holaf-nodes-manager-container');
-            if (container) {
-                container.style.setProperty('--holaf-nm-zoom-factor', zoomLevel);
-            }
+        // Applique la variable canonique --aih-zoom-factor sur le conteneur de
+        // CONTENU (exclut le header) — pattern Nodes Manager.
+        if (this.panelElements && this.panelElements.contentEl) {
+            this.panelElements.contentEl.style.setProperty('--aih-zoom-factor', zoomLevel);
         }
 
         if (doSave) {
@@ -207,25 +206,25 @@ const holafNodesManager = {
         document.addEventListener('click', () => { if (themeMenu) themeMenu.style.display = 'none' });
         themeButtonContainer.append(themeButton, themeMenu);
 
-        const zoomOutButton = document.createElement("button");
-        zoomOutButton.className = "holaf-header-button";
-        zoomOutButton.title = "Zoom Out";
-        zoomOutButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-        zoomOutButton.onclick = () => this.setZoom(this.settings.zoom_level - 0.1);
-
-        const zoomInButton = document.createElement("button");
-        zoomInButton.className = "holaf-header-button";
-        zoomInButton.title = "Zoom In";
-        zoomInButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-        zoomInButton.onclick = () => this.setZoom(this.settings.zoom_level + 0.1);
-
-        headerControls.append(themeButtonContainer, zoomOutButton, zoomInButton);
+        // Boutons zoom standard gérés par HolafPanelManager.createPanel (options.zoom)
+        headerControls.append(themeButtonContainer);
 
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-nodes-manager-panel",
-                title: "Holaf Custom Nodes Manager",
+                title: "AIH Custom Nodes Manager",
                 headerContent: headerControls,
+                zoom: {
+                    key: "holaf-nodes-manager-panel",
+                    min: 0.5,
+                    max: 2.5,
+                    step: 0.1,
+                    getLevel: () => this.settings.zoom_level,
+                    setLevel: (level) => {
+                        this.settings.zoom_level = level;
+                        this.setZoom(level, true);
+                    },
+                },
                 defaultSize: {
                     width: this.settings.panel_width || this.settings.width || 900,
                     height: this.settings.panel_height || this.settings.height || 600

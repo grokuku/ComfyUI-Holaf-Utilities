@@ -35,7 +35,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
   function ensureServerConfigured() {
     if (getApiUrl()) return true;
     if (window.aihShowAlert) {
-      window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ».", "info");
+      window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ».", "info");
     }
     return false;
   }

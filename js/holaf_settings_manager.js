@@ -15,7 +15,12 @@
 
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
-import { HOLAF_THEMES } from "./holaf_themes.js";
+import {
+    AIH_ACCENTS,
+    applyThemeState,
+    loadThemeState,
+    saveThemeState,
+} from "./holaf_themes.js";
 import { HolafWipManager, WIP_FEATURES } from "./holaf_wip_settings.js";
 import { saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
 
@@ -63,7 +68,7 @@ const HolafSettingsManager = {
     createPanel() {
         const { panelEl, contentEl } = HolafPanelManager.createPanel({
             id: "holaf-settings-panel",
-            title: "Holaf Utilities - Settings",
+            title: "AIH Utilities - Settings",
             defaultSize: { width: 560, height: 480 }, // Roomy enough for the AIH tabs
             // Persistance position/taille via le store unifié (clamp viewport).
             onStateChange: (rect) => {
@@ -94,8 +99,9 @@ const HolafSettingsManager = {
         }
 
         // Ensure the panel itself has the correct theme class initially
-        const currentTheme = localStorage.getItem("Holaf_Theme") || "holaf-theme-graphite-orange";
-        this.panelEl.classList.add(currentTheme);
+        // (NEW 3-axes system) : le body porte mode/accent/halo et les panels
+        // héritent des variables via CSS — pas besoin de classe par panel.
+        applyThemeState(this.panelEl, loadThemeState());
     },
 
     populatePanel() {
@@ -178,12 +184,13 @@ const HolafSettingsManager = {
     // ── Native Holaf tab (theme + WIP modules) ──
 
     renderGeneralTab(container) {
-        const currentTheme = localStorage.getItem("Holaf_Theme") || "holaf-theme-graphite-orange";
+        const state = loadThemeState();
 
-        // Build Theme Options HTML
-        const themeOptionsHtml = HOLAF_THEMES.map(theme => {
-            const isSelected = theme.className === currentTheme ? "selected" : "";
-            return `<option value="${theme.className}" ${isSelected}>${theme.name}</option>`;
+        // Labels du sélecteur d'accent (couleur de marque).
+        const accentButtonsHtml = Object.keys(AIH_ACCENTS).map(key => {
+            const acc = AIH_ACCENTS[key];
+            const isActive = state.accent === key;
+            return `<button type="button" class="holaf-settings-accent-btn ${isActive ? "active" : ""}" data-accent="${key}" title="${acc.label}"><span class="holaf-settings-accent-swatch aih-accent-${key}"></span>${acc.label}</button>`;
         }).join('');
 
         // Build the per-feature WIP checkboxes.
@@ -206,15 +213,33 @@ const HolafSettingsManager = {
         container.innerHTML = `
             <div class="holaf-settings-container" style="padding: 15px; gap: 20px;">
 
-                <!-- Theme Selection -->
+                <!-- Appearance : MODE + ACCENT + HALO (3 axes orthogonaux) -->
                 <div class="holaf-settings-group">
                     <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Appearance</h3>
-                    <div class="holaf-settings-field" style="display: flex; flex-direction: column; gap: 5px;">
-                        <label for="holaf-theme-select" style="font-size: 12px;">UI Theme</label>
-                        <select id="holaf-theme-select" style="outline: none; cursor: pointer;">
-                            ${themeOptionsHtml}
-                        </select>
-                        <span class="holaf-settings-field-description" style="font-size: 11px;">Changes the color scheme of Holaf's floating panels. Applies instantly.</span>
+
+                    <!-- Axe 1 : MODE (clair / foncé, fenêtres grises) -->
+                    <div class="holaf-settings-field" style="display:flex;flex-direction:column;gap:6px;">
+                        <label style="font-size:12px;">Mode</label>
+                        <div style="display:flex;gap:8px;" id="holaf-mode-toggle">
+                            <button type="button" class="holaf-settings-mode-btn ${state.mode === 'dark' ? 'active' : ''}" data-mode="dark">Dark</button>
+                            <button type="button" class="holaf-settings-mode-btn ${state.mode === 'light' ? 'active' : ''}" data-mode="light">Light</button>
+                        </div>
+                        <span class="holaf-settings-field-description" style="font-size:11px;">Fenêtres &amp; dialogues restent gris ; seul l'accent change de teinte.</span>
+                    </div>
+
+                    <!-- Axe 2 : ACCENT (couleur de marque, adaptée au mode) -->
+                    <div class="holaf-settings-field" style="display:flex;flex-direction:column;gap:6px;">
+                        <label style="font-size:12px;">Accent</label>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;" id="holaf-accent-picker">
+                            ${accentButtonsHtml}
+                        </div>
+                        <span class="holaf-settings-field-description" style="font-size:11px;">Une variante par mode (plus sombre en mode clair pour rester lisible).</span>
+                    </div>
+
+                    <!-- Axe 3 : HALO (lueur des fenêtres actives) -->
+                    <div class="holaf-settings-field" style="display:flex;align-items:center;gap:8px;">
+                        <input type="checkbox" id="holaf-halo-toggle" ${state.halo ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--holaf-accent-color);">
+                        <label for="holaf-halo-toggle" style="font-size:12px;cursor:pointer;">Lueur (halo) autour des fenêtres actives</label>
                     </div>
                 </div>
 
@@ -235,28 +260,48 @@ const HolafSettingsManager = {
 
         // --- Event Listeners ---
 
-        // 1. Theme Auto-Apply
-        const themeSelect = container.querySelector("#holaf-theme-select");
-        themeSelect.addEventListener("change", (e) => {
-            const newTheme = e.target.value;
+        // Helper : applique l'état sur body + ré-applique aux panels ouverts.
+        const applyTheme = (nextState) => {
+            applyThemeState(document.body, nextState);
+            saveThemeState(nextState);
+            // Ré-applique le thème à chaque panel déjà ouvert (héritage direct).
+            document.querySelectorAll(".holaf-utility-panel, .aih-dialog-root").forEach((p) => {
+                applyThemeState(p, nextState);
+            });
+            if (this.panelEl) applyThemeState(this.panelEl, nextState);
+        };
 
-            // Remove old theme classes from body
-            HOLAF_THEMES.forEach(t => document.body.classList.remove(t.className));
-
-            // Add new theme class
-            document.body.classList.add(newTheme);
-
-            // Save preference
-            localStorage.setItem("Holaf_Theme", newTheme);
-
-            // Update the settings panel itself
-            if (this.panelEl) {
-                HOLAF_THEMES.forEach(t => this.panelEl.classList.remove(t.className));
-                this.panelEl.classList.add(newTheme);
-            }
+        // 1. MODE : bascule light/dark.
+        container.querySelectorAll("#holaf-mode-toggle .holaf-settings-mode-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const mode = btn.dataset.mode;
+                const st = loadThemeState();
+                st.mode = mode;
+                applyTheme(st);
+                this.renderActiveTab(); // rafraîchit l'état actif des boutons
+            });
         });
 
-        // 2. Per-feature WIP checkboxes: persist each choice independently.
+        // 2. ACCENT : choix de la couleur de marque.
+        container.querySelectorAll("#holaf-accent-picker .holaf-settings-accent-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const accent = btn.dataset.accent;
+                const st = loadThemeState();
+                st.accent = accent;
+                applyTheme(st);
+                this.renderActiveTab();
+            });
+        });
+
+        // 3. HALO : case activable.
+        const haloToggle = container.querySelector("#holaf-halo-toggle");
+        haloToggle.addEventListener("change", (e) => {
+            const st = loadThemeState();
+            st.halo = e.target.checked;
+            applyTheme(st);
+        });
+
+        // 4. Per-feature WIP checkboxes: persist each choice independently.
         const applyWipChange = (checkbox) => {
             const featureId = checkbox.dataset.wipFeature;
             if (!featureId) return;
@@ -271,7 +316,7 @@ const HolafSettingsManager = {
             cb.addEventListener("change", (e) => applyWipChange(e.target));
         });
 
-        // 3. Reset: re-enable every WIP feature and refresh the panel + menu.
+        // 5. Reset: re-enable every WIP feature and refresh the panel + menu.
         const resetBtn = container.querySelector("#holaf-wip-reset");
         resetBtn.addEventListener("click", () => {
             HolafWipManager.resetAll();

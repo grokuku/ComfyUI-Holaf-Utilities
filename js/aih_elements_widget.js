@@ -50,7 +50,7 @@ function apiHeaders() {
 async function apiCall(method, path, body) {
     const baseUrl = getApiUrl();
     if (!baseUrl) {
-        throw new Error("Serveur AIH non configuré — Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+        throw new Error("Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »");
     }
     const opts = { method, headers: apiHeaders() };
     if (body) opts.body = JSON.stringify(body);

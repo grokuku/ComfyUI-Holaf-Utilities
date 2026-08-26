@@ -329,7 +329,7 @@ const holafImageViewer = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-viewer-panel",
-                title: "Holaf Image Viewer",
+                title: "AIH Image Viewer",
                 headerContent: headerControls,
                 defaultSize: { width: state.panel_width, height: state.panel_height },
                 defaultPosition: { x: state.panel_x, y: state.panel_y },
@@ -1275,12 +1275,12 @@ const holafImageViewer = {
                         if (menu.querySelector("#holaf-standalone-btn")) return true;
 
                         const buttons = Array.from(menu.querySelectorAll('button'));
-                        const mainButton = buttons.find(b => b.textContent && b.textContent.includes("Holaf Image Viewer"));
+                        const mainButton = buttons.find(b => b.textContent && b.textContent.includes("AIH Image Viewer"));
 
                         if (mainButton) {
                             const standaloneLink = document.createElement("button");
                             standaloneLink.id = "holaf-standalone-btn"; 
-                            standaloneLink.textContent = "Holaf Viewer (New Tab) ⧉";
+                            standaloneLink.textContent = "AIH Viewer (New Tab) ⧉";
                             standaloneLink.style.fontSize = "0.8em";
                             standaloneLink.style.opacity = "0.8";
                             standaloneLink.style.marginTop = "-5px";

@@ -13,7 +13,7 @@
  */
 
 import { HOLAF_THEMES } from "./holaf_themes.js";
-import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel } from "./holaf_window_utils.js";
 
 // MODIFICATION: Track open dialog count instead of boolean for proper stacking
 export const dialogState = {
@@ -72,6 +72,40 @@ export const HolafPanelManager = {
             header.appendChild(headerControlsWrapper);
         }
 
+        const content = document.createElement("div");
+        content.style.flexGrow = "1";
+        content.style.display = "flex";
+        content.style.flexDirection = "column";
+        content.style.overflow = "hidden";
+        content.style.position = "relative";
+
+        // ─── Boutons zoom standard ─ / + (taille du contenu) ────────────────
+        // Insérés dans la barre de titre (après headerContent, avant le bouton
+        // fermer). Appliquent la variable canonique --aih-zoom-factor sur le
+        // conteneur de CONTENU (exclut le header). Le comportement est piloté
+        // par `options.zoom` : `{ key, getLevel, setLevel, min, max, step }`.
+        // Sans config, on applique sur `content` et on persiste sous options.id.
+        const zoomGroup = (options.zoom !== false)
+            ? makeContentZoomable(options.zoom && options.zoom.container ? options.zoom.container : content, {
+                key: (options.zoom && options.zoom.key) || options.id || undefined,
+                getLevel: (options.zoom && options.zoom.getLevel) || (() => {
+                    const k = (options.zoom && options.zoom.key) || options.id;
+                    const v = k ? loadZoomLevel(k) : null;
+                    return v !== null ? v : 1;
+                }),
+                setLevel: (level) => {
+                    const target = options.zoom && options.zoom.container ? options.zoom.container : content;
+                    applyContentZoom(target, level);
+                    const k = (options.zoom && options.zoom.key) || options.id;
+                    if (k) saveZoomLevel(k, level);
+                    if (options.zoom && typeof options.zoom.setLevel === "function") options.zoom.setLevel(level);
+                },
+                min: options.zoom && options.zoom.min,
+                max: options.zoom && options.zoom.max,
+                step: options.zoom && options.zoom.step,
+            })
+            : null;
+
         const closeButton = document.createElement("button");
         closeButton.className = "holaf-utility-close-button";
         closeButton.textContent = "✕";
@@ -96,14 +130,8 @@ export const HolafPanelManager = {
             }
             if (options.onClose) options.onClose();
         };
+        if (zoomGroup) header.appendChild(zoomGroup);
         header.appendChild(closeButton);
-
-        const content = document.createElement("div");
-        content.style.flexGrow = "1";
-        content.style.display = "flex";
-        content.style.flexDirection = "column";
-        content.style.overflow = "hidden";
-        content.style.position = "relative";
 
         // Create 8 directional resize handles (N, S, E, W, NE, NW, SE, SW)
         const directions = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];

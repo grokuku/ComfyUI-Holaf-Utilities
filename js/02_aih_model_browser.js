@@ -307,7 +307,7 @@ import "./aih_dialog.js";
         try { cfg = JSON.parse(localStorage.getItem('AIH_config') || '{}'); } catch(e) {}
         var baseUrl = (cfg.serverUrl || '').replace(/\/+$/, '');
         if (!baseUrl) {
-            return Promise.reject(new Error('Serveur AIH non configuré — Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte »'));
+            return Promise.reject(new Error('Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »'));
         }
         var headers = { 'Content-Type': 'application/json' };
         if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
@@ -587,7 +587,7 @@ import "./aih_dialog.js";
             var cfg = JSON.parse(localStorage.getItem('AIH_config') || '{}');
             if (!(cfg.serverUrl || '').replace(/\/+$/, '')) {
                 if (window.aihShowAlert) {
-                    window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ». Les modèles locaux restent consultables.", "info");
+                    window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ». Les modèles locaux restent consultables.", "info");
                 }
             }
         } catch (e) {}

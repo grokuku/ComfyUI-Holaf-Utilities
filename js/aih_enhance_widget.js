@@ -553,7 +553,7 @@
                     // Comportement dégradé : sans serveur configuré, message
                     // explicite au lieu d'un POST vers une destination arbitraire.
                     if (!getApiUrl()) {
-                        resultTextarea.value = "⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte » (le bouton Test appelle le serveur distant).";
+                        resultTextarea.value = "⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte » (le bouton Test appelle le serveur distant).";
                         return;
                     }
                     try {

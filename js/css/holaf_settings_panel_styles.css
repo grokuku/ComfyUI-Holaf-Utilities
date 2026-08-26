@@ -156,6 +156,52 @@
     line-height: 1.3;
 }
 
+/* ── Appearance 3-axes : MODE / ACCENT / HALO ── */
+#holaf-settings-panel .holaf-settings-mode-btn,
+#holaf-settings-panel .holaf-settings-accent-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--holaf-border-color);
+    background-color: var(--holaf-tag-background);
+    color: var(--holaf-text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+#holaf-settings-panel .holaf-settings-mode-btn:hover,
+#holaf-settings-panel .holaf-settings-accent-btn:hover {
+    border-color: var(--holaf-accent-color);
+}
+
+#holaf-settings-panel .holaf-settings-mode-btn.active,
+#holaf-settings-panel .holaf-settings-accent-btn.active {
+    border-color: var(--holaf-accent-color);
+    background-color: color-mix(in srgb, var(--holaf-accent-color) 22%, var(--holaf-tag-background));
+    color: var(--holaf-text-primary);
+    font-weight: 600;
+}
+
+#holaf-settings-panel .holaf-settings-accent-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(128, 128, 128, 0.5);
+    display: inline-block;
+    background-color: var(--aih-accent, #D8700D);
+    flex-shrink: 0;
+}
+
+#holaf-settings-panel #holaf-halo-toggle {
+    accent-color: var(--holaf-accent-color);
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+}
+
 /* Settings panel scrollbar */
 #holaf-settings-panel .holaf-settings-form::-webkit-scrollbar {
     width: 10px;

@@ -46,7 +46,8 @@
     font-family: sans-serif !important;
     overflow: hidden !important;
     color: var(--holaf-text-primary) !important;
-    /* --holaf-mm-zoom-factor and --holaf-nm-zoom-factor are set on specific panels by JS */
+    /* --aih-zoom-factor (taille du contenu) est appliqué sur le conteneur de
+       contenu par le mécanisme de zoom unifié (boutons standard dans le header). */
 }
 
 /* ==========================================================================
@@ -102,6 +103,42 @@
 .holaf-utility-close-button:hover {
     color: #ff5555 !important;
     background: none !important;
+}
+
+/* ==========================================================================
+   Boutons zoom standard (− / +) dans la barre de titre
+   ========================================================================== */
+
+.holaf-utility-header .aih-zoom-controls {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 2px !important;
+    margin-right: 4px !important;
+    flex-shrink: 0 !important;
+}
+
+.holaf-utility-header .aih-dialog-zoom {
+    background: var(--holaf-header-button-bg) !important;
+    border: 1px solid var(--holaf-border-color) !important;
+    color: var(--holaf-header-button-text) !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    padding: 0 !important;
+    width: 24px !important;
+    height: 24px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    flex-shrink: 0 !important;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s !important;
+}
+
+.holaf-utility-header .aih-dialog-zoom:hover {
+    background: var(--holaf-header-button-hover-bg) !important;
+    color: var(--holaf-header-button-hover-text) !important;
+    border-color: var(--holaf-accent-color) !important;
 }
 
 /* ==========================================================================
