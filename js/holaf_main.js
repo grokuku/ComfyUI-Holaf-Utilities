@@ -256,23 +256,37 @@ const HolafUtilitiesMenu = {
             { label: "Restart ComfyUI", special: 'restart' }
         ];
 
-        const filteredItems = menuItems.filter(isWipItemVisible);
+        // Regroupe les entrées consécutives en sections : chaque sous-titre
+        // ouvre une nouvelle section. Une section dont AUCUN item n'est
+        // visible après le filtrage WIP/conditions est entièrement omise
+        // (sous-titre ET items) pour éviter un intitulé orphelin.
+        const sections = [];
+        let currentSection = null;
+        menuItems.forEach(itemInfo => {
+            if (itemInfo.type === 'subtitle') {
+                currentSection = { subtitle: itemInfo, items: [] };
+                sections.push(currentSection);
+            } else {
+                if (!currentSection) {
+                    currentSection = { subtitle: null, items: [] };
+                    sections.push(currentSection);
+                }
+                currentSection.items.push(itemInfo);
+            }
+        });
 
-        filteredItems.forEach(itemInfo => {
-            if (itemInfo.type === 'separator') {
-                const separator = document.createElement("li");
-                separator.style.height = "1px";
-                separator.style.backgroundColor = "var(--holaf-border-color, #3F3F3F)";
-                separator.style.margin = "5px 0";
-                separator.style.padding = "0";
-                this.dropdownMenuEl.appendChild(separator);
+        sections.forEach(section => {
+            const visibleItems = section.items.filter(isWipItemVisible);
+
+            // Section avec sous-titre mais AUCUN item visible → rien à rendre.
+            if (section.subtitle && visibleItems.length === 0) {
                 return;
             }
 
-            if (itemInfo.type === 'subtitle') {
+            if (section.subtitle) {
                 const subtitle = document.createElement("li");
                 subtitle.className = "holaf-menu-subtitle";
-                subtitle.textContent = itemInfo.label;
+                subtitle.textContent = section.subtitle.label;
                 Object.assign(subtitle.style, {
                     margin: "10px 0 2px 0",
                     padding: "2px 6px",
@@ -286,6 +300,16 @@ const HolafUtilitiesMenu = {
                     pointerEvents: "none"
                 });
                 this.dropdownMenuEl.appendChild(subtitle);
+            }
+
+            visibleItems.forEach(itemInfo => {
+            if (itemInfo.type === 'separator') {
+                const separator = document.createElement("li");
+                separator.style.height = "1px";
+                separator.style.backgroundColor = "var(--holaf-border-color, #3F3F3F)";
+                separator.style.margin = "5px 0";
+                separator.style.padding = "0";
+                this.dropdownMenuEl.appendChild(separator);
                 return;
             }
 
@@ -420,6 +444,7 @@ const HolafUtilitiesMenu = {
                 }
             };
             this.dropdownMenuEl.appendChild(menuItem);
+            });
         });
 
         // Pied de menu : statut du serveur AIH distant. Ligne passive,
