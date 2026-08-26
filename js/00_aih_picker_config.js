@@ -1,3 +1,5 @@
+import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+
 /**
  * AIH Picker Config — Composant réutilisable pour dropdown avec configuration modale.
  *
@@ -324,22 +326,12 @@
 
             // ── Drag ──
             var header = document.getElementById('aih-picker-header');
-            var dragOffX = 0, dragOffY = 0;
-            header.addEventListener('mousedown', function(e) {
-                if (e.target.id === 'aih-picker-close') return;
-                dragOffX = e.clientX - modal.offsetLeft;
-                dragOffY = e.clientY - modal.offsetTop;
-                function onMove(ev) {
-                    modal.style.left = Math.max(0, ev.clientX - dragOffX) + 'px';
-                    modal.style.top = Math.max(0, ev.clientY - dragOffY) + 'px';
-                }
-                function onUp() {
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
-                    saveModalRect();
-                }
-                document.addEventListener('mousemove', onMove);
-                document.addEventListener('mouseup', onUp);
+            makeDraggable(modal, {
+                handle: header,
+                anchor: 'left-top',
+                margin: 0,
+                isIgnored: function(e) { return e.target && e.target.id === 'aih-picker-close'; },
+                saveState: function() { saveModalRect(); },
             });
 
             // ── Resize (coin bas-droit) ──
@@ -350,27 +342,16 @@
                 background: 'linear-gradient(135deg, transparent 50%, #555 50%)',
                 borderRadius: '0 0 10px 0',
             });
+            resizeHandle.dataset.dir = 'se';
             modal.style.position = 'fixed';
             modal.appendChild(resizeHandle);
 
-            resizeHandle.addEventListener('mousedown', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                var startX = e.clientX, startY = e.clientY;
-                var startW = modal.offsetWidth, startH = modal.offsetHeight;
-                function onMove(ev) {
-                    var newW = Math.max(400, startW + (ev.clientX - startX));
-                    var newH = Math.max(350, startH + (ev.clientY - startY));
-                    modal.style.width = newW + 'px';
-                    modal.style.height = newH + 'px';
-                }
-                function onUp() {
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
-                    saveModalRect();
-                }
-                document.addEventListener('mousemove', onMove);
-                document.addEventListener('mouseup', onUp);
+            makeResizable(modal, {
+                handles: [resizeHandle],
+                anchor: 'left-top',
+                minWidth: 400,
+                minHeight: 350,
+                saveState: function() { saveModalRect(); },
             });
 
             function saveModalRect() {

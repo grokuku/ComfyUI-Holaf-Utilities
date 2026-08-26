@@ -1,3 +1,5 @@
+import { HolafToastManager } from "./holaf_toast_manager.js";
+
 /**
  * AIH Elements Picker — Custom widget for ComfyUI node.
  *
@@ -1810,17 +1812,8 @@ function showPrompt(title, msg, placeholder, cb) {
 }
 
 function showToast(title, msg) {
-    const overlay = document.createElement("div");
-    Object.assign(overlay.style, {
-        position: "fixed", bottom: "20px", right: "20px", zIndex: "99999",
-        background: "#2a2a2e", borderRadius: "8px", padding: "12px 16px",
-        border: "1px solid #555", maxWidth: "350px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-    });
-    overlay.innerHTML = `
-        <strong style="font-size:12px; color:#f87171;">${title}</strong>
-        <p style="margin:4px 0 0; font-size:11px; color:#ccc;">${msg}</p>
-    `;
-    document.body.appendChild(overlay);
-    setTimeout(() => overlay.remove(), 4000);
+    const type = title === "Succès" ? "success" : title === "Info" ? "info" : "error";
+    let toast = window.holaf && window.holaf.toastManager;
+    if (!toast) toast = new HolafToastManager();
+    toast.show({ message: msg, type: type, duration: 4000 });
 }

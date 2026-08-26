@@ -1,3 +1,6 @@
+import { makeDraggable } from "./holaf_window_utils.js";
+import { HolafToastManager } from "./holaf_toast_manager.js";
+
 /**
  * AIH Workflow Manager — Modale unique avec 2 onglets.
  *
@@ -180,58 +183,38 @@
   }
 
   // ── Toast / progress ──
+  // Utilise HolafToastManager (module ES) : les toasts vont dans le conteneur
+  // partagé #holaf-toast-container. La progression native du manager (option
+  // `progress` de show + `progress` de update) couvre le flux progress des
+  // toasts "progress". aihToast renvoie désormais l'ID (string) du toast.
 
-  var _toastContainer = null;
-
-  function _getToastContainer() {
-    if (!_toastContainer || !document.body.contains(_toastContainer)) {
-      _toastContainer = document.createElement("div");
-      _toastContainer.style.cssText = "position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none;";
-      document.body.appendChild(_toastContainer);
-    }
-    return _toastContainer;
+  var _holafToast = null;
+  function _toastMgr() {
+    if (!_holafToast) _holafToast = new HolafToastManager();
+    return _holafToast;
   }
 
   function aihToast(message, type) {
     // type: "info" | "success" | "error" | "progress"
-    var el = document.createElement("div");
-    var bg = type === "success" ? "#16a34a" : type === "error" ? "#dc2626" : type === "progress" ? "#1e293b" : "#334155";
-    el.style.cssText = "pointer-events:auto;padding:10px 16px;border-radius:8px;color:#fff;font-size:13px;max-width:380px;box-shadow:0 4px 12px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.15);";
-    el.style.background = bg;
-    el.innerHTML = '<span>' + esc(message) + '</span>' + (type === "progress" ? '<div style="flex:1;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden;"><div style="width:0%;height:100%;background:#6366f1;transition:width 0.3s;"></div></div>' : '');
-    _getToastContainer().appendChild(el);
-    if (type !== "progress") {
-      setTimeout(function() {
-        el.style.transition = "opacity 0.5s";
-        el.style.opacity = "0";
-        setTimeout(function() { el.remove(); }, 500);
-      }, 4000);
+    if (type === "progress") {
+      // Toast persistant avec barre de progression (mis à jour via aihToastProgress)
+      return _toastMgr().show({ message: esc(message), type: "info", duration: 0, progress: true });
     }
-    return el;
+    var t = type === "success" ? "success" : type === "error" ? "error" : "info";
+    return _toastMgr().show({ message: esc(message), type: t, duration: 4000 });
   }
 
-  function aihToastProgress(el, percent, message) {
-    if (message) {
-      var span = el.querySelector("span");
-      if (span) span.textContent = message;
-    }
-    var bar = el.querySelector("div > div");
-    if (bar) bar.style.width = Math.round(percent) + "%";
+  function aihToastProgress(id, percent, message) {
+    var opts = { progress: Math.max(0, Math.min(100, Math.round(percent))) };
+    if (message) opts.message = esc(message);
+    _toastMgr().update(id, opts);
   }
 
-  function aihToastDone(el, type, message) {
-    var bg = type === "success" ? "#16a34a" : "#dc2626";
-    el.style.background = bg;
-    var span = el.querySelector("span");
-    if (span) span.textContent = message;
-    var bar = el.querySelector("div > div");
-    if (bar) bar.parentElement.remove();
+  function aihToastDone(id, type, message) {
+    var t = type === "success" ? "success" : "error";
+    _toastMgr().update(id, { type: t, message: esc(message) });
     // Garder les toasts 8s pour avoir le temps de lire
-    setTimeout(function() {
-      el.style.transition = "opacity 0.5s";
-      el.style.opacity = "0";
-      setTimeout(function() { el.remove(); }, 500);
-    }, 8000);
+    setTimeout(function() { _toastMgr().hide(id); }, 8000);
   }
 
   // ── Types ComfyUI natifs ──
@@ -1175,20 +1158,18 @@
             header.style.cssText = "padding:12px 16px;border-bottom:1px solid #333;font-size:14px;font-weight:600;color:#e2e8f0;cursor:grab;user-select:none;";
             header.textContent = title || "T\u00e9l\u00e9chargement";
             panel.appendChild(header);
-            var drag = {active: false, sx: 0, sy: 0, ox: 0, oy: 0};
-            header.addEventListener("mousedown", function(e) {
-              drag.active = true; drag.sx = e.clientX; drag.sy = e.clientY;
-              var r = panel.getBoundingClientRect(); drag.ox = r.left; drag.oy = r.top;
-              header.style.cursor = "grabbing"; e.preventDefault();
-            });
-            document.addEventListener("mousemove", function(e) {
-              if (!drag.active) return;
-              panel.style.transform = "none";
-              panel.style.left = (drag.ox + e.clientX - drag.sx) + "px";
-              panel.style.top = (drag.oy + e.clientY - drag.sy) + "px";
-            });
-            document.addEventListener("mouseup", function() {
-              if (drag.active) { drag.active = false; header.style.cursor = "grab"; }
+            makeDraggable(panel, {
+              handle: header,
+              anchor: "left-top",
+              clamp: false,
+              bakeTransform: function() {
+                var r = panel.getBoundingClientRect();
+                panel.style.transform = "none";
+                panel.style.left = r.left + "px";
+                panel.style.top = r.top + "px";
+              },
+              cursor: "grabbing",
+              cursorRestore: "grab",
             });
             var body = document.createElement("div");
             body.style.cssText = "padding:12px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px;";

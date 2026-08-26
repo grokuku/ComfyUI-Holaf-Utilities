@@ -1,3 +1,5 @@
+import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+
 /**
  * AIH Modal v2 — Système de fenêtres flottantes pour extensions ComfyUI.
  *
@@ -480,131 +482,47 @@
 
         // ── Drag ──────────────────────────────────────────────────────────────
         if (draggable) {
-            var drag = { active: false, startX: 0, startY: 0, origLeft: 0, origTop: 0 };
-
-            header.addEventListener("mousedown", function (e) {
-                if (e.target === closeBtn || e.target === headerRight || headerRight.contains(e.target)) {
-                    return;
-                }
-                drag.active = true;
-                drag.startX = e.clientX;
-                drag.startY = e.clientY;
-                drag.origLeft = modal.offsetLeft;
-                drag.origTop = modal.offsetTop;
-                header.style.cursor = "grabbing";
-                e.preventDefault();
-            });
-
-            document.addEventListener("mousemove", function (e) {
-                if (!drag.active) return;
-                var newLeft = drag.origLeft + (e.clientX - drag.startX);
-                var newTop = drag.origTop + (e.clientY - drag.startY);
-                modal.style.left = newLeft + "px";
-                modal.style.top = newTop + "px";
-            });
-
-            document.addEventListener("mouseup", function () {
-                if (drag.active) {
-                    drag.active = false;
-                    header.style.cursor = "grab";
-                    // Sauvegarder position après drag
+            makeDraggable(modal, {
+                handle: header,
+                anchor: "left-top",
+                ignore: "button, input, select, textarea, a",
+                isIgnored: function (e) {
+                    return e.target === headerRight || headerRight.contains(e.target);
+                },
+                cursor: "grabbing",
+                cursorRestore: "",
+                saveState: function (rect) {
                     if (storageKey && persistPos) {
-                        _aihModalSaveRect(storageKey, {
-                            left: modal.offsetLeft,
-                            top: modal.offsetTop,
-                            width: modal.offsetWidth,
-                            height: modal.offsetHeight,
-                        });
+                        _aihModalSaveRect(storageKey, rect);
                     }
-                }
+                },
             });
         }
 
         // ── Resize ────────────────────────────────────────────────────────────
         if (resizable) {
-            var resize = { active: false, startX: 0, startY: 0, origW: 0, origH: 0, origLeft: 0, origTop: 0, dir: '' };
+            var minW = _parseCSSLength(modal.style.minWidth, window.innerWidth) || 280;
+            var minH = _parseCSSLength(modal.style.minHeight, window.innerHeight) || 120;
+            var maxW = _parseCSSLength(modal.style.maxWidth, window.innerWidth) || Math.round(window.innerWidth * 0.9);
+            var maxH = _parseCSSLength(modal.style.maxHeight, window.innerHeight) || Math.round(window.innerHeight * 0.85);
 
-            function startResize(e, dir) {
-                resize.active = true;
-                resize.dir = dir;
-                resize.startX = e.clientX;
-                resize.startY = e.clientY;
-                resize.origW = modal.offsetWidth;
-                resize.origH = modal.offsetHeight;
-                resize.origLeft = modal.offsetLeft;
-                resize.origTop = modal.offsetTop;
-                e.stopPropagation();
-                e.preventDefault();
-            }
-
-            resizeHandles.forEach(function(h) {
-                h.addEventListener("mousedown", function(e) {
-                    startResize(e, h.dataset.dir);
-                });
-            });
-
-            document.addEventListener("mousemove", function (e) {
-                if (!resize.active) return;
-                var dx = e.clientX - resize.startX;
-                var dy = e.clientY - resize.startY;
-                var newW = resize.origW;
-                var newH = resize.origH;
-                var newLeft = resize.origLeft;
-                var newTop = resize.origTop;
-                var dir = resize.dir;
-
-                if (dir.indexOf('e') >= 0) newW = resize.origW + dx;
-                if (dir.indexOf('w') >= 0) { newW = resize.origW - dx; newLeft = resize.origLeft + dx; }
-                if (dir.indexOf('s') >= 0) newH = resize.origH + dy;
-                if (dir.indexOf('n') >= 0) { newH = resize.origH - dy; newTop = resize.origTop + dy; }
-
-                // Appliquer les contraintes min/max
-                var minW = _parseCSSLength(modal.style.minWidth, window.innerWidth) || 280;
-                var minH = _parseCSSLength(modal.style.minHeight, window.innerHeight) || 120;
-                var maxW = _parseCSSLength(modal.style.maxWidth, window.innerWidth) || Math.round(window.innerWidth * 0.9);
-                var maxH = _parseCSSLength(modal.style.maxHeight, window.innerHeight) || Math.round(window.innerHeight * 0.85);
-
-                // Ajuster les positions si contraintes atteintes
-                if (newW < minW) {
-                    if (dir.indexOf('w') >= 0) newLeft = resize.origLeft + resize.origW - minW;
-                    newW = minW;
-                }
-                if (newW > maxW) {
-                    if (dir.indexOf('w') >= 0) newLeft = resize.origLeft + resize.origW - maxW;
-                    newW = maxW;
-                }
-                if (newH < minH) {
-                    if (dir.indexOf('n') >= 0) newTop = resize.origTop + resize.origH - minH;
-                    newH = minH;
-                }
-                if (newH > maxH) {
-                    if (dir.indexOf('n') >= 0) newTop = resize.origTop + resize.origH - maxH;
-                    newH = maxH;
-                }
-
-                modal.style.width = newW + "px";
-                modal.style.height = newH + "px";
-                if (dir.indexOf('w') >= 0) modal.style.left = newLeft + "px";
-                if (dir.indexOf('n') >= 0) modal.style.top = newTop + "px";
-
-                if (typeof onResize === "function") {
-                    try { onResize(newW, newH); } catch (e) { /* silencieux */ }
-                }
-            });
-
-            document.addEventListener("mouseup", function () {
-                if (resize.active) {
-                    resize.active = false;
-                    // Sauvegarder taille après resize
-                    if (storageKey && (persistSize || persistPos)) {
-                        _aihModalSaveRect(storageKey, {
-                            left: modal.offsetLeft,
-                            top: modal.offsetTop,
-                            width: modal.offsetWidth,
-                            height: modal.offsetHeight,
-                        });
+            makeResizable(modal, {
+                handles: resizeHandles,
+                anchor: "left-top",
+                minWidth: minW,
+                minHeight: minH,
+                maxWidth: maxW,
+                maxHeight: maxH,
+                onResize: function (w, h) {
+                    if (typeof onResize === "function") {
+                        try { onResize(w, h); } catch (e) { /* silencieux */ }
                     }
-                }
+                },
+                saveState: function (rect) {
+                    if (storageKey && (persistSize || persistPos)) {
+                        _aihModalSaveRect(storageKey, rect);
+                    }
+                },
             });
         }
 
