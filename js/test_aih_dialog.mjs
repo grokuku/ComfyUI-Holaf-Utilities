@@ -408,4 +408,32 @@ assert.ok(cdOk, "createDialog wrapper → alert");
 cdOk.dispatch("click", { preventDefault() {}, stopPropagation() {} });
 assert.strictEqual(await cdP, true, "createDialog résout true");
 
+/* ── 8. Auto-injection CSS (contexte standalone, CSS absente) ───────────── */
+// aih_dialog.js doit être auto-suffisant : quand aih_dialog.css n'est pas déjà
+// chargée (page standalone / profiler), le module injecte sa propre feuille.
+function findInHead(id) {
+    return fakeDocument.head.children.find((n) => n.id === id) || null;
+}
+const injLink = findInHead("aih-dialog-css");
+assert.ok(injLink, "feuille de style injectée dans <head> (id aih-dialog-css)");
+assert.strictEqual(injLink.rel, "stylesheet", "<link rel=stylesheet>");
+assert.ok(/aih_dialog\.css$/.test(injLink.href || ""), "href pointe sur css/aih_dialog.css : " + injLink.href);
+// NB: dans ce banc de test l'URL est file:// (dossier réel nommé "js") ; en
+// navigateur, holaf_ext_base.js sert sous /extensions/<pack>/ et retire le
+// segment "js/" (WEB_DIRECTORY monté directement) — voir holaf_ext_base.js.
+
+// Fallback inline : si on retire le <link> puis qu'un échec est simulé via
+// onerror, le <style> inline garantissant le rendu est injecté.
+const fakeLink = injLink;
+if (typeof fakeLink.onerror === "function") fakeLink.onerror();
+const injInline = findInHead("aih-dialog-css-inline");
+assert.ok(injInline, "fallback inline <style> injecté sur onerror");
+assert.ok(injInline._attrs && injInline._attrs["data-aih-dialog"] === "1", "style fallback marqué data-aih-dialog");
+const cssText = injInline.textContent || "";
+assert.ok(/position:\s*fixed/.test(cssText), "fallback : position fixed (centrage)");
+assert.ok(/inset:\s*0/.test(cssText), "fallback : overlay inset:0");
+assert.ok(/--aih-accent/.test(cssText), "fallback : variables --aih-* présentes");
+assert.ok(/\.aih-dialog-overlay/.test(cssText), "fallback : classe .aih-dialog-overlay");
+assert.ok(/\.aih-dialog-header/.test(cssText) && /\.aih-dialog-body/.test(cssText) && /\.aih-dialog-footer/.test(cssText), "fallback : header/body/footer");
+
 console.log("✅ Simulation AIH.Dialog : TOUS LES TESTS PASSENT");

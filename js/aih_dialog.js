@@ -13,13 +13,20 @@
  * makeResizable). Autorité de z-index unique (compteur partagé).
  *
  * Dépendances : holaf_window_utils.js (drag/resize),
- *               holaf_panel_manager.js (wrapper createDialog).
- * CSS : js/css/aih_dialog.css (auto-chargé par ComfyUI, thème centralisé --aih-*).
+ *               holaf_panel_manager.js (wrapper createDialog),
+ *               holaf_ext_base.js (résolution du chemin d'assets / base CSS).
+ * CSS : js/css/aih_dialog.css (thème centralisé --aih-*). AUTO-SUFFISANT : le
+ *       module injecte sa propre feuille de style (via holafExtUrl, chemin
+ *       /extensions/<pack>/css/aih_dialog.css SANS préfixe js/) quand elle est
+ *       absente, + fallback inline, afin que les modales soient stylées et
+ *       centrées dans TOUT contexte (dont pages standalone servies via route
+ *       alias comme le profiler, où aih_dialog.css n'est pas auto-chargé).
  */
 
 import "./aih_i18n.js";
 import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
+import { holafExtUrl } from "./holaf_ext_base.js";
 
 (function () {
     "use strict";
@@ -77,6 +84,113 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
+    }
+
+    // ─── Auto-injection CSS (module auto-suffisant) ──────────────────────────
+    // Un import JS n'importe JAMAIS son CSS. Dans une page standalone servie via
+    // route alias (ex. profiler : aih_dialog.js est chargé dynamiquement depuis
+    // /extensions/<pack>/), la feuille js/css/aih_dialog.css n'est pas injectée
+    // par ComfyUI ; sans elle la modale tombait dans le flux de la page (en bas,
+    // sans overlay ni positionnement centré). Ce module s'auto-suffit donc : il
+    // injecte sa propre feuille de style dès que celle-ci est absente, dans TOUT
+    // contexte. Le chemin d'URL est correct (base des extensions, SANS préfixe
+    // "js/" — WEB_DIRECTORY monté directement) via holaf_ext_base.js /
+    // window.HOLAF_EXT_BASE. Un fallback inline garantit le rendu même si le
+    // <link> échoue (404).
+    const DIALOG_CSS_ID = "aih-dialog-css";
+    const DIALOG_CSS_INLINE_ID = "aih-dialog-css-inline";
+    const DIALOG_CSS_HREF = "css/aih_dialog.css";
+
+    // Fallback inline : garantit centrage (position:fixed), overlay, thème
+    // (variables --aih-*) et classes .aih-dialog-* même en cas de 404 du lien.
+    const FALLBACK_DIALOG_CSS = `
+.aih-dialog-theme, :root {
+    --aih-accent: #D8700D; --aih-accent-hover: #F08020; --aih-accent-text: #FFFFFF;
+    --aih-bg: #1E1E1E; --aih-bg-secondary: #2B2B2B; --aih-bg-input: #1A1A1A; --aih-bg-hover: #353535;
+    --aih-text: #E0E0E0; --aih-text-secondary: #A0A0A0;
+    --aih-border: #3F3F3F; --aih-border-strong: #555555;
+    --aih-danger: #F44336; --aih-danger-hover: #E53935; --aih-danger-text: #FFFFFF; --aih-success: #4CAF50;
+    --aih-radius: 10px; --aih-radius-footer: 8px;
+    --aih-shadow: 0 16px 48px rgba(0,0,0,0.6); --aih-shadow-active: 0 16px 48px rgba(216,112,13,0.18);
+    --aih-overlay-bg: rgba(0,0,0,0.55); --aih-busy-bg: rgba(30,30,30,0.72);
+    --aih-font-size: 13px; --aih-title-size: 14px; --aih-title-weight: 600;
+    --aih-btn-bg: #3A3A3E; --aih-btn-bg-hover: #4A4A4E; --aih-btn-border: #555555;
+    --aih-close-color: #999999; --aih-close-hover: #F87171; --aih-input-focus: #D8700D;
+    --aih-resize-handle: #555555; --aih-resize-handle-active: #D8700D;
+}
+.aih-dialog-root { position: fixed; display: flex; flex-direction: column; background: var(--aih-bg); border: 1px solid var(--aih-border); border-radius: var(--aih-radius); box-shadow: var(--aih-shadow); overflow: hidden; min-width: 280px; min-height: 120px; color: var(--aih-text); font-size: var(--aih-font-size); line-height: 1.5; box-sizing: border-box; }
+.aih-dialog-root.active { border-color: var(--aih-accent); box-shadow: var(--aih-shadow-active); }
+.aih-dialog-overlay { position: fixed; inset: 0; background: var(--aih-overlay-bg); z-index: 90000; }
+.aih-dialog-header { display: flex; align-items: center; padding: 10px 16px; cursor: grab; user-select: none; border-bottom: 1px solid var(--aih-border); background: var(--aih-bg-secondary); flex-shrink: 0; }
+.aih-dialog-title { flex: 1; font-size: var(--aih-title-size); font-weight: var(--aih-title-weight); color: var(--aih-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aih-dialog-close { background: none; border: none; color: var(--aih-close-color); cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1; flex-shrink: 0; transition: color 0.15s; }
+.aih-dialog-close:hover { color: var(--aih-close-hover); }
+.aih-dialog-body { flex: 1; padding: 16px; overflow-y: auto; overflow-x: hidden; color: var(--aih-text); font-size: var(--aih-font-size); }
+.aih-dialog-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--aih-border); background: var(--aih-bg-secondary); border-radius: 0 0 var(--aih-radius-footer) var(--aih-radius-footer); flex-shrink: 0; }
+.aih-dialog-btn { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--aih-btn-border); background: var(--aih-btn-bg); color: var(--aih-text); cursor: pointer; font-size: var(--aih-font-size); transition: background 0.15s, border-color 0.15s; }
+.aih-dialog-btn:hover { background: var(--aih-btn-bg-hover); border-color: var(--aih-border-strong); }
+.aih-dialog-btn-primary { background: var(--aih-accent); border-color: var(--aih-accent); color: var(--aih-accent-text); }
+.aih-dialog-btn-primary:hover { background: var(--aih-accent-hover); border-color: var(--aih-accent-hover); }
+.aih-dialog-btn-danger { background: var(--aih-danger); border-color: var(--aih-danger); color: var(--aih-danger-text); }
+.aih-dialog-btn-danger:hover { background: var(--aih-danger-hover); border-color: var(--aih-danger-hover); }
+.aih-dialog-btn-cancel { background: var(--aih-btn-bg); border-color: var(--aih-btn-border); color: var(--aih-text); }
+.aih-dialog-btn-cancel:hover { background: var(--aih-btn-bg-hover); border-color: var(--aih-border-strong); }
+.aih-dialog-input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--aih-border); background: var(--aih-bg-input); color: var(--aih-text); font-size: var(--aih-font-size); outline: none; box-sizing: border-box; margin-top: 8px; }
+.aih-dialog-input:focus { border-color: var(--aih-input-focus); }
+.aih-dialog-message { color: var(--aih-text-secondary); font-size: var(--aih-font-size); line-height: 1.5; }
+.aih-dialog-icon { font-size: 24px; margin-bottom: 8px; text-align: center; }
+.aih-dialog-icon-info { color: var(--aih-accent); } .aih-dialog-icon-success { color: var(--aih-success); } .aih-dialog-icon-error { color: var(--aih-danger); } .aih-dialog-icon-warning { color: var(--aih-accent-hover); }
+.aih-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.aih-dialog-busy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--aih-busy-bg); color: var(--aih-text); font-size: var(--aih-font-size); z-index: 4; text-align: center; padding: 16px; }
+.aih-dialog-spinner { width: 28px; height: 28px; border: 3px solid var(--aih-border-strong); border-top-color: var(--aih-accent); border-radius: 50%; animation: aih-dialog-spin 0.8s linear infinite; }
+@keyframes aih-dialog-spin { to { transform: rotate(360deg); } }
+.aih-dialog-resize-handle { position: absolute; z-index: 3; }
+.aih-dialog-resize-nw { top: -4px; left: -4px; width: 12px; height: 12px; cursor: nw-resize; }
+.aih-dialog-resize-ne { top: -4px; right: -4px; width: 12px; height: 12px; cursor: ne-resize; }
+.aih-dialog-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: sw-resize; }
+.aih-dialog-resize-se { bottom: 0; right: 0; width: 14px; height: 14px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--aih-resize-handle) 50%); border-radius: 0 0 var(--aih-radius-footer) 0; }
+.aih-dialog-resize-n { top: -4px; left: 8px; right: 8px; height: 8px; cursor: n-resize; }
+.aih-dialog-resize-s { bottom: -4px; left: 8px; right: 8px; height: 8px; cursor: s-resize; }
+.aih-dialog-resize-e { top: 8px; right: -4px; bottom: 8px; width: 8px; cursor: e-resize; }
+.aih-dialog-resize-w { top: 8px; left: -4px; bottom: 8px; width: 8px; cursor: w-resize; }
+`;
+
+    function dialogCssPresent() {
+        if (typeof document === "undefined") return true;
+        if (document.getElementById(DIALOG_CSS_ID)) return true;
+        if (document.getElementById(DIALOG_CSS_INLINE_ID)) return true;
+        // Lien déjà injecté par une autre source / balise CSS équivalente.
+        if (document.querySelector('link[href*="aih_dialog.css"], style[data-aih-dialog]')) return true;
+        // Classe de test : si la variable de thème est déjà définie sur :root,
+        // la CSS (ou une copie) est présente.
+        try {
+            if (getComputedStyle(document.documentElement).getPropertyValue("--aih-accent").trim()) return true;
+        } catch (e) { /* silencieux */ }
+        return false;
+    }
+
+    function injectInlineDialogCss() {
+        if (typeof document === "undefined") return;
+        if (document.getElementById(DIALOG_CSS_INLINE_ID)) return;
+        const style = document.createElement("style");
+        style.id = DIALOG_CSS_INLINE_ID;
+        style.setAttribute("data-aih-dialog", "1");
+        style.textContent = FALLBACK_DIALOG_CSS;
+        document.head.appendChild(style);
+    }
+
+    function ensureDialogCss() {
+        if (typeof document === "undefined") return;
+        if (dialogCssPresent()) return;
+        const link = document.createElement("link");
+        link.id = DIALOG_CSS_ID;
+        link.rel = "stylesheet";
+        link.type = "text/css";
+        link.href = holafExtUrl(DIALOG_CSS_HREF);
+        // Sécurité : si le <link> ne charge pas (404/chemin inattendu), on bascule
+        // sur la copie inline qui garantit centrage + overlay + thème partout.
+        link.onerror = () => injectInlineDialogCss();
+        document.head.appendChild(link);
     }
 
     // ─── I18n helper ──────────────────────────────────────────────────────────
@@ -213,6 +327,9 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
     // ─── Noyau : AIH.Dialog.open ─────────────────────────────────────────────
     function open(opts) {
         opts = opts || {};
+
+        // Auto-injection de la feuille de style au premier open() (idempotent).
+        ensureDialogCss();
 
         const modal = !!opts.modal;
         const resizable = opts.resizable !== undefined ? !!opts.resizable : !modal;
@@ -750,6 +867,9 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
 
     // Restaure les surcharges de thème persistées au chargement.
     try { Theme._restorePersisted(); } catch (e) { /* silencieux */ }
+
+    // Auto-injection de la feuille de style au chargement du module (idempotent).
+    ensureDialogCss();
 
     // ══════════════════════════════════════════════════════════════════════
     // WRAPPERS DE COMPATIBILITÉ (aucun consommateur ne change)
