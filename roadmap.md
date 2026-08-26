@@ -126,6 +126,17 @@ Chantier principal réalisé directement sur **main** en commits conventionnels 
 * **Menu principal** — boutons « AIH Update » et « AIH Restart » dans le menu Holaf Utilities, redémarrage via le restart sécurisé existant (chantier D, commit `4b9660e`)
 * **Validation** — `py_compile` complet du pack ; harnais hors-ComfyUI store/sync 53/53 ; inventaire routes 43/43 vs source avec exécution réelle des handlers clés (traversal bloqué, auth blobby 401/fail-closed, update sur repos jetables) ; simulation loader ordonnée des widgets ; `node --check` ×11 JS OK ; matching dual-forme 28/28
 
+#### 🔀 Fusion — Menu AI Helper restauré
+
+Clôture du chantier réalisée directement sur **main** en commits conventionnels fins et révertibles (**`9b92cc8` + `4ac4cb7`**) — cf. `PLAN_FUSION.md` :
+
+* **Bibliothèque menu AIH** — port des helpers du menu original en `js/aih_menu.js` (`window.AIHMenu`, pattern merge sûr, aucun bouton propre : l'intégration visuelle est déléguée au dropdown Holaf Utilities) (`9b92cc8`)
+* **Réintégration dropdown** — toutes les entrées du menu original regroupées dans le dropdown orange Holaf Utilities (`js/holaf_main.js`), sans nouveau registerExtension ni bouton indigo recréé : 🌐 Open Webpage, 📤 Workflows, 📦 Models, 👥 Membres (modale draggable, tri admin→kw_editor→membres, avatars Discord) et ⚙️ Paramètres unifiés à deux onglets (« Compte » via `/aih/credentials`, « Provider LLM » avec CRUD presets distant + mode Client-side navigateur) (`9b92cc8` + `4ac4cb7`)
+* **Toggle Blobby + Chat conditionnel** — lignes dédiées avec pastille ON verte/OFF grise dynamique, Chat visible uniquement quand Blobby est actif, aucune fermeture du menu au clic (`4ac4cb7`)
+* **AIH Update enrichi** — modale d'origine restaurée : spinner + log git complet de `POST /aih/update`, puis proposition de redémarrage via le restart sécurisé `/holaf/utilities/restart` avec boucle de reconnexion automatique ; ancien flux toast conservé en fallback si le module est absent (`9b92cc8` + `4ac4cb7`)
+* **Pied de statut serveur 4 états** — 🟢 connecté / 🟢 en ligne / 🟡 HTTP x / 🔴 hors ligne via `/api/stats` + `/api/auth/me` en parallèle (timeout 5 s Bearer) (`9b92cc8`)
+* **Validation** — simulation du flux Update hors ComfyUI 11/11 ; `node --check` OK sur les JS touchés
+
 ---
 
 ### FONCTIONNALITÉS IMPLÉMENTÉES
