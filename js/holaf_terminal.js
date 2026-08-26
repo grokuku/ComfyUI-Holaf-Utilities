@@ -183,7 +183,7 @@ const holafTerminal = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-terminal-panel",
-                title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode("Holaf Terminal")); return f; })(),
+                title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode("AIH Terminal")); return f; })(),
                 headerContent: terminalHeaderControlsGroup,
                 defaultSize: { width: this.settings.panel_width, height: this.settings.panel_height },
                 defaultPosition: { x: this.settings.panel_x, y: this.settings.panel_y },
@@ -207,7 +207,7 @@ const holafTerminal = {
             });
         } catch (e) {
             console.error("[Holaf Terminal] Error during HolafPanelManager.createPanel:", e);
-            await window.AIH.alert("[Holaf Terminal]", "Error creating panel. Check console.", "error");
+            await window.AIH.alert("[AIH Terminal]", "Error creating panel. Check console.", "error");
             return;
         }
 
@@ -365,7 +365,7 @@ const holafTerminal = {
     createSetupView() {
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view";
-        const title = document.createElement("h3"); title.textContent = "Holaf Terminal Setup"; title.className = "holaf-terminal-title-success";
+        const title = document.createElement("h3"); title.textContent = "AIH Terminal Setup"; title.className = "holaf-terminal-title-success";
         const p1 = document.createElement("p"); p1.textContent = "No password is set. Please create one to enable the terminal."; p1.style.marginBottom = "15px";
         const passLabel = document.createElement("label"); passLabel.textContent = "New Password (min 4 chars):"; passLabel.style.display = "block"; passLabel.style.marginBottom = "2px";
         this.newPasswordInput = document.createElement("input"); this.newPasswordInput.type = "password"; this.newPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 5px;";

@@ -7,13 +7,19 @@
  * would resolve against /holaf/ and fail. The host page (PROFILER_HTML in
  * __init__.py) exposes the resolved extension asset base as window.HOLAF_EXT_BASE
  * before calling initProfiler(); pack modules are imported dynamically from it.
+ *
+ * NOTE: the AIH foundation (aih_i18n + aih_dialog) is NOT statically imported
+ * here. This entry module is served through the alias route, so a static
+ * relative import would resolve against /holaf/ (forbidden MIME type and a
+ * blank page). Instead it is loaded dynamically from the REAL extension path
+ * (/extensions/<pack>/...) resolved via window.HOLAF_EXT_BASE — see
+ * loadAihFoundation() below.
  */
-
-import "../aih_dialog.js";
 
 /**
  * Resolves a pack asset URL from the base injected by the host page.
- * @param {string} relativePath e.g. "js/holaf_comfy_bridge.js"
+ * @param {string} relativePath e.g. "aih_dialog.js" (no "js/" segment —
+ *   WEB_DIRECTORY="js" is mounted directly at /extensions/<pack>/)
  */
 function holafPackUrl(relativePath) {
     const rel = String(relativePath).replace(/^\/+/, "");
@@ -23,6 +29,32 @@ function holafPackUrl(relativePath) {
         return rel;
     }
     return `${base.replace(/\/+$/, "")}/${rel}`;
+}
+
+/**
+ * Loads the AIH foundation (aih_i18n then aih_dialog) from the REAL extension
+ * asset path so the JS is served with the correct MIME type. Because this entry
+ * module is served through the alias route /holaf/profiler/app.js, static
+ * relative imports must not be used (they would resolve under /holaf/ and be
+ * served as application/octet-stream → blank page). Resolving via
+ * window.HOLAF_EXT_BASE (host-injected in PROFILER_HTML) locates the pack JS on
+ * the real /extensions/<pack>/ path. Guarantees window.AIH (I18n, Dialog and
+ * confirm/prompt/alert) is defined before any consumer uses it.
+ */
+async function loadAihFoundation() {
+    try {
+        await import(holafPackUrl("aih_i18n.js"));
+        await import(holafPackUrl("aih_dialog.js"));
+        return !!(
+            window.AIH &&
+            typeof window.AIH.I18n === "object" &&
+            typeof window.AIH.confirm === "function" &&
+            typeof window.AIH.prompt === "function"
+        );
+    } catch (err) {
+        console.warn("[Holaf Profiler] Could not load AIH foundation; falling back to native dialogs.", err);
+        return false;
+    }
 }
 
 /**
@@ -43,8 +75,27 @@ async function loadHolafComfyBridge() {
 export async function initProfiler() {
     console.log("Holaf Profiler Initializing...");
     
+    // Load the AIH foundation (aih_i18n + aih_dialog) from the real extension
+    // path before anything can call window.AIH.confirm/prompt.
+    const aihLoaded = await loadAihFoundation();
+
     const HolafComfyBridge = await loadHolafComfyBridge();
     const bridge = new HolafComfyBridge();
+
+    // Safe AIH helpers: use the unified AIH dialogs when the foundation loaded,
+    // otherwise fall back to native browser dialogs so the profiler never breaks.
+    const aihConfirm = (message) => {
+        if (aihLoaded && window.AIH && typeof window.AIH.confirm === 'function') {
+            return window.AIH.confirm(message);
+        }
+        return window.confirm(message);
+    };
+    const aihPrompt = (message, defaultValue, placeholder) => {
+        if (aihLoaded && window.AIH && typeof window.AIH.prompt === 'function') {
+            return window.AIH.prompt(message, defaultValue, placeholder);
+        }
+        return window.prompt(message, defaultValue ?? '');
+    };
     
     // --- STATE ---
     let currentRunId = null;
@@ -475,7 +526,7 @@ export async function initProfiler() {
         btnDeleteSelected.addEventListener('click', async () => {
             if (!selectedRunIds.size) return;
             const ids = [...selectedRunIds];
-            if (!(await window.AIH.confirm(`Delete ${ids.length} run(s)? This cannot be undone.`))) return;
+            if (!(await aihConfirm(`Delete ${ids.length} run(s)? This cannot be undone.`))) return;
             for (const id of ids) {
                 try {
                     await fetch(`/holaf/profiler/run/${id}`, { method: 'DELETE' });
@@ -979,7 +1030,7 @@ export async function initProfiler() {
     const btnRun = document.getElementById('btn-run-profile');
     if (btnRun) {
         btnRun.addEventListener('click', async () => {
-            const runName = await window.AIH.prompt("Enter a name for this run (Optional):", "", "Run " + new Date().toLocaleTimeString());
+            const runName = await aihPrompt("Enter a name for this run (Optional):", "", "Run " + new Date().toLocaleTimeString());
             executionCounter = 0;
             nodesMap.forEach(node => {
                 node.vram_max = 0;
