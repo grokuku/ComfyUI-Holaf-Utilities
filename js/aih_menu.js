@@ -42,7 +42,6 @@
     "use strict";
 
     const STORAGE_KEY = "AIH_config";
-    const DEFAULT_SERVER = "https://kw.holaf.fr";
 
     function getConfig() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
@@ -60,8 +59,19 @@
     // ── Raccourcis du menu ───────────────────────────────────────────────
 
     function openWebpage() {
-        const cfg = getConfig();
-        window.open(cfg.serverUrl || DEFAULT_SERVER, "_blank");
+        // Aucune URL par défaut codée en dur : si le serveur n'est pas
+        // configuré, on invite l'utilisateur à le faire dans Settings.
+        const baseUrl = (getConfig().serverUrl || "").replace(/\/+$/, "");
+        if (!baseUrl) {
+            const msg = "Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte » (champ « URL du serveur »).";
+            if (window.holaf?.toastManager) {
+                window.holaf.toastManager.show({ message: msg, type: "info", duration: 8000 });
+            } else if (window.aihShowAlert) {
+                window.aihShowAlert("Serveur non configuré", msg, "info");
+            }
+            return;
+        }
+        window.open(baseUrl, "_blank");
     }
 
     function openWorkflows() {
@@ -105,7 +115,7 @@
 
     async function openMembers() {
         const cfg = getConfig();
-        const baseUrl = (cfg.serverUrl || DEFAULT_SERVER).replace(/\/+$/, "");
+        const baseUrl = (cfg.serverUrl || "").replace(/\/+$/, "");
         const apiKey = cfg.apiKey || "";
 
         const modal = window.aihOpenModalV2({
@@ -118,6 +128,13 @@
             persistSize: true,
             persistPos: true
         });
+
+        // Comportement dégradé : pas d'URL configurée → invitation au lieu
+        // d'une requête vers une destination arbitraire.
+        if (!baseUrl) {
+            modal.body.innerHTML = `<div style="padding:16px;color:#facc15;font-size:12px;line-height:1.6;">⚠️ Aucune URL de serveur AIH configurée.<br>Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ».</div>`;
+            return;
+        }
 
         try {
             const headers = {};
@@ -175,8 +192,20 @@
 
     async function checkServerStatus(el) {
         const cfg = getConfig();
-        const baseUrl = (cfg.serverUrl || DEFAULT_SERVER).replace(/\/+$/, "");
+        const baseUrl = (cfg.serverUrl || "").replace(/\/+$/, "");
         const apiKey = cfg.apiKey || "";
+
+        // Serveur non configuré : état explicite au lieu d'une sonde vers
+        // une destination arbitraire.
+        if (!baseUrl) {
+            el.innerHTML = "";
+            el.style.display = "flex";
+            el.style.alignItems = "center";
+            el.textContent = "⚪  Serveur AIH non configuré (Settings ▸ AIH · Compte)";
+            el.style.color = "#888";
+            return;
+        }
+
         try {
             const headers = {};
             if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -283,9 +312,13 @@
 
     async function _aihFetchApi(path, opts = {}) {
         const cfg = getConfig();
-        // baseUrl pointe vers le backend AIH (par defaut https://kw.holaf.fr)
-        // /api/* est prefixe automatiquement
-        const baseUrl = (cfg.serverUrl || DEFAULT_SERVER).replace(/\/+$/, "");
+        // baseUrl pointe vers le backend AIH distant configuré (cfg.serverUrl,
+        // renseigné dans Settings ▸ AIH · Compte) ; /api/* est préfixé
+        // automatiquement. Sans URL configurée : erreur explicite.
+        const baseUrl = (cfg.serverUrl || "").replace(/\/+$/, "");
+        if (!baseUrl) {
+            throw new Error("Serveur AIH non configuré — Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+        }
         const headers = { "Content-Type": "application/json" };
         if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
         // path peut deja commencer par /api/ (auquel cas on l'utilise tel quel) ou non
@@ -338,7 +371,8 @@
 
         const inputUrl = document.createElement("input");
         inputUrl.type = "url";
-        inputUrl.value = cfg.serverUrl || DEFAULT_SERVER;
+        inputUrl.value = cfg.serverUrl || "";
+        inputUrl.placeholder = "https://mon-serveur-aih.example.com";
         inputUrl.style.cssText = _aihStyle.input;
         inputUrl.style.marginBottom = "12px";
         section.appendChild(inputUrl);
@@ -419,8 +453,8 @@
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
-                                api_key: cfg.apiKey,
-                                server_url: cfg.serverUrl || DEFAULT_SERVER,
+                                api_key: cfg.apiKey || "",
+                                server_url: cfg.serverUrl || "",
                             }),
                         }).then(r => r.json()).then(saveData => {
                             if (saveData.status === "ok") {

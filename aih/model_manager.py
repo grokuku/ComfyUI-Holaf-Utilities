@@ -15,7 +15,7 @@ par aih/routes.py (groupe « models »).
 Utilise folder_paths (ComfyUI) pour connaître les chemins des models.
 Upload les fichiers directement depuis le filesystem Python (pas de file
 picker navigateur). Les transferts vont vers/depuis le backend AIH distant
-(kw.holaf.fr), en deux modes :
+(URL configurée dans user/default/aih/credentials.json), en deux modes :
   - direct SFTP : paramiko sftp.put()/get() avec callback de progression
     (imports paramiko paresseux — uniquement quand le backend fournit une
     config sftp) ;
@@ -142,12 +142,14 @@ def _get_aih_credentials():
     Retourne un tuple (api_url_avec_/api, api_key). Le fallback historique
     (lecture brute de user/default/aih_credentials.json) n'est plus nécessaire :
     aih.credentials migre lui-même l'ancien fichier vers user/default/aih/.
+    api_url est une chaîne vide si l'URL du serveur n'est pas configurée :
+    les appelants doivent dégrader proprement dans ce cas.
     """
     try:
         from aih import credentials
         return credentials.get_api_url(), credentials.get_api_key()
     except Exception:
-        return "https://kw.holaf.fr/api", ""
+        return "", ""
 
 
 def list_remote_models(page=1, limit=50, type_filter=None, search=None, sort='created_at', order='desc'):
@@ -157,6 +159,9 @@ def list_remote_models(page=1, limit=50, type_filter=None, search=None, sort='cr
     """
     import requests as _req
     api_url, api_key = _get_aih_credentials()
+    if not api_url:
+        return {'items': [], 'total': 0, 'page': page, 'limit': limit,
+                'error': "Serveur AIH non configuré (Settings ▸ onglet « AIH · Compte »)"}
 
     params = {'page': page, 'limit': min(limit, 200), 'sort': sort, 'order': order}
     if type_filter:
@@ -239,6 +244,9 @@ def upload_model_to_server(filepath, file_type="model", on_progress=None):
     import requests
 
     api_url, api_key = _get_aih_credentials()
+    if not api_url:
+        return {'success': False,
+                'error': "Serveur AIH non configuré (Settings ▸ onglet « AIH · Compte »)"}
 
     filename = os.path.basename(filepath)
     size = os.path.getsize(filepath)
@@ -459,6 +467,9 @@ def download_model_from_server(upload_id, filename, file_type="model", dest_path
     import requests
 
     api_url, api_key = _get_aih_credentials()
+    if not api_url:
+        return {'success': False,
+                'error': "Serveur AIH non configuré (Settings ▸ onglet « AIH · Compte »)"}
     auth_headers = {}
     if api_key:
         auth_headers["Authorization"] = f"Bearer {api_key}"

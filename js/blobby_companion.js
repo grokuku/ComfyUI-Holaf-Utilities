@@ -27,11 +27,12 @@ function _setAIHConfig(cfg) {
 
 
 function _blobbyLoadFromServer() {
+    var baseUrl = _blobbyGetBackendUrl();
+    if (!baseUrl) return; // Serveur non configuré : sync silencieusement ignorée
     try {
-        var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
-        var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
         var headers = { 'Content-Type': 'application/json' };
-        if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+        var apiKey = _blobbyGetApiKey();
+        if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
         fetch(baseUrl + '/api/settings', { method: 'GET', headers: headers })
             .then(function(r) { return r.json().catch(function(){ return {}; }); })
             .then(function(serverSettings) {
@@ -55,9 +56,10 @@ function _blobbyScheduleSync(data) {
     if (_blobbySyncTimer) clearTimeout(_blobbySyncTimer);
     _blobbySyncTimer = setTimeout(function() {
         _blobbySyncTimer = null;
+        var baseUrl = _blobbyGetBackendUrl();
+        if (!baseUrl) return; // Serveur non configuré : sync silencieusement ignorée
         try {
             var cfg = JSON.parse(localStorage.getItem('AIH_config')) || {};
-            var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
             var headers = { 'Content-Type': 'application/json' };
             if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
             fetch(baseUrl + '/api/settings', { method: 'GET', headers: headers })
@@ -175,8 +177,10 @@ var _blobbyLocalMemories = []; // fallback local si backend inaccessible
 var _blobbyBackendAvailable = true;
 
 function _blobbyGetBackendUrl() {
-    try { return JSON.parse(localStorage.getItem('AIH_config'))?.serverUrl?.replace(/\/+$/, '') || 'https://kw.holaf.fr'; }
-    catch { return 'https://kw.holaf.fr'; }
+    // Aucune URL par défaut codée en dur : renvoie "" si le serveur n'est
+    // pas configuré — les appelants doivent vérifier et dégrader proprement.
+    try { return JSON.parse(localStorage.getItem('AIH_config'))?.serverUrl?.replace(/\/+$/, '') || ''; }
+    catch { return ''; }
 }
 
 function _blobbyGetApiKey() {
@@ -1237,7 +1241,11 @@ const Blobby = {
             try {
                 var cfg = {};
                 try { cfg = JSON.parse(localStorage.getItem('AIH_config')) || {}; } catch {}
-                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var baseUrl = _blobbyGetBackendUrl();
+                if (!baseUrl) {
+                    select.innerHTML = '<option value="">Serveur non configuré (Settings ▸ AIH · Compte)</option>';
+                    return;
+                }
                 var headers = { 'Content-Type': 'application/json' };
                 if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
                 var res = await fetch(baseUrl + '/api/presets', { headers });
@@ -1937,7 +1945,17 @@ const Blobby = {
                 + '\n'
                 + 'Message de l\'utilisateur : ' + userText;
 
-            var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+            // Aucune URL par défaut codée en dur : sans serveur configuré,
+            // le chat affiche une invitation au lieu d'appeler une destination
+            // arbitraire.
+            var baseUrl = _blobbyGetBackendUrl();
+            if (!baseUrl) {
+                var thinkingEl = container.querySelector('div:last-child');
+                if (thinkingEl && thinkingEl.textContent.indexOf('Blobby') >= 0) thinkingEl.remove();
+                this._addChatMessage(container, 'blobby',
+                    '⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ».');
+                return;
+            }
             var headers = { 'Content-Type': 'application/json' };
             if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
 
@@ -2064,7 +2082,8 @@ const Blobby = {
             // ── Mise à jour personnalité tous les 5 messages ──
             if (_blobbyMsgCounter % 5 === 0) {
                 // Demander au LLM de mettre à jour la personnalité (fire-and-forget)
-                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var baseUrl = _blobbyGetBackendUrl();
+                if (!baseUrl) return; // Serveur non configuré : skip silencieux
                 var updateHeaders = { 'Content-Type': 'application/json' };
                 if (cfg.apiKey) updateHeaders['Authorization'] = 'Bearer ' + cfg.apiKey;
                 var updateInstruction = 'Tu es Blobby. Voici ta personnalite actuelle et la conversation recente. '

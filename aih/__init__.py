@@ -12,8 +12,9 @@ routes ``/aih/*`` :
 
 - ``store``            : store SQLite WAL local (miroirs + outbox + meta)
                          dans ``<ComfyUI>/user/default/aih/data/aihelper.db`` ;
-- ``sync_engine``      : moteur de synchronisation avec le backend kw.holaf.fr
-                         (manifest/export paginé, outbox, thread périodique) ;
+- ``sync_engine``      : moteur de synchronisation avec le backend AIH distant
+                         (URL configurée dans credentials.json ; manifest/export
+                         paginé, outbox, thread périodique) ;
 - ``embedding_engine`` : embeddings locaux (sentence-transformers ou Ollama) ;
 - ``local_source``     : couche de lecture locale par-dessus le store ;
 - ``credentials``      : lecture/écriture de ``user/default/aih/credentials.json``
@@ -21,7 +22,7 @@ routes ``/aih/*`` :
 - ``llm_helper``       : appels LLM unifiés (LM Studio SDK, API compatible
                          OpenAI, Ollama ; vision multimodale incluse) ;
 - ``music_prompts``    : system prompts & builders du pipeline Music 3.0
-                         (miroir du backend kw.holaf.fr, consommé par la node
+                         (miroir du backend AIH distant, consommé par la node
                          Music en mode local).
 
 Le dossier ``templates/`` héberge les prompts maîtres de référence MiniMax

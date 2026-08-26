@@ -176,7 +176,7 @@ def _register_credentials_group(r):
             return web.json_response({
                 "status": "ok",
                 "api_key": creds.get("api_key", ""),
-                "server_url": creds.get("server_url", "https://kw.holaf.fr"),
+                "server_url": creds.get("server_url", ""),
                 "path": creds_path,
                 "exists": os.path.isfile(creds_path),
             })
@@ -191,7 +191,7 @@ def _register_credentials_group(r):
         try:
             data = await request.json()
             api_key = (data.get("api_key") or "").strip()
-            server_url = (data.get("server_url") or "https://kw.holaf.fr").strip()
+            server_url = (data.get("server_url") or "").strip()
 
             creds_path = credentials.get_credentials_path()
             os.makedirs(os.path.dirname(creds_path), exist_ok=True)

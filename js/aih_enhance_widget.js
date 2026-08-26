@@ -106,12 +106,14 @@
 
                 // ---- Helpers API ----
                 const getApiUrl = () => {
+                    // Aucune URL par défaut codée en dur : chaîne vide si non
+                    // configuré (comportements dégradés ci-dessous).
                     try {
                         const cfg = JSON.parse(localStorage.getItem("AIH_config") || "{}");
-                        const base = (cfg.serverUrl || "https://kw.holaf.fr").replace(/\/+$/, "");
-                        return base + "/api";
+                        const base = (cfg.serverUrl || "").replace(/\/+$/, "");
+                        return base ? base + "/api" : "";
                     } catch {
-                        return "https://kw.holaf.fr/api";
+                        return "";
                     }
                 };
                 const getApiKey = () => window.AIH.getApiKey();
@@ -122,7 +124,9 @@
                     return h;
                 };
                 const apiGet = async (path) => {
-                    const resp = await fetch(`${getApiUrl()}/${path.replace(/^\//, "")}`, { headers: apiHeaders() });
+                    const baseUrl = getApiUrl();
+                    if (!baseUrl) return []; // Serveur non configuré : listes vides
+                    const resp = await fetch(`${baseUrl}/${path.replace(/^\//, "")}`, { headers: apiHeaders() });
                     if (!resp.ok) return [];
                     return resp.json().catch(() => []);
                 };
@@ -545,6 +549,12 @@
                         resultTextarea.value = "Note: L'image connectée n'est pas envoyée en mode Test. Lancez le workflow pour utiliser l'image.\n\nEnhancement en cours...";
                     } else {
                         resultTextarea.value = "Enhancement en cours...";
+                    }
+                    // Comportement dégradé : sans serveur configuré, message
+                    // explicite au lieu d'un POST vers une destination arbitraire.
+                    if (!getApiUrl()) {
+                        resultTextarea.value = "⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte » (le bouton Test appelle le serveur distant).";
+                        return;
                     }
                     try {
                         const resp = await fetch(`${getApiUrl()}/enhance`, {

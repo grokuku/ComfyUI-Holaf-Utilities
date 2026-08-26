@@ -17,10 +17,23 @@
   }
 
   function getApiUrl() {
+    // Aucune URL par défaut codée en dur : chaîne vide si le serveur n'est
+    // pas configuré (les points d'entrée vérifient via ensureServerConfigured).
     try {
       var cfg = JSON.parse(localStorage.getItem("AIH_config") || "{}");
-      return (cfg.serverUrl || "https://kw.holaf.fr").replace(/\/+$/, "") + "/api";
-    } catch { return "https://kw.holaf.fr/api"; }
+      var base = (cfg.serverUrl || "").replace(/\/+$/, "");
+      return base ? base + "/api" : "";
+    } catch { return ""; }
+  }
+
+  // Comportement dégradé : sans URL serveur configurée, on invite à la
+  // renseigner au lieu de déboucher sur des erreurs réseau confuses.
+  function ensureServerConfigured() {
+    if (getApiUrl()) return true;
+    if (window.aihShowAlert) {
+      window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ».", "info");
+    }
+    return false;
   }
 
   const getApiKey = () => window.AIH.getApiKey();
@@ -543,6 +556,7 @@
   // ── Modale unique ──
 
   window.openWorkflowManager = function () {
+    if (!ensureServerConfigured()) return;
     if (!document.getElementById('aih-spin-style')) {
       var spinStyle = document.createElement('style');
       spinStyle.id = 'aih-spin-style';

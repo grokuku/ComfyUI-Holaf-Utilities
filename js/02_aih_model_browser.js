@@ -297,13 +297,16 @@
         });
     }
 
-    // ─── Fetch vers l'API AIH (backend kw.holaf.fr) ───────────────────────────
+    // ─── Fetch vers l'API AIH (backend distant configuré) ───────────────────────────
     function _fetchAihApi(path, opts) {
         opts = opts || {};
         // Lire la config depuis localStorage (même clé que aih_menu.js)
         var cfg = {};
         try { cfg = JSON.parse(localStorage.getItem('AIH_config') || '{}'); } catch(e) {}
-        var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+        var baseUrl = (cfg.serverUrl || '').replace(/\/+$/, '');
+        if (!baseUrl) {
+            return Promise.reject(new Error('Serveur AIH non configuré — Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte »'));
+        }
         var headers = { 'Content-Type': 'application/json' };
         if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
         var cleanPath = path.replace(/^\/+/, '');
@@ -575,6 +578,18 @@
 
     // ─── openModelBrowser ────────────────────────────────────────────────────────
     window.openModelBrowser = function () {
+        // Comportement dégradé : la liste distante dépend du backend AIH ;
+        // sans URL configurée, on invite à configurer au lieu de laisser
+        // le panneau distant échouer avec une erreur réseau confuse.
+        try {
+            var cfg = JSON.parse(localStorage.getItem('AIH_config') || '{}');
+            if (!(cfg.serverUrl || '').replace(/\/+$/, '')) {
+                if (window.aihShowAlert) {
+                    window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte ». Les modèles locaux restent consultables.", "info");
+                }
+            }
+        } catch (e) {}
+
         _mbInjectCSS();
 
         var m = aihOpenModalV2({

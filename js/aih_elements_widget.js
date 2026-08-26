@@ -24,12 +24,14 @@ function getConfig() {
 }
 
 function getApiUrl() {
+    // Aucune URL par défaut codée en dur : chaîne vide si non configuré
+    // (apiCall renvoie alors une erreur explicite).
     try {
         const cfg = JSON.parse(localStorage.getItem("AIH_config") || "{}");
-        const base = (cfg.serverUrl || "https://kw.holaf.fr").replace(/\/+$/, "");
-        return base + "/api";
+        const base = (cfg.serverUrl || "").replace(/\/+$/, "");
+        return base ? base + "/api" : "";
     } catch {
-        return "https://kw.holaf.fr/api";
+        return "";
     }
 }
 
@@ -43,9 +45,13 @@ function apiHeaders() {
 }
 
 async function apiCall(method, path, body) {
+    const baseUrl = getApiUrl();
+    if (!baseUrl) {
+        throw new Error("Serveur AIH non configuré — Holaf Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+    }
     const opts = { method, headers: apiHeaders() };
     if (body) opts.body = JSON.stringify(body);
-    const resp = await fetch(`${getApiUrl()}/${path.replace(/^\//, "")}`, opts);
+    const resp = await fetch(`${baseUrl}/${path.replace(/^\//, "")}`, opts);
     if (!resp.ok) {
         const txt = await resp.text().catch(() => "");
         throw new Error(`HTTP ${resp.status}: ${txt.substring(0, 200)}`);

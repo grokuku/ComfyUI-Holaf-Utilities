@@ -25,13 +25,24 @@
 
     /**
      * Récupère l'URL du serveur AIH depuis localStorage ("AIH_config").
-     * @returns {string} L'URL de base (ex: "https://kw.holaf.fr"), sans slash final.
+     * @returns {string} L'URL de base sans slash final, ou "" si non
+     *   configurée (aucune URL par défaut codée en dur : les appelants doivent
+     *   adopter un comportement dégradé, cf. AIH.isServerConfigured()).
      */
     AIH.getServerUrl = function getServerUrl() {
         try {
-            return JSON.parse(localStorage.getItem("AIH_config") || "{}").serverUrl || "https://kw.holaf.fr";
+            const url = JSON.parse(localStorage.getItem("AIH_config") || "{}").serverUrl || "";
+            return url.replace(/\/+$/, "");
         } catch {
-            return "https://kw.holaf.fr";
+            return "";
         }
+    };
+
+    /**
+     * Indique si l'URL du serveur AIH est configurée.
+     * @returns {boolean} true si une URL non vide est présente dans la config.
+     */
+    AIH.isServerConfigured = function isServerConfigured() {
+        return !!AIH.getServerUrl();
     };
 })();

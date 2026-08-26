@@ -1003,8 +1003,10 @@ def start_sync_engine(interval_seconds=300):
             while not _sync_stop.is_set():
                 try:
                     api_url, api_key = _load_credentials()
-                    if not api_key:
-                        _LOG.warning("[AIH sync] pas d'api_key configurée, cycle ignoré")
+                    if not api_key or not api_url:
+                        # Pas d'api_key OU pas d'URL serveur configurée
+                        # (comportement dégradé : cycle ignoré, jamais d'erreur).
+                        _LOG.warning("[AIH sync] credentials incomplets (api_key ou server_url manquant), cycle ignoré")
                     else:
                         result = run_sync_once(api_url, api_key)
                         if result.get("error"):

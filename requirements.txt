@@ -32,7 +32,7 @@ spandrel
 av
 
 # --- Nodes & infrastructure imported from AIH / AI-Helper (fusion) ---
-# requests: backend kw.holaf.fr calls from the AIH nodes (Elements, Enhance,
+# requests: backend AIH distant calls from the AIH nodes (Elements, Enhance,
 # Ideogram 4, Music...) and the sync engine.
 requests
 # paramiko: SFTP chunked transfers + fingerprint for the /api/aih/models routes.

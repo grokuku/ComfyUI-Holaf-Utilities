@@ -122,7 +122,7 @@ def _load_aih_credentials(use_cache=True):
 
     path = get_credentials_path()
     if not os.path.isfile(path):
-        _CREDENTIALS_CACHE = {"api_key": "", "server_url": "https://kw.holaf.fr"}
+        _CREDENTIALS_CACHE = {"api_key": "", "server_url": ""}
         return _CREDENTIALS_CACHE
 
     try:
@@ -136,7 +136,7 @@ def _load_aih_credentials(use_cache=True):
 
     _CREDENTIALS_CACHE = {
         "api_key": data.get("api_key", ""),
-        "server_url": data.get("server_url", "https://kw.holaf.fr"),
+        "server_url": data.get("server_url", ""),
     }
     return _CREDENTIALS_CACHE
 
@@ -148,10 +148,17 @@ def invalidate_cache():
 
 
 def get_api_url():
-    """Retourne l'URL du backend (avec /api)."""
+    """Retourne l'URL du backend (avec /api), ou "" si non configurée.
+
+    Aucune URL par défaut codée en dur : la chaîne vide signale l'absence de
+    configuration et les appelants doivent dégrader proprement (les
+    credentials se renseignent dans Settings ▸ onglet « AIH · Compte »).
+    Les données existantes (server_url déjà présent dans le fichier) restent
+    bien sûr lues et retournées telles quelles.
+    """
     creds = _load_aih_credentials()
-    base = (creds.get("server_url") or "https://kw.holaf.fr").rstrip("/")
-    return base + "/api"
+    base = (creds.get("server_url") or "").rstrip("/")
+    return base + "/api" if base else ""
 
 
 def get_api_key():
