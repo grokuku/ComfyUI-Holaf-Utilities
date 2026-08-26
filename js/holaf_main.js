@@ -229,7 +229,6 @@ const HolafUtilitiesMenu = {
             { label: "📤 Workflows", special: 'aih_workflows' },
             { label: "📦 Models", special: 'aih_models' },
             { label: "👥 Membres", special: 'aih_members' },
-            { label: "⚙️ Paramètres", special: 'aih_settings' },
             { special: 'aih_blobby_toggle' },
             { label: "💬 Chat", special: 'aih_chat' },
             { type: 'separator' },
@@ -407,13 +406,15 @@ const HolafUtilitiesMenu = {
 
     // ── Groupe AIH ──
     // Délègue aux helpers portés dans js/aih_menu.js (window.AIHMenu).
+    // NB : plus d'entrée « Paramètres » — les onglets AIH (Compte / Provider
+    // LLM) vivent dans la fenêtre Settings Holaf (holaf_settings_manager.js),
+    // et window.AIHMenu.openSettings() ouvre simplement cette fenêtre.
     callAihMenuFn(special) {
         const map = {
             aih_webpage: "openWebpage",
             aih_workflows: "openWorkflows",
             aih_models: "openModels",
-            aih_members: "openMembers",
-            aih_settings: "openSettings"
+            aih_members: "openMembers"
         };
         const fnName = map[special];
         if (fnName && window.AIHMenu && typeof window.AIHMenu[fnName] === "function") {

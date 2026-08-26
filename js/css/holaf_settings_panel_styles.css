@@ -10,6 +10,45 @@
     color: var(--holaf-text-primary);
 }
 
+/* ── Settings tabs (General / AIH · Compte / AIH · Provider LLM) ── */
+#holaf-settings-panel .holaf-settings-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 8px 8px 0 8px;
+    border-bottom: 1px solid var(--holaf-border-color);
+    background-color: color-mix(in srgb, var(--holaf-text-primary) 5%, transparent);
+    flex-shrink: 0;
+}
+
+#holaf-settings-panel .holaf-settings-tab-btn {
+    flex: 1;
+    padding: 8px 10px;
+    border: none;
+    background: transparent;
+    color: var(--holaf-text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    text-align: center;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+#holaf-settings-panel .holaf-settings-tab-btn:hover {
+    color: var(--holaf-text-primary);
+}
+
+#holaf-settings-panel .holaf-settings-tab-btn.active {
+    color: var(--holaf-text-primary);
+    font-weight: 600;
+    border-bottom-color: var(--holaf-accent-color);
+}
+
+#holaf-settings-panel .holaf-settings-tab-content {
+    flex-grow: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
 #holaf-settings-panel .holaf-settings-toolbar {
     padding: 8px;
     border-bottom: 1px solid var(--holaf-border-color);

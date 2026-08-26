@@ -10,10 +10,15 @@
  *   - openWebpage / openWorkflows / openModels : raccourcis du menu source.
  *   - openMembers        : modale draggable aihOpenModalV2 (key
  *                          "aih-modal-members"), GET {serverUrl}/api/members.
- *   - openSettings       : UNE fenêtre, deux onglets (« Compte » local via
- *                          GET/POST /aih/credentials + migration automatique
- *                          depuis localStorage ; « Provider LLM » CRUD distant
- *                          api/presets + list-models + mode Client-side).
+ *   - openSettings       : ouvre la fenêtre Settings Holaf unifiée (panel
+ *                          #holaf-settings-panel de js/holaf_settings_manager.js)
+ *                          sur l'onglet AIH demandé. Les onglets eux-mêmes
+ *                          (« Compte » : GET/POST /aih/credentials + migration
+ *                          automatique depuis localStorage ; « Provider LLM » :
+ *                          CRUD distant api/presets + list-models + mode
+ *                          Client-side) sont rendus par renderAccountTab() /
+ *                          renderProviderTab(), appelés par le gestionnaire
+ *                          Settings Holaf comme ses propres onglets.
  *   - openUpdate         : modale spinner + log git de POST /aih/update ;
  *                          si updated → proposition de redémarrage via
  *                          POST /holaf/utilities/restart (adaptation fusion :
@@ -46,6 +51,10 @@
 
     function setConfig(cfg) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+    }
+
+    function getApp() {
+        return window.app || window.comfyAPI?.app?.app || null;
     }
 
     // ── Raccourcis du menu ───────────────────────────────────────────────
@@ -237,74 +246,29 @@
         }
     }
 
-    // ── Paramètres (modale à 2 onglets : Compte / Provider LLM) ──────────
+    // ── Paramètres (délégué à la fenêtre Settings Holaf unifiée) ─────────
+    // Les onglets « Compte » et « Provider LLM » vivent désormais dans la
+    // fenêtre Settings de Holaf Utilities (panel #holaf-settings-panel,
+    // js/holaf_settings_manager.js), au même niveau que ses onglets natifs.
+    // Ce gestionnaire appelle directement renderCompteTab() /
+    // renderProvidersTab() exposés plus bas sur window.AIHMenu ; ici, on se
+    // contente d'ouvrir la fenêtre sur l'onglet AIH demandé (aucune logique
+    // de rendu dupliquée).
 
-    function openSettings() {
-        const cfg = getConfig();
-        const modal = window.aihOpenModalV2({
-            title: "⚙️ Paramètres AIH",
-            width: "720px",
-            height: "600px",
-            minWidth: "480px",
-            minHeight: "350px",
-            storageKey: "aih-modal-settings",
-            persistSize: true,
-            persistPos: true
-        });
-
-        // Tabs
-        const tabsBar = document.createElement("div");
-        Object.assign(tabsBar.style, {
-            display: "flex", borderBottom: "1px solid #444", background: "#1a1a1e",
-        });
-        const tabContent = document.createElement("div");
-        Object.assign(tabContent.style, { padding: "16px", overflowY: "auto", maxHeight: "calc(80vh - 100px)" });
-
-        modal.body.innerHTML = "";
-        modal.body.appendChild(tabsBar);
-        modal.body.appendChild(tabContent);
-
-        const tabs = [
-            { id: "compte", label: "Compte", render: renderCompteTab },
-            { id: "providers", label: "Provider LLM", render: renderProvidersTab },
-        ];
-        const activeTabs = new Set(["compte"]);
-
-        const renderTabsBar = () => {
-            tabsBar.innerHTML = "";
-            tabs.forEach(t => {
-                const btn = document.createElement("button");
-                btn.textContent = t.label;
-                const isActive = activeTabs.has(t.id);
-                Object.assign(btn.style, {
-                    flex: "1", padding: "10px 12px", border: "none", cursor: "pointer",
-                    background: "transparent", fontSize: "13px", fontWeight: isActive ? "600" : "400",
-                    color: isActive ? "#fff" : "#888",
-                    borderBottom: isActive ? "2px solid #ff8c00" : "2px solid transparent",
-                    transition: "all 0.15s",
-                });
-                btn.onclick = () => {
-                    activeTabs.clear();
-                    activeTabs.add(t.id);
-                    renderTabsBar();
-                    renderActiveTab();
-                };
-                tabsBar.appendChild(btn);
-            });
-        };
-
-        const renderActiveTab = async () => {
-            tabContent.innerHTML = "<p style='color:#888;font-size:12px;'>Chargement...</p>";
-            const t = tabs.find(x => activeTabs.has(x.id));
-            try {
-                await t.render(tabContent, cfg);
-            } catch (e) {
-                tabContent.innerHTML = `<p style='color:#f87171;font-size:12px;'>Erreur : ${e.message || e}</p>`;
-            }
-        };
-
-        renderTabsBar();
-        renderActiveTab();
+    function openSettings(tabId = "aih-account") {
+        const mgr = getApp()?.holafSettingsManager;
+        if (mgr && typeof mgr.show === "function") {
+            mgr.show({ tab: tabId });
+            return;
+        }
+        // Fallback : le panneau Settings Holaf n'est pas disponible
+        // (holaf_settings_manager.js pas encore chargé).
+        const msg = "Le panneau Settings Holaf n'est pas disponible. Ouvre Holaf Utilities ▸ Settings pour configurer le compte AIH.";
+        if (window.holaf?.toastManager) {
+            window.holaf.toastManager.show({ message: msg, type: "info", duration: 6000 });
+        } else if (window.aihShowAlert) {
+            window.aihShowAlert("Info", msg, "info");
+        }
     }
 
     // ── Helpers partagés ─────────────────────────────────────────────────
@@ -350,10 +314,13 @@
     }
 
     // ── Onglet Compte (URL serveur + clé API) ────────────────────────────
-    // Backend local porté : GET/POST /aih/credentials gèrent le fichier
+    // Renderer autonome : appelé par la fenêtre Settings Holaf
+    // (holaf_settings_manager.js, onglet « AIH · Compte »). Le backend local
+    // porté expose GET/POST /aih/credentials qui gèrent le fichier
     // user/default/aih/credentials.json (cf. aih/routes.py groupe 1).
 
-    function renderCompteTab(container, cfg) {
+    function renderCompteTab(container) {
+        const cfg = getConfig();
         container.innerHTML = "";
         const section = document.createElement("div");
         section.style.cssText = _aihStyle.section;
@@ -477,13 +444,15 @@
     }
 
     // ── Onglet Provider LLM ──────────────────────────────────────────────
-    // CRUD presets LLM sur le serveur distant (kw.holaf.fr ou cfg.serverUrl),
+    // CRUD presets LLM sur le serveur distant configuré (cfg.serverUrl),
     // appelé directement depuis le navigateur avec Bearer apiKey :
     // GET/POST api/presets, PUT/DELETE api/presets/{id},
     // POST api/presets/list-models (proxy backend) ou appel direct
     // navigateur {base_url}/models en mode Client-side.
+    // Renderer autonome appelé par la fenêtre Settings Holaf
+    // (holaf_settings_manager.js, onglet « AIH · Provider LLM »).
 
-    async function renderProvidersTab(container, cfg) {
+    async function renderProvidersTab(container) {
         container.innerHTML = "";
 
         // Section : liste des presets existants
@@ -841,6 +810,12 @@
         openModels,
         openMembers,
         openSettings,
+        // Renderers d'onglets consommés par holaf_settings_manager.js :
+        // chaque onglet de la fenêtre Settings Holaf délègue ici.
+        renderAccountTab: renderCompteTab,
+        renderCompteTab,
+        renderProviderTab: renderProvidersTab,
+        renderProvidersTab,
         openUpdate,
         checkServerStatus,
         getBlobbyState,
