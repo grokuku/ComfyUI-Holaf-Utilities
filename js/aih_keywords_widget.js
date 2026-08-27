@@ -1,5 +1,5 @@
 import "./aih_dialog.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 
 // Helper i18n central : traduit via AIH.I18n (clé brute si absente)

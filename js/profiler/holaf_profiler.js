@@ -58,7 +58,7 @@ function holafPackUrl(relativePath) {
 async function loadAihFoundation() {
     try {
         await import(holafPackUrl("aih_i18n.js"));
-        await import(holafPackUrl("aih/strings.js"));
+        await import(holafPackUrl("aih_strings.js"));
         await import(holafPackUrl("aih_dialog.js"));
         return !!(
             window.AIH &&

@@ -7,7 +7,7 @@
 
 // Global variable for the ComfyUI App instance (only populated in main tab)
 // Uses the compatibility layer via holaf_api_compat.js
-import "./aih/strings.js";
+import "./aih_strings.js";
 import { app as comfyApp, api as comfyApi } from "./holaf_api_compat.js";
 let app = comfyApp;
 

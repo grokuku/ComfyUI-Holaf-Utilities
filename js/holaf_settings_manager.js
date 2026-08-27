@@ -15,7 +15,7 @@
 
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import {
     AIH_ACCENTS,
     applyThemeState,

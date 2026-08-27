@@ -4,7 +4,7 @@
  * including the main panel, dialogs, and theme/zoom controls.
  */
 
-import "../aih/strings.js";
+import "../aih_strings.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { HOLAF_THEMES } from "../holaf_themes.js";
 

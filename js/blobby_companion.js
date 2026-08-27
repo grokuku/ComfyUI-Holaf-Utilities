@@ -13,7 +13,7 @@
  */
 
 import "./aih_dialog.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import { saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
 
 // Helper i18n central : traduit via AIH.I18n (clé brute si absente).

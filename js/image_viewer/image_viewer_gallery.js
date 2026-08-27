@@ -18,7 +18,7 @@
  *       deduplication of activeThumbnailLoads decrements, and idle-restart mechanism.
  */
 
-import "../aih/strings.js";
+import "../aih_strings.js";
 import { imageViewerState } from "./image_viewer_state.js";
 import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
 import {

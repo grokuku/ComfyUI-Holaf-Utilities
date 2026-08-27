@@ -9,7 +9,7 @@
  */
 
 import "./aih_dialog.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 
 (function () {
     "use strict";

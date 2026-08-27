@@ -10,7 +10,7 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { applyPersistedTheme } from "./holaf_themes.js";
 
 import "./holaf_themes.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import "./holaf_terminal.js";
 import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";

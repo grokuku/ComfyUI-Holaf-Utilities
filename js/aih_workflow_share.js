@@ -1,5 +1,5 @@
 import "./aih_dialog.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import { makeDraggable } from "./holaf_window_utils.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 

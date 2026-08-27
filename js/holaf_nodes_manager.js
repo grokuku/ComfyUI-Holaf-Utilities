@@ -30,7 +30,7 @@
  */
 
 import "./aih_dialog.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";

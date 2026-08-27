@@ -11,7 +11,7 @@
  * BUGFIX: The delete operation now provides detailed feedback from the backend, especially on failure.
  */
 
-import "../aih/strings.js";
+import "../aih_strings.js";
 import { HolafPanelManager, dialogState } from "../holaf_panel_manager.js";
 import { imageViewerState } from "./image_viewer_state.js";
 

@@ -13,7 +13,7 @@
  */
 
 import { HOLAF_THEMES } from "./holaf_themes.js";
-import "./aih/strings.js";
+import "./aih_strings.js";
 import { makeDraggable, makeResizable, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel, aihWindowManager } from "./holaf_window_utils.js";
 
 // Helper i18n central : traduit via AIH.I18n (clé brute si absente).

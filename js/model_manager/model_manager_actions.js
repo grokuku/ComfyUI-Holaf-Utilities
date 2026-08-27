@@ -6,7 +6,7 @@
  * Replaced with a simple file size check on the server side.
  */
 
-import "../aih/strings.js";
+import "../aih_strings.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 
 // Helper i18n central : traduit via AIH.I18n (clé brute si absente).

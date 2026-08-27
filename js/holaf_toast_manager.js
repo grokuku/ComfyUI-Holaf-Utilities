@@ -7,7 +7,7 @@
  * CORRECTION: Removed flawed MutationObserver logic and now applies a default theme directly.
  */
 
-import "./aih/strings.js";
+import "./aih_strings.js";
 
 // Helper i18n central : traduit via AIH.I18n (clé brute si absente).
 const t = (key, params) => {

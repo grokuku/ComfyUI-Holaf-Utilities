@@ -3,7 +3,7 @@
  * Holaf Utilities - Image Viewer UI Module
  */
 
-import "../aih/strings.js";
+import "../aih_strings.js";
 import { HOLAF_THEMES } from '../holaf_themes.js';
 import { imageViewerState } from './image_viewer_state.js';
 import * as Navigation from './image_viewer_navigation.js';
