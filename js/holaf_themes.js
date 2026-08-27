@@ -110,7 +110,7 @@ export const HOLAF_THEMES = [
 ];
 
 /* ════════════════════════════════════════════════════════════════════════
-   THEMING 3 AXES orthogonaux : MODE / ACCENT / HALO
+   THEMING 4 AXES orthogonaux : MODE / ACCENT / HALO / HIGHLIGHT
    Source de vérité partagée (CSS holaf_themes.css + API JS).
    ════════════════════════════════════════════════════════════════════════ */
 
@@ -137,6 +137,7 @@ export const THEME_STORAGE = {
     mode: "AIH_Mode",
     accent: "AIH_Accent",
     halo: "AIH_Halo",
+    highlight: "AIH_Highlight",
 };
 
 // Migration depuis l'ancienne clé combinée `Holaf_Theme` (désormais obsolète).
@@ -148,12 +149,12 @@ const LEGACY_THEME_MAP = {
     "holaf-theme-ashy-light":       { mode: "light", accent: "blue"   },
 };
 
-export const AIH_THEME_DEFAULT = { mode: AIH_DEFAULT_MODE, accent: AIH_DEFAULT_ACCENT, halo: true };
+export const AIH_THEME_DEFAULT = { mode: AIH_DEFAULT_MODE, accent: AIH_DEFAULT_ACCENT, halo: true, highlight: true };
 
 /**
- * Applique l'état {mode, accent, halo} sur un élément cible (généralement
- * <body>). Retire les classes d'axes précédentes puis ajoute les nouvelles.
- * Les panneaux et dialogues descendants héritent des variables via CSS.
+ * Applique l'état {mode, accent, halo, highlight} sur un élément cible
+ * (généralement <body>). Retire les classes d'axes précédentes puis ajoute les
+ * nouvelles. Les panneaux et dialogues descendants héritent des variables via CSS.
  */
 export function applyThemeState(target, state) {
     const el = target || (typeof document !== "undefined" ? document.body : null);
@@ -163,6 +164,7 @@ export function applyThemeState(target, state) {
     const mode = (s.mode && AIH_MODES[s.mode]) ? s.mode : AIH_DEFAULT_MODE;
     const accent = (s.accent && AIH_ACCENTS[s.accent]) ? s.accent : AIH_DEFAULT_ACCENT;
     const halo = s.halo !== false;
+    const highlight = s.highlight !== false;
 
     // Mode : retire les deux classes, garde celle active.
     Object.keys(AIH_MODES).forEach((k) => el.classList.remove(AIH_MODES[k].className));
@@ -175,7 +177,10 @@ export function applyThemeState(target, state) {
     // Halo : classe neutralisante toggle.
     el.classList.toggle("aih-halo-off", !halo);
 
-    return { mode, accent, halo };
+    // Highlight : classe neutralisante toggle (indépendante du halo).
+    el.classList.toggle("aih-highlight-off", !highlight);
+
+    return { mode, accent, halo, highlight };
 }
 
 /**
@@ -186,6 +191,7 @@ export function loadThemeState() {
     let mode = AIH_DEFAULT_MODE;
     let accent = AIH_DEFAULT_ACCENT;
     let halo = true;
+    let highlight = true;
 
     try {
         const m = localStorage.getItem(THEME_STORAGE.mode);
@@ -194,6 +200,8 @@ export function loadThemeState() {
         if (a && AIH_ACCENTS[a]) accent = a;
         const h = localStorage.getItem(THEME_STORAGE.halo);
         if (h !== null) halo = h !== "0" && h !== "false";
+        const hl = localStorage.getItem(THEME_STORAGE.highlight);
+        if (hl !== null) highlight = hl !== "0" && hl !== "false";
     } catch (e) { /* silencieux */ }
 
     // Migration d'une ancienne clé Holaf_Theme (si rien n'est encore persisté).
@@ -210,11 +218,11 @@ export function loadThemeState() {
         }
     } catch (e) { /* silencieux */ }
 
-    return { mode, accent, halo };
+    return { mode, accent, halo, highlight };
 }
 
 /**
- * Persiste l'état {mode, accent, halo}.
+ * Persiste l'état {mode, accent, halo, highlight}.
  */
 export function saveThemeState(state) {
     const s = state || {};
@@ -222,6 +230,7 @@ export function saveThemeState(state) {
         if (s.mode !== undefined) localStorage.setItem(THEME_STORAGE.mode, s.mode);
         if (s.accent !== undefined) localStorage.setItem(THEME_STORAGE.accent, s.accent);
         if (s.halo !== undefined) localStorage.setItem(THEME_STORAGE.halo, s.halo ? "1" : "0");
+        if (s.highlight !== undefined) localStorage.setItem(THEME_STORAGE.highlight, s.highlight ? "1" : "0");
     } catch (e) { /* silencieux */ }
 }
 

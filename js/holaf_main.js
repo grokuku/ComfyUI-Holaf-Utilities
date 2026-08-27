@@ -123,8 +123,8 @@ const HolafUtilitiesMenu = {
             document.body.classList.add("holaf-theme-graphite-orange");
         }
 
-        // THEMING 3-axes (mode/accent/halo) : applique l'état persisté sur <body>.
-        // Les panneaux et dialogues héritent des variables via CSS.
+        // THEMING 4-axes (mode/accent/halo/highlight) : applique l'état persisté
+        // sur <body>. Les panneaux et dialogues héritent des variables via CSS.
         try { applyPersistedTheme(document.body); } catch (e) { /* silencieux */ }
 
         if (!window.holaf) {

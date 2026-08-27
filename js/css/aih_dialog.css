@@ -32,6 +32,10 @@
     --aih-halo-color: rgba(216, 112, 13, 0.5);
     --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
 
+    /* HIGHLIGHT : contour coloré de la fenêtre active (neutralisé par
+       .aih-highlight-off). INDÉPENDANT du halo (box-shadow). */
+    --aih-highlight: var(--aih-accent-active);
+
     /* Surfaces */
     --aih-bg: #1E1E1E;
     --aih-bg-secondary: #2B2B2B;
@@ -84,6 +88,13 @@
     --aih-shadow-active: var(--aih-shadow);
 }
 
+/* Neutralisation du highlight (case « Highlight » des Settings) : posée sur body
+   ou un ancêtre, elle coupe le contour coloré de la fenêtre active — dialogues
+   AIH inclus — SANS toucher au halo (box-shadow). */
+.aih-highlight-off {
+    --aih-highlight: transparent;
+}
+
 /* ─── Fenêtre racine ──────────────────────────────────────────────────────── */
 .aih-dialog-root {
     position: fixed;
@@ -103,7 +114,7 @@
 }
 
 .aih-dialog-root.active {
-    border-color: var(--aih-accent-active);
+    border-color: var(--aih-highlight);
     box-shadow: var(--aih-shadow-active);
 }
 

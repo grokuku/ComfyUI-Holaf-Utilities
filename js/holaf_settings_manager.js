@@ -213,7 +213,7 @@ const HolafSettingsManager = {
         container.innerHTML = `
             <div class="holaf-settings-container" style="padding: 15px; gap: 20px;">
 
-                <!-- Appearance : MODE + ACCENT + HALO (3 axes orthogonaux) -->
+                <!-- Appearance : MODE + ACCENT + HALO + HIGHLIGHT (4 axes orthogonaux) -->
                 <div class="holaf-settings-group">
                     <h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14px;">Appearance</h3>
 
@@ -240,6 +240,12 @@ const HolafSettingsManager = {
                     <div class="holaf-settings-field" style="display:flex;align-items:center;gap:8px;">
                         <input type="checkbox" id="holaf-halo-toggle" ${state.halo ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--holaf-accent-color);">
                         <label for="holaf-halo-toggle" style="font-size:12px;cursor:pointer;">Lueur (halo) autour des fenêtres actives</label>
+                    </div>
+
+                    <!-- Axe 4 : HIGHLIGHT (contour coloré des fenêtres actives, indépendant du halo) -->
+                    <div class="holaf-settings-field" style="display:flex;align-items:center;gap:8px;">
+                        <input type="checkbox" id="holaf-highlight-toggle" ${state.highlight ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--holaf-accent-color);">
+                        <label for="holaf-highlight-toggle" style="font-size:12px;cursor:pointer;">Contour coloré (highlight) des fenêtres actives</label>
                     </div>
                 </div>
 
@@ -298,6 +304,14 @@ const HolafSettingsManager = {
         haloToggle.addEventListener("change", (e) => {
             const st = loadThemeState();
             st.halo = e.target.checked;
+            applyTheme(st);
+        });
+
+        // 3bis. HIGHLIGHT : case activable (contour coloré, indépendante du halo).
+        const highlightToggle = container.querySelector("#holaf-highlight-toggle");
+        highlightToggle.addEventListener("change", (e) => {
+            const st = loadThemeState();
+            st.highlight = e.target.checked;
             applyTheme(st);
         });
 

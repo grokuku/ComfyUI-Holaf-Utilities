@@ -2,7 +2,7 @@
  * Copyright (C) 2025 Holaf
  * Holaf Utilities - Theme Definitions
  *
- * THEMING en 3 AXES orthogonaux (Étape A) :
+ * THEMING en 4 AXES orthogonaux :
  *   1. MODE   (clair / foncé)  → classes `aih-mode-dark` / `aih-mode-light`
  *      définies sur <body> : variables de SURFACE en GRIS (fond principal,
  *      secondaire, textes, bordures, input, scrollbar) indépendantes de
@@ -13,6 +13,9 @@
  *      `--aih-accent-active` est dérivée du mode.
  *   3. HALO   (lueur activable) → `--aih-halo` (box-shadow des fenêtres actives)
  *      + classe `.aih-halo-off` qui la neutralise.
+ *   4. HIGHLIGHT (contour coloré activable) → `--aih-highlight` (border-color
+ *      de la fenêtre active) + classe `.aih-highlight-off` qui la neutralise.
+ *      INDÉPENDANT du halo : on peut couper l'un sans l'autre.
  *
  * UNIFICATION --holaf-* / --aih-* : les classes body définissent `--aih-*`
  * (source de vérité) ET aliassent `--holaf-*` vers les mêmes valeurs. Les
@@ -66,6 +69,10 @@
 
     /* ───────────── HALO (lueur des fenêtres actives) ───────────── */
     --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
+
+    /* ───────────── HIGHLIGHT (contour coloré de la fenêtre active) ─────────────
+       Par défaut = accent actif (dérivé du mode). Neutralisée par .aih-highlight-off. */
+    --aih-highlight: var(--aih-accent-active);
 
     /* ───────────── Formes & ombres ───────────── */
     --aih-radius: 10px;
@@ -271,6 +278,13 @@
 .aih-halo-off {
     --aih-halo: 0 0 0 0 transparent;
     --aih-shadow-active: var(--aih-shadow);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AXE 4 — HIGHLIGHT (contour coloré de la fenêtre active, indépendant du halo)
+   ════════════════════════════════════════════════════════════════════════ */
+.aih-highlight-off {
+    --aih-highlight: transparent;
 }
 
 /* ════════════════════════════════════════════════════════════════════════

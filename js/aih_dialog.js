@@ -117,6 +117,7 @@ import {
     --aih-accent: #D8700D; --aih-accent-hover: #F08020; --aih-accent-light: #B45A08; --aih-accent-light-hover: #9A4D06; --aih-accent-text: #FFFFFF;
     --aih-accent-active: var(--aih-accent); --aih-accent-hover-active: var(--aih-accent-hover);
     --aih-halo-color: rgba(216,112,13,0.5); --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
+    --aih-highlight: var(--aih-accent-active);
     --aih-bg: #1E1E1E; --aih-bg-secondary: #2B2B2B; --aih-bg-input: #1A1A1A; --aih-bg-hover: #353535;
     --aih-text: #E0E0E0; --aih-text-secondary: #A0A0A0;
     --aih-border: #3F3F3F; --aih-border-strong: #555555;
@@ -130,7 +131,9 @@ import {
     --aih-resize-handle: #555555; --aih-resize-handle-active: var(--aih-accent-active);
 }
 .aih-dialog-root { position: fixed; display: flex; flex-direction: column; background: var(--aih-bg); border: 1px solid var(--aih-border); border-radius: var(--aih-radius); box-shadow: var(--aih-shadow); overflow: hidden; min-width: 280px; min-height: 120px; color: var(--aih-text); font-size: var(--aih-font-size); line-height: 1.5; box-sizing: border-box; }
-.aih-dialog-root.active { border-color: var(--aih-accent-active); box-shadow: var(--aih-shadow-active); }
+.aih-halo-off { --aih-halo: 0 0 0 0 transparent; --aih-shadow-active: var(--aih-shadow); }
+.aih-highlight-off { --aih-highlight: transparent; }
+.aih-dialog-root.active { border-color: var(--aih-highlight); box-shadow: var(--aih-shadow-active); }
 .aih-dialog-overlay { position: fixed; inset: 0; background: var(--aih-overlay-bg); z-index: 90000; }
 .aih-dialog-header { display: flex; align-items: center; padding: 10px 16px; cursor: grab; user-select: none; border-bottom: 1px solid var(--aih-border); background: var(--aih-bg-secondary); flex-shrink: 0; }
 .aih-dialog-title { flex: 1; font-size: var(--aih-title-size); font-weight: var(--aih-title-weight); color: var(--aih-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -275,11 +278,11 @@ import {
         },
 
         setTheme(overrides, target) {
-            // Support du nouvel état 3-axes {mode, accent, halo}.
-            if (overrides && (overrides.mode !== undefined || overrides.accent !== undefined || overrides.halo !== undefined)) {
+            // Support du nouvel état 4-axes {mode, accent, halo, highlight}.
+            if (overrides && (overrides.mode !== undefined || overrides.accent !== undefined || overrides.halo !== undefined || overrides.highlight !== undefined)) {
                 const el = target || document.body;
                 const merged = this.applyState(overrides, el);
-                if (overrides.mode !== undefined || overrides.accent !== undefined || overrides.halo !== undefined) {
+                if (overrides.mode !== undefined || overrides.accent !== undefined || overrides.halo !== undefined || overrides.highlight !== undefined) {
                     saveThemeState(overrides);
                 }
                 return merged;
@@ -299,12 +302,13 @@ import {
             return merged;
         },
 
-        // État courant {mode, accent, halo}.
+        // État courant {mode, accent, halo, highlight}.
         getState(target) {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             let mode = AIH_THEME_DEFAULT.mode;
             let accent = AIH_THEME_DEFAULT.accent;
             let halo = true;
+            let highlight = true;
             if (el) {
                 if (el.classList.contains(AIH_MODES.light.className)) mode = "light";
                 else mode = "dark";
@@ -312,11 +316,12 @@ import {
                     if (el.classList.contains(AIH_ACCENTS[k].className)) accent = k;
                 });
                 halo = !el.classList.contains("aih-halo-off");
+                highlight = !el.classList.contains("aih-highlight-off");
             }
-            return { mode, accent, halo };
+            return { mode, accent, halo, highlight };
         },
 
-        // Applique {mode, accent, halo} sur un élément (souvent body).
+        // Applique {mode, accent, halo, highlight} sur un élément (souvent body).
         applyState(state, target) {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             return applyThemeState(el, state);
@@ -326,7 +331,7 @@ import {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
             const m = (mode && AIH_MODES[mode]) ? mode : AIH_THEME_DEFAULT.mode;
-            const applied = applyThemeState(el, { mode: m, accent: state.accent, halo: state.halo });
+            const applied = applyThemeState(el, { mode: m, accent: state.accent, halo: state.halo, highlight: state.highlight });
             saveThemeState({ mode: m });
             return applied;
         },
@@ -335,7 +340,7 @@ import {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
             const a = (accent && AIH_ACCENTS[accent]) ? accent : AIH_THEME_DEFAULT.accent;
-            const applied = applyThemeState({ mode: state.mode, accent: a, halo: state.halo }, el);
+            const applied = applyThemeState({ mode: state.mode, accent: a, halo: state.halo, highlight: state.highlight }, el);
             saveThemeState({ accent: a });
             return applied;
         },
@@ -343,8 +348,16 @@ import {
         setHalo(on, target) {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
-            const applied = applyThemeState({ mode: state.mode, accent: state.accent, halo: !!on }, el);
+            const applied = applyThemeState({ mode: state.mode, accent: state.accent, halo: !!on, highlight: state.highlight }, el);
             saveThemeState({ halo: !!on });
+            return applied;
+        },
+
+        setHighlight(on, target) {
+            const el = target || (typeof document !== "undefined" ? document.body : null);
+            const state = this.getState(el);
+            const applied = applyThemeState({ mode: state.mode, accent: state.accent, halo: state.halo, highlight: !!on }, el);
+            saveThemeState({ highlight: !!on });
             return applied;
         },
 
@@ -375,7 +388,7 @@ import {
             } catch (e) { /* silencieux */ }
         },
 
-        // Restaure le thème 3-axes persisté (mode/accent/halo) sur <body>.
+        // Restaure le thème 4-axes persisté (mode/accent/halo/highlight) sur <body>.
         _restoreAxis() {
             try {
                 applyPersistedTheme(document.body);
@@ -986,7 +999,7 @@ import {
     // Restaure les surcharges de thème persistées au chargement.
     try { Theme._restorePersisted(); } catch (e) { /* silencieux */ }
 
-    // Restaure le thème 3-axes (mode/accent/halo) persisté sur <body>.
+    // Restaure le thème 4-axes (mode/accent/halo/highlight) persisté sur <body>.
     try { Theme._restoreAxis(); } catch (e) { /* silencieux */ }
 
     // Auto-injection de la feuille de style au chargement du module (idempotent).
