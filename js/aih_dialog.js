@@ -24,7 +24,7 @@
  */
 
 import "./aih_i18n.js";
-import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel, aihWindowManager } from "./holaf_window_utils.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { holafExtUrl } from "./holaf_ext_base.js";
 import {
@@ -42,25 +42,11 @@ import {
 
     const AIH = (window.AIH = window.AIH || {});
 
-    // ─── Z-index authority (compteur partagé unique) ────────────────────────
-    const DEFAULT_Z = 90000;
-    const MAX_Z = 50000; // fenêtre de compteur avant renormalisation
-    if (typeof window._aihDialogZCounter === "undefined") {
-        window._aihDialogZCounter = 0;
-    }
-
-    function nextZ() {
-        window._aihDialogZCounter += 1;
-        if (window._aihDialogZCounter > MAX_Z) {
-            const all = document.querySelectorAll(".aih-dialog-root");
-            window._aihDialogZCounter = 0;
-            for (let i = 0; i < all.length; i++) {
-                window._aihDialogZCounter += 1;
-                all[i].style.zIndex = String(DEFAULT_Z + window._aihDialogZCounter);
-            }
-        }
-        return DEFAULT_Z + window._aihDialogZCounter;
-    }
+    // ─── Z-index / actif / halo : autorité UNIQUE partagée ──────────────────
+    // Délégation au gestionnaire commun `aihWindowManager` (holaf_window_utils),
+    // qui regroupe dialogues AIH ET panneaux holaf sur une seule échelle de
+    // z-index et un seul état actif/halo (classe .active).
+    const windowManager = aihWindowManager();
 
     // ─── Utilitaires ─────────────────────────────────────────────────────────
     function isNode(obj) {
@@ -422,7 +408,7 @@ import {
         const maxWidth = toPx(opts.maxWidth || opts.max) || "90vw";
         const maxHeight = toPx(opts.maxHeight || opts.max) || "85vh";
 
-        const storageKey = opts.storageKey === undefined ? null : opts.storageKey;
+        let storageKey = opts.storageKey === undefined ? null : opts.storageKey;
         let persistSize = opts.persistSize;
         let persistPos = opts.persistPos;
 
@@ -455,9 +441,23 @@ import {
         // Applique un thème spécifique au dialogue (inline, sans persistance).
         if (opts.theme) applyVars(el, opts.theme);
 
-        const z = (typeof opts.zIndex === "number" ? opts.zIndex : DEFAULT_Z) + window._aihDialogZCounter + 1;
-        el.style.zIndex = String(z);
-        if (overlay) overlay.style.zIndex = String(z);
+        // ── Z-index initial via l'autorité partagée ────────────────────────
+        // Enregistre la fenêtre dans le gestionnaire commun (partage la même
+        // échelle que les panneaux holaf). Sauf z-index explicite (ex. login
+        // 210000), on passe au premier plan immédiatement : el devient l'unique
+        // fenêtre `.active` (halo) et monte au-dessus de toutes les autres.
+        windowManager.register(el);
+        if (overlay) windowManager.register(overlay);
+        let z;
+        if (typeof opts.zIndex === "number") {
+            z = opts.zIndex;
+            el.style.zIndex = String(z);
+            if (overlay) overlay.style.zIndex = String(z);
+            windowManager.markActive(el);
+        } else {
+            z = windowManager.bringToFront(el);
+            if (overlay) overlay.style.zIndex = String(z);
+        }
 
         el.style.width = width;
         if (height) el.style.height = height;
@@ -607,18 +607,15 @@ import {
             if (busyEl) busyEl.style.display = b ? "flex" : "none";
         }
 
-        // ── Bring to front ──────────────────────────────────────────────────
+        // ── Bring to front (délégué à l'autorité partagée) ─────────────────
         function bringToFront() {
-            const newZ = nextZ();
-            el.style.zIndex = String(newZ);
+            const newZ = windowManager.bringToFront(el);
             if (overlay) overlay.style.zIndex = String(newZ);
-            document.querySelectorAll(".aih-dialog-root").forEach((d) => d.classList.remove("active"));
-            el.classList.add("active");
         }
 
         if (bringToFrontOnClick) {
             el.addEventListener("mousedown", () => {
-                if (document.querySelectorAll(".aih-dialog-root.active")[0] !== el) {
+                if (!el.classList.contains("active")) {
                     bringToFront();
                 }
             });
@@ -648,6 +645,8 @@ import {
             }
             cleanup();
             el.remove();
+            windowManager.unregister(el);
+            if (overlay) windowManager.unregister(overlay);
             if (typeof opts.onClose === "function") {
                 try { opts.onClose(_result); } catch (e) { /* silencieux */ }
             }

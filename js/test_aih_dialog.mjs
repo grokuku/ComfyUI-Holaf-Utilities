@@ -79,6 +79,7 @@ class FakeEl {
     }
     get innerHTML() { return this._innerHTML; }
     appendChild(c) { if (c._parent) c._parent._removeChild(c); c._parent = this; c.parentNode = this; this.children.push(c); return c; }
+    insertBefore(newNode, refNode) { if (refNode && this.children.indexOf(refNode) >= 0) { if (newNode._parent) newNode._parent._removeChild(newNode); newNode._parent = this; newNode.parentNode = this; this.children.splice(this.children.indexOf(refNode), 0, newNode); } else { this.appendChild(newNode); } return newNode; }
     append(...nodes) { nodes.forEach((n) => this.appendChild(n)); }
     _removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); c._parent = null; c.parentNode = null; }
     remove() { if (this._parent) this._parent._removeChild(this); }
@@ -269,7 +270,7 @@ assert.ok(ctrl.modal === ctrl.el, "alias modal");
 assert.ok(typeof ctrl.setBody === "function" && typeof ctrl.setContent === "function", "setBody/setContent");
 // z-index
 const z = parseInt(ctrl.el.style.zIndex, 10);
-assert.ok(z >= 90000, "z-index >= 90000, got " + z);
+assert.ok(z >= 1000, "z-index >= 1000 (échelle unifiée), got " + z);
 
 // setTitle / setContent
 ctrl.setTitle("Nouveau");

@@ -605,3 +605,100 @@ export function makeContentZoomable(contentEl, opts = {}) {
 
     return group;
 }
+
+
+// ─── Autorité de z-index / actif / halo UNIQUE (systèmes partagés) ──────────
+// Auparavant, AIH.Dialog (base 90000 + compteur _aihDialogZCounter) et
+// HolafPanelManager (base 1000 + normalisation >1100) géraient chacun leur
+// propre échelle de z-index et leur propre classe `.active` (halo). Résultat :
+// on pouvait avoir un halo sur une fenêtre de chaque groupe en même temps, et
+// cliquer une fenêtre d'un groupe ne la passait pas devant celles de l'autre.
+//
+// Ce gestionnaire centralise TOUTES les fenêtres (dialogues AIH ET panneaux
+// holaf) sur UNE SEULE échelle de z-index continue (compteur global monotone)
+// et UN SEUL état actif/halo partagé. `bringToFront` monte la fenêtre au-dessus
+// de toutes les autres (max+1 global) et ne laisse qu'une seule `.active` à la
+// fois, indépendamment du système d'origine.
+
+const WINDOW_BASE_Z = 1000;      // échelle continue unique (plus de 90000/1000)
+const WINDOW_MAX_Z = 1000000;    // seuil de renormalisation (évite croissance ∞)
+const _windows = new Set();
+let _zCounter = 0;
+
+function _globalMaxZ() {
+    let max = WINDOW_BASE_Z;
+    _windows.forEach((w) => {
+        const z = parseInt(w.style.zIndex, 10);
+        if (!isNaN(z) && z > max) max = z;
+    });
+    return max;
+}
+
+// Renormalise toutes les fenêtres enregistrées sur une plage contiguë
+// [WINDOW_BASE_Z+1 .. WINDOW_BASE_Z+n]. La fenêtre active garde le halo.
+function _renormalize() {
+    const sorted = [..._windows].sort((a, b) =>
+        (parseInt(a.style.zIndex, 10) || WINDOW_BASE_Z) - (parseInt(b.style.zIndex, 10) || WINDOW_BASE_Z)
+    );
+    sorted.forEach((w, i) => { w.style.zIndex = String(WINDOW_BASE_Z + i + 1); });
+    _zCounter = sorted.length;
+}
+
+/**
+ * Gestionnaire partagé de fenêtres (AIH.Dialog + HolafPanelManager).
+ * Instance unique : le module ESM garantit que toutes les fenêtres partagent
+ * le même compteur et le même état actif/halo.
+ */
+export function aihWindowManager() {
+    return {
+        /** Enregistre une fenêtre (dialogue AIH ou panneau holaf). */
+        register(el) {
+            if (el && !_windows.has(el)) _windows.add(el);
+        },
+
+        /** Désenregistre une fenêtre (fermeture). */
+        unregister(el) {
+            _windows.delete(el);
+        },
+
+        /**
+         * Met `el` au-dessus de TOUTES les fenêtres enregistrées : z-index =
+         * max global + 1 (échelle continue partagée), ajoute `.active` à el et
+         * la RETIRE de toutes les autres (halo unique).
+         * @returns {number} le z-index attribué.
+         */
+        bringToFront(el) {
+            if (!el) return 0;
+            _windows.add(el);
+            _windows.forEach((w) => { if (w !== el) w.classList.remove("active"); });
+            el.classList.add("active");
+            const next = Math.max(_globalMaxZ() + 1, WINDOW_BASE_Z + _zCounter + 1);
+            _zCounter = next - WINDOW_BASE_Z;
+            el.style.zIndex = String(next);
+            if (next > WINDOW_BASE_Z + WINDOW_MAX_Z) _renormalize();
+            return next;
+        },
+
+        /**
+         * Marque `el` comme la fenêtre ACTIVE (halo) sans bouger le z-index.
+         * Retire `.active` de toutes les autres fenêtres enregistrées.
+         */
+        markActive(el) {
+            if (!el) return;
+            _windows.add(el);
+            _windows.forEach((w) => { if (w !== el) w.classList.remove("active"); });
+            el.classList.add("active");
+        },
+
+        /** Retire l'état actif/halo de `el`. */
+        markInactive(el) {
+            if (el) el.classList.remove("active");
+        },
+
+        /** Compteur global courant (diagnostic / tests). */
+        get counter() { return _zCounter; },
+
+        /** Nombre de fenêtres enregistrées (diagnostic / tests). */
+        get size() { return _windows.size; },
+    };
+}

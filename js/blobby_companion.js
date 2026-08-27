@@ -1812,45 +1812,6 @@ const Blobby = {
         };
         _appendHeaderBtn(forgetBtn);
 
-        // Compact button
-        var compactBtn = document.createElement('button');
-        compactBtn.textContent = '📦';
-        compactBtn.title = 'Mode compact';
-        Object.assign(compactBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
-        compactBtn.onmouseenter = () => compactBtn.style.color = '#fff';
-        compactBtn.onmouseleave = () => compactBtn.style.color = '#888';
-        compactBtn.onclick = function(e) {
-            e.stopPropagation();
-            var msgs = document.getElementById('blobby-chat-msgs');
-            if (!msgs) return;
-            var isCompact = compactBtn.dataset.compact === '1';
-            if (isCompact) {
-                msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
-                    el.style.padding = '';
-                    el.style.fontSize = '';
-                    el.style.borderRadius = '';
-                });
-                msgs.querySelectorAll('.blobby-msg-compact').forEach(function(el) { el.remove(); });
-                compactBtn.dataset.compact = '0';
-                compactBtn.style.color = '#888';
-            } else {
-                msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
-                    el.style.padding = '2px 8px';
-                    el.style.fontSize = '11px';
-                    el.style.borderRadius = '4px';
-                });
-                var note = document.createElement('div');
-                note.className = 'blobby-msg-compact';
-                note.textContent = '📦 Mode compact';
-                Object.assign(note.style, { textAlign: 'center', color: '#666', fontSize: '10px', padding: '2px' });
-                msgs.appendChild(note);
-                compactBtn.dataset.compact = '1';
-                compactBtn.style.color = '#4ade80';
-            }
-        };
-        compactBtn.dataset.compact = '0';
-        _appendHeaderBtn(compactBtn);
-
         // ── Sauvegarde de la transparence (rect géré par le store unifié) ──
         function _saveChatState() {
             try {

@@ -13,7 +13,7 @@
  */
 
 import { HOLAF_THEMES } from "./holaf_themes.js";
-import { makeDraggable, makeResizable, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel, aihWindowManager } from "./holaf_window_utils.js";
 
 // MODIFICATION: Track open dialog count instead of boolean for proper stacking
 export const dialogState = {
@@ -21,8 +21,6 @@ export const dialogState = {
     get isOpen() { return this.openCount > 0; }
 };
 
-const BASE_Z_INDEX = 1000;
-let currentMaxZIndex = BASE_Z_INDEX;
 const openPanels = new Set();
 
 export const HolafPanelManager = {
@@ -120,15 +118,7 @@ export const HolafPanelManager = {
             panel.style.display = "none";
             panel.classList.remove("active");
             openPanels.delete(panel);
-            if (parseInt(panel.style.zIndex) === currentMaxZIndex && openPanels.size > 0) {
-                currentMaxZIndex = BASE_Z_INDEX;
-                openPanels.forEach(p => {
-                    const pZIndex = parseInt(p.style.zIndex);
-                    if (pZIndex > currentMaxZIndex) currentMaxZIndex = pZIndex;
-                });
-            } else if (openPanels.size === 0) {
-                currentMaxZIndex = BASE_Z_INDEX;
-            }
+            aihWindowManager().unregister(panel);
             if (options.onClose) options.onClose();
         };
         if (zoomGroup) header.appendChild(zoomGroup);
@@ -156,6 +146,7 @@ export const HolafPanelManager = {
     },
 
     bringToFront(panelEl) {
+        if (!panelEl) return;
         // Auto-cleanup: remove stale references (elements no longer in the DOM)
         if (openPanels.size > 0 && openPanels.size % 10 === 0) {
             for (const p of openPanels) {
@@ -168,42 +159,16 @@ export const HolafPanelManager = {
             openPanels.add(panelEl);
         }
 
-        // Marque la fenêtre ACTIVE (halo --aih-halo) : une seule à la fois.
-        openPanels.forEach(p => { if (p !== panelEl) p.classList.remove("active"); });
-        panelEl.classList.add("active");
-
-        // Find the current max z-index among all tracked panels
-        let maxZ = BASE_Z_INDEX;
-        openPanels.forEach(p => {
-            const pZIndex = parseInt(p.style.zIndex);
-            if (!isNaN(pZIndex) && pZIndex > maxZ) maxZ = pZIndex;
-        });
-
-        // Bump z-index if this panel isn't already on top, or if it has no z-index yet (NaN)
-        const currentZ = parseInt(panelEl.style.zIndex);
-        if (isNaN(currentZ) || currentZ < maxZ) {
-            currentMaxZIndex = maxZ + 1;
-            panelEl.style.zIndex = currentMaxZIndex;
-        }
-
-        // Normalize z-indices periodically to prevent unbounded growth
-        if (currentMaxZIndex > BASE_Z_INDEX + 100) {
-            this._normalizeZIndices();
-        }
-    },
-
-    _normalizeZIndices() {
-        const sorted = [...openPanels].sort((a, b) =>
-            (parseInt(a.style.zIndex) || BASE_Z_INDEX) - (parseInt(b.style.zIndex) || BASE_Z_INDEX)
-        );
-        sorted.forEach((p, i) => {
-            p.style.zIndex = BASE_Z_INDEX + i;
-        });
-        currentMaxZIndex = BASE_Z_INDEX + sorted.length;
+        // Autorité partagée unique : z-index = max global + 1 sur la même
+        // échelle que les dialogues AIH, et une seule fenêtre `.active` (halo)
+        // à la fois — la classe est retirée de toutes les autres, y compris
+        // les dialogues AIH, indépendamment du système d'origine.
+        aihWindowManager().bringToFront(panelEl);
     },
 
     unregister(panelEl) {
         openPanels.delete(panelEl);
+        aihWindowManager().unregister(panelEl);
     },
 
     _bakePosition(panel) {
