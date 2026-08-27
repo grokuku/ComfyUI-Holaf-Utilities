@@ -138,8 +138,10 @@
             // Boutons zoom standard (− / +) : zoom sur le contenu, persistés
             // sous la clé de fenêtre de la barre d'outils.
             const zoomGroup = makeContentZoomable(content, { key: this.STORAGE_KEY });
-            header.insertBefore(zoomGroup, closeBtn);
+            // closeBtn doit être enfant de header AVANT insertBefore (sinon
+            // DOMException: Child to insert before is not a child of this node).
             header.appendChild(closeBtn);
+            header.insertBefore(zoomGroup, closeBtn);
 
             this.container.appendChild(header);
             this.container.appendChild(content);

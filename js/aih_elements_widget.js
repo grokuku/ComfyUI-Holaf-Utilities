@@ -1712,8 +1712,10 @@ function _parseConceptSyntax(text, defaultCount) {
 
         // Écouteur d'événements API global (la méthode la plus fiable)
         async setup() {
-            // API singleton : ancien frontend (window.app.api) ou nouveau (window.comfyAPI.api)
-            const api = window.app?.api || window.comfyAPI?.api;
+            // API singleton : ancien frontend (window.app.api) ou nouveau
+            // (window.comfyAPI.api.api = instance ComfyApi). window.comfyAPI.api
+            // est le namespace { api, api_base } qui n'a PAS addEventListener.
+            const api = window.app?.api || window.comfyAPI?.api?.api || window.api;
             if (!api) return;
 
             api.addEventListener("executed", ({ detail }) => {

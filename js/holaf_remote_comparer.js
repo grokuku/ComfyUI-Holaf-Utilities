@@ -202,8 +202,11 @@ const HolafRemoteComparer = {
     // --- SETTINGS BRIDGE LOGIC ---
 
     syncSettingsToBackend() {
-        const fetchFn = api.fetchApi || fetch;
-        fetchFn("/holaf/comparer/settings", {
+        // Ne PAS extraire api.fetchApi dans une variable : c'est une méthode qui
+        // utilise `this` (ex. this.user) → this serait perdu (undefined).
+        // On l'appelle toujours en tant que méthode de `api` pour préserver le contexte.
+        const doFetch = (url, opts) => (api.fetchApi ? api.fetchApi(url, opts) : fetch(url, opts));
+        doFetch("/holaf/comparer/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(this.globalSettings)
