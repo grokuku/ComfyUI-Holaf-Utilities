@@ -1,4 +1,5 @@
 import "./aih_dialog.js";
+import "./aih/strings.js";
 import { makeDraggable } from "./holaf_window_utils.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
 
@@ -13,6 +14,12 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
 (function () {
   "use strict";
+
+  // ── Helper i18n central : traduit via AIH.I18n (clé brute si absente) ──
+  const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+  };
 
   // ── Helpers ──
 
@@ -35,7 +42,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
   function ensureServerConfigured() {
     if (getApiUrl()) return true;
     if (window.aihShowAlert) {
-      window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ».", "info");
+      window.aihShowAlert(t("aih.notConfiguredTitle"), t("aih.notConfiguredMsg"), "info");
     }
     return false;
   }
@@ -60,7 +67,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
   function createUploadPanel() {
     var m = aihOpenModalV2({
-      title: "Upload des dépendances",
+      title: t("wf.uploadTitle"),
       width: "440px",
       height: "auto",
       maxHeight: "70vh",
@@ -161,17 +168,17 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           r.row.style.background = "rgba(220,38,38,0.15)";
           var errEl = document.createElement("div");
           errEl.style.cssText = "font-size:10px;color:#f87171;word-break:break-all;width:100%;margin-left:26px;";
-          errEl.textContent = "Erreur: " + (errorMsg || "inconnue");
+          errEl.textContent = t("wf.errorPrefix") + (errorMsg || t("aih.unknown"));
           r.row.appendChild(errEl);
         }
-        m.setTitle("Upload (" + doneCount + "/" + totalCount + ")");
+        m.setTitle(t("wf.uploadProgress", { done: doneCount, total: totalCount }));
       },
       done: function() {
         clearInterval(timer);
         var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        m.setTitle("Upload terminé (" + totalCount + " fichiers, " + elapsed + "s)");
+        m.setTitle(t("wf.uploadDone", { count: totalCount, seconds: elapsed }));
         var closeBtn = document.createElement("button");
-        closeBtn.textContent = "Fermer";
+        closeBtn.textContent = t("dialog.close");
         closeBtn.style.cssText = "padding:6px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:12px;cursor:pointer;";
         closeBtn.onclick = function() { m.close(); };
         closeBtn.onmouseenter = function() { closeBtn.style.background = "#3a3a3e"; closeBtn.style.color = "#fff"; };
@@ -550,7 +557,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       document.head.appendChild(spinStyle);
     }
     var _m = aihOpenModalV2({
-        title: "📤  Workflows",
+        title: t("wf.title"),
         width: "680px",
         height: "auto",
         minWidth: "480px",
@@ -588,11 +595,11 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         '<button id="wf-tab-share" style="flex:1;padding:8px;border:none;border-bottom:2px solid ' +
         (currentTab === "share" ? "var(--aih-accent, #D8700D)" : "transparent") + ';background:transparent;color:' +
         (currentTab === "share" ? "#e2e8f0" : "#888") + ';font-size:13px;font-weight:' +
-        (currentTab === "share" ? "600" : "400") + ';cursor:pointer;">📤 Partager</button>' +
+        (currentTab === "share" ? "600" : "400") + ';cursor:pointer;">' + t('wf.tabShare') + '</button>' +
         '<button id="wf-tab-browse" style="flex:1;padding:8px;border:none;border-bottom:2px solid ' +
         (currentTab === "browse" ? "var(--aih-accent, #D8700D)" : "transparent") + ';background:transparent;color:' +
         (currentTab === "browse" ? "#e2e8f0" : "#888") + ';font-size:13px;font-weight:' +
-        (currentTab === "browse" ? "600" : "400") + ';cursor:pointer;">🌐 Parcourir</button>' +
+        (currentTab === "browse" ? "600" : "400") + ';cursor:pointer;">' + t('wf.tabBrowse') + '</button>' +
         '</div>' +
         '<div id="wf-tab-content" style="flex:1;"></div>' +
         '</div>';
@@ -625,11 +632,11 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       } catch (e) { workflowStr = ""; }
 
       if (!workflowStr) {
-        container.innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">Impossible de lire le workflow actif.</p>';
+        container.innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.noWorkflow') + '</p>'';
         return;
       }
 
-      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:#888;font-size:13px;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #555;border-top-color:var(--aih-accent, #D8700D);border-radius:50%;animation:aih-spin 0.8s linear infinite;"></span> Analyse des dépendances...</div>';
+      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:#888;font-size:13px;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #555;border-top-color:var(--aih-accent, #D8700D);border-radius:50%;animation:aih-spin 0.8s linear infinite;"></span> ' + t('wf.analyzingDeps') + '</div>'';
       var deps = await detectDependencies(workflowJSON);
       var existingId = null;
 
@@ -656,37 +663,37 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
       container.innerHTML =
         '<div style="display:flex;flex-direction:column;gap:10px;">' +
-        '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom *</label>' +
-        '<input id="wf-name" type="text" placeholder="Nom du workflow" value="' + esc(wfTitle) + '" style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:13px;box-sizing:border-box;"></div>' +
-        '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Description</label>' +
+        '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">' + t('wf.labelName') + '</label>' +
+        '<input id="wf-name" type="text" placeholder="' + t('wf.namePlaceholder') + '" value="' + esc(wfTitle) + '" style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:13px;box-sizing:border-box;"></div>' +
+        '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">' + t('wf.labelDesc') + '</label>' +
         '<textarea id="wf-desc" rows="2" style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:12px;box-sizing:border-box;resize:vertical;"></textarea></div>' +
-        '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Tags (virgules)</label>' +
+        '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">' + t('wf.labelTags') + '</label>' +
         '<input id="wf-tags" type="text" style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:13px;box-sizing:border-box;"></div>' +
         '<div id="wf-deps" style="font-size:12px;color:#bbb;border-top:1px solid #444;padding-top:8px;"></div>' +
-        '<button id="wf-publish-btn" style="padding:8px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📤 Publier</button>' +
+        '<button id="wf-publish-btn" style="padding:8px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">' + t('wf.publish') + '</button>' +
         '<div id="wf-status" style="font-size:11px;color:#888;display:none;"></div>' +
         '</div>';
 
       // Remplir les dépendances avec checkboxes d'upload
-      var depsHtml = '<p style="font-size:11px;color:#888;margin:0 0 6px 0;">🔍 Dépendances détectées :</p>';
+      var depsHtml = '<p style="font-size:11px;color:#888;margin:0 0 6px 0;">' + t('wf.depsDetected') + '</p>';
       if (deps.nodes.length === 0 && deps.models.length === 0 && deps.loras.length === 0) {
-        depsHtml += '<span style="color:#34d399;">✓ Aucune dépendance externe</span>';
+        depsHtml += '<span style="color:#34d399;">' + t('wf.noDeps') + '</span>';
       } else {
-        depsHtml += '<p style="font-size:10px;color:#666;margin:0 0 6px 0;">Cochez les models/loras à uploader vers le serveur :</p>';
+        depsHtml += '<p style="font-size:10px;color:#666;margin:0 0 6px 0;">' + t('wf.checkUpload') + '</p>';
         if (deps.nodes.length) {
-          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#f59e0b;">📦 Custom nodes (' + deps.nodes.length + (deps.nodes.length > 1 ? ' packs' : ' pack') + ')</span>';
+          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#f59e0b;">' + t('wf.customNodes') + ' (' + deps.nodes.length + (deps.nodes.length > 1 ? ' ' + t('wf.packs') : ' ' + t('wf.pack')) + ')</span>';
           for (var i = 0; i < deps.nodes.length; i++) {
             var pk = deps.nodes[i];
             var nodeCount = pk.node_types ? pk.node_types.length : 1;
             depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(pk.name) +
-              (nodeCount > 1 ? ' <span style="color:#888;font-size:10px;">(' + nodeCount + ' nodes)</span>' : '') +
-              (pk.url ? ' <span style="color:#34d399;font-size:10px;">✓ ' + esc(pk.url) + '</span>' : ' <span style="color:#f87171;font-size:10px;">URL git non trouvée</span>') +
+              (nodeCount > 1 ?  ' + t('wf.nodeCount', { count: nodeCount }) + ' : '') +
+              (pk.url ? ' <span style="color:#34d399;font-size:10px;">✓ ' + esc(pk.url) + '</span>' : ' <span style="color:#f87171;font-size:10px;">' + t('wf.noGitUrl') + '</span>') +
               '</div>';
           }
           depsHtml += '</div>';
         }
         if (deps.models.length) {
-          depsHtml += '<div style="margin-bottom:4px;"><span style="color:var(--aih-accent, #D8700D);">🧠 Modèles</span>';
+          depsHtml += '<div style="margin-bottom:4px;"><span style="color:var(--aih-accent, #D8700D);">' + t('wf.models') + '</span>';
           for (var i = 0; i < deps.models.length; i++) {
             var m = deps.models[i];
             depsHtml += '<label style="display:flex;align-items:center;gap:6px;margin-left:12px;color:#ccc;cursor:pointer;font-size:11px;">' +
@@ -696,7 +703,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           depsHtml += '</div>';
         }
         if (deps.loras.length) {
-          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#a78bfa;">🎨 LoRAs</span>';
+          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#a78bfa;">' + t('wf.loras') + '</span>';
           for (var i = 0; i < deps.loras.length; i++) {
             var l = deps.loras[i];
             depsHtml += '<label style="display:flex;align-items:center;gap:6px;margin-left:12px;color:#ccc;cursor:pointer;font-size:11px;">' +
@@ -722,14 +729,14 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   if (items[i].name.toLowerCase() === name.toLowerCase() && items[i].user_id === me.id) {
                     existingId = items[i].id;
                     var btn = container.querySelector("#wf-publish-btn");
-                    btn.textContent = "🔄 Mettre à jour (v" + (items[i].version + 1) + ")";
+                    btn.textContent = t("wf.update", { version: (items[i].version + 1) });
                     btn.style.background = "#f59e0b";
                     return;
                   }
                 }
                 existingId = null;
                 var btn = container.querySelector("#wf-publish-btn");
-                btn.textContent = "📤 Publier";
+                btn.textContent = t("wf.publish");
                 btn.style.background = "var(--aih-accent, #D8700D)";
               });
           });
@@ -750,7 +757,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         var statusEl = container.querySelector("#wf-status");
         statusEl.style.display = "block";
         statusEl.style.color = "#fbbf24";
-        statusEl.textContent = "Capture de l'aperçu...";
+        statusEl.textContent = t("wf.capturePreview");
 
         // 📸 Capture du canvas ComfyUI
         var thumbnail = "";
@@ -779,7 +786,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           console.warn("[AIH] Screenshot failed:", e);
         }
 
-        statusEl.textContent = "Publication...";
+        statusEl.textContent = t("wf.publishing");
 
         // Uploader les models/loras cochés vers le serveur AIH
         var uploadCbs = container.querySelectorAll(".wf-upload-cb:checked");
@@ -840,7 +847,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           panel.done();
         }
 
-        statusEl.textContent = "Publication...";
+        statusEl.textContent = t("wf.publishing");
         var payload = {
           name: name, description: desc, tags: tags,
           workflow_json: workflowStr,
@@ -859,7 +866,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           .then(function (data) {
             if (data.error) throw new Error(data.error);
             statusEl.style.color = "#34d399";
-            statusEl.textContent = existingId ? "✅ Mis à jour !" : "✅ Publié !";
+            statusEl.textContent = existingId ? t("wf.updated") : t("wf.published");
             setTimeout(function () { statusEl.textContent = ""; statusEl.style.display = "none"; }, 2000);
           })
           .catch(function (e) {
@@ -890,13 +897,13 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       container.innerHTML =
         '<div style="display:flex;flex-direction:column;gap:8px;min-height:300px;">' +
         '<div style="display:flex;gap:8px;">' +
-        '<input id="wf-search" type="text" placeholder="🔍 Rechercher..." value="' + esc(ctx.query) + '" style="flex:1;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:13px;">' +
+        '<input id="wf-search" type="text" placeholder="' + t('wf.searchPlaceholder') + '" value="' + esc(ctx.query) + '" style="flex:1;padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:13px;">' +
         '<select id="wf-sort" style="padding:6px 8px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:12px;">' +
-        '<option value="downloads"' + (ctx.sort === "downloads" ? " selected" : "") + '>📥 DL</option>' +
-        '<option value="likes"' + (ctx.sort === "likes" ? " selected" : "") + '>❤️ Likes</option>' +
-        '<option value="created_at"' + (ctx.sort === "created_at" ? " selected" : "") + '>📅 Date</option>' +
+        '<option value="downloads"' + (ctx.sort === "downloads" ? " selected" : "") + '>' + t('wf.sortDl') + '</option>' +
+        '<option value="likes"' + (ctx.sort === "likes" ? " selected" : "") + '>' + t('wf.sortLikes') + '</option>' +
+        '<option value="created_at"' + (ctx.sort === "created_at" ? " selected" : "") + '>' + t('wf.sortDate') + '</option>' +
         '</select></div>' +
-        '<div id="wf-list" style="flex:1;"><p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">Chargement...</p></div>' +
+        '<div id="wf-list" style="flex:1;"><p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.loading') + '</p></div>' +
         '<div id="wf-pages" style="display:flex;justify-content:center;gap:6px;"></div>' +
         '</div>';
 
@@ -924,7 +931,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           var listEl = container.querySelector("#wf-list");
 
           if (items.length === 0) {
-            listEl.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">Aucun workflow trouvé.</p>';
+            listEl.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.noWorkflows') + '</p>';
             return;
           }
 
@@ -943,7 +950,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
               (w.thumbnail ? '<img src="' + w.thumbnail + '" style="width:48px;height:48px;border-radius:4px;object-fit:cover;flex-shrink:0;">' : '<div style="width:48px;height:48px;border-radius:4px;background:#444;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">📤</div>') +
               '<div style="flex:1;min-width:0;">' +
               '<div style="font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(w.name) + '</div>' +
-              '<div style="font-size:11px;color:#888;">par ' + esc(author) + (depsCount > 0 ? ' · ' + depsCount + ' dép.' : '') + '</div></div>' +
+              '<div style="font-size:11px;color:#888;">' + t('wf.by') + esc(author) + (depsCount > 0 ? ' · ' + depsCount + t('wf.depsAbbr') : '') + '</div></div>' +
               '<div style="text-align:right;font-size:11px;color:#888;white-space:nowrap;">' +
               '❤️ ' + (w.likes || 0) + ' 📥 ' + (w.downloads || 0) + ' <span style="color:#666;">v' + (w.version || 1) + '</span></div></div>';
           }
@@ -962,7 +969,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           }
         })
         .catch(function () {
-          container.querySelector("#wf-list").innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">Erreur de chargement.</p>';
+          container.querySelector("#wf-list").innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.loadError') + '</p>';
         });
     }
 
@@ -976,7 +983,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
     window._wfDeleteWorkflow = async function(btn) {
       var id = parseInt(btn.getAttribute("data-wf-id"));
       var name = btn.getAttribute("data-wf-name") || "?";
-      var confirmed = await aihShowConfirm("Supprimer", 'Supprimer le workflow "' + name + '" ?<br><br>Les modèles associés non utilisés par d\'autres workflows seront aussi supprimés.');
+      var confirmed = await aihShowConfirm(t("dialog.delete"), t("wf.deleteConfirm", { name: name }));
       if (!confirmed) return;
       btn.textContent = "⏳";
       try {
@@ -985,9 +992,9 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
         if (data.error) throw new Error(data.error);
         var card = btn.closest('[class*="wf-card"]');
         if (card) { card.style.transition = "opacity 0.3s, transform 0.3s"; card.style.opacity = "0"; card.style.transform = "scale(0.9)"; setTimeout(function() { if (card) card.remove(); }, 300); }
-        aihToast('Workflow "' + name + '" supprimé' + (data.deleted_files && data.deleted_files.length ? ' (' + data.deleted_files.length + ' fichiers orphelins supprimés)' : ''), "success");
+        aihToast(t('wf.deleted', { name: name }) + (data.deleted_files && data.deleted_files.length ? ' (' + t('wf.orphansDeleted', { count: data.deleted_files.length }) + ')' : ''), "success");
       } catch (e) {
-        aihToast("Erreur: " + e.message, "error");
+        aihToast(t("wf.errorPrefix") + e.message, "error");
       }
     };
 
@@ -995,7 +1002,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
     window._wfOpenDetail = function (workflowId) {
       var _dm = aihOpenModalV2({
-          title: "📥 Workflow",
+          title: t("wf.detailTitle"),
           width: "580px",
           height: "auto",
           minWidth: "400px",
@@ -1006,7 +1013,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       });
       var detailModal = _dm.modal;
       var detailBody = _dm.body;
-      detailBody.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">Chargement...</p>';
+      detailBody.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.loading') + '</p>';
 
       fetch(getApiUrl() + "/workflows/" + workflowId, { headers: apiHeaders() })
         .then(function (r) { return r.json(); })
@@ -1014,14 +1021,14 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           var html =
             '<div style="margin-bottom:12px;">' +
             '<h2 style="font-size:16px;font-weight:700;color:#e2e8f0;margin:0 0 4px 0;">' + esc(w.name) + '</h2>' +
-            '<p style="font-size:12px;color:#888;margin:0;">par ' + esc(w.author || w.user_id) + ' · v' + (w.version || 1) +
+            '<p style="font-size:12px;color:#888;margin:0;">' + t('wf.by') + esc(w.author || w.user_id) + ' · v' + (w.version || 1) +
             ' · ❤️ ' + (w.likes || 0) + ' · 📥 ' + (w.downloads || 0) + '</p>' +
             (w.description ? '<p style="font-size:12px;color:#aaa;margin:8px 0 0 0;">' + esc(w.description) + '</p>' : '') +
             '</div>' +
             '<div id="wf-install-deps" style="margin-bottom:12px;"></div>' +
             '<div style="display:flex;gap:8px;">' +
-            '<button id="wf-load-btn" style="flex:1;padding:10px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📥 Charger le workflow</button>' +
-            '<button id="wf-close-btn" style="padding:10px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">Fermer</button></div>' +
+            '<button id="wf-load-btn" style="flex:1;padding:10px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">' + t('wf.loadWorkflow') + '</button>' +
+            '<button id="wf-close-btn" style="padding:10px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">' + t('dialog.close') + '</button></div>' +
             '<div id="wf-load-status" style="font-size:11px;color:#888;display:none;margin-top:8px;"></div>';
 
           detailBody.innerHTML = html;
@@ -1037,16 +1044,16 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           var depsEl = detailBody.querySelector("#wf-install-deps");
 
           if (totalDeps === 0) {
-            depsEl.innerHTML = '<p style="font-size:12px;color:#34d399;">✓ Aucune dépendance externe</p>';
+            depsEl.innerHTML = '<p style="font-size:12px;color:#34d399;">' + t('wf.noDeps') + '</p>';
           } else {
-            depsEl.innerHTML = '<p style="font-size:12px;color:#888;">Vérification des dépendances locales...</p>';
+            depsEl.innerHTML = '<p style="font-size:12px;color:#888;">' + t('wf.checkingDeps') + '</p>';
             
             // Interroger ComfyUI pour les models/loras déjà installés
             Promise.all([getLocalModels(), getLocalLoras()]).then(async function(results) {
               var localModels = results[0];
               var localLoras = results[1];
               
-              var depHtml = '<p style="font-size:12px;color:#fbbf24;margin:0 0 8px 0;">⚠️ Dépendances requises :</p>';
+              var depHtml = '<p style="font-size:12px;color:#fbbf24;margin:0 0 8px 0;">' + t('wf.requiredDeps') + '</p>';
               depHtml += '<div style="border:1px solid #444;border-radius:6px;overflow:hidden;">';
 
               if (allDeps.nodes.length) {
@@ -1058,7 +1065,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                     installedUrls[installedNodes[k].git_url] = true;
                   }
                 }
-                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#f59e0b;font-weight:600;">📦 Custom nodes</span></div>';
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#f59e0b;font-weight:600;">' + t('wf.customNodesHeader') + '</span></div>';
                 for (var i = 0; i < allDeps.nodes.length; i++) {
                   var n = allDeps.nodes[i];
                   var nodeCount = n.node_types ? n.node_types.length : 1;
@@ -1066,16 +1073,16 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<input type="checkbox" class="wf-dep-cb" checked data-type="node" data-name="' + esc(n.name) + '" data-url="' + esc(n.url || '') + '" style="accent-color:var(--aih-accent, #D8700D);">' +
                     '<span style="flex:1;">' + esc(n.name) +
-                    (nodeCount > 1 ? ' <span style="color:#888;font-size:10px;">(' + nodeCount + ' nodes)</span>' : '') +
-                    (installed ? ' ✅ déjà installé' : '') + '</span>' +
-                    (n.url && !installed ? '<button onclick="window._wfInstallNode(\'' + esc(n.url) + '\', \'' + esc(n.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">📥 Installer</button>' : '') +
+                    (nodeCount > 1 ?  ' + t('wf.nodeCount', { count: nodeCount }) + ' : '') +
+                    (installed ? t('wf.alreadyInstalled') : '') + '</span>' +
+                    (n.url && !installed ? '<button onclick="window._wfInstallNode(\'' + esc(n.url) + '\', \'' + esc(n.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">' + t('wf.install') + '</button>' : '') +
                     (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:var(--aih-accent, #D8700D);text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +
                     '</label>';
                 }
               }
               if (allDeps.models.length) {
                 if (allDeps.nodes.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
-                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:var(--aih-accent, #D8700D);font-weight:600;">🧠 Modèles</span></div>';
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:var(--aih-accent, #D8700D);font-weight:600;">' + t('wf.models') + '</span></div>';
                 for (var i = 0; i < allDeps.models.length; i++) {
                   var m = allDeps.models[i];
                   var installed = localModels.indexOf(m.name) >= 0;
@@ -1083,14 +1090,14 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   depHtml += '<div style="padding:6px 10px;border-bottom:1px solid #3a3a3e;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
                     '<input type="checkbox" class="wf-dep-cb"' + (installed ? '' : ' checked') + ' data-type="model" data-model-type="' + esc(m.type || 'model') + '" data-name="' + esc(m.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(m.upload_id) + '"' : '') + ' style="accent-color:var(--aih-accent, #D8700D);">' +
-                    '<span style="flex:1;">' + esc(m.name) + (installed ? ' ✅ déjà installé' : '') + '</span>' +
-                    '<span style="font-size:10px;color:#666;">' + (m.type || 'modèle') + '</span></label>';
+                    '<span style="flex:1;">' + esc(m.name) + (installed ? t('wf.alreadyInstalled') : '') + '</span>' +
+                    '<span style="font-size:10px;color:#666;">' + (m.type || t('wf.modelType')) + '</span></label>';
                   if (!installed && hasFile) {
                     var typeToFolder = {'checkpoint':'checkpoints','lora':'loras','vae':'vae','clip':'clip','clip_vision':'clip_vision','controlnet':'controlnet','unet':'unet','unet_gguf':'unet_gguf','upscale':'upscale_models','gligen':'gligen','hypernetwork':'hypernetworks','text_encoder':'text_encoders','style_model':'style_models','model':'checkpoints'};
                     var modelBase = (typeToFolder[m.type] || 'checkpoints') + '/';
                     depHtml += '<div style="display:flex;align-items:center;gap:4px;margin-top:4px;">' +
                       '<span class="wf-dep-basepath" style="font-size:10px;color:#666;font-family:monospace;white-space:nowrap;flex-shrink:0;">' + esc(modelBase) + '</span>' +
-                      '<input type="text" class="wf-dep-path" value="' + esc(m.name) + '" data-orig="' + esc(m.name) + '" style="flex:1;padding:4px 6px;border:1px solid #555;border-radius:3px;background:#2a2a2e;color:#ccc;font-size:11px;font-family:monospace;box-sizing:border-box;" placeholder="nom.ext">' +
+                      '<input type="text" class="wf-dep-path" value="' + esc(m.name) + '" data-orig="' + esc(m.name) + '" style="flex:1;padding:4px 6px;border:1px solid #555;border-radius:3px;background:#2a2a2e;color:#ccc;font-size:11px;font-family:monospace;box-sizing:border-box;" placeholder="' + t('wf.filePlaceholder') + '">' +
                       '</div>';
                   }
                   depHtml += '</div>';
@@ -1098,7 +1105,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
               }
               if (allDeps.loras.length) {
                 if (allDeps.nodes.length || allDeps.models.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
-                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#a78bfa;font-weight:600;">🎨 LoRAs</span></div>';
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#a78bfa;font-weight:600;">' + t('wf.loras') + '</span></div>';
                 for (var i = 0; i < allDeps.loras.length; i++) {
                   var l = allDeps.loras[i];
                   var installed = localLoras.indexOf(l.name) >= 0;
@@ -1106,11 +1113,11 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   depHtml += '<div style="padding:6px 10px;border-bottom:1px solid #3a3a3e;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
                     '<input type="checkbox" class="wf-dep-cb"' + (installed ? '' : ' checked') + ' data-type="lora" data-name="' + esc(l.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(l.upload_id) + '"' : '') + ' style="accent-color:var(--aih-accent, #D8700D);">' +
-                    '<span style="flex:1;">' + esc(l.name) + (installed ? ' ✅ déjà installé' : '') + '</span></label>';
+                    '<span style="flex:1;">' + esc(l.name) + (installed ? t('wf.alreadyInstalled') : '') + '</span></label>';
                   if (!installed && hasFile) {
                     depHtml += '<div style="display:flex;align-items:center;gap:4px;margin-top:4px;">' +
                       '<span class="wf-dep-basepath" style="font-size:10px;color:#666;font-family:monospace;white-space:nowrap;flex-shrink:0;">loras/</span>' +
-                      '<input type="text" class="wf-dep-path" value="' + esc(l.name) + '" data-orig="' + esc(l.name) + '" style="flex:1;padding:4px 6px;border:1px solid #555;border-radius:3px;background:#2a2a2e;color:#ccc;font-size:11px;font-family:monospace;box-sizing:border-box;" placeholder="nom.ext">' +
+                      '<input type="text" class="wf-dep-path" value="' + esc(l.name) + '" data-orig="' + esc(l.name) + '" style="flex:1;padding:4px 6px;border:1px solid #555;border-radius:3px;background:#2a2a2e;color:#ccc;font-size:11px;font-family:monospace;box-sizing:border-box;" placeholder="' + t('wf.filePlaceholder') + '">' +
                       '</div>';
                   }
                   depHtml += '</div>';
@@ -1123,10 +1130,10 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
 // Install custom node (global for onclick)
           window._wfInstallNode = async function(gitUrl, nodeName, btn) {
-            if (!gitUrl) { aihToast("Pas d URL git pour ce node.", "error"); return; }
-            btn.textContent = "⏳ Clone...";
+            if (!gitUrl) { aihToast(t("wf.noGitUrlMsg"), "error"); return; }
+            btn.textContent = t("wf.cloning");
             btn.disabled = true;
-            var toast = aihToast("Installation " + nodeName + "...", "progress");
+            var toast = aihToast(t("wf.installing", { name: nodeName }), "progress");
             try {
               var resp = await fetch("/api/aih/custom-nodes/install", {
                 method: "POST",
@@ -1135,14 +1142,14 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
               });
               var data = await resp.json();
               if (data.success) {
-                btn.textContent = "✅ Installé";
+                btn.textContent = t("wf.installed");
                 btn.style.color = "#34d399";
                 btn.style.borderColor = "#34d399";
-                aihToastDone(toast, "success", "✅ " + nodeName + " installé");
+                aihToastDone(toast, "success", t("wf.installedMsg", { name: nodeName }));
               } else {
                 btn.textContent = "❌";
                 btn.style.color = "#f87171";
-                aihToastDone(toast, "error", "❌ " + (data.message || "échec"));
+                aihToastDone(toast, "error", "❌ " + (data.message || t("aih.failed")));
 
               }
             } catch (e) {
@@ -1159,7 +1166,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
             panel.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1e24;border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,0.6);width:440px;max-height:70vh;z-index:100001;display:flex;flex-direction:column;overflow:hidden;";
             var header = document.createElement("div");
             header.style.cssText = "padding:12px 16px;border-bottom:1px solid #333;font-size:14px;font-weight:600;color:#e2e8f0;cursor:grab;user-select:none;";
-            header.textContent = title || "T\u00e9l\u00e9chargement";
+            header.textContent = title || t("wf.downloadTitle");
             panel.appendChild(header);
             makeDraggable(panel, {
               handle: header,
@@ -1247,14 +1254,14 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   if (errorMsg) {
                     var errEl = document.createElement("div");
                     errEl.style.cssText = "font-size:10px;color:#f87171;word-break:break-all;width:100%;margin-left:26px;";
-                    errEl.textContent = "Erreur: " + errorMsg;
+                    errEl.textContent = t("wf.errorPrefix") + errorMsg;
                     r.row.appendChild(errEl);
                   }
                 }
               },
               done: function() {
                 var closeBtn = document.createElement("button");
-                closeBtn.textContent = "Fermer";
+                closeBtn.textContent = t("dialog.close");
                 closeBtn.style.cssText = "padding:6px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:12px;cursor:pointer;";
                 closeBtn.onclick = function() { panel.remove(); };
                 footer.appendChild(closeBtn);
@@ -1266,21 +1273,21 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           // ── Reboot prompt modal ──
           function showRebootPrompt() {
             var m = aihOpenModalV2({
-              title: "⚠️ Redémarrage nécessaire",
+              title: t("wf.rebootTitle"),
               width: "380px",
               height: "auto",
               minHeight: "auto",
               resizable: false,
               storageKey: null,
-              content: '<p style="color:#aaa;font-size:13px;margin-bottom:16px;text-align:center;">Nouveaux custom nodes installés.<br>ComfyUI doit redémarrer pour les charger.</p>' +
+              content: '<p style="color:#aaa;font-size:13px;margin-bottom:16px;text-align:center;">' + t('wf.rebootMsg') + '</p>' +
                 '<div style="display:flex;gap:8px;justify-content:center;">' +
-                '<button id="reboot-cancel" style="padding:8px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">Plus tard</button>' +
-                '<button id="reboot-now" style="padding:8px 16px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Redémarrer</button>' +
+                '<button id="reboot-cancel" style="padding:8px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">' + t('wf.later') + '</button>' +
+                '<button id="reboot-now" style="padding:8px 16px;border:none;border-radius:6px;background:var(--aih-accent, #D8700D);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">' + t('wf.reboot') + '</button>' +
                 '</div>',
             });
             m.modal.querySelector("#reboot-cancel").onclick = function() { m.close(); };
             m.modal.querySelector("#reboot-now").onclick = function() {
-              m.setBody('<div style="padding:20px;text-align:center;color:#fbbf24;font-size:13px;">Redémarrage en cours...</div>');
+              m.setBody('<div style="padding:20px;text-align:center;color:#fbbf24;font-size:13px;">' + t('wf.rebooting') + '</div>');
               setTimeout(function() { window.location.reload(); }, 500);
             };
           }
@@ -1290,20 +1297,20 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
             localFilesFlat = localFilesFlat || {};
             return new Promise(function(resolve) {
               var m = aihOpenModalV2({
-                title: "⚠️ Conflit de modèle",
+                title: t("wf.conflictTitle"),
                 width: "440px",
                 height: "auto",
                 minHeight: "auto",
                 resizable: false,
-                content: '<div style="font-size:13px;color:#ccc;margin-bottom:8px;">Un modèle local avec le même nom existe mais avec un contenu différent :</div>' +
+                content: '<div style="font-size:13px;color:#ccc;margin-bottom:8px;">' + t('wf.conflictDesc') + '</div>' +
                   '<div style="background:#1a1a1e;padding:10px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#aaa;font-family:monospace;">' +
                   '<div>📁 <b style="color:#e2e8f0;">' + esc(fileName) + '</b></div>' +
-                  '<div style="margin-top:4px;">Local: ' + (localInfo.size/1048576).toFixed(1) + ' MB (' + (localInfo.path || 'chemin inconnu') + ')</div>' +
+                  '<div style="margin-top:4px;">Local: ' + (localInfo.size/1048576).toFixed(1) + ' MB (' + (localInfo.path || t('wf.unknownPath')) + ')</div>' +
                   '<div>Server: ' + (remoteInfo.size/1048576).toFixed(1) + ' MB</div></div>' +
                   '<div style="display:flex;flex-direction:column;gap:8px;">' +
-                  '<button id="conflict-overwrite" class="aih-btn-warning" style="padding:10px;border:1px solid #f59e0b;border-radius:6px;background:transparent;color:#f59e0b;font-size:13px;cursor:pointer;">✅ Écraser le fichier local</button>' +
-                  '<button id="conflict-suffix" class="aih-btn-primary" style="padding:10px;border:1px solid var(--aih-accent, #D8700D);border-radius:6px;background:transparent;color:var(--aih-accent, #D8700D);font-size:13px;cursor:pointer;">➕ Télécharger avec un autre nom</button>' +
-                  '<button id="conflict-keep" class="aih-btn-success" style="padding:10px;border:1px solid #34d399;border-radius:6px;background:transparent;color:#34d399;font-size:13px;cursor:pointer;">🔍 Garder le modèle local (skip)</button></div>',
+                  '<button id="conflict-overwrite" class="aih-btn-warning" style="padding:10px;border:1px solid #f59e0b;border-radius:6px;background:transparent;color:#f59e0b;font-size:13px;cursor:pointer;">' + t('wf.overwrite') + '</button>' +
+                  '<button id="conflict-suffix" class="aih-btn-primary" style="padding:10px;border:1px solid var(--aih-accent, #D8700D);border-radius:6px;background:transparent;color:var(--aih-accent, #D8700D);font-size:13px;cursor:pointer;">' + t('wf.suffix') + '</button>' +
+                  '<button id="conflict-keep" class="aih-btn-success" style="padding:10px;border:1px solid #34d399;border-radius:6px;background:transparent;color:#34d399;font-size:13px;cursor:pointer;">' + t('wf.keep') + '</button></div>',
               });
               m.modal.querySelector("#conflict-overwrite").onclick = function() {
                 m.close();
@@ -1388,7 +1395,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
             try {
               // 1. Download workflow JSON
-              statusEl.textContent = "T\u00e9l\u00e9chargement du workflow...";
+              statusEl.textContent = t("wf.downloadingWorkflow");
               var resp = await fetch(getApiUrl() + "/workflows/" + workflowId + "/download", { headers: apiHeaders() });
               var data = await resp.json();
               if (data.error) throw new Error(data.error);
@@ -1407,7 +1414,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                 var nurl = ncb.dataset.url;
                 var nname = ncb.dataset.name;
                 if (!nurl) continue;
-                statusEl.textContent = "Installation node " + (ni + 1) + "/" + nodeCbs.length + ": " + esc(nname) + "...";
+                statusEl.textContent = t("wf.installingNode", { i: (ni + 1), total: nodeCbs.length, name: esc(nname) });
                 try {
                   var installResp = await fetch("/api/aih/custom-nodes/install", {
                     method: "POST",
@@ -1510,7 +1517,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   }
                   if (isDifferent) {
                     // Conflict! Ask the user
-                    statusEl.textContent = "R\u00e9solution du conflit: " + esc(newPath) + "...";
+                    statusEl.textContent = t("wf.resolvingConflict", { name: esc(newPath) });
                     var conflictResult = await showConflictModal(newPath,
                       {size: localFile.size, path: localFile.name},
                       {size: depSize},
@@ -1538,8 +1545,8 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
 
               // 4. Download models with progress panel (parallel)
               if (toDownload.length > 0) {
-                statusEl.textContent = "T\u00e9l\u00e9chargement de " + toDownload.length + " model(s)...";
-                var dlPanel = createDownloadPanel("T\u00e9l\u00e9chargement des d\u00e9pendances");
+                statusEl.textContent = t("wf.downloadingModels", { count: toDownload.length });
+                var dlPanel = createDownloadPanel(t("wf.downloadingTitle"));
                 // Downloads sequentiels par batches de 2 pour ne pas saturer SFTP
                 var MAX_PARALLEL = 2;
                 var dlQueue = toDownload.slice();
@@ -1567,13 +1574,13 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                       }).then(function(r) {
                         return r.json().then(function(result) {
                           if (!result.success && !result.error) {
-                            result.error = 'Erreur inconnue (success=false sans message)';
+                            result.error = t('wf.unknownError');
                           }
                           dlPanel.setResult(it.newName, result.success, result.error);
                           return result;
                         }).catch(function() {
-                          dlPanel.setResult(it.newName, false, 'Reponse non-JSON');
-                          return { success: false, error: 'Reponse non-JSON' };
+                          dlPanel.setResult(it.newName, false, t('wf.nonJson'));
+                          return { success: false, error: t('wf.nonJson') };
                         });
                       }).catch(function(e) {
                         dlPanel.setResult(it.newName, false, e.message);
@@ -1599,24 +1606,24 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
               }
 
               // 5. Always verify and adapt model names in workflow
-              statusEl.textContent = "Adaptation du workflow...";
+              statusEl.textContent = t("wf.adaptingWorkflow");
               var nameMap = buildNameMap(allDeps, downloadResults);
               applyNameMap(parsed, nameMap);
 
               // 6. Load into ComfyUI (only after models are downloaded)
-              statusEl.textContent = "Chargement dans ComfyUI...";
+              statusEl.textContent = t("wf.loadingIntoComfy");
               var currentApp = getApp();
               if (currentApp && currentApp.loadGraphData) {
                 currentApp.loadGraphData(parsed).then(function () {
                   statusEl.style.color = "#34d399";
-                  statusEl.textContent = "\u2705 Workflow charg\u00e9 !";
+                  statusEl.textContent = t("wf.loaded");
                   setTimeout(function () { _dm.close(); }, 1500);
                   if (newNodesInstalled > 0) {
                     setTimeout(function() { showRebootPrompt(); }, 1600);
                   }
                 }).catch(function (err) {
                   statusEl.style.color = "#f87171";
-                  statusEl.textContent = "\u274c Erreur : " + err.message;
+                  statusEl.textContent = t("wf.errorPrefixColon") + err.message;
                   loadBtn.disabled = false;
                   loadBtn.style.opacity = "1";
                 });
@@ -1624,7 +1631,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                 currentApp.graph.clear();
                 currentApp.loadGraphData(parsed);
                 statusEl.style.color = "#34d399";
-                statusEl.textContent = "\u2705 Workflow charg\u00e9 !";
+                statusEl.textContent = t("wf.loaded");
                 setTimeout(function () { _dm.close(); }, 1500);
                 if (newNodesInstalled > 0) {
                   setTimeout(function() { showRebootPrompt(); }, 1600);
@@ -1632,10 +1639,10 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
               } else {
                 navigator.clipboard.writeText(JSON.stringify(parsed)).then(function () {
                   statusEl.style.color = "#fbbf24";
-                  statusEl.textContent = "\u26a0\ufe0f Copi\u00e9 dans le presse-papier.";
+                  statusEl.textContent = t("wf.copiedClipboard");
                 }).catch(function () {
                   statusEl.style.color = "#f87171";
-                  statusEl.textContent = "\u274c Impossible de charger.";
+                  statusEl.textContent = t("wf.cannotLoad");
                 });
               }
             } catch (e) {
@@ -1647,7 +1654,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
           };
         })
         .catch(function () {
-          detailBody.innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">Erreur de chargement.</p>';
+          detailBody.innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.loadError') + '</p>';
         });
     };
 

@@ -552,6 +552,12 @@ export function makeContentZoomable(contentEl, opts = {}) {
         min, max, step,
     } = opts;
 
+    // Traduit via AIH.I18n si disponible (clé brute sinon).
+    const zt = (k) => {
+        const I = window.AIH && window.AIH.I18n;
+        return I && typeof I.t === "function" ? I.t(k) : k;
+    };
+
     const config = { min, max, step };
 
     const current = () => {
@@ -577,8 +583,8 @@ export function makeContentZoomable(contentEl, opts = {}) {
     const outBtn = document.createElement("button");
     outBtn.type = "button";
     outBtn.className = "aih-dialog-zoom aih-zoom-out";
-    outBtn.title = "Zoom Out";
-    outBtn.setAttribute("aria-label", "Zoom Out");
+    outBtn.title = zt("window.zoomOut");
+    outBtn.setAttribute("aria-label", zt("window.zoomOut"));
     outBtn.innerHTML = "−";
     outBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -588,8 +594,8 @@ export function makeContentZoomable(contentEl, opts = {}) {
     const inBtn = document.createElement("button");
     inBtn.type = "button";
     inBtn.className = "aih-dialog-zoom aih-zoom-in";
-    inBtn.title = "Zoom In";
-    inBtn.setAttribute("aria-label", "Zoom In");
+    inBtn.title = zt("window.zoomIn");
+    inBtn.setAttribute("aria-label", zt("window.zoomIn"));
     inBtn.innerHTML = "+";
     inBtn.addEventListener("click", (e) => {
         e.stopPropagation();

@@ -152,6 +152,18 @@
 }
 
 /* ==========================================================================
+   Zoom du contenu — `.holaf-zoom-content` (contenu des panneaux autonomes)
+   ==========================================================================
+   Applique le facteur de zoom canonique `--aih-zoom-factor` (posé par
+   makeContentZoomable) sur le conteneur de CONTENU. `zoom` met à l'échelle le
+   rendu ET la mise en page (contrairement à transform) : les enfants px se
+   mettent à l'échelle, le header (hors conteneur) reste à taille fixe.
+   Repli 1 = aucun zoom si la variable n'est pas posée. */
+.holaf-zoom-content {
+    zoom: var(--aih-zoom-factor, 1);
+}
+
+/* ==========================================================================
    Resize handles — 8 directions (N, S, E, W, NE, NW, SE, SW)
    ========================================================================== */
 

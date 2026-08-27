@@ -3,10 +3,17 @@
  * Holaf Utilities - Image Viewer UI Module
  */
 
+import "../aih/strings.js";
 import { HOLAF_THEMES } from '../holaf_themes.js';
 import { imageViewerState } from './image_viewer_state.js';
 import * as Navigation from './image_viewer_navigation.js';
 import { HolafToastManager } from '../holaf_toast_manager.js';
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 class ImageViewerUI {
     constructor() {
@@ -137,79 +144,79 @@ class ImageViewerUI {
         pane.className = 'holaf-viewer-pane';
         pane.innerHTML = `
             <div class="holaf-viewer-filter-group">
-                <h4>Search</h4>
-                <input type="search" id="holaf-viewer-search-input" placeholder="Search filename, prompt, workflow..." class="holaf-viewer-search-bar">
+                <h4>${t('iv.uiSearch')}</h4>
+                <input type="search" id="holaf-viewer-search-input" placeholder="${t('iv.searchPlaceholder')}" class="holaf-viewer-search-bar">
                 <div class="holaf-viewer-scope-buttons" style="display: flex; gap: 5px; margin-top: 8px;">
-                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-filename" title="Search in Filenames">Name</button>
-                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-prompt" title="Search in Prompts">Prompt</button>
-                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-workflow" title="Search in Workflow JSON">Workflow</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-filename" title="${t('iv.scopeNameTitle')}">${t('iv.scopeName')}</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-prompt" title="${t('iv.scopePromptTitle')}">${t('iv.scopePrompt')}</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-search-scope-workflow" title="${t('iv.scopeWorkflowTitle')}">${t('iv.scopeWorkflow')}</button>
                 </div>
             </div>
             
             <div class="holaf-viewer-filter-group">
-                <h4>Date Range</h4>
+                <h4>${t('iv.dateRange')}</h4>
                 <div class="holaf-viewer-date-range-container">
-                    <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-start">From:</label><input type="date" id="holaf-viewer-date-start"></div>
-                    <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-end">To:</label><input type="date" id="holaf-viewer-date-end"></div>
+                    <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-start">${t('iv.from')}</label><input type="date" id="holaf-viewer-date-start"></div>
+                    <div class="holaf-viewer-date-input-group"><label for="holaf-viewer-date-end">${t('iv.to')}</label><input type="date" id="holaf-viewer-date-end"></div>
                 </div>
             </div>
             
             <div class="holaf-viewer-filter-group">
-                <h4>Workflow Availability</h4>
+                <h4>${t('iv.workflowAvailability')}</h4>
                 <div id="holaf-viewer-workflow-filters" class="holaf-viewer-button-grid" style="display: flex; gap: 5px;">
-                    <button class="holaf-viewer-toggle-button" id="holaf-wf-filter-internal" data-source="internal_png">Internal</button>
-                    <button class="holaf-viewer-toggle-button" id="holaf-wf-filter-external" data-source="external_json">External</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-wf-filter-internal" data-source="internal_png">${t('iv.internal')}</button>
+                    <button class="holaf-viewer-toggle-button" id="holaf-wf-filter-external" data-source="external_json">${t('iv.external')}</button>
                 </div>
             </div>
 
             <div class="holaf-viewer-filter-group">
-                <h4>Tags (AND logic)</h4>
+                <h4>${t('iv.tags')}</h4>
                 <div id="holaf-viewer-tags-filter-container">
                     <div id="holaf-viewer-active-tags" class="holaf-viewer-active-tags-container"></div>
-                    <input type="text" id="holaf-viewer-tag-input" list="holaf-viewer-tag-suggestions" placeholder="Add a tag..." class="holaf-viewer-search-bar">
+                    <input type="text" id="holaf-viewer-tag-input" list="holaf-viewer-tag-suggestions" placeholder="${t('iv.addTagPlaceholder')}" class="holaf-viewer-search-bar">
                     <datalist id="holaf-viewer-tag-suggestions"></datalist>
                 </div>
             </div>
             
             <div class="holaf-viewer-filter-group holaf-viewer-scrollable-section">
                 <div class="holaf-viewer-filter-header">
-                    <h4>Folders</h4>
+                    <h4>${t('iv.folders')}</h4>
                     <div class="holaf-viewer-folder-actions">
-                        <a href="#" id="holaf-viewer-folders-select-all">All</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-none">None</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-invert">Invert</a>
+                        <a href="#" id="holaf-viewer-folders-select-all">${t('iv.all')}</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-none">${t('iv.none')}</a><span class="holaf-folder-separator">/</span><a href="#" id="holaf-viewer-folders-select-invert">${t('iv.invert')}</a>
                     </div>
                 </div>
-                <div id="holaf-viewer-folders-filter" class="holaf-viewer-filter-list"><p class="holaf-viewer-message"><em>Loading...</em></p></div>
+                <div id="holaf-viewer-folders-filter" class="holaf-viewer-filter-list"><p class="holaf-viewer-message"><em>${t('iv.loading')}</em></p></div>
             </div>
             <div class="holaf-viewer-fixed-sections">
                 <div class="holaf-viewer-filter-group">
-                    <h4>Formats</h4>
+                    <h4>${t('iv.formats')}</h4>
                     <div id="holaf-viewer-formats-filter" class="holaf-viewer-filter-list"></div>
                 </div>
                 <div class="holaf-viewer-actions-group">
-                    <h4>Actions</h4>
+                    <h4>${t('iv.actions')}</h4>
                     <div class="holaf-viewer-actions-buttons-container">
                          <div class="holaf-viewer-action-button-row">
-                            <button id="holaf-viewer-btn-delete" class="holaf-viewer-action-button" disabled title="Move selected to trashcan">🗑️ Delete</button>
-                            <button id="holaf-viewer-btn-restore" class="holaf-viewer-action-button" disabled title="Restore selected from trashcan">♻️ Restore</button>
+                            <button id="holaf-viewer-btn-delete" class="holaf-viewer-action-button" disabled title="${t('iv.deleteTitle')}">${t('iv.delete')}</button>
+                            <button id="holaf-viewer-btn-restore" class="holaf-viewer-action-button" disabled title="${t('iv.restoreTitle')}">${t('iv.restore')}</button>
                         </div>
                         <div class="holaf-viewer-action-button-row">
-                            <button id="holaf-viewer-btn-extract" class="holaf-viewer-action-button" disabled title="Extract metadata to .txt/.json and remove from image"> जाये Extract</button>
-                            <button id="holaf-viewer-btn-inject" class="holaf-viewer-action-button" disabled title="Inject metadata from .txt/.json into image">💉 Inject</button>
+                            <button id="holaf-viewer-btn-extract" class="holaf-viewer-action-button" disabled title="${t('iv.extractTitle')}"> जाये ${t('iv.extract')}</button>
+                            <button id="holaf-viewer-btn-inject" class="holaf-viewer-action-button" disabled title="${t('iv.injectTitle')}">${t('iv.inject')}</button>
                         </div>
                          <div class="holaf-viewer-action-button-row">
-                            <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="Export selected images">📤 Export</button>
-                            <button id="holaf-viewer-btn-reset-filters" class="holaf-viewer-action-button" title="Reset all filters to their default values">🔄 Reset</button>
+                            <button id="holaf-viewer-btn-export" class="holaf-viewer-action-button" disabled title="${t('iv.exportTitle')}">${t('iv.export')}</button>
+                            <button id="holaf-viewer-btn-reset-filters" class="holaf-viewer-action-button" title="${t('iv.resetTitle')}">${t('iv.reset')}</button>
                         </div>
                         <div class="holaf-viewer-action-button-row">
-                            <button id="holaf-viewer-btn-regen-thumbs" class="holaf-viewer-action-button" title="Remet en file les miniatures en échec ou corrompues pour régénération">🖼️ Regen Thumbs</button>
+                            <button id="holaf-viewer-btn-regen-thumbs" class="holaf-viewer-action-button" title="${t('iv.regenThumbsTitle')}">${t('iv.regenThumbs')}</button>
                         </div>
                     </div>
                 </div>
                 <div class="holaf-viewer-display-options">
-                    <h4>Display Options</h4>
+                    <h4>${t('iv.displayOptions')}</h4>
                     <div class="holaf-viewer-filter-list">
-                       <div class="holaf-viewer-filter-item"><input type="checkbox" id="holaf-viewer-thumb-fit-toggle"><label for="holaf-viewer-thumb-fit-toggle">Contained (no crop)</label></div>
-                       <div class="holaf-viewer-slider-container"><label for="holaf-viewer-thumb-size-slider">Size</label><input type="range" id="holaf-viewer-thumb-size-slider" min="80" max="300" step="10"><span id="holaf-viewer-thumb-size-value">150px</span></div>
+                       <div class="holaf-viewer-filter-item"><input type="checkbox" id="holaf-viewer-thumb-fit-toggle"><label for="holaf-viewer-thumb-fit-toggle">${t('iv.contained')}</label></div>
+                       <div class="holaf-viewer-slider-container"><label for="holaf-viewer-thumb-size-slider">${t('iv.size')}</label><input type="range" id="holaf-viewer-thumb-size-slider" min="80" max="300" step="10"><span id="holaf-viewer-thumb-size-value">150px</span></div>
                     </div>
                 </div>
             </div>
@@ -224,19 +231,19 @@ class ImageViewerUI {
         // [MODIFIED] Added Processing Overlay
         pane.innerHTML = `
             <div id="holaf-viewer-toolbar">
-                <button id="holaf-viewer-jump-newest" class="holaf-viewer-toolbar-button" title="Aller aux images les plus récentes">⏫ récentes</button>
-                <button id="holaf-viewer-jump-oldest" class="holaf-viewer-toolbar-button" title="Aller aux images les plus anciennes">⏬ anciennes</button>
+                <button id="holaf-viewer-jump-newest" class="holaf-viewer-toolbar-button" title="${t('iv.jumpNewestTitle')}">${t('iv.jumpNewest')}</button>
+                <button id="holaf-viewer-jump-oldest" class="holaf-viewer-toolbar-button" title="${t('iv.jumpOldestTitle')}">${t('iv.jumpOldest')}</button>
             </div>
-            <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">Loading images...</p></div>
+            <div id="holaf-viewer-gallery"><p class="holaf-viewer-message">${t('iv.loadingImages')}</p></div>
             <div id="holaf-viewer-zoom-view" style="display: none;">
-                <div id="holaf-preview-indicator" style="display:none; position:absolute; bottom:15px; left:15px; color:rgba(255,255,255,0.7); font-size:0.8em; z-index:100; pointer-events:none; text-shadow: 1px 1px 2px black;">⚡ Preview</div>
+                <div id="holaf-preview-indicator" style="display:none; position:absolute; bottom:15px; left:15px; color:rgba(255,255,255,0.7); font-size:0.8em; z-index:100; pointer-events:none; text-shadow: 1px 1px 2px black;">${t('iv.preview')}</div>
                 <div id="holaf-processing-overlay" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.6); color:white; padding:15px 25px; border-radius:8px; z-index:101; pointer-events:none; font-weight:bold; backdrop-filter:blur(2px);">
-                    ⏳ Processing Video...
+                    ${t('iv.processingVideo')}
                 </div>
-                <button class="holaf-viewer-zoom-close" title="Close (or double-click image)">✖</button>
+                <button class="holaf-viewer-zoom-close" title="${t('iv.zoomCloseTitle')}">✖</button>
                 <img src="" draggable="false" />
                 <video controls loop id="holaf-viewer-zoom-video" style="display: none; width: 100%; height: 100%; object-fit: contain;"></video>
-                <button class="holaf-viewer-zoom-fullscreen-icon" title="Enter fullscreen">⛶</button>
+                <button class="holaf-viewer-zoom-fullscreen-icon" title="${t('iv.enterFullscreen')}">⛶</button>
             </div>
         `;
         return pane;
@@ -247,9 +254,9 @@ class ImageViewerUI {
         col.id = 'holaf-viewer-right-column';
         col.innerHTML = `
             <div id="holaf-viewer-right-pane" class="holaf-viewer-pane">
-                <h4>Image Information</h4>
+                <h4>${t('iv.imageInfo')}</h4>
                 <div id="holaf-viewer-info-content">
-                    <p class="holaf-viewer-message">Select an image to see details.</p>
+                    <p class="holaf-viewer-message">${t('iv.selectImageDetails')}</p>
                 </div>
             </div>
         `;
@@ -328,8 +335,8 @@ class ImageViewerUI {
             try {
                 // Step 1: Full cleanup — validate every thumbnail on disk and
                 // reset missing/corrupt ones so the worker regenerates them.
-                regenThumbsBtn.textContent = '⏳ Nettoyage...';
-                showToast('Nettoyage des miniatures en cours...', 'info');
+                regenThumbsBtn.textContent = t('iv.cleanupThumbs');
+                showToast(t('iv.cleanupThumbsToast'), 'info');
 
                 const cleanResponse = await fetch('/holaf/images/maintenance/clean-thumbnails', { method: 'POST' });
                 if (!cleanResponse.ok) {
@@ -340,7 +347,7 @@ class ImageViewerUI {
                 // Step 2 (best-effort): reset permanent-failure thumbnails.
                 // If this step fails, keep going so the user still sees the
                 // clean results.
-                regenThumbsBtn.textContent = '⏳ Régénération...';
+                regenThumbsBtn.textContent = t('iv.regenerating');
                 let resetCount = 0;
                 let regenFailed = false;
                 try {
@@ -361,21 +368,21 @@ class ImageViewerUI {
                 if (typeof details.deleted_orphans === 'number' &&
                     typeof details.regenerated_missing === 'number' &&
                     typeof details.regenerated_corrupt === 'number') {
-                    message = `🧹 Nettoyage: ${details.deleted_orphans} orphelines supprimées, ${details.regenerated_missing} manquantes + ${details.regenerated_corrupt} corrompues remises en file.`;
+                    message = t('iv.cleanupResult', { orphans: details.deleted_orphans, missing: details.regenerated_missing, corrupt: details.regenerated_corrupt });
                     message += regenFailed
-                        ? ' ⚠️ Étape de régénération en échec.'
-                        : ` 🔄 ${resetCount} échouées remises en file.`;
+                        ? t('iv.regenerateStepFailed')
+                        : t('iv.regeneratedFailed', { count: resetCount });
                 } else {
-                    message = '🧹 Nettoyage des miniatures terminé.';
+                    message = t('iv.cleanupDone');
                 }
 
                 showToast(message, 'success');
                 if (regenFailed) {
-                    showToast('Erreur lors de la régénération des miniatures.', 'error');
+                    showToast(t('iv.regenerateError'), 'error');
                 }
             } catch (error) {
                 console.error('[Holaf ImageViewer] Error regenerating thumbnails:', error);
-                showToast('Erreur lors de la régénération des miniatures.', 'error');
+                showToast(t('iv.regenerateError'), 'error');
             } finally {
                 // Refresh the gallery so thumbnails are reloaded.
                 this.callbacks.onFilterChange(true);
@@ -541,7 +548,7 @@ class ImageViewerUI {
 
             const removeButton = document.createElement('button');
             removeButton.className = 'holaf-viewer-tag-remove';
-            removeButton.title = 'Remove tag';
+            removeButton.title = t('iv.removeTag');
             removeButton.textContent = '×';
 
             tagEl.append(tagLabel, removeButton);

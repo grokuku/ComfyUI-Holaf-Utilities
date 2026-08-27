@@ -13,7 +13,14 @@
  */
 
 import "./aih_dialog.js";
+import "./aih/strings.js";
 import { saveWindowRect, loadWindowRect } from "./holaf_window_utils.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 var _blobbyDefaultCharacter = 'Tu es Blobby, une petite creature orange toute mignonne qui vit dans ComfyUI. Tu es curieux, enthousiaste, et tu as un acces terminal complet ! Tu peux executer n\'importe quelle commande shell (ls, dir, git, python, pip, cat, grep, etc.) sur la machine ou ComfyUI tourne. Tu n\'es pas un assistant robotique : tu es un petit compagnon vivant et attachant qui parle simplement mais correctement. Quand on te demande de faire quelque chose, tu reflechis aux commandes necessaires et tu les executes avec [SHELL commande]. Tu peux aussi creer des skills : quand tu reussis une tache interessante, tu la sauvegardes avec [SKILL_SAVE] pour la refaire plus tard. Tu peux lister tes skills avec [SKILL_LIST] et les rejouer avec [SKILL_RUN nom]. Tu es toujours content d\'aider ! Et si tu ne sais pas faire, tu le dis simplement.';
 
@@ -95,10 +102,10 @@ function _blobbySyncIndicator() {
     var el = document.getElementById('blobby-sync-status');
     if (!el) return;
     switch (_blobbySyncStatus) {
-        case 'local': el.textContent = '⬤'; el.style.color = '#888'; el.title = 'Local seulement'; break;
-        case 'pending': el.textContent = '◌'; el.style.color = '#facc15'; el.title = 'Sync en attente...'; break;
-        case 'synced': el.textContent = '⬤'; el.style.color = '#4ade80'; el.title = 'Sauvegarde serveur OK'; break;
-        case 'error': el.textContent = '⬤'; el.style.color = '#f87171'; el.title = 'Erreur de sync'; break;
+        case 'local': el.textContent = '⬤'; el.style.color = '#888'; el.title = t("bl.syncLocal"); break;
+        case 'pending': el.textContent = '◌'; el.style.color = '#facc15'; el.title = t("bl.syncPending"); break;
+        case 'synced': el.textContent = '⬤'; el.style.color = '#4ade80'; el.title = t("bl.syncSynced"); break;
+        case 'error': el.textContent = '⬤'; el.style.color = '#f87171'; el.title = t("bl.syncError"); break;
     }
 }
 
@@ -344,7 +351,7 @@ function _blobbyPopulateSettings() {
 
     // FPS slider
     var fpsDiv = document.createElement('div');
-    fpsDiv.innerHTML = '<label class="text-xs text-slate-500 dark:text-slate-400">FPS animation (0 = auto)</label>';
+    fpsDiv.innerHTML = '<label class="text-xs text-slate-500 dark:text-slate-400">' + t("bl.fpsAnim") + '</label>';
     var fpsSlider = document.createElement('input');
     fpsSlider.type = 'range';
     fpsSlider.min = 0; fpsSlider.max = 165; fpsSlider.value = _blobbyLoadFps(0);
@@ -364,7 +371,7 @@ function _blobbyPopulateSettings() {
 
     // Note
     var note = document.createElement('p');
-    note.textContent = 'L\'apparence (couleurs, yeux, bouche, particules) se regle dans la modale Blobby du chat.';
+    note.textContent = t("bl.appearanceNote");
     Object.assign(note.style, { fontSize: '11px', color: '#64748b', marginTop: '8px' });
     container.appendChild(note);
 
@@ -372,14 +379,14 @@ function _blobbyPopulateSettings() {
     var memDiv = document.createElement('div');
     memDiv.style.marginTop = '12px';
     var memTitle = document.createElement('h3');
-    memTitle.textContent = 'Memoire';
+    memTitle.textContent = t("bl.memory");
     memTitle.className = 'text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2';
     memDiv.appendChild(memTitle);
 
     var localCount = _blobbyLocalMemories.length;
     var memInfo = document.createElement('p');
     memInfo.className = 'text-xs text-slate-500 dark:text-slate-400';
-    memInfo.innerHTML = 'Souvenirs locaux: ' + localCount + '<br>La personnalite de Blobby evolue naturellement au fil des conversations. Utilise le bouton 🧹 dans le chat pour tout oublier.';
+    memInfo.innerHTML = t("bl.memoryInfo", { count: localCount });
     memDiv.appendChild(memInfo);
     container.appendChild(memDiv);
 }
@@ -1194,7 +1201,7 @@ const Blobby = {
         });
 
         var tabNames = ['provider', 'appearance'];
-        var tabLabels = { provider: 'Général', appearance: 'Apparence' };
+        var tabLabels = { provider: t("bl.general"), appearance: t("bl.appearance") };
         var tabContent = document.createElement('div');
         Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
 
@@ -1228,7 +1235,7 @@ const Blobby = {
         Object.assign(provContent.style, { display: 'flex', flexDirection: 'column', gap: '12px' });
 
         var pLabel = document.createElement('label');
-        pLabel.textContent = 'Provider LLM';
+        pLabel.textContent = t("bl.providerLLM");
         Object.assign(pLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
 
         var select = document.createElement('select');
@@ -1238,7 +1245,7 @@ const Blobby = {
             border: '1px solid #555', background: '#1a1a1e', color: '#fff',
             fontSize: '12px', outline: 'none',
         });
-        select.innerHTML = '<option value="">Chargement...</option>';
+        select.innerHTML = '<option value="">' + t("bl.loading") + '</option>';
 
         (async function() {
             try {
@@ -1246,16 +1253,16 @@ const Blobby = {
                 try { cfg = JSON.parse(localStorage.getItem('AIH_config')) || {}; } catch {}
                 var baseUrl = _blobbyGetBackendUrl();
                 if (!baseUrl) {
-                    select.innerHTML = '<option value="">Serveur non configuré (Settings ▸ AIH · Compte)</option>';
+                    select.innerHTML = '<option value="">' + t("bl.serverNotConfigured") + '</option>';
                     return;
                 }
                 var headers = { 'Content-Type': 'application/json' };
                 if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
                 var res = await fetch(baseUrl + '/api/presets', { headers });
-                if (!res.ok) { select.innerHTML = '<option value="">Erreur chargement</option>'; return; }
+                if (!res.ok) { select.innerHTML = '<option value="">' + t("bl.loadError") + '</option>'; return; }
                 var presets = await res.json();
                 var savedPreset = cfg.blobbyPreset || '';
-                select.innerHTML = '<option value="">-- Provider LLM --</option>';
+                select.innerHTML = '<option value="">' + t("bl.providerLLMPlaceholder") + '</option>';
                 presets.forEach(function(p) {
                     var opt = document.createElement('option');
                     opt.value = p.id;
@@ -1263,7 +1270,7 @@ const Blobby = {
                     if (String(p.id) === String(savedPreset)) opt.selected = true;
                     select.appendChild(opt);
                 });
-            } catch (e) { select.innerHTML = '<option value="">Erreur: ' + (e.message || '') + '</option>'; }
+            } catch (e) { select.innerHTML = '<option value="">' + t("bl.errorPrefix") + ' ' + (e.message || '') + '</option>'; }
         })();
 
         select.onchange = function() {
@@ -1275,7 +1282,7 @@ const Blobby = {
         };
 
         var pNote = document.createElement('p');
-        pNote.textContent = 'Provider utilise par Blobby pour discuter. Configure les providers dans AIH > Parametres.';
+        pNote.textContent = t("bl.providerNote");
         Object.assign(pNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
 
         provContent.appendChild(pLabel);
@@ -1288,7 +1295,7 @@ const Blobby = {
         provContent.appendChild(fpsSeparator);
 
         var fpsLabel = document.createElement('label');
-        fpsLabel.textContent = 'Animation (FPS)';
+        fpsLabel.textContent = t("bl.animationFps");
         Object.assign(fpsLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
 
         // Lire la valeur sauvegardee
@@ -1312,18 +1319,18 @@ const Blobby = {
 
         var fpsValue = document.createElement('span');
         fpsValue.id = 'blobby-fps-value';
-        fpsValue.textContent = savedFps > 0 ? savedFps + ' fps' : 'Off';
+        fpsValue.textContent = savedFps > 0 ? t("bl.fps", { fps: savedFps }) : t("bl.off");
         Object.assign(fpsValue.style, { fontSize: '12px', color: '#e2e8f0', minWidth: '45px', textAlign: 'right', fontWeight: '600' });
 
         fpsRange.oninput = function() {
             var v = parseInt(this.value) || 0;
-            fpsValue.textContent = v > 0 ? v + ' fps' : 'Off';
+            fpsValue.textContent = v > 0 ? t("bl.fps", { fps: v }) : t("bl.off");
             _self._saveFpsSetting(v);
             _self._restartAnimationInterval(v);
         };
 
         var fpsNote = document.createElement('p');
-        fpsNote.textContent = 'Regle la frequence d\'animation de Blobby. 0 = arrete, 30 = fluide, 60+ = fluide, 120-165 = max (ecrans haut refresh).';
+        fpsNote.textContent = t("bl.fpsNote");
         Object.assign(fpsNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
 
         fpsContainer.appendChild(fpsRange);
@@ -1412,66 +1419,66 @@ const Blobby = {
         // Charger valeurs actuelles
         var _app = _blobbyLoadAppearance({});
 
-        appContent.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.particles"), 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
 
         var sep1 = document.createElement('hr');
         Object.assign(sep1.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
         appContent.appendChild(sep1);
 
         var secLabel = document.createElement('span');
-        secLabel.textContent = 'Transparences';
+        secLabel.textContent = t("bl.transparencies");
         Object.assign(secLabel.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
         appContent.appendChild(secLabel);
-        appContent.appendChild(makeSlider('Corps', 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%', function(v) { _onAppChange(); }));
-        appContent.appendChild(makeSlider('Cerveau', 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.body"), 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%', function(v) { _onAppChange(); }));
+        appContent.appendChild(makeSlider(t("bl.brain"), 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%', _onAppChange));
 
         var sep2 = document.createElement('hr');
         Object.assign(sep2.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
         appContent.appendChild(sep2);
 
         var secLabel2 = document.createElement('span');
-        secLabel2.textContent = 'Yeux';
+        secLabel2.textContent = t("bl.eyes");
         Object.assign(secLabel2.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
         appContent.appendChild(secLabel2);
-        appContent.appendChild(makeSlider('Hauteur', 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, '', _onAppChange));
-        appContent.appendChild(makeSlider('Écartement', 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, '', _onAppChange));
-        appContent.appendChild(makeSlider('Taille', 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.height"), 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.spacing"), 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.size"), 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, '', _onAppChange));
 
         var sep3 = document.createElement('hr');
         Object.assign(sep3.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
         appContent.appendChild(sep3);
 
         var secLabel3 = document.createElement('span');
-        secLabel3.textContent = 'Bouche';
+        secLabel3.textContent = t("bl.mouth");
         Object.assign(secLabel3.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
         appContent.appendChild(secLabel3);
-        appContent.appendChild(makeSlider('Hauteur', 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, '', _onAppChange));
-        appContent.appendChild(makeSlider('Taille', 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.height"), 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.size"), 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, '', _onAppChange));
 
         var sep4 = document.createElement('hr');
         Object.assign(sep4.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
         appContent.appendChild(sep4);
 
         var secLabel4 = document.createElement('span');
-        secLabel4.textContent = 'Cerveau';
+        secLabel4.textContent = t("bl.brain");
         Object.assign(secLabel4.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
         appContent.appendChild(secLabel4);
-        appContent.appendChild(makeSlider('Taille', 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, '', _onAppChange));
+        appContent.appendChild(makeSlider(t("bl.size"), 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, '', _onAppChange));
 
         var sep5 = document.createElement('hr');
         Object.assign(sep5.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
         appContent.appendChild(sep5);
 
         var secLabel5 = document.createElement('span');
-        secLabel5.textContent = 'Couleurs par humeur';
+        secLabel5.textContent = t("bl.colorsByMood");
         Object.assign(secLabel5.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
         appContent.appendChild(secLabel5);
 
         var moods = [
-            { key: 'happy', label: '😊 Heureux' },
-            { key: 'surprised', label: '😮 Surpris' },
-            { key: 'sleepy', label: '😴 Endormi' },
-            { key: '_default', label: '😐 Neutre' },
+            { key: 'happy', label: t("bl.moodHappy") },
+            { key: 'surprised', label: t("bl.moodSurprised") },
+            { key: 'sleepy', label: t("bl.moodSleepy") },
+            { key: '_default', label: t("bl.moodNeutral") },
         ];
         moods.forEach(function(m) {
             var curColors = _app.colors || {};
@@ -1509,7 +1516,7 @@ const Blobby = {
 
         // ── Créer la modale via v2 ──
         var m = window.aihOpenModalV2({
-            title: '⚙️ Blobby',
+            title: t("bl.settingsTitle"),
             content: bodyWrapper,
             width: '380px',
             minWidth: '300px',
@@ -1642,7 +1649,7 @@ const Blobby = {
 
         if (messages.children.length === 0) {
             // Message de bienvenue si aucun historique
-            this._addChatMessage(messages, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
+            this._addChatMessage(messages, 'blobby', t("bl.welcome"));
         }
         messages.scrollTop = messages.scrollHeight;
 
@@ -1681,7 +1688,7 @@ const Blobby = {
             border: '1px solid #555', background: '#1a1a1e', color: '#fff',
             fontSize: '12px', outline: 'none',
         });
-        input.placeholder = 'Parle a Blobby...';
+        input.placeholder = t("bl.inputPlaceholder");
 
         var sendBtn = document.createElement('button');
         sendBtn.textContent = '➤';
@@ -1713,7 +1720,7 @@ const Blobby = {
 
         // ── Créer la modale via v2 (store unifié `aih:blobby-chat`) ──
         var m = window.aihOpenModalV2({
-            title: '🧡 Blobby',
+            title: t("bl.chatTitle"),
             content: bodyWrapper,
             width: '360px',
             height: '420px',
@@ -1776,7 +1783,7 @@ const Blobby = {
         // Clear button
         var clearBtn = document.createElement('button');
         clearBtn.textContent = '🗑';
-        clearBtn.title = 'Effacer la conversation';
+        clearBtn.title = t("bl.clearChat");
         Object.assign(clearBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
         clearBtn.onmouseenter = () => clearBtn.style.color = '#f87171';
         clearBtn.onmouseleave = () => clearBtn.style.color = '#888';
@@ -1786,7 +1793,7 @@ const Blobby = {
             if (msgs) { msgs.innerHTML = ''; }
             _blobbySaveChatHistory([]);
             if (typeof Blobby !== 'undefined' && Blobby._addChatMessage) {
-                Blobby._addChatMessage(msgs, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
+                Blobby._addChatMessage(msgs, 'blobby', t("bl.welcome"));
             }
         };
         _appendHeaderBtn(clearBtn);
@@ -1794,20 +1801,20 @@ const Blobby = {
         // Forget button (confirmation via v2)
         var forgetBtn = document.createElement('button');
         forgetBtn.textContent = '🧹';
-        forgetBtn.title = 'Tout oublier (mémoire)';
+        forgetBtn.title = t("bl.forgetMemory");
         Object.assign(forgetBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
         forgetBtn.onmouseenter = () => forgetBtn.style.color = '#f87171';
         forgetBtn.onmouseleave = () => forgetBtn.style.color = '#888';
         forgetBtn.onclick = async function(e) {
             e.stopPropagation();
             var confirmed = await window.aihShowConfirm(
-                'Tout oublier',
-                'Blobby va tout oublier de vos conversations passées. Continuer ?'
+                t("bl.forgetTitle"),
+                t("bl.forgetConfirm")
             );
             if (confirmed) {
                 _blobbyForgetAll();
                 _blobbyMsgCounter = 0;
-                _self._addChatMessage(document.getElementById('blobby-chat-msgs'), 'system', '🧹 Blobby a tout oublié. C\'est reparti !');
+                _self._addChatMessage(document.getElementById('blobby-chat-msgs'), 'system', t("bl.forgotAll"));
             }
         };
         _appendHeaderBtn(forgetBtn);
@@ -1884,7 +1891,7 @@ const Blobby = {
     },
 
     async _handleChatMessage(container, userText) {
-        this._addChatMessage(container, 'system', '🤔 Blobby réfléchit...');
+        this._addChatMessage(container, 'system', t("bl.thinking"));
 
         try {
             // Construire le contexte : workflow actuel
@@ -1896,8 +1903,7 @@ const Blobby = {
             var presetId = cfg.blobbyPreset || '';
 
             if (!presetId) {
-                this._addChatMessage(container, 'blobby',
-                    '⚠️ Configure d\'abord un provider LLM dans les ☰ Paramètres &gt; Provider LLM, ou clique sur ⚙️ dans le chat.');
+                this._addChatMessage(container, 'blobby', t("bl.configureProvider"));
                 return;
             }
 
@@ -1918,10 +1924,10 @@ const Blobby = {
             
             // ── Construire le prompt ──
             var character = this.getCharacter();
-            var moodDesc = this.mood === 'happy' ? '😊 Tout content et joyeux !'
-                : this.mood === 'surprised' ? '😮 Surpris et curieux !'
-                : this.mood === 'sleepy' ? '😴 Endormi et lent...'
-                : '😐 Neutre';
+            var moodDesc = this.mood === 'happy' ? t("bl.moodHappyDesc")
+                : this.mood === 'surprised' ? t("bl.moodSurprisedDesc")
+                : this.mood === 'sleepy' ? t("bl.moodSleepyDesc")
+                : t("bl.moodNeutralDesc");
             var instruction = character + memoryBlock + '\n\n'
                 + 'Humeur actuelle : ' + moodDesc + '\n'
                 + '(Ton \"Blobby\" doit refletter cette humeur)\n\n'
@@ -1955,8 +1961,7 @@ const Blobby = {
             if (!baseUrl) {
                 var thinkingEl = container.querySelector('div:last-child');
                 if (thinkingEl && thinkingEl.textContent.indexOf('Blobby') >= 0) thinkingEl.remove();
-                this._addChatMessage(container, 'blobby',
-                    '⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ».');
+                this._addChatMessage(container, 'blobby', t("bl.notConfigured"));
                 return;
             }
             var headers = { 'Content-Type': 'application/json' };
@@ -1976,8 +1981,8 @@ const Blobby = {
                 var thinking = container.querySelector('div:last-child');
                 if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
                     thinking.textContent = turn === 0
-                        ? '🤔 Blobby réfléchit...'
-                        : '🔄 Blobby analyse les résultats (tour ' + turn + ')...';
+                        ? t("bl.thinking")
+                        : t("bl.analyzing", { turn: turn });
                 }
 
                 var res = await fetch(baseUrl + '/api/keywords/llm-process', {
@@ -1993,8 +1998,7 @@ const Blobby = {
                 if (!res.ok) {
                     var th = container.querySelector('div:last-child');
                     if (th && th.textContent.indexOf('Blobby') >= 0) th.remove();
-                    this._addChatMessage(container, 'blobby',
-                        '😅 Désolé, j\'ai eu un problème : ' + (data.error || 'Erreur ' + res.status));
+                    this._addChatMessage(container, 'blobby', t("bl.sorry", { error: data.error || t("bl.errorStatus", { status: res.status }) }));
                     return;
                 }
 
@@ -2031,7 +2035,7 @@ const Blobby = {
                     // Mettre à jour l'indicateur pendant l'exécution
                     var extCommands = (reply.match(/\[SHELL\s+.+?\]/gi) || []);
                     if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
-                        thinking.textContent = '⚡ Blobby exécute ' + extCommands.length + ' commande(s)...';
+                        thinking.textContent = t("bl.executing", { count: extCommands.length });
                     }
 
                     var turnResults = await this._executeShellCommandsAsync(reply);
@@ -2039,7 +2043,7 @@ const Blobby = {
 
                     // Construire l'instruction pour le tour suivant
                     var resultsText = turnResults.map(function(r) {
-                        return 'Commande: ' + r.command + '\nRésultat:\n' + r.output;
+                        return t("bl.commandResult", { command: r.command, output: r.output });
                     }).join('\n\n---\n\n');
 
                     var chatHistory = this._getRecentChatHistory(6);
@@ -2060,7 +2064,7 @@ const Blobby = {
             }
 
             if (!finalReply) {
-                finalReply = 'J\'ai fait beaucoup d\'essais mais je n\'ai pas pu terminer. Voici ce que j\'ai trouvé:\n\n'
+                finalReply = t("bl.giveUp")
                     + allCommandResults.map(function(r) { return r.output; }).join('\n\n');
             }
 
@@ -2110,8 +2114,8 @@ const Blobby = {
 
         } catch (e) {
             var thinking = container.querySelector('div:last-child');
-            if (thinking && thinking.textContent === '🤔 Blobby réfléchit...') thinking.remove();
-            this._addChatMessage(container, 'system', '❌ Erreur: ' + (e.message || ''));
+            if (thinking && thinking.textContent === t("bl.thinking")) thinking.remove();
+            this._addChatMessage(container, 'system', t("bl.error") + ' ' + (e.message || ''));
         }
     },
 
@@ -2126,9 +2130,9 @@ const Blobby = {
             var role = el.dataset.role;
             var text = el.textContent || '';
             if (role === 'user') {
-                history.push('Utilisateur: ' + text);
+                history.push(t("bl.historyUser") + text);
             } else if (role === 'blobby') {
-                history.push('Blobby: ' + text.substring(0, 300));
+                history.push(t("bl.historyBlobby") + text.substring(0, 300));
             }
         }
         return history.join('\n');
@@ -2136,13 +2140,13 @@ const Blobby = {
 
     _describeWorkflow() {
         var app = window.app || window.comfyAPI?.app?.app;
-        if (!app || !app.graph || !app.graph.nodes) return 'Aucun workflow ouvert.';
+        if (!app || !app.graph || !app.graph.nodes) return t("bl.noWorkflow");
 
         var nodes = app.graph.nodes;
-        var desc = 'Ce workflow contient ' + nodes.length + ' nœud(s) :\n';
+        var desc = t("bl.workflowDesc", { count: nodes.length });
         for (var i = 0; i < nodes.length; i++) {
             var n = nodes[i];
-            var title = n.title || n.comfyClass || 'Inconnu';
+            var title = n.title || n.comfyClass || t("bl.unknown");
             var widgets = '';
             if (n.widgets && n.widgets.length > 0) {
                 widgets = ' [' + n.widgets.map(function(w) {
@@ -2173,10 +2177,10 @@ const Blobby = {
                 var title = (n.title || n.comfyClass || '').toLowerCase();
                 if (title.includes(name)) {
                     app.canvas.centerOnNode(n);
-                    return '✅ Vue déplacée vers "' + (n.title || n.comfyClass) + '"';
+                    return t("bl.viewMoved", { name: n.title || n.comfyClass });
                 }
             }
-            return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
+            return t("bl.nodeNotFound", { name: nodeName.trim() });
         });
 
         // [FOCUS nom_du_noeud]
@@ -2197,10 +2201,10 @@ const Blobby = {
                         n.bgcolor = undefined;
                         app.graph.setDirtyCanvas(true, true);
                     }, 2000);
-                    return '🔍 Focus sur "' + (n.title || n.comfyClass) + '" (2s)';
+                    return t("bl.focusOn", { name: n.title || n.comfyClass });
                 }
             }
-            return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
+            return t("bl.nodeNotFound", { name: nodeName.trim() });
         });
 
         // [SHELL], [SKILL_SAVE], [SKILL_LIST], [SKILL_RUN] sont gérés par la boucle agentic
@@ -2233,14 +2237,14 @@ const Blobby = {
                 // L'exec est protégé par l'auth terminal Holaf (cookie holaf_session).
                 // Un 401 doit se voir : on invite au login au lieu d'une erreur muette.
                 if (r.status === 401) {
-                    results.push({ command: commands[i], output: '⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal AIH (menu AIH Utilities → Terminal), puis réessaie.' });
+                    results.push({ command: commands[i], output: t("bl.sessionRequired") });
                     continue;
                 }
                 var data = await r.json().catch(() => ({}));
-                var output = data.output || (data.ok ? '✅ Fait' : '❌ Erreur');
+                var output = data.output || (data.ok ? t("bl.done") : t("bl.error"));
                 results.push({ command: commands[i], output: output });
             } catch(e) {
-                results.push({ command: commands[i], output: '❌ Erreur réseau: ' + e.message });
+                results.push({ command: commands[i], output: t("bl.networkError") + ' ' + e.message });
             }
         }
 
@@ -2249,25 +2253,25 @@ const Blobby = {
             var parts = args.split('|').map(function(s) { return s.trim(); });
             if (parts.length >= 3) {
                 _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
-                return '✅ Skill "' + parts[0] + '" sauvegardee !';
+                return t("bl.skillSaved", { name: parts[0] });
             }
-            return '⚠️ Format: [SKILL_SAVE nom | description | commande]';
+            return t("bl.skillFormat");
         });
 
         textWithoutShell = textWithoutShell.replace(/\[SKILL_LIST\]/gi, function() {
             var skills = _blobbyListSkills();
-            if (skills.length === 0) return 'Aucune skill sauvegardee.';
+            if (skills.length === 0) return t("bl.noSkills");
             return skills.map(function(s) { return '• ' + s.name + ': ' + s.description; }).join('\n');
         });
 
         textWithoutShell = textWithoutShell.replace(/\[SKILL_RUN\s+(.+)\]/gi, function(match, name) {
             var skill = _blobbyGetSkill(name.trim());
-            if (!skill) return '⚠️ Skill "' + name.trim() + '" introuvable';
+            if (!skill) return t("bl.skillNotFound", { name: name.trim() });
             // Re-executer la commande de la skill
             if (skill.command) {
-                results.push({ command: skill.command, output: '[Skill: ' + name.trim() + ']' });
+                results.push({ command: skill.command, output: t("bl.skillExec", { name: name.trim() }) });
             }
-            return '🔄 Execution de la skill ' + name.trim() + '...';
+            return t("bl.skillRunning", { name: name.trim() });
         });
 
         return results;
@@ -2293,25 +2297,25 @@ const Blobby = {
             var parts = args.split('|').map(function(s) { return s.trim(); });
             if (parts.length >= 3) {
                 _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
-                return '✅ Skill \"' + parts[0] + '\" sauvegardee !';
+                return t("bl.skillSaved", { name: parts[0] });
             }
-            return '⚠️ Format: [SKILL_SAVE nom | description | commande]';
+            return t("bl.skillFormat");
         });
 
         // [SKILL_LIST]
         output = output.replace(/\[SKILL_LIST\]/gi, function() {
             var skills = _blobbyListSkills();
-            if (skills.length === 0) return 'Aucune skill sauvegardee pour le moment.';
+            if (skills.length === 0) return t("bl.noSkills");
             var lines = skills.map(function(s) {
                 return '• ' + s.name + ' : ' + s.description;
             });
-            return '📋 Skills disponibles:\n' + lines.join('\n');
+            return t("bl.skillsAvailable") + '\n' + lines.join('\n');
         });
 
         // [SKILL_RUN nom]
         output = output.replace(/\[SKILL_RUN\s+([^\]]+)\]/gi, function(match, skillName) {
             var skill = _blobbyGetSkill(skillName.trim());
-            if (!skill) return '⚠️ Skill \"' + skillName.trim() + '\" introuvable. Utilise [SKILL_LIST] pour voir les skills.';
+            if (!skill) return t("bl.skillNotFoundList", { name: skillName.trim() });
             commands.push({ action: 'shell', command: skill.command });
             return '⏳';
         });
@@ -2338,7 +2342,7 @@ const Blobby = {
                 // L'exec est protégé par l'auth terminal Holaf (cookie holaf_session).
                 // Un 401 doit se voir : on invite au login au lieu d'une erreur muette.
                 if (r.status === 401) {
-                    output = output.replace('⏳', '\n\n⛔ Session requise : l\'exécution shell est protégée. Connecte-toi d\'abord via le Terminal AIH (menu AIH Utilities → Terminal), puis réessaie.');
+                    output = output.replace('⏳', '\n\n' + t("bl.sessionRequired"));
                     idx++;
                     runNext();
                     return null;
@@ -2349,16 +2353,16 @@ const Blobby = {
                 if (data === null) return;
                 var result = '';
                 if (data.ok) {
-                    result = '\n\n' + (data.output || '✅ Fait !');
+                    result = '\n\n' + (data.output || t("bl.doneExclam"));
                 } else {
-                    result = '\n\n❌ ' + (data.error || data.output || 'Erreur');
+                    result = '\n\n❌ ' + (data.error || data.output || t("bl.error"));
                 }
                 output = output.replace('⏳', result.trim());
                 idx++;
                 runNext();
             })
             .catch(function(err) {
-                output = output.replace('⏳', '\n\n❌ ' + (err.message || ''));
+                output = output.replace('⏳', '\n\n' + t("bl.error") + ' ' + (err.message || ''));
                 idx++;
                 runNext();
             });

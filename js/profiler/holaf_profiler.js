@@ -58,6 +58,7 @@ function holafPackUrl(relativePath) {
 async function loadAihFoundation() {
     try {
         await import(holafPackUrl("aih_i18n.js"));
+        await import(holafPackUrl("aih/strings.js"));
         await import(holafPackUrl("aih_dialog.js"));
         return !!(
             window.AIH &&
@@ -118,6 +119,12 @@ export async function initProfiler() {
             return window.AIH.prompt(message, defaultValue, placeholder);
         }
         return window.prompt(message, defaultValue ?? '');
+    };
+
+    // Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+    const t = (key, params) => {
+        const I = window.AIH && window.AIH.I18n;
+        return I && typeof I.t === "function" ? I.t(key, params) : key;
     };
     
     // --- STATE ---
@@ -253,7 +260,7 @@ export async function initProfiler() {
                 color: var(--holaf-text-secondary, #A0A0A0);
                 border-radius: 3px;
             }
-            .history-comment:empty::before { content: 'Add comment...'; opacity: .5; }
+            .history-comment:empty::before { content: '${t("pr.addComment")}'; opacity: .5; }
             .history-comment:focus {
                 outline: 1px solid var(--holaf-accent-color, #D8700D);
                 color: var(--holaf-text-primary, #E0E0E0);
@@ -323,25 +330,25 @@ export async function initProfiler() {
 
         <header class="profiler-header">
             <div class="header-title">
-                <h1>AIH Workflow Profiler</h1>
+                <h1>${t("pr.title")}</h1>
             </div>
             <div class="header-actions">
-                <button id="btn-update-nodes" class="btn btn-secondary">Update Nodes</button>
-                <button id="btn-run-profile" class="btn">Run Profile</button>
+                <button id="btn-update-nodes" class="btn btn-secondary">${t("pr.updateNodes")}</button>
+                <button id="btn-run-profile" class="btn">${t("pr.runProfile")}</button>
             </div>
         </header>
 
         <!-- TAB BAR -->
         <div class="profiler-tabs">
-            <button class="profiler-tab active" data-tab="live">Live Profile</button>
-            <button class="profiler-tab" data-tab="history">Run History</button>
-            <button class="profiler-tab" data-tab="compare">Compare</button>
+            <button class="profiler-tab active" data-tab="live">${t("pr.tabLive")}</button>
+            <button class="profiler-tab" data-tab="history">${t("pr.tabHistory")}</button>
+            <button class="profiler-tab" data-tab="compare">${t("pr.tabCompare")}</button>
         </div>
 
         <!-- ============ TAB 1: LIVE PROFILE ============ -->
         <div class="profiler-tab-content" data-tab="live">
             <div class="profiler-summary-bar" id="profiler-summary-bar" style="display:none;">
-                <span class="summary-label">Total:</span>
+                <span class="summary-label">${t("pr.summaryTotal")}</span>
                 <span class="summary-value" id="summary-total">0.00s</span>
                 <span class="summary-status" id="summary-status"></span>
             </div>
@@ -349,19 +356,19 @@ export async function initProfiler() {
             <div class="profiler-toolbar">
                 <div class="filter-group">
                     <label title="Only active if at least one node has finished execution">
-                        <input type="checkbox" id="chk-hide-non-executed"> Hide Non-Executed
+                        <input type="checkbox" id="chk-hide-non-executed"> ${t("pr.hideNonExecuted")}
                     </label>
                 </div>
                 <div class="filter-group">
-                    <label>Min Time: <span id="lbl-min-time" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
+                    <label>${t("pr.minTime")} <span id="lbl-min-time" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
                     <input type="range" id="rng-min-time" min="0" max="5" step="0.1" value="0">
                 </div>
                 <div class="filter-group">
-                    <label>Exclude Type:</label>
-                    <input type="text" id="inp-filter-type" placeholder="Type..." style="width: 100px;">
+                    <label>${t("pr.excludeType")}</label>
+                    <input type="text" id="inp-filter-type" placeholder="${t("pr.typePlaceholder")}" style="width: 100px;">
                 </div>
                 <div class="filter-group" style="flex-grow:1; text-align:right;">
-                    <span style="font-size:0.8rem; color:var(--holaf-text-secondary);">Click headers to sort</span>
+                    <span style="font-size:0.8rem; color:var(--holaf-text-secondary);">${t("pr.clickHeaders")}</span>
                 </div>
             </div>
 
@@ -369,18 +376,18 @@ export async function initProfiler() {
                 <table class="data-table">
                     <thead>
                         <tr id="table-header-row">
-                            <th data-sort="exec_order" class="sortable" style="width:60px;">Order <span class="sort-icon"></span></th>
-                            <th data-sort="id" class="sortable">ID <span class="sort-icon"></span></th>
-                            <th data-sort="title" class="sortable">Node Name <span class="sort-icon"></span></th>
-                            <th data-sort="holaf_group" class="sortable">Group <span class="sort-icon"></span></th>
-                            <th data-sort="type" class="sortable">Type <span class="sort-icon"></span></th>
-                            <th data-sort="vram" class="sortable col-vram">VRAM Max <span class="sort-icon"></span></th>
-                            <th data-sort="exec_time" class="sortable col-time">Time <span class="sort-icon"></span></th>
-                            <th data-sort="gpu" class="sortable col-gpu">GPU Load <span class="sort-icon"></span></th>
+                            <th data-sort="exec_order" class="sortable" style="width:60px;">${t("pr.colOrder")} <span class="sort-icon"></span></th>
+                            <th data-sort="id" class="sortable">${t("pr.colId")} <span class="sort-icon"></span></th>
+                            <th data-sort="title" class="sortable">${t("pr.colNodeName")} <span class="sort-icon"></span></th>
+                            <th data-sort="holaf_group" class="sortable">${t("pr.colGroup")} <span class="sort-icon"></span></th>
+                            <th data-sort="type" class="sortable">${t("pr.colType")} <span class="sort-icon"></span></th>
+                            <th data-sort="vram" class="sortable col-vram">${t("pr.colVram")} <span class="sort-icon"></span></th>
+                            <th data-sort="exec_time" class="sortable col-time">${t("pr.colTime")} <span class="sort-icon"></span></th>
+                            <th data-sort="gpu" class="sortable col-gpu">${t("pr.colGpu")} <span class="sort-icon"></span></th>
                         </tr>
                     </thead>
                     <tbody id="profiler-table-body">
-                        <tr><td colspan="8" style="text-align:center; color:var(--holaf-text-secondary);">Ready. Click "Update Nodes".</td></tr>
+                        <tr><td colspan="8" style="text-align:center; color:var(--holaf-text-secondary);">${t("pr.readyUpdate")}</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -389,63 +396,63 @@ export async function initProfiler() {
         <!-- ============ TAB 2: RUN HISTORY ============ -->
         <div class="profiler-tab-content" data-tab="history" style="display:none;">
             <div class="history-toolbar">
-                <h2 style="margin:0; font-size:1rem; flex-grow:1; color:var(--holaf-text-primary, #E0E0E0);">Run History</h2>
-                <button id="btn-refresh-history" class="btn btn-secondary">Refresh</button>
+                <h2 style="margin:0; font-size:1rem; flex-grow:1; color:var(--holaf-text-primary, #E0E0E0);">${t("pr.historyTitle")}</h2>
+                <button id="btn-refresh-history" class="btn btn-secondary">${t("pr.refresh")}</button>
             </div>
             <div class="history-table-wrap">
                 <table class="data-table">
                     <thead>
                         <tr>
                             <th style="width:36px; text-align:center;"></th>
-                            <th>Name</th>
-                            <th>Time</th>
-                            <th>Date</th>
-                            <th>Nodes</th>
-                            <th>Comment</th>
+                            <th>${t("pr.colName")}</th>
+                            <th>${t("pr.colTime")}</th>
+                            <th>${t("pr.colDate")}</th>
+                            <th>${t("pr.colNodes")}</th>
+                            <th>${t("pr.colComment")}</th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
-                        <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+                        <tr><td colspan="6" class="empty-state">${t("pr.loading")}</td></tr>
                     </tbody>
                 </table>
             </div>
             <div class="history-toolbar" style="border-top:1px solid var(--holaf-border-color, #3F3F3F); border-bottom:none;">
-                <button id="btn-compare-selected" class="btn" disabled>Compare Selected</button>
-                <button id="btn-delete-selected" class="btn btn-danger" disabled>Delete Selected</button>
-                <span style="flex-grow:1; font-size:0.8rem; color:var(--holaf-text-secondary, #A0A0A0);" id="history-selection-info">Select 2+ runs to compare</span>
+                <button id="btn-compare-selected" class="btn" disabled>${t("pr.compareSelected")}</button>
+                <button id="btn-delete-selected" class="btn btn-danger" disabled>${t("pr.deleteSelected")}</button>
+                <span style="flex-grow:1; font-size:0.8rem; color:var(--holaf-text-secondary, #A0A0A0);" id="history-selection-info">${t("pr.selectionInfo")}</span>
             </div>
         </div>
 
         <!-- ============ TAB 3: RUN COMPARISON ============ -->
         <div class="profiler-tab-content" data-tab="compare" style="display:none;">
             <div class="compare-toolbar">
-                <h2 id="compare-title" style="margin:0; font-size:1rem; flex-grow:1; color:var(--holaf-text-primary, #E0E0E0);">Comparison</h2>
+                <h2 id="compare-title" style="margin:0; font-size:1rem; flex-grow:1; color:var(--holaf-text-primary, #E0E0E0);">${t("pr.compareTitle")}</h2>
                 <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--holaf-text-secondary, #A0A0A0);">
-                    Metric:
+                    ${t("pr.metric")}
                     <select id="compare-metric-select" class="compare-metric-select">
-                        <option value="exec_time">Time</option>
-                        <option value="vram_max">VRAM Max</option>
-                        <option value="gpu_load_max">GPU Load Max</option>
-                        <option value="gpu_load_avg">GPU Load Avg</option>
+                        <option value="exec_time">${t("pr.optionTime")}</option>
+                        <option value="vram_max">${t("pr.optionVramMax")}</option>
+                        <option value="gpu_load_max">${t("pr.optionGpuLoadMax")}</option>
+                        <option value="gpu_load_avg">${t("pr.optionGpuLoadAvg")}</option>
                     </select>
                 </label>
                 <div class="filter-group">
                     <label title="Only active if at least one node has finished execution">
-                        <input type="checkbox" id="chk-hide-non-executed-cmp"> Hide Non-Executed
+                        <input type="checkbox" id="chk-hide-non-executed-cmp"> ${t("pr.hideNonExecuted")}
                     </label>
                 </div>
                 <div class="filter-group">
-                    <label>Min Time: <span id="lbl-min-time-cmp" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
+                    <label>${t("pr.minTime")} <span id="lbl-min-time-cmp" style="font-weight:bold; color:var(--holaf-success-color, #4CAF50);">0.0s</span></label>
                     <input type="range" id="rng-min-time-cmp" min="0" max="5" step="0.1" value="0">
                 </div>
                 <div class="filter-group">
-                    <label>Exclude Type:</label>
-                    <input type="text" id="inp-filter-type-cmp" placeholder="Type..." style="width: 100px;">
+                    <label>${t("pr.excludeType")}</label>
+                    <input type="text" id="inp-filter-type-cmp" placeholder="${t("pr.typePlaceholder")}" style="width: 100px;">
                 </div>
-                <button id="btn-compare-back" class="btn btn-outline">Back</button>
+                <button id="btn-compare-back" class="btn btn-outline">${t("pr.back")}</button>
             </div>
             <div class="compare-table-wrap" id="compare-content">
-                <div class="empty-state">Select runs in Run History to compare.</div>
+                <div class="empty-state">${t("pr.compareEmpty")}</div>
             </div>
         </div>
     `;
@@ -465,7 +472,7 @@ export async function initProfiler() {
                 loadComparison();
             } else {
                 const content = document.getElementById('compare-content');
-                if (content) content.innerHTML = '<div class="empty-state">Select runs in Run History to compare.</div>';
+                if (content) content.innerHTML = '<div class="empty-state">' + t('pr.compareEmpty') + '</div>';
             }
         }
     }
@@ -549,7 +556,7 @@ export async function initProfiler() {
         btnDeleteSelected.addEventListener('click', async () => {
             if (!selectedRunIds.size) return;
             const ids = [...selectedRunIds];
-            if (!(await aihConfirm(`Delete ${ids.length} run(s)? This cannot be undone.`))) return;
+            if (!(await aihConfirm(t('pr.deleteRunConfirm', { count: ids.length })))) return;
             for (const id of ids) {
                 try {
                     await fetch(`/holaf/profiler/run/${id}`, { method: 'DELETE' });
@@ -694,7 +701,7 @@ export async function initProfiler() {
     function resolveNodeName(nodeId, nodeData) {
         const idStr = String(nodeId);
         if (!idStr.includes(':')) {
-            return nodeData.title || nodeData.type || "Unknown";
+            return nodeData.title || nodeData.type || t("pr.unknown");
         }
         const parts = idStr.split(':');
         const breadcrumb = [];
@@ -704,7 +711,7 @@ export async function initProfiler() {
             const parent = nodesMap.get(prefix);
             breadcrumb.push(parent ? (parent.title || parent.type) : `?${parts[i]}`);
         }
-        const leafName = nodeData.title || nodeData.type || `Node ${parts[parts.length - 1]}`;
+        const leafName = nodeData.title || nodeData.type || t('pr.nodeLabel', { id: parts[parts.length - 1] });
         return `<span style="opacity:0.5">${breadcrumb.join(' › ')} ›</span> ${leafName}`;
     }
 
@@ -712,7 +719,7 @@ export async function initProfiler() {
     function resolveNodeNameFromMap(nodeId, nodeData, map) {
         const idStr = String(nodeId);
         if (!idStr.includes(':')) {
-            return nodeData.title || nodeData.type || "Unknown";
+            return nodeData.title || nodeData.type || t("pr.unknown");
         }
         const parts = idStr.split(':');
         const breadcrumb = [];
@@ -722,7 +729,7 @@ export async function initProfiler() {
             const parent = map.get(prefix);
             breadcrumb.push(parent ? (parent.title || parent.type) : `?${parts[i]}`);
         }
-        const leafName = nodeData.title || nodeData.type || `Node ${parts[parts.length - 1]}`;
+        const leafName = nodeData.title || nodeData.type || t('pr.nodeLabel', { id: parts[parts.length - 1] });
         return `<span style="opacity:0.5">${breadcrumb.join(' › ')} ›</span> ${leafName}`;
     }
 
@@ -748,7 +755,7 @@ export async function initProfiler() {
         value.textContent = hasTotal ? formatTime(totalTime) : '0.00s';
         bar.classList.toggle('finished', hasTotal);
         bar.style.display = 'flex';
-        if (status) status.textContent = hasTotal ? 'Run completed' : 'Profiling...';
+        if (status) status.textContent = hasTotal ? t('pr.summaryCompleted') : t('pr.summaryProfiling');
     }
 
     // --- RENDER LOGIC ---
@@ -802,7 +809,7 @@ export async function initProfiler() {
         });
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#777;">No nodes data.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#777;">' + t('pr.noNodesData') + '</td></tr>';
             return;
         }
 
@@ -930,8 +937,8 @@ export async function initProfiler() {
             if (!nodeData) {
                 nodeData = {
                     id: idStr,
-                    title: step.node_title || "Unknown",
-                    type: step.node_type || "Unknown",
+                    title: step.node_title || t("pr.unknown"),
+                    type: step.node_type || t("pr.unknown"),
                     holaf_group: groupMapping[idStr] || null, 
                     mode: 0,
                     exec_order: null,
@@ -1043,12 +1050,12 @@ export async function initProfiler() {
             // degrade clearly instead of silently doing nothing.
             if (!comfyBridgeActive) {
                 console.warn("[Holaf Profiler] Update Nodes skipped: holaf_comfy_bridge.js is not available (live group-sync disabled).");
-                await aihConfirm("Live group-sync is disabled because holaf_comfy_bridge.js could not be loaded.\n\nNodes can still be fetched from the server context, but group assignments won't sync from the ComfyUI graph.");
+                await aihConfirm(t('pr.bridgeDisabledMsg'));
                 await refreshContextView();
                 return;
             }
 
-            btnUpdate.innerText = "Syncing...";
+            btnUpdate.innerText = t('pr.syncing');
             btnUpdate.disabled = true;
 
             bridge.send('get_workflow_for_profiler');
@@ -1064,7 +1071,7 @@ export async function initProfiler() {
     const btnRun = document.getElementById('btn-run-profile');
     if (btnRun) {
         btnRun.addEventListener('click', async () => {
-            const runName = await aihPrompt("Enter a name for this run (Optional):", "", "Run " + new Date().toLocaleTimeString());
+            const runName = await aihPrompt(t('pr.runNamePrompt'), "", t('pr.defaultRunNamePrefix') + " " + new Date().toLocaleTimeString());
             executionCounter = 0;
             nodesMap.forEach(node => {
                 node.vram_max = 0;
@@ -1106,9 +1113,9 @@ export async function initProfiler() {
         if (btnCompare) btnCompare.disabled = selectedRunIds.size < 2;
         if (btnDelete) btnDelete.disabled = selectedRunIds.size === 0;
         if (info) {
-            if (selectedRunIds.size === 0) info.textContent = 'Select 2+ runs to compare';
-            else if (selectedRunIds.size === 1) info.textContent = '1 run selected (need 2+)';
-            else info.textContent = `${selectedRunIds.size} runs selected`;
+            if (selectedRunIds.size === 0) info.textContent = t('pr.selectionInfo');
+            else if (selectedRunIds.size === 1) info.textContent = t('pr.oneRunSelected');
+            else info.textContent = t('pr.runsSelected', { count: selectedRunIds.size });
         }
     }
 
@@ -1117,7 +1124,7 @@ export async function initProfiler() {
         if (!runId) return;
         try {
             const resp = await fetch(`/holaf/profiler/run/${runId}`);
-            if (!resp.ok) throw new Error('Failed to load run data');
+            if (!resp.ok) throw new Error(t('pr.failedToLoadRun'));
             const data = await resp.json();
 
             // Reset order/metrics so the historical run renders faithfully, but keep
@@ -1158,15 +1165,15 @@ export async function initProfiler() {
         const btnRefresh = document.getElementById('btn-refresh-history');
         if (!tbody) return;
         if (btnRefresh) btnRefresh.disabled = true;
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">' + t('pr.loading') + '</td></tr>';
         try {
             const resp = await fetch('/holaf/profiler/runs?limit=50&offset=0');
-            if (!resp.ok) throw new Error('Failed to load runs');
+            if (!resp.ok) throw new Error(t('pr.failedLoadRuns', { message: '' }));
             const data = await resp.json();
             historyRuns = data.runs || [];
             renderHistory();
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load runs: ${esc(e.message)}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${t('pr.failedLoadRuns', { message: esc(e.message) })}</td></tr>`;
         } finally {
             if (btnRefresh) btnRefresh.disabled = false;
         }
@@ -1177,7 +1184,7 @@ export async function initProfiler() {
         if (!tbody) return;
 
         if (!historyRuns.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No runs recorded yet. Start a profile in the Live Profile tab.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">' + t('pr.noRunsYet') + '</td></tr>';
             updateHistoryActions();
             return;
         }
@@ -1190,8 +1197,8 @@ export async function initProfiler() {
                 <tr>
                     <td style="text-align:center;"><input type="checkbox" class="history-checkbox" data-run-id="${id}" ${checked}></td>
                     <td>
-                        <button class="btn btn-outline history-view" data-run-id="${id}" title="View this run in the Live Profile" style="padding:2px 8px; font-size:0.8rem; margin-right:8px;">👁 View</button>
-                        ${esc(run.name || `Run ${id}`)}
+                        <button class="btn btn-outline history-view" data-run-id="${id}" title="${t('pr.viewTitle')}" style="padding:2px 8px; font-size:0.8rem; margin-right:8px;">${t('pr.view')}</button>
+                        ${esc(run.name || t('pr.runLabel', { id }))}
                     </td>
                     <td class="metric-cell">${formatTime(run.total_time)}</td>
                     <td class="metric-cell" style="font-size:0.85em;">${formatTimestamp(run.timestamp)}</td>
@@ -1211,11 +1218,11 @@ export async function initProfiler() {
         if (!container) return;
 
         if (!comparisonRunIds.length) {
-            container.innerHTML = '<div class="empty-state">Select runs in Run History to compare.</div>';
+            container.innerHTML = '<div class="empty-state">' + t('pr.compareEmpty') + '</div>';
             return;
         }
 
-        container.innerHTML = '<div class="empty-state">Loading comparison...</div>';
+        container.innerHTML = '<div class="empty-state">' + t('pr.loadingComparison') + '</div>';
 
         try {
             const resp = await fetch('/holaf/profiler/compare', {
@@ -1223,12 +1230,12 @@ export async function initProfiler() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ run_ids: comparisonRunIds })
             });
-            if (!resp.ok) throw new Error('Compare request failed');
+            if (!resp.ok) throw new Error(t('pr.compareRequestFailed'));
             const data = await resp.json();
             compareData = data;
             renderComparison();
         } catch (e) {
-            container.innerHTML = `<div class="empty-state">Failed to load comparison: ${esc(e.message)}</div>`;
+            container.innerHTML = `<div class="empty-state">${t('pr.compareFailed', { message: esc(e.message) })}</div>`;
         }
     }
 
@@ -1268,7 +1275,7 @@ export async function initProfiler() {
         if (!container) return;
 
         if (!compareData || !compareData.runs || !compareData.runs.length) {
-            container.innerHTML = '<div class="empty-state">No comparison data. Select runs in Run History to compare.</div>';
+            container.innerHTML = '<div class="empty-state">' + t('pr.noCompareData') + '</div>';
             return;
         }
 
@@ -1301,9 +1308,9 @@ export async function initProfiler() {
         // Title
         const title = document.getElementById('compare-title');
         if (title) {
-            title.textContent = 'Comparison: ' + runs.map(r => (
-                (r.meta && r.meta.name) ? r.meta.name : `Run ${r.run_id}`
-            )).join(' vs ');
+            title.textContent = t('pr.comparisonColon') + runs.map(r => (
+                (r.meta && r.meta.name) ? r.meta.name : t('pr.runLabel', { id: r.run_id })
+            )).join(t('pr.vs'));
         }
 
         // Rows (respect the shared Live Profile filters from config)
@@ -1318,7 +1325,7 @@ export async function initProfiler() {
             rowsHtml.push(renderCompareRow(nodeId, entry, runOrder, metric));
         });
         if (rowsHtml.length === 0) {
-            rowsHtml.push(`<tr><td colspan="${runOrder.length + 2}" class="empty-state">${filterActive ? 'No nodes match the current filters.' : 'No nodes found in the selected runs.'}</td></tr>`);
+            rowsHtml.push(`<tr><td colspan="${runOrder.length + 2}" class="empty-state">${filterActive ? t('pr.noNodesMatchFilter') : t('pr.noNodesFound')}</td></tr>`);
         }
 
         // Footer (summary)
@@ -1328,8 +1335,8 @@ export async function initProfiler() {
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Node</th>
-                        ${runs.map(r => `<th>${esc((r.meta && r.meta.name) ? r.meta.name : 'Run ' + r.run_id)}</th>`).join('')}
+                        <th>${t('pr.node')}</th>
+                        ${runs.map(r => `<th>${esc((r.meta && r.meta.name) ? r.meta.name : t('pr.runLabel', { id: r.run_id }))}</th>`).join('')}
                         <th>Δ</th>
                     </tr>
                 </thead>
@@ -1386,7 +1393,7 @@ export async function initProfiler() {
 
         // TOTAL TIME (sum exec_time)
         rows.push(buildCompareFooterRow(
-            'TOTAL TIME',
+            t('pr.totalTime'),
             runs,
             r => (r.summary && r.summary.total_exec_time !== null && r.summary.total_exec_time !== undefined) ? r.summary.total_exec_time : null,
             'exec_time'
@@ -1394,7 +1401,7 @@ export async function initProfiler() {
 
         // VRAM MAX
         rows.push(buildCompareFooterRow(
-            'VRAM MAX',
+            t('pr.vramMax'),
             runs,
             r => (r.summary && r.summary.max_vram) ? r.summary.max_vram : null,
             'vram_max'
@@ -1402,7 +1409,7 @@ export async function initProfiler() {
 
         // GPU AVG
         rows.push(buildCompareFooterRow(
-            'GPU AVG',
+            t('pr.gpuAvg'),
             runs,
             r => (r.summary && r.summary.avg_gpu !== null && r.summary.avg_gpu !== undefined) ? r.summary.avg_gpu : null,
             'gpu_load_avg'

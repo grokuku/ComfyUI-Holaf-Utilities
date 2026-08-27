@@ -9,7 +9,13 @@
     */
 
 import { app, api } from "./holaf_api_compat.js";
-import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, makeContentZoomable, aihWindowManager } from "./holaf_window_utils.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 const COMPARER_CHANNEL = 'holaf_comparer_bridge';
 const COMPARER_STANDALONE_HEARTBEAT_MS = 2500;
@@ -104,7 +110,7 @@ const HolafRemoteComparer = {
             this._bridge.onmessage = (event) => {
                 const { type, payload } = event.data;
                 if (type === 'COMPARER_PAYLOAD') {
-                    const compName = payload.comparison_name || "Unnamed Comparison";
+                    const compName = payload.comparison_name || t("rc.unnamed");
                     const mediaMeta = payload.media || [];
                     if (mediaMeta.length === 0) return;
                     this.latestImagesMeta = mediaMeta;
@@ -236,7 +242,7 @@ const HolafRemoteComparer = {
         header.style.boxSizing = "border-box";
 
         const title = document.createElement("span");
-        title.innerText = "Remote Media Comparer";
+        title.innerText = t("rc.title");
         Object.assign(title.style, { flex: "1", fontWeight: "bold", fontSize: "12px", userSelect: "none", pointerEvents: "none" });
 
         const btnContainer = document.createElement("div");
@@ -244,7 +250,7 @@ const HolafRemoteComparer = {
 
         const closeBtn = document.createElement("button");
         closeBtn.innerText = "✕";
-        closeBtn.title = "Close";
+        closeBtn.title = t("dialog.close");
         closeBtn.className = "holaf-utility-close-button";
         // Hover handled by CSS
         closeBtn.onmousedown = (e) => e.stopPropagation();
@@ -262,6 +268,7 @@ const HolafRemoteComparer = {
 
         // Main Container
         this.mainContainer = document.createElement("div");
+        this.mainContainer.classList.add("holaf-zoom-content");
         Object.assign(this.mainContainer.style, {
             flex: "1", display: "flex", flexDirection: "row", overflow: "hidden", width: "100%", height: "100%"
         });
@@ -328,7 +335,7 @@ const HolafRemoteComparer = {
         Object.assign(this.statusTextEl.style, {
             position: "absolute", pointerEvents: "none", userSelect: "none", zIndex: "10"
         });
-        this.statusTextEl.innerText = "Waiting for execution...";
+        this.statusTextEl.innerText = t("rc.waiting");
 
         this.canvasEl = document.createElement("canvas");
         Object.assign(this.canvasEl.style, {
@@ -344,6 +351,11 @@ const HolafRemoteComparer = {
 
         this.mainContainer.appendChild(this.sidebarElement);
         this.mainContainer.appendChild(this.contentElement);
+
+        // Boutons zoom standard (− / +) : appliqués au contenu (hors header),
+        // persistés sous la clé de fenêtre du comparateur.
+        const zoomGroup = makeContentZoomable(this.mainContainer, { key: this.STORAGE_KEY });
+        header.insertBefore(zoomGroup, btnContainer);
 
         this.createResizeHandles();
         if (this.isStandalone) this.setResizeHandlesVisible(false);
@@ -400,14 +412,14 @@ const HolafRemoteComparer = {
             return row;
         };
 
-        settingsContainer.appendChild(createSelect("Image Format", "image_format", [
+        settingsContainer.appendChild(createSelect(t("rc.imageFormat"), "image_format", [
             {value: "WEBP", text: "WEBP"}, {value: "PNG", text: "PNG"}, {value: "JPEG", text: "JPEG"}
         ]));
-        settingsContainer.appendChild(createSelect("Video Res", "video_res", [
-            {value: "0", text: "Original"}, {value: "1024", text: "1024px"}, {value: "720", text: "720px"}, {value: "512", text: "512px"}
+        settingsContainer.appendChild(createSelect(t("rc.videoRes"), "video_res", [
+            {value: "0", text: t("rc.original")}, {value: "1024", text: "1024px"}, {value: "720", text: "720px"}, {value: "512", text: "512px"}
         ]));
-        settingsContainer.appendChild(createSelect("Video Speed", "video_speed", [
-            {value: "ultrafast", text: "Ultrafast"}, {value: "fast", text: "Fast"}, {value: "medium", text: "Medium"}
+        settingsContainer.appendChild(createSelect(t("rc.videoSpeed"), "video_speed", [
+            {value: "ultrafast", text: t("rc.ultrafast")}, {value: "fast", text: t("rc.fast")}, {value: "medium", text: t("rc.medium")}
         ]));
 
         this.sidebarBottomContainer.appendChild(settingsContainer);
@@ -473,7 +485,7 @@ const HolafRemoteComparer = {
         };
 
         const clearBtn = document.createElement("div");
-        clearBtn.innerText = "Clear";
+        clearBtn.innerText = t("rc.clear");
         clearBtn.className = "holaf-rc-action-btn holaf-rc-clear-btn";
         Object.assign(clearBtn.style, { flex: "1" });
         clearBtn.onclick = () => this.clearHistory();
@@ -697,7 +709,7 @@ const HolafRemoteComparer = {
         if (!payloads || payloads.length === 0) return;
 
         const payload = payloads[0];
-        const compName = payload.comparison_name || "Unnamed Comparison";
+        const compName = payload.comparison_name || t("rc.unnamed");
         const mediaMeta = payload.media || [];
 
         if (mediaMeta.length === 0) return;
@@ -847,7 +859,7 @@ const HolafRemoteComparer = {
             ctx.fillStyle = isA ? "rgba(255, 140, 0, 0.2)" : "rgba(0, 168, 255, 0.2)";
             ctx.font = "bold 40px sans-serif";
             ctx.textAlign = "center";
-            ctx.fillText(`🎵 AUDIO ${isA ? 'A' : 'B'}`, x + w/2, y + h/2);
+            ctx.fillText(`🎵 ${t("rc.audio")} ${isA ? 'A' : 'B'}`, x + w/2, y + h/2);
         }
     },
 
@@ -880,7 +892,7 @@ const HolafRemoteComparer = {
             ctx.fillStyle = colorA;
             ctx.textAlign = "left";
             ctx.font = "bold 13px sans-serif";
-            const nameA = imgA._holafName ? imgA._holafName.replace(/^holaf_remote_cmp_[AB]_.*?_/, '') : "Unknown Track";
+            const nameA = imgA._holafName ? imgA._holafName.replace(/^holaf_remote_cmp_[AB]_.*?_/, '') : t("rc.unknownTrack");
             ctx.fillText(`🎵 A: ${nameA}`, 35, 30);
             
             ctx.fillStyle = "#333";
@@ -901,7 +913,7 @@ const HolafRemoteComparer = {
             ctx.fillStyle = colorB;
             ctx.textAlign = "right";
             ctx.font = "bold 13px sans-serif";
-            const nameB = imgB._holafName ? imgB._holafName.replace(/^holaf_remote_cmp_[AB]_.*?_/, '') : "Unknown Track";
+            const nameB = imgB._holafName ? imgB._holafName.replace(/^holaf_remote_cmp_[AB]_.*?_/, '') : t("rc.unknownTrack");
             ctx.fillText(`🎵 B: ${nameB}`, width - 35, 30);
             
             ctx.fillStyle = "#333";
@@ -1065,7 +1077,7 @@ const HolafRemoteComparer = {
             return el;
         };
 
-        this.sidebarHistoryContainer.appendChild(createItem("Latest", "latest", true));
+        this.sidebarHistoryContainer.appendChild(createItem(t("rc.latest"), "latest", true));
         if (this.history.length > 0) {
             const sep1 = document.createElement("div");
             sep1.className = "holaf-rc-history-separator";
@@ -1097,7 +1109,7 @@ const HolafRemoteComparer = {
         this.images = [];
         this.uiControls.container.style.display = "none";
         this.statusTextEl.style.display = "block";
-        this.statusTextEl.innerText = "Waiting for execution...";
+        this.statusTextEl.innerText = t("rc.waiting");
         this.renderSidebarHistory();
         this.resetZoom();
     },
@@ -1237,6 +1249,7 @@ const HolafRemoteComparer = {
     show() {
         if (!this.rootElement) this.buildUI();
         this.isOpen = true;
+        if (this.rootElement) aihWindowManager().bringToFront(this.rootElement);
 
         if (this.isStandalone) {
             // In standalone mode, the panel fills the entire viewport
@@ -1258,7 +1271,10 @@ const HolafRemoteComparer = {
     hide() {
         this.isOpen = false;
         if (this.isPoppedOut) this.popIn();
-        if (this.rootElement) this.rootElement.style.display = "none";
+        if (this.rootElement) {
+            aihWindowManager().unregister(this.rootElement);
+            this.rootElement.style.display = "none";
+        }
         this.images.forEach(m => { if (m instanceof HTMLMediaElement) m.pause(); });
         this.saveState();
     },

@@ -4,8 +4,15 @@
  * including the main panel, dialogs, and theme/zoom controls.
  */
 
+import "../aih/strings.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { HOLAF_THEMES } from "../holaf_themes.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 /**
  * Creates the main panel for the Model Manager.
@@ -24,7 +31,7 @@ export function createPanel(manager) {
     themeButtonContainer.style.position = 'relative';
     const themeButton = document.createElement("button");
     themeButton.className = "holaf-header-button";
-    themeButton.title = "Change Theme";
+    themeButton.title = t("mmu.changeTheme");
     themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
     const themeMenu = createThemeMenu(manager);
     themeButton.onclick = (e) => {
@@ -40,7 +47,7 @@ export function createPanel(manager) {
     try {
         manager.panelElements = HolafPanelManager.createPanel({
             id: "holaf-manager-panel",
-            title: "AIH Model Manager",
+            title: t("mmu.panelTitle"),
             headerContent: managerHeaderControls,
             zoom: {
                 key: "holaf-manager-panel",
@@ -77,7 +84,7 @@ export function createPanel(manager) {
         });
     } catch (e) {
         console.error("[Holaf ModelManager] Error during HolafPanelManager.createPanel:", e);
-        HolafPanelManager.createDialog({ title: "Panel Error", message: "Error creating panel. Check console for details." });
+        HolafPanelManager.createDialog({ title: t("mmu.panelError"), message: t("mmu.panelErrorMsg") });
         return;
     }
 
@@ -96,30 +103,30 @@ function populatePanelContent(manager) {
         <div class="holaf-manager-toolbar" style="flex-wrap: wrap;">
             <div style="display: flex; gap: 8px; align-items: center; flex-grow: 1; min-width: 250px;">
                 <select id="holaf-manager-type-select" class="holaf-manager-search" style="flex-grow: 0.5;"></select>
-                <input type="text" id="holaf-manager-search-input" class="holaf-manager-search" placeholder="Search models (name, family, path)..." style="flex-grow: 1;">
+                <input type="text" id="holaf-manager-search-input" class="holaf-manager-search" placeholder="${t("mmu.searchPlaceholder")}" style="flex-grow: 1;">
             </div>
             <div id="holaf-manager-button-group" style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
-                <button id="holaf-manager-upload-button" class="comfy-button" title="Upload new models.">Upload</button>
-                <button id="holaf-manager-download-button" class="comfy-button" title="Download selected models.">Download</button>
-                <button id="holaf-manager-deep-scan-button" class="comfy-button" title="Deep Scan selected .safetensors models for metadata and hash.">Deep Scan</button>
-                <button id="holaf-manager-delete-button" class="comfy-button" title="Delete selected models from server." style="background-color: var(--holaf-error-color, #D32F2F);">Delete</button>
+                <button id="holaf-manager-upload-button" class="comfy-button" title="${t("mmu.uploadTitle")}">${t("mmu.upload")}</button>
+                <button id="holaf-manager-download-button" class="comfy-button" title="${t("mmu.downloadTitle")}">${t("mmu.download")}</button>
+                <button id="holaf-manager-deep-scan-button" class="comfy-button" title="${t("mmu.deepScanTitle")}">${t("mmu.deepScan")}</button>
+                <button id="holaf-manager-delete-button" class="comfy-button" title="${t("mmu.deleteTitle")}" style="background-color: var(--holaf-error-color, #D32F2F);">${t("mmu.delete")}</button>
             </div>
         </div>
         <div class="holaf-manager-list-header">
             <div class="holaf-manager-header-col holaf-header-checkbox">
-                <input type="checkbox" id="holaf-manager-select-all-checkbox" title="Select/Deselect All">
+                <input type="checkbox" id="holaf-manager-select-all-checkbox" title="${t("mmu.selectAllTitle")}">
             </div>
-            <div class="holaf-manager-header-col holaf-header-name" data-sort-by="name">Name</div>
-            <div class="holaf-manager-header-col holaf-header-path" data-sort-by="path">Path</div>
-            <div class="holaf-manager-header-col holaf-header-type" data-sort-by="display_type">Type</div>
-            <div class="holaf-manager-header-col holaf-header-family" data-sort-by="model_family">Family</div>
-            <div class="holaf-manager-header-col holaf-header-size" data-sort-by="size_bytes">Size</div>
+            <div class="holaf-manager-header-col holaf-header-name" data-sort-by="name">${t("mmu.colName")}</div>
+            <div class="holaf-manager-header-col holaf-header-path" data-sort-by="path">${t("mmu.colPath")}</div>
+            <div class="holaf-manager-header-col holaf-header-type" data-sort-by="display_type">${t("mmu.colType")}</div>
+            <div class="holaf-manager-header-col holaf-header-family" data-sort-by="model_family">${t("mmu.colFamily")}</div>
+            <div class="holaf-manager-header-col holaf-header-size" data-sort-by="size_bytes">${t("mmu.colSize")}</div>
         </div>
         <div id="holaf-manager-models-area" class="holaf-manager-content">
-            <p class="holaf-manager-message">Initializing...</p>
+            <p class="holaf-manager-message">${t("mmu.initializing")}</p>
         </div>
         <div id="holaf-manager-statusbar" class="holaf-manager-statusbar">
-            Status: Ready
+            ${t("mmu.statusReady")}
         </div>
     `;
 
@@ -186,7 +193,7 @@ export function createUploadDialog(manager) {
 
     const header = document.createElement("div");
     header.className = "holaf-utility-header";
-    header.innerHTML = `<span>Upload Models</span><button class="holaf-utility-close-button" style="margin-left:auto;">✖</button>`;
+    header.innerHTML = `<span>${t("mmu.uploadDialogTitle")}</span><button class="holaf-utility-close-button" style="margin-left:auto;">✖</button>`;
     header.querySelector('.holaf-utility-close-button').onclick = () => {
         dialogEl.style.display = 'none';
         HolafPanelManager.unregister(dialogEl);
@@ -197,21 +204,21 @@ export function createUploadDialog(manager) {
     content.className = "holaf-utility-content";
     content.innerHTML = `
         <div style="margin-bottom: 15px;">
-            <label for="holaf-upload-dest-type" class="holaf-label">Destination Type:</label>
+            <label for="holaf-upload-dest-type" class="holaf-label">${t("mmu.destType")}</label>
             <select id="holaf-upload-dest-type" class="holaf-manager-search"></select>
         </div>
         <div style="margin-bottom: 15px;">
-            <label for="holaf-upload-subfolder" class="holaf-label">Subfolder (optional):</label>
-            <input type="text" id="holaf-upload-subfolder" class="holaf-manager-search" placeholder="e.g., characters/female">
+            <label for="holaf-upload-subfolder" class="holaf-label">${t("mmu.subfolder")}</label>
+            <input type="text" id="holaf-upload-subfolder" class="holaf-manager-search" placeholder="${t("mmu.subfolderPlaceholder")}">
         </div>
         <hr class="holaf-hr">
         <div style="margin-bottom: 15px;">
-             <label for="holaf-upload-file-input" class="comfy-button" style="display: block; text-align: center; margin-bottom: 10px;">Choose Files</label>
+             <label for="holaf-upload-file-input" class="comfy-button" style="display: block; text-align: center; margin-bottom: 10px;">${t("mmu.chooseFiles")}</label>
             <input type="file" id="holaf-upload-file-input" multiple style="display: none;">
             <div id="holaf-upload-file-list" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--holaf-border-color); padding: 5px; display: none; background-color: var(--holaf-input-background)"></div>
         </div>
         <div style="text-align:center; margin-top:20px;">
-            <button id="holaf-upload-add-queue-button" class="comfy-button">Add to Upload Queue</button>
+            <button id="holaf-upload-add-queue-button" class="comfy-button">${t("mmu.addToQueue")}</button>
         </div>
         <div id="holaf-upload-status" style="margin-top:15px; text-align:center; color:var(--holaf-text-secondary);"></div>
     `;
@@ -240,7 +247,7 @@ export function createUploadDialog(manager) {
  */
 function showUploadDialog(manager) {
     if (manager.isLoading) {
-        HolafPanelManager.createDialog({ title: "Operation in Progress", message: "Please wait for the model list to load before uploading." });
+        HolafPanelManager.createDialog({ title: t("mmu.opInProgress"), message: t("mmu.opInProgressMsg") });
         return;
     }
     if (!manager.uploadDialog) {

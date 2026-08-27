@@ -9,9 +9,16 @@
  */
 
 import "./aih_dialog.js";
+import "./aih/strings.js";
 
 (function () {
     "use strict";
+
+    // ─── Helper i18n central : traduit via AIH.I18n (clé brute si absente) ──────
+    var t = function (key, params) {
+        var I = window.AIH && window.AIH.I18n;
+        return I && typeof I.t === "function" ? I.t(key, params) : key;
+    };
 
     // ─── Injection CSS (une seule fois) ──────────────────────────────────────────
     var _cssInjected = false;
@@ -275,7 +282,7 @@ import "./aih_dialog.js";
         { key: 'gligen', label: 'GLIGEN', color: '#a78bfa' },
         { key: 'hypernetwork', label: 'HyperNet', color: '#f472b6' },
         { key: 'embedding', label: 'Embeddings', color: '#94a3b8' },
-        { key: 'other', label: 'Autres', color: '#888' },
+        { key: 'other', label: t('mb.type.other'), color: '#888' },
     ];
 
     // ─── Cache local (évite les re-fetch inutiles) ──────────────────────────────
@@ -307,7 +314,7 @@ import "./aih_dialog.js";
         try { cfg = JSON.parse(localStorage.getItem('AIH_config') || '{}'); } catch(e) {}
         var baseUrl = (cfg.serverUrl || '').replace(/\/+$/, '');
         if (!baseUrl) {
-            return Promise.reject(new Error('Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »'));
+            return Promise.reject(new Error(t('aih.notConfiguredError')));
         }
         var headers = { 'Content-Type': 'application/json' };
         if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
@@ -368,11 +375,11 @@ import "./aih_dialog.js";
         var remoteBtn = m.modal ? m.modal.querySelector('.mb-batch-download') : null;
         if (localBtn) {
             localBtn.disabled = localSel === 0;
-            localBtn.textContent = '↗ Upload selected (' + localSel + ')';
+            localBtn.textContent = t('mb.uploadSelected', { count: localSel });
         }
         if (remoteBtn) {
             remoteBtn.disabled = remoteSel === 0;
-            remoteBtn.textContent = '↙ Download selected (' + remoteSel + ')';
+            remoteBtn.textContent = t('mb.downloadSelected', { count: remoteSel });
         }
     }
 
@@ -396,7 +403,7 @@ import "./aih_dialog.js";
             var filename = item.name || item.filename || '?';
 
             if (!filepath) {
-                reject(new Error('Chemin du fichier manquant'));
+                reject(new Error(t('mb.missingPath')));
                 return;
             }
 
@@ -417,15 +424,15 @@ import "./aih_dialog.js";
                 })
                 .then(function (data) {
                     if (data.status === 'ok' || data.success) {
-                        updateProgress(progressEl, 100, '✅ Upload terminé');
+                        updateProgress(progressEl, 100, t('mb.uploadDone'));
                         resolve();
                     } else {
-                        updateProgress(progressEl, 0, '❌ Erreur: ' + (data.error || data.message || 'inconnue'));
-                        reject(new Error(data.error || 'Échec'));
+                        updateProgress(progressEl, 0, t('mb.errorPrefix') + (data.error || data.message || t('aih.unknown')));
+                        reject(new Error(data.error || t('aih.failed')));
                     }
                 })
                 .catch(function (err) {
-                    updateProgress(progressEl, 0, '❌ Erreur: ' + err.message);
+                    updateProgress(progressEl, 0, t('mb.errorPrefix') + err.message);
                     reject(err);
                 });
         });
@@ -440,7 +447,7 @@ import "./aih_dialog.js";
             var destSubdir = overrideDestSubdir || getDefaultDestDir(item);
 
             if (!uploadId) {
-                reject(new Error('ID du modèle distant manquant'));
+                reject(new Error(t('mb.missingRemoteId')));
                 return;
             }
 
@@ -464,19 +471,19 @@ import "./aih_dialog.js";
                 .then(function (data) {
                     if (data.status === 'ok' || data.success) {
                         if (data.conflict) {
-                            updateProgress(progressEl, 50, '⚠️ Conflit, ignore...');
+                            updateProgress(progressEl, 50, t('mb.conflictIgnore'));
                             resolve();
                             return;
                         }
-                        updateProgress(progressEl, 100, '✅ Download terminé');
+                        updateProgress(progressEl, 100, t('mb.downloadDone'));
                         resolve();
                     } else {
-                        updateProgress(progressEl, 0, '❌ Erreur: ' + (data.error || data.message || 'inconnue'));
-                        reject(new Error(data.error || 'Échec'));
+                        updateProgress(progressEl, 0, t('mb.errorPrefix') + (data.error || data.message || t('aih.unknown')));
+                        reject(new Error(data.error || t('aih.failed')));
                     }
                 })
                 .catch(function (err) {
-                    updateProgress(progressEl, 0, '❌ Erreur: ' + err.message);
+                    updateProgress(progressEl, 0, t('mb.errorPrefix') + err.message);
                     reject(err);
                 });
         });
@@ -489,14 +496,14 @@ import "./aih_dialog.js";
         var btn = m.modal.querySelector('.mb-batch-upload');
         if (!btn) return;
         btn.disabled = true;
-        btn.textContent = '⏳ Upload...';
+        btn.textContent = t('mb.uploading');
 
         var done = 0;
         function next() {
             if (done >= selected.length) {
-                btn.textContent = '✅ Terminé';
+                btn.textContent = t('mb.done');
                 setTimeout(function () {
-                    btn.textContent = '↗ Upload selected (0)';
+                    btn.textContent = t('mb.uploadSelected', { count: 0 });
                     btn.disabled = true;
                 }, 2000);
                 // Désélectionner tout
@@ -527,14 +534,14 @@ import "./aih_dialog.js";
         var btn = m.modal.querySelector('.mb-batch-download');
         if (!btn) return;
         btn.disabled = true;
-        btn.textContent = '⏳ Download...';
+        btn.textContent = t('mb.downloading');
 
         var done = 0;
         function next() {
             if (done >= selected.length) {
-                btn.textContent = '✅ Terminé';
+                btn.textContent = t('mb.done');
                 setTimeout(function () {
-                    btn.textContent = '↙ Download selected (0)';
+                    btn.textContent = t('mb.downloadSelected', { count: 0 });
                     btn.disabled = true;
                 }, 2000);
                 // Désélectionner tout
@@ -587,7 +594,7 @@ import "./aih_dialog.js";
             var cfg = JSON.parse(localStorage.getItem('AIH_config') || '{}');
             if (!(cfg.serverUrl || '').replace(/\/+$/, '')) {
                 if (window.aihShowAlert) {
-                    window.aihShowAlert("Serveur non configuré", "Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ». Les modèles locaux restent consultables.", "info");
+                    window.aihShowAlert(t('aih.notConfiguredTitle'), t('mb.notConfiguredMsgLocal'), "info");
                 }
             }
         } catch (e) {}
@@ -595,7 +602,7 @@ import "./aih_dialog.js";
         _mbInjectCSS();
 
         var m = aihOpenModalV2({
-            title: "📦 Model Browser",
+            title: t("mb.title"),
             width: "920px",
             height: "620px",
             minWidth: "700px",
@@ -619,18 +626,18 @@ import "./aih_dialog.js";
             '<div class="mb-filters" id="mb-filters"></div>' +
             '<div class="mb-panels" id="mb-panels">' +
             '  <div class="mb-panel mb-panel-local">' +
-            '    <div class="mb-panel-header">📁 Local (ComfyUI)</div>' +
+            '    <div class="mb-panel-header">' + t('mb.panelLocal') + '</div>' +
             '    <div class="mb-panel-list" id="mb-local-list"></div>' +
             '    <div class="mb-panel-footer mb-panel-footer-local">' +
-            '      <button class="mb-batch-btn mb-batch-upload" disabled>↗ Upload selected (0)</button>' +
+            '      <button class="mb-batch-btn mb-batch-upload" disabled>' + t('mb.uploadSelected', { count: 0 }) + '</button>' +
             '    </div>' +
             '  </div>' +
             '  <div class="mb-divider"></div>' +
             '  <div class="mb-panel mb-panel-remote">' +
-            '    <div class="mb-panel-header">🌐 Remote (AIH)</div>' +
+            '    <div class="mb-panel-header">' + t('mb.panelRemote') + '</div>' +
             '    <div class="mb-panel-list" id="mb-remote-list"></div>' +
             '    <div class="mb-panel-footer mb-panel-footer-remote">' +
-            '      <button class="mb-batch-btn mb-batch-download" disabled>↙ Download selected (0)</button>' +
+            '      <button class="mb-batch-btn mb-batch-download" disabled>' + t('mb.downloadSelected', { count: 0 }) + '</button>' +
             '    </div>' +
             '  </div>' +
             '</div>' +
@@ -742,7 +749,7 @@ import "./aih_dialog.js";
         var selectAllSpan = document.createElement('span');
         selectAllSpan.className = 'mb-select-all';
         selectAllSpan.style.cssText = 'font-size:10px;color:#888;cursor:pointer;user-select:none;';
-        selectAllSpan.innerHTML = '[<a href="#" class="mb-select-all-link" data-action="all">Tout</a>] [<a href="#" class="mb-select-all-link" data-action="none">Aucun</a>]';
+        selectAllSpan.innerHTML = '[<a href="#" class="mb-select-all-link" data-action="all">' + t('mb.selectAll') + '</a>] [<a href="#" class="mb-select-all-link" data-action="none">' + t('mb.selectNone') + '</a>]';
         selectAllSpan.addEventListener('click', function (e) {
             if (e.target.tagName === 'A') {
                 e.preventDefault();
@@ -778,12 +785,12 @@ import "./aih_dialog.js";
         var s1 = document.createElement('input');
         s1.type = 'text';
         s1.id = 'mb-search-local';
-        s1.placeholder = '🔍 Search local...';
+        s1.placeholder = t('mb.searchLocal');
 
         var s2 = document.createElement('input');
         s2.type = 'text';
         s2.id = 'mb-search-remote';
-        s2.placeholder = '🔍 Search remote...';
+        s2.placeholder = t('mb.searchRemote');
 
         var debounceTimer = null;
         function onSearchInput() {
@@ -819,7 +826,7 @@ import "./aih_dialog.js";
         // Premier chargement ou refresh forcé : on fetch TOUT (pas de filtre serveur)
         var url = '/api/aih/models/local';
 
-        m._localList.innerHTML = '<div class="mb-loading"><span class="mb-loading-spinner"></span> Chargement...</div>';
+        m._localList.innerHTML = '<div class="mb-loading"><span class="mb-loading-spinner"></span> ' + t('mb.loading') + '</div>';
 
         fetch(url)
             .then(function (r) {
@@ -865,7 +872,7 @@ import "./aih_dialog.js";
             })
             .catch(function (err) {
                 m._localLoading = false;
-                m._localList.innerHTML = '<div class="mb-empty">❌ Erreur: ' + _esc(err.message || 'Requête échouée') + '</div>';
+                m._localList.innerHTML = '<div class="mb-empty">' + t('mb.errorPrefix') + _esc(err.message || t('mb.requestFailed')) + '</div>';
             });
     }
 
@@ -887,7 +894,7 @@ import "./aih_dialog.js";
         if (search) url += '&search=' + encodeURIComponent(search);
 
         if (page === 1) {
-            m._remoteList.innerHTML = '<div class="mb-loading"><span class="mb-loading-spinner"></span> Chargement...</div>';
+            m._remoteList.innerHTML = '<div class="mb-loading"><span class="mb-loading-spinner"></span> ' + t('mb.loading') + '</div>';
         }
 
         fetch(url)
@@ -902,7 +909,7 @@ import "./aih_dialog.js";
             .catch(function (err) {
                 m._remoteLoading = false;  // TOUJOURS réinitialiser
                 if (page === 1) {
-                    m._remoteList.innerHTML = '<div class="mb-empty">❌ Erreur: ' + _esc(err.message || 'Requête échouée') + '</div>';
+                    m._remoteList.innerHTML = '<div class="mb-empty">' + t('mb.errorPrefix') + _esc(err.message || t('mb.requestFailed')) + '</div>';
                 }
             });
     }
@@ -913,7 +920,7 @@ import "./aih_dialog.js";
         list.innerHTML = "";
 
         if (!items || items.length === 0) {
-            list.innerHTML = '<div class="mb-empty">Aucun modèle local trouvé</div>';
+            list.innerHTML = '<div class="mb-empty">' + t('mb.noLocal') + '</div>';
             return;
         }
 
@@ -1048,7 +1055,7 @@ import "./aih_dialog.js";
                 var check = document.createElement('span');
                 check.className = 'mb-check';
                 check.textContent = '✅';
-                check.title = 'Déjà présent sur le serveur';
+                check.title = t('mb.alreadyOnServer');
                 div.appendChild(check);
             }
 
@@ -1095,7 +1102,7 @@ import "./aih_dialog.js";
         }
 
         if (items.length === 0 && page === 1) {
-            list.innerHTML = '<div class="mb-empty">Aucun modèle distant trouvé</div>';
+            list.innerHTML = '<div class="mb-empty">' + t('mb.noRemote') + '</div>';
             return;
         }
 
@@ -1234,7 +1241,7 @@ import "./aih_dialog.js";
                 var check = document.createElement('span');
                 check.className = 'mb-check';
                 check.textContent = '✅';
-                check.title = 'Déjà présent localement';
+                check.title = t('mb.alreadyLocal');
                 div.appendChild(check);
             }
 
@@ -1254,11 +1261,11 @@ import "./aih_dialog.js";
                 var delBtn = document.createElement('button');
                 delBtn.textContent = '🗑';
                 delBtn.className = 'mb-del-btn';
-                delBtn.title = 'Supprimer ce modèle';
+                delBtn.title = t('mb.deleteModelTitle');
                 delBtn.addEventListener('click', function (e) {
                     e.stopPropagation();
                     if (typeof aihShowConfirm === 'function') {
-                        aihShowConfirm('Supprimer', 'Supprimer "' + _esc(item.filename || displayName) + '" ?').then(function (ok) {
+                        aihShowConfirm(t('dialog.delete'), t('mb.deleteConfirm', { name: _esc(item.filename || displayName) })).then(function (ok) {
                             if (!ok) return;
                             _fetchAihApi('aih/models/remote/' + (item.upload_id || item.id || item._id), { method: 'DELETE' })
                                 .then(function (r) { return r.json(); })
@@ -1267,11 +1274,11 @@ import "./aih_dialog.js";
                                         m._remotePage = 1;
                                         m._remoteLoading = false;
                                         m._remoteHasMore = true;
-                                        m._remoteList.innerHTML = '<div class="mb-loading"><span class="mb-loading-spinner"></span> Chargement...</div>';
+                                        m._remoteList.innerHTML = '<div class="mb-loading"><span class="mb-loading-spinner"></span> ' + t('mb.loading') + '</div>';
                                         loadRemoteModels(m);
                                     } else {
                                         if (typeof aihShowAlert === 'function') {
-                                            aihShowAlert('Erreur', d.error || 'Échec', 'error');
+                                            aihShowAlert(t('dialog.error'), d.error || t('aih.failed'), 'error');
                                         }
                                     }
                                 });
@@ -1297,7 +1304,7 @@ import "./aih_dialog.js";
             loadMore.className = 'mb-loading';
             loadMore.style.padding = '12px';
             loadMore.style.borderBottom = 'none';
-            loadMore.innerHTML = '<span class="mb-loading-spinner"></span> Scrollez pour charger plus...';
+            loadMore.innerHTML = '<span class="mb-loading-spinner"></span> ' + t('mb.scrollMore');
             list.appendChild(loadMore);
         }
     }
@@ -1309,12 +1316,12 @@ import "./aih_dialog.js";
 
     // ─── getTypeInfo ────────────────────────────────────────────────────────────
     function getTypeInfo(typeKey) {
-        if (!typeKey) return { key: 'other', label: 'Autres', color: '#888' };
+        if (!typeKey) return { key: 'other', label: t('mb.type.other'), color: '#888' };
         var key = typeKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
         for (var i = 0; i < MODEL_TYPES.length; i++) {
             if (MODEL_TYPES[i].key === key) return MODEL_TYPES[i];
         }
-        return { key: 'other', label: 'Autres', color: '#888' };
+        return { key: 'other', label: t('mb.type.other'), color: '#888' };
     }
 
     // ─── getDefaultDestDir ─────────────────────────────────────────────────────
@@ -1336,7 +1343,7 @@ import "./aih_dialog.js";
     // ─── uploadLocalModel ──────────────────────────────────────────────────────
     function uploadLocalModel(m, filepath, fileType, filename) {
         if (!filepath) {
-            aihShowAlert("Erreur", "Chemin du fichier manquant", "error");
+            aihShowAlert(t('dialog.error'), t('mb.missingPath'), "error");
             return;
         }
 
@@ -1357,25 +1364,25 @@ import "./aih_dialog.js";
             })
             .then(function (data) {
                 if (data.status === 'ok' || data.success) {
-                    updateProgress(progressEl, 100, '✅ Upload terminé');
+                    updateProgress(progressEl, 100, t('mb.uploadDone'));
                     // Rafraîchir les deux listes
                     m._remotePage = 1;
                     m._remoteHasMore = true;
                     loadRemoteModels(m);
                     loadLocalModels(m, true);
                 } else {
-                    updateProgress(progressEl, 0, '❌ Erreur: ' + (data.error || data.message || 'inconnue'));
+                    updateProgress(progressEl, 0, t('mb.errorPrefix') + (data.error || data.message || t('aih.unknown')));
                 }
             })
             .catch(function (err) {
-                updateProgress(progressEl, 0, '❌ Erreur: ' + err.message);
+                updateProgress(progressEl, 0, t('mb.errorPrefix') + err.message);
             });
     }
 
     // ─── downloadRemoteModel ───────────────────────────────────────────────────
     function downloadRemoteModel(m, uploadId, filename, fileType, destSubdir) {
         if (!uploadId) {
-            aihShowAlert("Erreur", "ID du modèle distant manquant", "error");
+            aihShowAlert(t('dialog.error'), t('mb.missingRemoteId'), "error");
             return;
         }
 
@@ -1400,20 +1407,20 @@ import "./aih_dialog.js";
                 if (data.status === 'ok' || data.success) {
                     if (data.conflict) {
                         // Conflit détecté par le serveur
-                        updateProgress(progressEl, 50, '⚠️ Conflit, résolution...');
+                        updateProgress(progressEl, 50, t('mb.conflictResolve'));
                         return handleDownloadConflict(m, uploadId, filename, fileType, destSubdir, data, progressEl);
                     }
-                    updateProgress(progressEl, 100, '✅ Download terminé');
+                    updateProgress(progressEl, 100, t('mb.downloadDone'));
                     m._remotePage = 1;
                     m._remoteHasMore = true;
                     loadLocalModels(m, true);
                     loadRemoteModels(m);
                 } else {
-                    updateProgress(progressEl, 0, '❌ Erreur: ' + (data.error || data.message || 'inconnue'));
+                    updateProgress(progressEl, 0, t('mb.errorPrefix') + (data.error || data.message || t('aih.unknown')));
                 }
             })
             .catch(function (err) {
-                updateProgress(progressEl, 0, '❌ Erreur: ' + err.message);
+                updateProgress(progressEl, 0, t('mb.errorPrefix') + err.message);
             });
     }
 
@@ -1428,19 +1435,19 @@ import "./aih_dialog.js";
                     } else if (result.action === 'suffix') {
                         return retryDownload(m, uploadId, result.newName, fileType, destSubdir, 'suffix', progressEl);
                     } else {
-                        updateProgress(progressEl, 0, '⏹️ Download annulé (conflit)');
+                        updateProgress(progressEl, 0, t('mb.downloadCancelledConflict'));
                     }
                 });
         } else {
             // Fallback : aihShowConfirm simple
             aihShowConfirm(
-                "⚠️ Conflit",
-                "Le fichier \"" + _esc(filename) + "\" existe déjà localement avec un contenu différent.\n\nVoulez-vous écraser le fichier local ?"
+                t('mb.conflictTitle'),
+                t('mb.conflictMsg', { name: _esc(filename) })
             ).then(function (ok) {
                 if (ok) {
                     retryDownload(m, uploadId, filename, fileType, destSubdir, 'overwrite', progressEl);
                 } else {
-                    updateProgress(progressEl, 0, '⏹️ Download annulé (conflit)');
+                    updateProgress(progressEl, 0, t('mb.downloadCancelledConflict'));
                 }
             });
         }
@@ -1468,17 +1475,17 @@ import "./aih_dialog.js";
             })
             .then(function (data) {
                 if (data.status === 'ok' || data.success) {
-                    updateProgress(progressEl, 100, '✅ Download terminé');
+                    updateProgress(progressEl, 100, t('mb.downloadDone'));
                     m._remotePage = 1;
                     m._remoteHasMore = true;
                     loadLocalModels(m, true);
                     loadRemoteModels(m);
                 } else {
-                    updateProgress(progressEl, 0, '❌ Erreur: ' + (data.error || data.message || 'inconnue'));
+                    updateProgress(progressEl, 0, t('mb.errorPrefix') + (data.error || data.message || t('aih.unknown')));
                 }
             })
             .catch(function (err) {
-                updateProgress(progressEl, 0, '❌ Erreur: ' + err.message);
+                updateProgress(progressEl, 0, t('mb.errorPrefix') + err.message);
             });
     }
 
@@ -1493,7 +1500,7 @@ import "./aih_dialog.js";
 
         var nameSpan = document.createElement('span');
         nameSpan.className = 'mb-progress-name';
-        nameSpan.textContent = filename || 'fichier';
+        nameSpan.textContent = filename || t('mb.file');
         row.appendChild(nameSpan);
 
         var barWrap = document.createElement('div');

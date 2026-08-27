@@ -30,10 +30,17 @@
  */
 
 import "./aih_dialog.js";
+import "./aih/strings.js";
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HOLAF_THEMES } from "./holaf_themes.js";
 import { escapeHtml, sanitizeMarkdownHtml, sanitizeUrl } from "./holaf_dom_utils.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 // Helper to load external scripts
 function loadScript(src, id) {
@@ -134,7 +141,7 @@ const holafNodesManager = {
             return true;
         } catch (error) {
             console.error("[Holaf NodesManager] Critical error loading marked.js script", error);
-            HolafPanelManager.createDialog({ title: "Component Error", message: "Could not load the Markdown rendering component. READMEs will be shown as plain text." });
+            HolafPanelManager.createDialog({ title: t("nm.componentError"), message: t("nm.componentErrorMsg") });
             return false;
         }
     },
@@ -196,7 +203,7 @@ const holafNodesManager = {
         themeButtonContainer.style.position = 'relative';
         const themeButton = document.createElement("button");
         themeButton.className = "holaf-header-button";
-        themeButton.title = "Change Theme";
+        themeButton.title = t("nm.theme");
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
         const themeMenu = this.createThemeMenu();
         themeButton.onclick = (e) => {
@@ -212,7 +219,7 @@ const holafNodesManager = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-nodes-manager-panel",
-                title: "AIH Custom Nodes Manager",
+                title: t("nm.panelTitle"),
                 headerContent: headerControls,
                 zoom: {
                     key: "holaf-nodes-manager-panel",
@@ -256,7 +263,7 @@ const holafNodesManager = {
             this.applyCurrentZoom();
         } catch (e) {
             console.error("[Holaf NodesManager] Error creating panel:", e);
-            HolafPanelManager.createDialog({ title: "Panel Error", message: "Error creating Nodes Manager panel. Check console for details." });
+            HolafPanelManager.createDialog({ title: t("nm.panelError"), message: t("nm.panelErrorMsg") });
         }
     },
 
@@ -266,26 +273,26 @@ const holafNodesManager = {
             <div class="holaf-nodes-manager-container">
                 <div id="holaf-nodes-manager-left-pane" class="holaf-nodes-manager-left-pane">
                     <div class="holaf-nodes-manager-toolbar">
-                        <button id="holaf-nodes-manager-refresh-btn" class="comfy-button" title="Refresh node list">Refresh</button>
-                        <input type="text" id="holaf-nodes-manager-filter-input" class="holaf-nodes-manager-filter-input" placeholder="Filter by name...">
-                        <input type="checkbox" id="holaf-nodes-manager-select-all-cb" title="Select/Deselect All Visible" style="margin-left: 10px; vertical-align: middle;">
-                        <span id="holaf-nodes-manager-selected-count" style="margin-left: 5px; font-size: 0.9em; color: var(--holaf-text-secondary);">0 selected</span>
+                        <button id="holaf-nodes-manager-refresh-btn" class="comfy-button" title="${t("nm.refreshTitle")}">${t("nm.refresh")}</button>
+                        <input type="text" id="holaf-nodes-manager-filter-input" class="holaf-nodes-manager-filter-input" placeholder="${t("nm.filterPlaceholder")}">
+                        <input type="checkbox" id="holaf-nodes-manager-select-all-cb" title="${t("nm.selectAllTitle")}" style="margin-left: 10px; vertical-align: middle;">
+                        <span id="holaf-nodes-manager-selected-count" style="margin-left: 5px; font-size: 0.9em; color: var(--holaf-text-secondary);">${t("nm.selectedCount", { count: 0 })}</span>
                     </div>
                     <div id="holaf-nodes-manager-list" class="holaf-nodes-manager-list">
-                        <p class="holaf-manager-message">Click Refresh to scan...</p>
+                        <p class="holaf-manager-message">${t("nm.clickToScan")}</p>
                     </div>
                     <div class="holaf-nodes-manager-actions-toolbar" style="padding: 8px; border-top: 1px solid var(--holaf-border-color); display: flex; gap: 5px; flex-wrap: wrap; align-items: center;">
-                        <button id="holaf-nodes-manager-update-btn" class="comfy-button" disabled title="Update selected nodes">Update</button>
-                        <button id="holaf-nodes-manager-req-btn" class="comfy-button" disabled title="Install requirements">Install Req.</button>
-                        <button id="holaf-nodes-manager-delete-btn" class="comfy-button" disabled title="Delete selected nodes" style="background-color: var(--holaf-error-color, #c0392b);">Delete</button>
+                        <button id="holaf-nodes-manager-update-btn" class="comfy-button" disabled title="${t("nm.updateTitle")}">${t("nm.update")}</button>
+                        <button id="holaf-nodes-manager-req-btn" class="comfy-button" disabled title="${t("nm.installReqTitle")}">${t("nm.installReq")}</button>
+                        <button id="holaf-nodes-manager-delete-btn" class="comfy-button" disabled title="${t("nm.deleteTitle")}" style="background-color: var(--holaf-error-color, #c0392b);">${t("nm.delete")}</button>
                         <div style="flex-grow: 1;"></div>
-                        <button id="holaf-nodes-manager-install-url-btn" class="comfy-button" title="Install via Git URL" style="border: 1px solid var(--holaf-accent-color);">Install via URL</button>
-                        <button id="holaf-nodes-manager-search-github-btn" class="comfy-button" title="Search GitHub" style="background-color: var(--holaf-accent-color); color: white;">Search GitHub</button>
+                        <button id="holaf-nodes-manager-install-url-btn" class="comfy-button" title="${t("nm.installUrlTitle")}" style="border: 1px solid var(--holaf-accent-color);">${t("nm.installUrl")}</button>
+                        <button id="holaf-nodes-manager-search-github-btn" class="comfy-button" title="${t("nm.searchGithubTitle")}" style="background-color: var(--holaf-accent-color); color: white;">${t("nm.searchGithub")}</button>
                     </div>
                 </div>
                 <div id="holaf-nodes-manager-right-pane" class="holaf-nodes-manager-right-pane">
                     <div id="holaf-nodes-manager-readme-header" class="holaf-nodes-manager-readme-header">
-                        Select a node to see details
+                        ${t("nm.selectNodeDetails")}
                     </div>
                     <div id="holaf-nodes-manager-readme-content" class="holaf-nodes-manager-readme-content">
                         <!-- README content will be rendered here -->
@@ -322,7 +329,7 @@ const holafNodesManager = {
         const readmeContentEl = document.getElementById("holaf-nodes-manager-readme-content");
         if (!listEl || !readmeHeaderEl || !readmeContentEl) return;
 
-        listEl.innerHTML = `<p class="holaf-manager-message">Scanning...</p>`;
+        listEl.innerHTML = `<p class="holaf-manager-message">${t("nm.scanning")}</p>`;
 
         const oldSelectedNodeName = this.currentlyDisplayedNode ? this.currentlyDisplayedNode.name : null;
 
@@ -341,15 +348,15 @@ const holafNodesManager = {
                 if (stillExistsNode) {
                     this.displayReadmeForNode(stillExistsNode);
                 } else {
-                    readmeHeaderEl.textContent = 'Select a node to see details';
+                    readmeHeaderEl.textContent = t("nm.selectNodeDetails");
                     readmeContentEl.innerHTML = '';
                     this.currentlyDisplayedNode = null;
                 }
             }
         } catch (e) {
             console.error("[Holaf NodesManager] Error fetching node list:", e);
-            listEl.innerHTML = `<p class="holaf-manager-message error">Error loading nodes. Check console.</p>`;
-            readmeHeaderEl.textContent = 'Error loading nodes';
+            listEl.innerHTML = `<p class="holaf-manager-message error">${t("nm.loadError")}</p>`;
+            readmeHeaderEl.textContent = t("nm.loadErrorTitle");
             readmeContentEl.innerHTML = '';
             this.currentlyDisplayedNode = null;
         }
@@ -368,7 +375,7 @@ const holafNodesManager = {
         const filteredNodes = this.getFilteredNodes();
 
         if (filteredNodes.length === 0) {
-            listEl.innerHTML = `<p class="holaf-manager-message">${this.nodesList.length === 0 ? "No custom nodes found." : "No nodes match your filter."}</p>`;
+            listEl.innerHTML = `<p class="holaf-manager-message">${this.nodesList.length === 0 ? t("nm.noNodes") : t("nm.noMatch")}</p>`;
             this.updateSelectAllCheckboxState();
             return;
         }
@@ -443,15 +450,15 @@ const holafNodesManager = {
 
         let iconsHTML = '';
         if (nodeData.has_requirements_txt) {
-            iconsHTML += `<svg title="Has requirements.txt" class="holaf-nodes-manager-req-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color: var(--holaf-text-secondary);"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm-1 9h-2v2H9v-2H7v-2h2V9h2v2h2v2zm4-10H5V2.5L13 2.5V3c0 .55.45 1 1 1h.5v.5z"/></svg>`;
+            iconsHTML += `<svg title="${t("nm.hasReq")}" class="holaf-nodes-manager-req-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color: var(--holaf-text-secondary);"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm-1 9h-2v2H9v-2H7v-2h2V9h2v2h2v2zm4-10H5V2.5L13 2.5V3c0 .55.45 1 1 1h.5v.5z"/></svg>`;
         }
 
         if (nodeData.is_git_repo && nodeData.repo_url) {
-            iconsHTML += `<svg title="Local Git repository: ${escapeHtml(nodeData.repo_url)}" class="holaf-nodes-manager-git-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0v1a6 6 0 0 0 6 6h1a5 5 0 0 0 5-5V8zm-6 6a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/><path d="M12 14v6"/><path d="M15 17H9"/></svg>`;
+            iconsHTML += `<svg title="${t("nm.localGitTitle", { url: nodeData.repo_url })}" class="holaf-nodes-manager-git-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0v1a6 6 0 0 0 6 6h1a5 5 0 0 0 5-5V8zm-6 6a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/><path d="M12 14v6"/><path d="M15 17H9"/></svg>`;
         } else if (nodeData.repo_url) {
-            iconsHTML += `<svg title="GitHub repo found (manual install): ${escapeHtml(nodeData.repo_url)}" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--holaf-accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
+            iconsHTML += `<svg title="${t("nm.manualGitTitle", { url: nodeData.repo_url })}" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--holaf-accent-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
         } else {
-            iconsHTML += `<svg title="Manually installed (no remote repo identified)" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
+            iconsHTML += `<svg title="${t("nm.manualInstalled")}" class="holaf-nodes-manager-manual-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>`;
         }
 
         const iconsContainer = document.createElement('span');
@@ -467,7 +474,7 @@ const holafNodesManager = {
     displayReadmeForNode(node) {
         if (this.currentlyDisplayedNode && this.currentlyDisplayedNode.name === node.name) {
             const readmeContentEl = document.getElementById("holaf-nodes-manager-readme-content");
-            if (readmeContentEl && !readmeContentEl.innerHTML.includes('<p class="holaf-manager-message">Loading...</p>')) {
+            if (readmeContentEl && !readmeContentEl.innerHTML.includes(`<p class="holaf-manager-message">${t("nm.loading")}</p>`)) {
                 const listEl = document.getElementById("holaf-nodes-manager-list");
                 listEl.querySelectorAll(".holaf-nodes-manager-list-item").forEach(item => {
                     const nameSpan = Array.from(item.childNodes).find(cn => cn.nodeName === "SPAN" && cn.parentElement === item && !cn.dataset.holafIcons);
@@ -544,7 +551,7 @@ const holafNodesManager = {
         const selectedCount = this.selectedNodes.size;
         const selectedCountEl = document.getElementById("holaf-nodes-manager-selected-count");
         if (selectedCountEl) {
-            selectedCountEl.textContent = `${selectedCount} selected`;
+            selectedCountEl.textContent = t("nm.selectedCount", { count: selectedCount });
         }
 
         const updateBtn = document.getElementById("holaf-nodes-manager-update-btn");
@@ -605,7 +612,7 @@ const holafNodesManager = {
         const contentEl = document.getElementById("holaf-nodes-manager-readme-content");
 
         headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3>`;
-        contentEl.innerHTML = `<p class="holaf-manager-message">Loading...</p>`;
+        contentEl.innerHTML = `<p class="holaf-manager-message">${t("nm.loading")}</p>`;
 
         let effectiveRepoUrl = node.repo_url;
         let readmeText = null;
@@ -613,7 +620,7 @@ const holafNodesManager = {
         let repoUrlWasFoundThisCall = false;
 
         if (!node.is_git_repo && !effectiveRepoUrl) {
-            contentEl.innerHTML = `<p class="holaf-manager-message">No local Git repo. Searching GitHub for "${escapeHtml(node.name)}"...</p>`;
+            contentEl.innerHTML = `<p class="holaf-manager-message">${t("nm.searchingGithub", { name: escapeHtml(node.name) })}</p>`;
             try {
                 const searchResponse = await fetch(`/holaf/nodes/search/github/${encodeURIComponent(node.name)}`);
                 if (searchResponse.ok) {
@@ -630,15 +637,15 @@ const holafNodesManager = {
             }
         }
 
-        let githubLinkText = "GitHub Repo";
-        if (node.is_git_repo && node.repo_url) githubLinkText = "Local Git Source";
-        else if (repoUrlWasFoundThisCall) githubLinkText = "Found on GitHub";
-        else if (node.repo_url) githubLinkText = "Detected Remote";
+        let githubLinkText = t("nm.githubRepo");
+        if (node.is_git_repo && node.repo_url) githubLinkText = t("nm.localGitSource");
+        else if (repoUrlWasFoundThisCall) githubLinkText = t("nm.foundOnGithub");
+        else if (node.repo_url) githubLinkText = t("nm.detectedRemote");
 
         if (effectiveRepoUrl) {
-            const repoLink = `<a href="${escapeHtml(sanitizeUrl(effectiveRepoUrl))}" target="_blank" rel="noopener noreferrer" title="Open on GitHub">${escapeHtml(githubLinkText)}</a>`;
+            const repoLink = `<a href="${escapeHtml(sanitizeUrl(effectiveRepoUrl))}" target="_blank" rel="noopener noreferrer" title="${t("nm.openOnGithub")}">${escapeHtml(githubLinkText)}</a>`;
             headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3> ${repoLink}`;
-            contentEl.innerHTML = `<p class="holaf-manager-message">Fetching README from GitHub (${escapeHtml(effectiveRepoUrl)})...</p>`;
+            contentEl.innerHTML = `<p class="holaf-manager-message">${t("nm.fetchingReadme", { url: escapeHtml(effectiveRepoUrl) })}</p>`;
             const match = effectiveRepoUrl.match(/github\.com[/:]([^/]+\/[^/]+)/);
             if (match && match[1]) {
                 const [owner, repoWithGit] = match[1].split('/');
@@ -651,7 +658,7 @@ const holafNodesManager = {
                     });
                     if (response.ok) {
                         readmeText = await response.text();
-                        source = node.is_git_repo ? 'GitHub (via Local Git)' : 'GitHub (Found/Remote)';
+                        source = node.is_git_repo ? t("nm.sourceLocalGit") : t("nm.sourceFoundRemote");
                     } else {
                         console.warn(`[Holaf NodesManager] GitHub README fetch non-OK for ${owner}/${repo}: ${response.status}`);
                     }
@@ -663,16 +670,16 @@ const holafNodesManager = {
 
         if (readmeText === null) {
             if (effectiveRepoUrl) {
-                contentEl.innerHTML = `<p class="holaf-manager-message">Could not retrieve README from GitHub. Checking for a local file...</p>`;
+                contentEl.innerHTML = `<p class="holaf-manager-message">${t("nm.cantRetrieveReadme")}</p>`;
             } else {
                 headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3>`;
-                contentEl.innerHTML = `<p class="holaf-manager-message">No GitHub repository identified. Checking for a local file...</p>`;
+                contentEl.innerHTML = `<p class="holaf-manager-message">${t("nm.noRepoChecking")}</p>`;
             }
             try {
                 const response = await fetch(`/holaf/nodes/readme/local/${encodeURIComponent(node.name)}`);
                 if (response.ok) {
                     readmeText = await response.text();
-                    source = 'Local File';
+                    source = t("nm.sourceLocalFile");
                 }
             } catch (e) {
                 console.error(`[Holaf NodesManager] Error fetching local README for ${node.name}:`, e);
@@ -680,7 +687,7 @@ const holafNodesManager = {
         }
 
         if (readmeText === null) {
-            readmeText = `## No README Found\n\nCould not find a README file on GitHub or locally for **${node.name}**.`;
+            readmeText = t("nm.noReadme", { name: node.name });
             if (!effectiveRepoUrl) {
                 headerEl.innerHTML = `<h3>${escapeHtml(node.name)}</h3>`;
             }
@@ -694,7 +701,7 @@ const holafNodesManager = {
 
         const sourceTag = document.createElement('span');
         sourceTag.className = 'readme-source-tag';
-        sourceTag.textContent = `Source: ${source}`;
+        sourceTag.textContent = t("nm.source", { source });
         sourceTag.style.fontSize = '0.8em';
         sourceTag.style.marginLeft = '10px';
         sourceTag.style.color = 'var(--holaf-text-secondary)';
@@ -733,7 +740,7 @@ const holafNodesManager = {
         }
     },
 
-    _showLoginModal(message = "Authentication is required for this action. Please enter your password.", passwordNotConfigured = false) {
+    _showLoginModal(message = t("nm.authRequiredMsg"), passwordNotConfigured = false) {
         return new Promise((resolve) => {
             const overlay = document.createElement("div");
             overlay.className = "holaf-dialog-overlay";
@@ -750,7 +757,7 @@ const holafNodesManager = {
             header.className = "holaf-utility-header";
             header.style.cursor = "default";
             const title = document.createElement("span");
-            title.textContent = passwordNotConfigured ? "Password Setup Required" : "Authentication Required";
+            title.textContent = passwordNotConfigured ? t("nm.passwordSetupRequired") : t("nm.authRequired");
             header.appendChild(title);
 
             const content = document.createElement("div");
@@ -759,12 +766,12 @@ const holafNodesManager = {
 
             const info = document.createElement("p");
             info.textContent = passwordNotConfigured
-                ? "No password is set yet. Create one to secure this action."
+                ? t("nm.noPasswordYet")
                 : message;
             info.style.cssText = "margin:0 0 12px 0;color:var(--holaf-text-secondary);line-height:1.4;";
 
             const label = document.createElement("label");
-            label.textContent = passwordNotConfigured ? "New Password (min 4 chars):" : "Password:";
+            label.textContent = passwordNotConfigured ? t("nm.newPassword") : t("nm.password");
             label.style.cssText = "display:block;margin-bottom:5px;color:var(--holaf-text-primary);";
 
             const passwordInput = document.createElement("input");
@@ -777,7 +784,7 @@ const holafNodesManager = {
             const manualContainer = document.createElement("div");
 
             if (passwordNotConfigured) {
-                confirmLabel.textContent = "Confirm Password:";
+                confirmLabel.textContent = t("nm.confirmPassword");
                 confirmLabel.style.cssText = "display:block;margin-bottom:5px;color:var(--holaf-text-primary);";
                 confirmInput.type = "password";
                 confirmInput.autocomplete = "new-password";
@@ -785,17 +792,17 @@ const holafNodesManager = {
 
                 manualContainer.style.cssText = "display:none;margin-top:10px;padding:8px;border:1px dashed var(--holaf-border-color);border-radius:3px;";
                 const manualTitle = document.createElement("p");
-                manualTitle.textContent = "Manual setup required: config.ini is not writable by the server.";
+                manualTitle.textContent = t("nm.manualSetupRequired");
                 manualTitle.style.cssText = "margin:0 0 6px 0;color:var(--holaf-text-secondary);";
                 const manualSteps = document.createElement("p");
-                manualSteps.textContent = "Add the line below under [Security] in config.ini, then restart ComfyUI:";
+                manualSteps.textContent = t("nm.manualSteps");
                 manualSteps.style.cssText = "margin:0 0 6px 0;color:var(--holaf-text-secondary);";
                 const hashInput = document.createElement("input");
                 hashInput.type = "text";
                 hashInput.readOnly = true;
                 hashInput.style.cssText = "width:100%;font-family:monospace;padding:6px;box-sizing:border-box;background-color:var(--holaf-input-background);color:var(--holaf-text-primary);border:1px solid var(--holaf-border-color);border-radius:3px;margin-bottom:6px;";
                 const copyButton = document.createElement("button");
-                copyButton.textContent = "Copy Hash";
+                copyButton.textContent = t("nm.copyHash");
                 copyButton.className = "comfy-button";
                 copyButton.addEventListener("click", () => {
                     if (hashInput.value) {
@@ -817,12 +824,12 @@ const holafNodesManager = {
             footer.className = "holaf-dialog-footer";
 
             const cancelButton = document.createElement("button");
-            cancelButton.textContent = "Cancel";
+            cancelButton.textContent = t("nm.cancel");
             cancelButton.className = "comfy-button";
             cancelButton.style.backgroundColor = "var(--holaf-tag-background)";
 
             const actionButton = document.createElement("button");
-            actionButton.textContent = passwordNotConfigured ? "Create Password" : "Connect";
+            actionButton.textContent = passwordNotConfigured ? t("nm.createPassword") : t("nm.connect");
             actionButton.className = "comfy-button";
             actionButton.style.backgroundColor = "var(--holaf-accent-color)";
             actionButton.style.color = "white";
@@ -844,18 +851,18 @@ const holafNodesManager = {
             const submitLogin = async () => {
                 const password = passwordInput.value;
                 if (!password) {
-                    statusMessage.textContent = "Error: Password cannot be empty.";
+                    statusMessage.textContent = t("nm.passEmpty");
                     passwordInput.focus();
                     return;
                 }
                 if (passwordNotConfigured) {
                     if (password.length < 4) {
-                        statusMessage.textContent = "Password must be at least 4 characters long.";
+                        statusMessage.textContent = t("nm.passTooShort");
                         passwordInput.focus();
                         return;
                     }
                     if (password !== confirmInput.value) {
-                        statusMessage.textContent = "Passwords do not match.";
+                        statusMessage.textContent = t("nm.passMismatch");
                         confirmInput.focus();
                         return;
                     }
@@ -865,7 +872,7 @@ const holafNodesManager = {
                 cancelButton.disabled = true;
                 passwordInput.disabled = true;
                 if (confirmInput) confirmInput.disabled = true;
-                statusMessage.textContent = passwordNotConfigured ? "Creating password..." : "Authenticating...";
+                statusMessage.textContent = passwordNotConfigured ? t("nm.creatingPassword") : t("nm.authenticating");
 
                 try {
                     if (passwordNotConfigured) {
@@ -887,7 +894,7 @@ const holafNodesManager = {
                         }
 
                         if (!(setupResponse.ok && setupData.status === "ok" && setupData.action === "reload")) {
-                            statusMessage.textContent = `Error: ${setupData.message || 'Could not set the password.'}`;
+                            statusMessage.textContent = `Error: ${setupData.message || t("nm.couldNotSetPassword")}`;
                             return;
                         }
                     }
@@ -905,16 +912,16 @@ const holafNodesManager = {
                     }
 
                     if (response.status === 401) {
-                        statusMessage.textContent = "Mot de passe non configuré ou incorrect.";
+                        statusMessage.textContent = t("nm.passNotConfiguredOrWrong");
                     } else {
                         const serverMessage = data.message || data.error || "";
                         statusMessage.textContent = serverMessage
                             ? `Error: ${serverMessage}`
-                            : "Mot de passe non configuré ou incorrect.";
+                            : t("nm.passNotConfiguredOrWrong");
                     }
                 } catch (e) {
                     console.error("[Holaf NodesManager] Login request failed:", e);
-                    statusMessage.textContent = "Error: Could not reach server.";
+                    statusMessage.textContent = t("nm.cantReachServer");
                 } finally {
                     passwordInput.value = "";
                     if (confirmInput) confirmInput.value = "";
@@ -950,7 +957,7 @@ const holafNodesManager = {
         });
     },
 
-    async _ensureAuthenticated(message = "Authentication is required for this action. Please enter your password.") {
+    async _ensureAuthenticated(message = t("nm.authRequiredMsg")) {
         const status = await this._checkAuthStatus();
         if (status.authenticated) return true;
         return this._showLoginModal(message, !status.passwordConfigured);
@@ -958,11 +965,11 @@ const holafNodesManager = {
 
     async _executeNodeAction(actionPath, nodePayloads, actionName, confirmMessage, requiresAuth = false) {
         if (this.isActionInProgress) {
-            HolafPanelManager.createDialog({ title: "Action In Progress", message: "Another action is currently running. Please wait." });
+            HolafPanelManager.createDialog({ title: t("nm.actionInProgress"), message: t("nm.actionInProgressMsg") });
             return;
         }
         if (!nodePayloads || nodePayloads.length === 0) {
-            HolafPanelManager.createDialog({ title: actionName, message: "No nodes selected for this action." });
+            HolafPanelManager.createDialog({ title: actionName, message: t("nm.noNodesSelected") });
             return;
         }
 
@@ -974,9 +981,9 @@ const holafNodesManager = {
         const nodeNamesForDisplay = nodePayloads.map(p => p.name).join(', ');
 
         const confirm = await HolafPanelManager.createDialog({
-            title: `Confirm ${actionName}`,
-            message: `${confirmMessage}\n\nNodes: ${nodeNamesForDisplay}`,
-            buttons: [{ text: "Cancel", value: false, type: "cancel" }, { text: actionName, value: true, type: actionName === "Delete" ? "danger" : "confirm" }]
+            title: t("nm.confirmAction", { action: actionName }),
+            message: t("nm.nodesList", { confirmMessage, nodes: nodeNamesForDisplay }),
+            buttons: [{ text: t("nm.cancel"), value: false, type: "cancel" }, { text: actionName, value: true, type: actionName === "Delete" ? "danger" : "confirm" }]
         });
 
         if (!confirm) return;
@@ -1012,10 +1019,10 @@ const holafNodesManager = {
 
             const header = document.createElement("div");
             header.className = "holaf-utility-header";
-            header.innerHTML = `<span>${actionName} In Progress</span>`;
+            header.innerHTML = `<span>${t("nm.actionInProgressTitle", { action: actionName })}</span>`;
 
             const contentDiv = document.createElement("div");
-            contentDiv.innerHTML = `<p style="padding: 15px 20px; color: var(--holaf-text-primary); white-space: pre-wrap;">Processing ${nodePayloads.length} node(s)...\n\nThis may take a while. Check server console for detailed progress.\n\nResults will be shown here upon completion.</p>`;
+            contentDiv.innerHTML = `<p style="padding: 15px 20px; color: var(--holaf-text-primary); white-space: pre-wrap;">${t("nm.processingNodes", { count: nodePayloads.length })}</p>`;
 
             dialog.append(header, contentDiv);
             inProgressOverlayElement.appendChild(dialog);
@@ -1040,9 +1047,9 @@ const holafNodesManager = {
 
             if (response.status === 401) {
                 removeInProgressDialog();
-                const reconnected = await this._showLoginModal("Your session has expired. Please enter your password to reconnect.");
+                const reconnected = await this._showLoginModal(t("nm.sessionExpired"));
                 if (!reconnected) {
-                    HolafPanelManager.createDialog({ title: `${actionName} Cancelled`, message: "Authentication is required to perform this action." });
+                    HolafPanelManager.createDialog({ title: t("nm.actionCancelled", { action: actionName }), message: t("nm.authRequiredForAction") });
                     return;
                 }
                 showInProgressDialog();
@@ -1053,7 +1060,7 @@ const holafNodesManager = {
                 });
                 if (response.status === 401) {
                     removeInProgressDialog();
-                    HolafPanelManager.createDialog({ title: `${actionName} Error`, message: "Authentication failed. The action was not executed." });
+                    HolafPanelManager.createDialog({ title: t("nm.actionError", { action: actionName }), message: t("nm.authFailedNotExecuted") });
                     return;
                 }
             }
@@ -1062,14 +1069,14 @@ const holafNodesManager = {
 
             removeInProgressDialog();
 
-            let summaryMessage = `${actionName} Results:\n\n`;
+            let summaryMessage = t("nm.actionResults", { action: actionName });
             let refreshNeeded = false;
 
             if (result.details && Array.isArray(result.details)) {
                 result.details.forEach(item => {
-                    summaryMessage += `Node: ${item.node_name}\nStatus: ${item.status}\nMessage: ${item.message || 'N/A'}\n`;
-                    if (item.output) summaryMessage += `Output:\n${item.output.substring(0, 300)}${item.output.length > 300 ? '...' : ''}\n`;
-                    summaryMessage += "----------------------------\n";
+                    summaryMessage += t("nm.nodeStatus", { name: item.node_name, status: item.status, message: item.message || 'N/A' });
+                    if (item.output) summaryMessage += t("nm.output", { output: item.output.substring(0, 300) }) + (item.output.length > 300 ? '...' : '') + '\n';
+                    summaryMessage += t("nm.separator") + '\n';
 
                     if (item.status === 'success') {
                         if (actionName === "Delete" || actionName === "Update") {
@@ -1085,10 +1092,10 @@ const holafNodesManager = {
                     }
                 });
             } else {
-                summaryMessage += `Server Response: ${result.status || 'Unknown'} - ${result.message || 'No specific details.'}`;
+                summaryMessage += t("nm.serverResponse", { status: result.status || t("nm.unknown"), message: result.message || t("nm.noDetails") });
             }
 
-            HolafPanelManager.createDialog({ title: `${actionName} Complete`, message: summaryMessage });
+            HolafPanelManager.createDialog({ title: t("nm.actionComplete", { action: actionName }), message: summaryMessage });
 
             if (refreshNeeded) {
                 await this.refreshNodesList();
@@ -1111,7 +1118,7 @@ const holafNodesManager = {
         } catch (error) {
             removeInProgressDialog();
             console.error(`[Holaf NodesManager] Error during ${actionName}:`, error);
-            HolafPanelManager.createDialog({ title: `${actionName} Error`, message: `An error occurred: ${error.message}. Check browser and server console.` });
+            HolafPanelManager.createDialog({ title: t("nm.actionError", { action: actionName }), message: t("nm.errorOccurred", { message: error.message }) });
         } finally {
             removeInProgressDialog();
             this.isActionInProgress = false;
@@ -1133,7 +1140,7 @@ const holafNodesManager = {
             .filter(payload => payload !== null);
 
         if (nodesToUpdatePayloads.length === 0) {
-            HolafPanelManager.createDialog({ title: "Update Nodes", message: "No selected nodes are local Git repositories or have a detected GitHub URL for update attempt." });
+            HolafPanelManager.createDialog({ title: t("nm.updateNodes"), message: t("nm.noUpdateNodes") });
             return;
         }
 
@@ -1144,14 +1151,14 @@ const holafNodesManager = {
 
         const manualNodesWithUrl = nodesToUpdatePayloads.filter(p => p.repo_url_override !== null).map(p => p.name);
 
-        let message = "This will attempt to update the selected nodes.\n";
+        let message = t("nm.updateIntro");
         if (gitRepoNodes.length > 0) {
-            message += `\nFor LOCAL GIT repositories (${gitRepoNodes.join(', ')}):\nLocal changes to tracked files will be OVERWRITTEN with the latest from the remote. Untracked files will be kept.\n`;
+            message += t("nm.updateLocalGit", { names: gitRepoNodes.join(', ') });
         }
         if (manualNodesWithUrl.length > 0) {
-            message += `\nFor manually installed nodes with a found GitHub URL (${manualNodesWithUrl.join(', ')}):\nThis will RENAME the current folder, CLONE the repository, and attempt to RESTORE any files from the original folder that are not in the new clone. BACKUP YOUR NODE MANUALLY IF YOU HAVE CRITICAL UNTRACKED CHANGES.\n`;
+            message += t("nm.updateManual", { names: manualNodesWithUrl.join(', ') });
         }
-        message += "\nAre you sure you want to proceed?";
+        message += t("nm.updateConfirm");
 
         await this._executeNodeAction(
             '/holaf/nodes/update',
@@ -1168,7 +1175,7 @@ const holafNodesManager = {
             '/holaf/nodes/delete',
             nodesToDeletePayloads,
             "Delete",
-            "WARNING: This will PERMANENTLY DELETE the folder(s) for the selected node(s). This action cannot be undone. Are you absolutely sure?"
+            t("nm.deleteWarning")
         );
     },
 
@@ -1183,8 +1190,8 @@ const holafNodesManager = {
         await this._executeNodeAction(
             '/holaf/nodes/install-requirements',
             nodesForReqPayloads,
-            "Install Requirements",
-            "This will attempt to run 'pip install -r requirements.txt' for the selected nodes. Ensure your ComfyUI Python environment is active. This might take some time.",
+            t("nm.installRequirements"),
+            t("nm.installRequirementsMsg"),
             true
         );
     },
@@ -1193,11 +1200,11 @@ const holafNodesManager = {
         if (this.isActionInProgress) return;
 
         // Simple prompt for now, could be improved with a custom dialog later
-        let url = await window.AIH.prompt("Enter the Git URL of the node to install:");
+        let url = await window.AIH.prompt(t("nm.enterGitUrl"));
         if (!url) return;
         url = url.trim();
         if (!url.startsWith("http")) {
-            await window.AIH.alert("Install via URL", "Please enter a valid URL starting with http/https", "warning");
+            await window.AIH.alert(t("nm.installViaUrl"), t("nm.invalidUrl"), "warning");
             return;
         }
 
@@ -1220,9 +1227,9 @@ const holafNodesManager = {
         const header = document.createElement("div");
         header.className = "holaf-utility-header";
         header.innerHTML = `
-            <span>Search GitHub for Custom Nodes</span>
+            <span>${t("nm.searchGithubTitle")}</span>
             <div class="holaf-window-controls">
-                 <button class="holaf-window-control-btn close" title="Close">×</button>
+                 <button class="holaf-window-control-btn close" title="${t("nm.close")}">×</button>
             </div>
         `;
         header.querySelector(".close").onclick = () => document.body.removeChild(overlay);
@@ -1238,8 +1245,8 @@ const holafNodesManager = {
         searchBar.style.display = "flex";
         searchBar.style.marginBottom = "10px";
         searchBar.innerHTML = `
-            <input type="text" placeholder="Search query..." style="flex: 1; margin-right: 5px;" class="holaf-nodes-manager-filter-input">
-            <button class="comfy-button">Search</button>
+            <input type="text" placeholder="${t("nm.searchPlaceholder")}" style="flex: 1; margin-right: 5px;" class="holaf-nodes-manager-filter-input">
+            <button class="comfy-button">${t("nm.search")}</button>
         `;
 
         const resultsContainer = document.createElement("div");
@@ -1262,7 +1269,7 @@ const holafNodesManager = {
         const performSearch = async () => {
             const query = input.value.trim();
             if (!query) return;
-            resultsContainer.innerHTML = "<p>Searching...</p>";
+            resultsContainer.innerHTML = `<p>${t("nm.searching")}</p>`;
             try {
                 const res = await fetch("/holaf/nodes/search", {
                     method: "POST",
@@ -1287,7 +1294,7 @@ const holafNodesManager = {
                         const descriptionDiv = document.createElement('div');
                         descriptionDiv.style.fontSize = '0.8em';
                         descriptionDiv.style.opacity = '0.7';
-                        descriptionDiv.textContent = r.description || 'No description';
+                        descriptionDiv.textContent = r.description || t("nm.noDescription");
 
                         const linkWrap = document.createElement('div');
                         linkWrap.style.fontSize = '0.7em';
@@ -1296,7 +1303,7 @@ const holafNodesManager = {
                         link.href = sanitizeUrl(r.url);
                         link.target = '_blank';
                         link.rel = 'noopener noreferrer';
-                        link.textContent = 'View on GitHub';
+                        link.textContent = t("nm.viewOnGithub");
                         linkWrap.appendChild(link);
 
                         infoDiv.append(nameDiv, descriptionDiv, linkWrap);
@@ -1304,7 +1311,7 @@ const holafNodesManager = {
                         const installButton = document.createElement('button');
                         installButton.className = 'comfy-button';
                         installButton.style.marginLeft = '10px';
-                        installButton.textContent = 'Install';
+                        installButton.textContent = t("nm.install");
                         installButton.onclick = () => {
                              document.body.removeChild(overlay);
                              this._performInstall(r.url);
@@ -1314,11 +1321,11 @@ const holafNodesManager = {
                         resultsContainer.appendChild(row);
                     });
                 } else {
-                    resultsContainer.innerHTML = "<p>No results found.</p>";
+                    resultsContainer.innerHTML = `<p>${t("nm.noResults")}</p>`;
                 }
 
             } catch (e) {
-                resultsContainer.innerHTML = `<p style="color:red">Error: ${escapeHtml(e.message)}</p>`;
+                resultsContainer.innerHTML = `<p style="color:red">${t("nm.errorPrefix", { message: escapeHtml(e.message) })}</p>`;
             }
         };
 
@@ -1353,7 +1360,7 @@ const holafNodesManager = {
                 ? this.panelElements.panelEl.className.match(/holaf-theme-\S+/)?.[0]
                 : null) || HOLAF_THEMES[0].className);
             dialog.style.cssText = "position:relative;width:auto;min-width:300px;padding:20px;background:var(--holaf-bg-secondary);border:1px solid var(--holaf-border-color);";
-            dialog.innerHTML = `<h3>Installing...</h3><p>Cloning ${escapeHtml(url)}...</p>`;
+            dialog.innerHTML = `<h3>${t("nm.installing")}</h3><p>${t("nm.cloning", { url: escapeHtml(url) })}</p>`;
             overlay.append(dialog);
             document.body.append(overlay);
         };
@@ -1376,9 +1383,9 @@ const holafNodesManager = {
 
             if (response.status === 401) {
                 removeInstallOverlay();
-                const reconnected = await this._showLoginModal("Your session has expired. Please enter your password to reconnect.");
+                const reconnected = await this._showLoginModal(t("nm.sessionExpired"));
                 if (!reconnected) {
-                    HolafPanelManager.createDialog({ title: "Install Cancelled", message: "Authentication is required to install nodes." });
+                    HolafPanelManager.createDialog({ title: t("nm.installCancelled"), message: t("nm.authRequiredInstall") });
                     return;
                 }
                 showInstallOverlay();
@@ -1389,7 +1396,7 @@ const holafNodesManager = {
                 });
                 if (response.status === 401) {
                     removeInstallOverlay();
-                    HolafPanelManager.createDialog({ title: "Install Failed", message: "Authentication failed. The node was not installed." });
+                    HolafPanelManager.createDialog({ title: t("nm.installFailed"), message: t("nm.authFailedNotInstalled") });
                     return;
                 }
             }
@@ -1399,14 +1406,14 @@ const holafNodesManager = {
             removeInstallOverlay();
 
             if (response.ok && result.status === 'success') {
-                HolafPanelManager.createDialog({ title: "Install Complete", message: `Successfully installed node from ${url}.\n\nA restart of ComfyUI is likely required to load the new node.` });
+                HolafPanelManager.createDialog({ title: t("nm.installComplete"), message: t("nm.installCompleteMsg", { url }) });
                 this.refreshNodesList();
             } else {
-                throw new Error(result.message || "Unknown error");
+                throw new Error(result.message || t("nm.unknownError"));
             }
         } catch (e) {
             removeInstallOverlay();
-            HolafPanelManager.createDialog({ title: "Install Failed", message: `Error installing node: ${e.message}` });
+            HolafPanelManager.createDialog({ title: t("nm.installFailed"), message: t("nm.installErrorMsg", { message: e.message }) });
         } finally {
             removeInstallOverlay();
             this.isActionInProgress = false;

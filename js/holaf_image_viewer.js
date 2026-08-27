@@ -7,8 +7,15 @@
 
 // Global variable for the ComfyUI App instance (only populated in main tab)
 // Uses the compatibility layer via holaf_api_compat.js
+import "./aih/strings.js";
 import { app as comfyApp, api as comfyApi } from "./holaf_api_compat.js";
 let app = comfyApp;
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { HolafComfyBridge, holafBridge } from "./holaf_comfy_bridge.js";
@@ -98,7 +105,7 @@ const holafImageViewer = {
                         void toast.offsetWidth;
                         toast.style.opacity = '1';
                     }
-                    toast.innerHTML = opts.message || "Operation processed.";
+                    toast.innerHTML = opts.message || t("iv.operationProcessed");
 
                     if (!opts.duration || opts.duration > 0) {
                         setTimeout(() => {
@@ -266,11 +273,11 @@ const holafImageViewer = {
         overlay.id = 'holaf-viewer-fullscreen-overlay';
         overlay.style.display = 'none';
         overlay.innerHTML = `
-            <button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="Close (Esc)">✖</button>
-            <button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="Previous (Left Arrow)">‹</button>
+            <button id="holaf-viewer-fs-close" class="holaf-viewer-fs-close" title="${t('iv.fsClose')}">✖</button>
+            <button id="holaf-viewer-fs-prev" class="holaf-viewer-fs-nav" title="${t('iv.fsPrev')}">‹</button>
             <img src="" draggable="false" />
             <video controls loop id="holaf-viewer-fs-video" style="display: none;"></video>
-            <button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="Next (Right Arrow)">›</button>
+            <button id="holaf-viewer-fs-next" class="holaf-viewer-fs-nav" title="${t('iv.fsNext')}">›</button>
         `;
         document.body.appendChild(overlay);
 
@@ -298,7 +305,7 @@ const holafImageViewer = {
         if (window.location.pathname !== '/holaf/view') {
             const popOutButton = document.createElement("button");
             popOutButton.className = "holaf-header-button";
-            popOutButton.title = "Open in New Tab (Standalone Mode)";
+            popOutButton.title = t("iv.popOutTitle");
             popOutButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
             popOutButton.onclick = (e) => {
                 e.stopPropagation();
@@ -311,7 +318,7 @@ const holafImageViewer = {
         themeButtonContainer.style.position = 'relative';
         const themeButton = document.createElement("button");
         themeButton.className = "holaf-header-button";
-        themeButton.title = "Change Theme";
+        themeButton.title = t("iv.theme");
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
 
         const themeMenu = createThemeMenu((themeName) => this.setTheme(themeName));
@@ -329,7 +336,7 @@ const holafImageViewer = {
         try {
             this.panelElements = HolafPanelManager.createPanel({
                 id: "holaf-viewer-panel",
-                title: "AIH Image Viewer",
+                title: t("iv.panelTitle"),
                 headerContent: headerControls,
                 defaultSize: { width: state.panel_width, height: state.panel_height },
                 defaultPosition: { x: state.panel_x, y: state.panel_y },
@@ -358,7 +365,7 @@ const holafImageViewer = {
 
         } catch (e) {
             console.error("[Holaf ImageViewer] Error creating panel:", e);
-            HolafPanelManager.createDialog({ title: "Panel Error", message: "Error creating Image Viewer panel. Check console for details." });
+            HolafPanelManager.createDialog({ title: t("iv.panelError"), message: t("iv.panelErrorMsg") });
         }
     },
 
@@ -383,11 +390,11 @@ const holafImageViewer = {
 
     async _handleEmptyTrash() {
         if (await HolafPanelManager.createDialog({
-            title: "Confirm Empty Trash",
-            message: "Are you sure you want to permanently delete ALL files in the trashcan?\nThis action cannot be undone.",
+            title: t("iv.confirmEmptyTrashTitle"),
+            message: t("iv.confirmEmptyTrashMsg"),
             buttons: [
-                { text: "Cancel", value: false, type: "cancel" },
-                { text: "Permanently Delete", value: true, type: "danger" }
+                { text: t("iv.cancel"), value: false, type: "cancel" },
+                { text: t("iv.permanentlyDelete"), value: true, type: "danger" }
             ]
         })) {
             try {
@@ -399,24 +406,24 @@ const holafImageViewer = {
 
                 if (response.ok) {
                     HolafPanelManager.createDialog({
-                        title: "Trash Emptied",
-                        message: result.message || "The trashcan has been successfully emptied.",
-                        buttons: [{ text: "OK", value: true }]
+                        title: t("iv.trashEmptiedTitle"),
+                        message: result.message || t("iv.trashEmptiedMsg"),
+                        buttons: [{ text: t("iv.ok"), value: true }]
                     });
                     this.loadAndPopulateFilters();
                 } else {
                     HolafPanelManager.createDialog({
-                        title: "Error",
-                        message: `Failed to empty trashcan: ${result.message || 'Unknown server error.'}`,
-                        buttons: [{ text: "OK", value: true }]
+                        title: t("iv.error"),
+                        message: t("iv.emptyTrashFailed", { message: result.message || t("iv.unknownServerError") }),
+                        buttons: [{ text: t("iv.ok"), value: true }]
                     });
                 }
             } catch (error) {
                 console.error("[Holaf ImageViewer] Error calling empty-trashcan API:", error);
                 HolafPanelManager.createDialog({
-                    title: "API Error",
-                    message: `Error communicating with the server: ${error.message}`,
-                    buttons: [{ text: "OK", value: true }]
+                    title: t("iv.apiError"),
+                    message: t("iv.apiErrorMsg", { message: error.message }),
+                    buttons: [{ text: t("iv.ok"), value: true }]
                 });
             }
         }
@@ -540,7 +547,7 @@ const holafImageViewer = {
                 } else {
                     imageViewerState.setState({ status: { pendingNewImages: true } });
                     if (window.holaf?.toastManager) {
-                        window.holaf.toastManager.show({ message: "Nouvelles images détectées — cliquez sur « ⏫ récentes ».", type: "info" });
+                        window.holaf.toastManager.show({ message: t("iv.newImagesDetected"), type: "info" });
                     }
                 }
             } else if (delta && delta.total_db_count !== undefined) {
@@ -608,12 +615,12 @@ const holafImageViewer = {
         }
 
         const choice = await HolafPanelManager.createDialog({
-            title: "Reset Filters Confirmation",
-            message: "You have locked folders. How would you like to proceed?",
+            title: t("iv.resetFiltersConfirmTitle"),
+            message: t("iv.resetFiltersConfirmMsg"),
             buttons: [
-                { text: "Cancel", value: "cancel", type: "cancel" },
-                { text: "Reset (Keep Locks)", value: "reset_keep_locks" },
-                { text: "Unlock & Reset All", value: "unlock_and_reset", type: "confirm" }
+                { text: t("iv.cancel"), value: "cancel", type: "cancel" },
+                { text: t("iv.resetKeepLocks"), value: "reset_keep_locks" },
+                { text: t("iv.unlockAndReset"), value: "unlock_and_reset", type: "confirm" }
             ]
         });
 
@@ -702,7 +709,7 @@ const holafImageViewer = {
 
                         const isTrashChecked = hasSavedFolderFilters && folder_filters.includes('trashcan');
 
-                        const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', '🗑️ Trashcan', isTrashChecked, (e) => {
+                        const trashCheckboxItem = this.createFilterItem('folder-filter-trashcan', t('iv.trashcan'), isTrashChecked, (e) => {
                             const otherFolderCheckboxes = foldersEl.querySelectorAll('input[type="checkbox"]:not(#folder-filter-trashcan)');
                             if (e.target.checked) {
                                 this._lastFolderFilterState = [...otherFolderCheckboxes].filter(cb => cb.checked).map(cb => cb.id);
@@ -724,8 +731,8 @@ const holafImageViewer = {
                         trashContainer.style.alignItems = 'center';
 
                         const emptyTrashBtn = document.createElement('button');
-                        emptyTrashBtn.textContent = 'Empty';
-                        emptyTrashBtn.title = 'Permanently delete all files in the trashcan';
+                        emptyTrashBtn.textContent = t('iv.empty');
+                        emptyTrashBtn.title = t('iv.emptyTrashTitle');
                         emptyTrashBtn.style.cssText = 'font-size: 10px; padding: 2px 6px; margin-left: 10px; background-color: var(--holaf-error-color, #802020); color: var(--holaf-button-text, white); border: 1px solid var(--holaf-border-color, #c03030); cursor: pointer; border-radius: 4px;';
                         emptyTrashBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); this._handleEmptyTrash(); };
                         trashContainer.appendChild(emptyTrashBtn);
@@ -751,7 +758,7 @@ const holafImageViewer = {
         } catch (e) {
             console.error("[Holaf ImageViewer] Failed to load filter options:", e);
             if (this.panelElements && document.getElementById('holaf-viewer-folders-filter')) {
-                document.getElementById('holaf-viewer-folders-filter').innerHTML = `<p class="holaf-viewer-message error">Error loading filters.</p>`;
+                document.getElementById('holaf-viewer-folders-filter').innerHTML = `<p class="holaf-viewer-message error">${t('iv.errorLoadingFilters')}</p>`;
             }
         }
     },
@@ -848,7 +855,7 @@ const holafImageViewer = {
             }
 
             if (isInitialLoad && this.panelElements) {
-                this.setLoadingState("Applying filters...");
+                this.setLoadingState(t("iv.applyingFilters"));
             }
 
             const currentState = imageViewerState.getState();
@@ -991,7 +998,7 @@ const holafImageViewer = {
 
             if (state.exporting.activeToastId && state.exporting.stats.completedFiles > 0) {
                 window.holaf.toastManager.update(state.exporting.activeToastId, {
-                    message: `<strong>Export Queue Complete:</strong><br>${state.exporting.stats.completedFiles} file(s) downloaded.`,
+                    message: t("iv.exportQueueComplete", { count: state.exporting.stats.completedFiles }),
                     type: 'success',
                     progress: 100
                 });
@@ -1071,7 +1078,7 @@ const holafImageViewer = {
             const activeToastId = imageViewerState.getState().exporting.activeToastId;
             if (activeToastId) {
                 window.holaf.toastManager.update(activeToastId, {
-                    message: `<strong>Download Failed:</strong><br>${filename}<br><small>${error.message}</small>`,
+                    message: t("iv.downloadFailed", { filename, error: error.message }),
                     type: 'error',
                     progress: 100
                 });
@@ -1120,7 +1127,7 @@ const holafImageViewer = {
 
         if (state.status.isExporting) {
             const progress = state.exporting.stats.currentFileProgress.toFixed(1);
-            const text = `Exporting (${state.exporting.stats.completedFiles + 1}/${state.exporting.stats.totalFiles}): ${state.exporting.stats.currentFileName}`;
+            const text = t("iv.exportingStatus", { done: state.exporting.stats.completedFiles + 1, total: state.exporting.stats.totalFiles, name: state.exporting.stats.currentFileName });
             statusBarEl.textContent = `${text} [${progress}%]`;
 
             if (state.exporting.activeToastId) {
@@ -1138,20 +1145,20 @@ const holafImageViewer = {
         if (filteredCount !== undefined) imageViewerState.setState({ status: { filteredImageCount: filteredCount } });
         if (totalCount !== undefined) imageViewerState.setState({ status: { totalImageCount: totalCount } });
 
-        let statusText = `Displaying ${currentFilteredCount} of ${currentTotalDbCount} total images.`;
+        let statusText = t("iv.displaying", { filtered: currentFilteredCount, total: currentTotalDbCount });
 
         if (state.exporting.queue.length > 0) {
-            statusText += ` | Export Queue: ${state.exporting.queue.length} file(s)`;
+            statusText += t("iv.exportQueueStatus", { count: state.exporting.queue.length });
         } else if (currentTotalDbCount > 0 && !state.status.allThumbnailsGenerated) {
             const percentage = ((state.status.generatedThumbnailsCount / currentTotalDbCount) * 100).toFixed(1);
-            statusText += ` | Thumbnails: ${state.status.generatedThumbnailsCount}/${currentTotalDbCount} (${percentage}%)`;
+            statusText += t("iv.thumbnailsStatus", { done: state.status.generatedThumbnailsCount, total: currentTotalDbCount, percentage });
         } else if (currentTotalDbCount === 0) {
-            statusText += ` | Thumbnails: N/A`;
+            statusText += t("iv.thumbnailsNA");
         }
 
         const selectedCount = imageViewerState.getState().selectedPaths.size;
         if (selectedCount > 0) {
-            statusText += ` | Selected: ${selectedCount}`;
+            statusText += t("iv.selectedStatus", { count: selectedCount });
         }
         statusBarEl.textContent = statusText;
     },
@@ -1182,7 +1189,7 @@ const holafImageViewer = {
             const isLocked = locked_folders.includes(folderId);
 
             lockIcon.innerHTML = isLocked ? ICONS.locked : ICONS.unlocked;
-            lockIcon.title = isLocked ? 'Unlock this folder' : 'Lock this folder (prevents changes from All/None/Invert)';
+            lockIcon.title = isLocked ? t('iv.unlockFolderTitle') : t('iv.lockFolderTitle');
             lockIcon.classList.toggle('locked', isLocked);
 
             lockIcon.onclick = (e) => {
@@ -1202,7 +1209,7 @@ const holafImageViewer = {
                 this.saveSettings({ locked_folders: currentLocked });
 
                 lockIcon.innerHTML = !isCurrentlyLocked ? ICONS.locked : ICONS.unlocked;
-                lockIcon.title = !isCurrentlyLocked ? 'Unlock this folder' : 'Lock this folder (prevents changes from All/None/Invert)';
+                lockIcon.title = !isCurrentlyLocked ? t('iv.unlockFolderTitle') : t('iv.lockFolderTitle');
                 lockIcon.classList.toggle('locked', !isCurrentlyLocked);
             };
             elementsToAppend.push(lockIcon);
@@ -1260,7 +1267,7 @@ const holafImageViewer = {
                             try {
                                 app.loadGraphData(data.payload);
                                 if (window.holaf && window.holaf.toastManager) {
-                                    window.holaf.toastManager.show({ message: "Workflow loaded from external gallery", type: "success" });
+                                    window.holaf.toastManager.show({ message: t("iv.workflowLoadedFromGallery"), type: "success" });
                                 }
                             } catch (e) {
                                 console.error("Failed to load workflow from bridge:", e);
@@ -1280,7 +1287,7 @@ const holafImageViewer = {
                         if (mainButton) {
                             const standaloneLink = document.createElement("button");
                             standaloneLink.id = "holaf-standalone-btn"; 
-                            standaloneLink.textContent = "AIH Viewer (New Tab) ⧉";
+                            standaloneLink.textContent = t("iv.viewerNewTab");
                             standaloneLink.style.fontSize = "0.8em";
                             standaloneLink.style.opacity = "0.8";
                             standaloneLink.style.marginTop = "-5px";

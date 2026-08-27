@@ -7,6 +7,14 @@
  * CORRECTION: Removed flawed MutationObserver logic and now applies a default theme directly.
  */
 
+import "./aih/strings.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
+
 export class HolafToastManager {
     constructor() {
         this.container = null;
@@ -62,7 +70,7 @@ export class HolafToastManager {
      */
     show(options = {}) {
         const {
-            message = 'No message provided.',
+            message = t("toast.noMessage"),
             type = 'info',
             duration = 4000,
             id = `toast-${Date.now()}-${Math.random()}`,
@@ -166,7 +174,7 @@ export class HolafToastManager {
         const closeBtn = document.createElement('button');
         closeBtn.className = 'holaf-toast-close-btn';
         closeBtn.innerHTML = '×';
-        closeBtn.title = 'Close';
+        closeBtn.title = t('toast.close');
         closeBtn.onclick = (e) => {
             e.stopPropagation(); // Prevent the toast's own click event
             this.hide(id);

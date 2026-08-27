@@ -7,9 +7,21 @@
  * navigation to wait for in-flight saves before switching images.
  */
 
+import "../aih/strings.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { imageViewerState } from './image_viewer_state.js';
 import { getThumbnailUrl } from './image_viewer_gallery.js';
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
+
+// Traduit le libellé d'un type de contrôle (brightness → Luminosité/...).
+function _controlTypeLabel(id) {
+    return t('iv.ctrl' + id.charAt(0).toUpperCase() + id.slice(1));
+}
 
 const CONTROL_TYPES = [
     { id: 'brightness', label: 'Brightness', default: 1, min: 0, max: 200, step: 1 },
@@ -72,11 +84,11 @@ export class ImageEditor {
         el.id = 'holaf-viewer-editor-pane';
         el.style.display = 'none';
         el.innerHTML = `
-            <h4>Image Editor</h4>
+            <h4>${t('iv.editorTitle')}</h4>
             <div id="holaf-editor-content">
                 <div id="holaf-editor-controls-list"></div>
                 <div style="padding: 4px 0 8px 0;">
-                    <button id="holaf-editor-add-btn" class="comfy-button" style="width:100%;font-size:12px;padding:6px;">+ Add Control</button>
+                    <button id="holaf-editor-add-btn" class="comfy-button" style="width:100%;font-size:12px;padding:6px;">${t('iv.addControl')}</button>
                 </div>
                 <div id="holaf-editor-video-section" style="display:none;border-top:1px solid var(--holaf-border-color);padding-top:8px;margin-top:4px;">
                     <style>
@@ -85,21 +97,21 @@ export class ImageEditor {
                         #holaf-editor-fps-input { -moz-appearance: textfield; }
                     </style>
                     <div class="holaf-editor-slider-container">
-                        <label for="holaf-editor-fps-slider">FPS</label>
+                        <label for="holaf-editor-fps-slider">${t('iv.fps')}</label>
                         <input type="range" id="holaf-editor-fps-slider" min="1" max="144" step="1" style="flex-grow:1;margin:0 8px;">
                         <input type="number" id="holaf-editor-fps-input" min="1" max="144" step="1"
                                style="width:40px;background:var(--comfy-input-bg);color:var(--comfy-input-text);border:1px solid var(--border-color);border-radius:4px;padding:2px;text-align:center;">
                     </div>
                     <div class="holaf-editor-slider-container" style="justify-content:flex-start;margin-top:6px;">
                         <input type="checkbox" id="holaf-editor-interpolate-check" style="margin-right:8px;">
-                        <label for="holaf-editor-interpolate-check" style="cursor:pointer;opacity:0.8;" title="AI frame interpolation (2x).">AI Interpolation (RIFE)</label>
+                        <label for="holaf-editor-interpolate-check" style="cursor:pointer;opacity:0.8;" title="${t('iv.aiInterpolation')}">${t('iv.aiInterpolation')}</label>
                     </div>
                 </div>
                 <div class="holaf-editor-footer">
-                    <label style="display:flex;align-items:center;gap:4px;margin-right:auto;cursor:pointer;font-size:12px;opacity:0.8;" title="Split view: left = original, right = edited">
-                        <input type="checkbox" id="holaf-editor-compare-check" style="cursor:pointer;"> Compare
+                    <label style="display:flex;align-items:center;gap:4px;margin-right:auto;cursor:pointer;font-size:12px;opacity:0.8;" title="${t('iv.compareTitle')}">
+                        <input type="checkbox" id="holaf-editor-compare-check" style="cursor:pointer;"> ${t('iv.compare')}
                     </label>
-                    <button id="holaf-editor-reset-btn" class="comfy-button">Reset</button>
+                    <button id="holaf-editor-reset-btn" class="comfy-button">${t('iv.reset')}</button>
                 </div>
             </div>`;
         col.appendChild(el);
@@ -423,7 +435,7 @@ export class ImageEditor {
         const controls = this.currentState.controls || [];
 
         if (controls.length === 0) {
-            container.innerHTML = `<p style="opacity:0.5;font-size:12px;text-align:center;padding:12px 0;">No controls yet. Click "+ Add Control" to begin.</p>`;
+            container.innerHTML = `<p style="opacity:0.5;font-size:12px;text-align:center;padding:12px 0;">${t('iv.noControlsYet')}</p>`;
             return;
         }
 
@@ -433,16 +445,16 @@ export class ImageEditor {
             const val = c.value;
             const displayVal = c.type === 'hue' ? val : Math.round(val * 100);
             const sliderVal = c.type === 'hue' ? val : val * 100;
-            const rangeLabel = c.range === 'all' ? 'All' : c.range.charAt(0).toUpperCase() + c.range.slice(1);
+            const rangeLabel = c.range === 'all' ? t('iv.all') : c.range.charAt(0).toUpperCase() + c.range.slice(1);
             const rangeStyle = c.range === 'all' ? 'opacity:0.5;' : 'color:var(--holaf-accent-color,#4682B4);font-weight:bold;';
             return `
                 <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}">
-                    <label>${def.label}</label>
+                    <label>${_controlTypeLabel(c.type)}</label>
                     <span class="holaf-editor-range-label" style="font-size:11px;${rangeStyle}">${rangeLabel}</span>
                     <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${sliderVal}">
                     <div style="display:flex;align-items:center;gap:4px;">
                         <span class="holaf-editor-slider-value" style="min-width:36px;">${displayVal}</span>
-                        <button class="holaf-editor-remove-ctrl" data-ctrl-id="${c.id}" title="Remove ${def.label}"
+                        <button class="holaf-editor-remove-ctrl" data-ctrl-id="${c.id}" title="${t('iv.removeCtrlTitle', { label: _controlTypeLabel(c.type) })}"
                                 style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">✕</button>
                     </div>
                 </div>`;
@@ -479,22 +491,22 @@ export class ImageEditor {
         const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
         if (addBtn) {
             addBtn.onclick = async () => {
-                const typeButtons = CONTROL_TYPES.map(t => ({ text: t.label, value: t.id, type: 'confirm' }));
-                typeButtons.push({ text: "Cancel", value: null, type: 'cancel' });
+                const typeButtons = CONTROL_TYPES.map(ct => ({ text: _controlTypeLabel(ct.id), value: ct.id, type: 'confirm' }));
+                typeButtons.push({ text: t('iv.cancel'), value: null, type: 'cancel' });
                 const chosenType = await HolafPanelManager.createDialog({
-                    title: "Add Control", message: "Choose a control type:", buttons: typeButtons
+                    title: t('iv.addControlTitle'), message: t('iv.chooseControlType'), buttons: typeButtons
                 });
                 if (!chosenType) return;
 
                 const rangeOptions = [
-                    { text: 'All', value: 'all' }, { text: 'Shadows', value: 'shadows' },
-                    { text: 'Midtones', value: 'midtones' }, { text: 'Highlights', value: 'highlights' },
+                    { text: t('iv.all'), value: 'all' }, { text: t('iv.shadows'), value: 'shadows' },
+                    { text: t('iv.midtones'), value: 'midtones' }, { text: t('iv.highlights'), value: 'highlights' },
                 ];
                 const rangeButtons = rangeOptions.map(r => ({ text: r.text, value: r.value, type: 'confirm' }));
-                rangeButtons.push({ text: "Cancel", value: null, type: 'cancel' });
+                rangeButtons.push({ text: t('iv.cancel'), value: null, type: 'cancel' });
                 const chosenRange = await HolafPanelManager.createDialog({
-                    title: CONTROL_TYPES.find(t => t.id === chosenType).label + " — Range",
-                    message: "Apply to which luminance range?", buttons: rangeButtons
+                    title: t('iv.rangeTitle', { label: _controlTypeLabel(chosenType) }),
+                    message: t('iv.chooseRange'), buttons: rangeButtons
                 });
                 if (!chosenRange) return;
                 this._addControl(chosenType, chosenRange);
@@ -588,8 +600,8 @@ export class ImageEditor {
     async _resetEdits() {
         if (!this.activeImage) return;
         if (!await HolafPanelManager.createDialog({
-            title: "Confirm Reset", message: "Reset all edits? This deletes the .edt file.",
-            buttons: [{ text: "Cancel", value: false }, { text: "Reset", value: true, type: "danger" }]
+            title: t('iv.confirmReset'), message: t('iv.resetMsg'),
+            buttons: [{ text: t('iv.cancel'), value: false }, { text: t('iv.reset'), value: true, type: "danger" }]
         })) return;
 
         const path = this.activeImage.path_canon;
@@ -610,7 +622,7 @@ export class ImageEditor {
             this.applyPreview();
             this._updateGlobalImageState(path, false);
             if (this.viewer?.gallery) this.viewer.gallery.refreshThumbnail(path);
-            this._showToast("Edits Reset", 'success');
+            this._showToast(t('iv.editsReset'), 'success');
         } catch (e) { console.error(e); }
     }
 
@@ -623,10 +635,10 @@ export class ImageEditor {
             });
             const d = await r.json();
             if (r.ok) {
-                this._showToast(d.stats ? `Preview Ready! ${d.stats.duration}s` : "Preview Generated", 'success');
+                this._showToast(d.stats ? t('iv.previewReady', { duration: d.stats.duration }) : t('iv.previewGenerated'), 'success');
                 if (this.activeImage?.path_canon === path) await this._loadEditsForCurrentImage();
-            } else HolafPanelManager.createDialog({ title: "Process Error", message: d.message });
-        } catch (e) { this._showToast(`Process Failed: ${e.message}`, 'error'); }
+            } else HolafPanelManager.createDialog({ title: t('iv.processError'), message: d.message });
+        } catch (e) { this._showToast(t('iv.processFailed', { message: e.message }), 'error'); }
         finally { document.dispatchEvent(new Event('holaf-video-processing-end')); }
     }
 

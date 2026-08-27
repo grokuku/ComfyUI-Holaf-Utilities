@@ -11,8 +11,15 @@
  * BUGFIX: The delete operation now provides detailed feedback from the backend, especially on failure.
  */
 
+import "../aih/strings.js";
 import { HolafPanelManager, dialogState } from "../holaf_panel_manager.js";
 import { imageViewerState } from "./image_viewer_state.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 // --- CORRECTIF : Nouvelle fonction d'aide pour déterminer la cible des actions ---
 /**
@@ -98,26 +105,26 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
     const isAnyFileTrashed = imagesForDeletion.some(img => img.is_trashed);
     if (isAnyFileTrashed) {
         HolafPanelManager.createDialog({
-            title: "Action Not Allowed",
-            message: "This action cannot be performed on items already in the trash. Use 'Restore' or 'Empty Trash'.",
-            buttons: [{ text: "OK" }],
+            title: t("iv.actionNotAllowed"),
+            message: t("iv.actionNotAllowedMsg"),
+            buttons: [{ text: t("iv.ok") }],
             parentElement: document.body
         });
         return false;
     }
 
     const pathsToDelete = imagesForDeletion.map(img => img.path_canon);
-    const dialogTitle = permanent ? "Confirm Permanent Deletion" : "Confirm Delete";
+    const dialogTitle = permanent ? t("iv.confirmPermanentDeletion") : t("iv.confirmDelete");
     const dialogMessage = permanent 
-        ? `Are you sure you want to PERMANENTLY delete ${imagesForDeletion.length} image(s)?<br><br><strong>This action CANNOT be undone.</strong>`
-        : `Are you sure you want to move ${imagesForDeletion.length} image(s) to the trashcan?`;
-    const confirmButtonText = permanent ? "Permanently Delete" : "Delete";
+        ? t("iv.confirmPermanentDeleteMsg", { count: imagesForDeletion.length })
+        : t("iv.confirmDeleteMsg", { count: imagesForDeletion.length });
+    const confirmButtonText = permanent ? t("iv.permanentlyDelete") : t("iv.delete");
 
     const confirmed = await HolafPanelManager.createDialog({
         title: dialogTitle,
         message: dialogMessage,
         buttons: [
-            { text: "Cancel", value: false, type: "cancel" },
+            { text: t("iv.cancel"), value: false, type: "cancel" },
             { text: confirmButtonText, value: true, type: "danger" }
         ],
         parentElement: document.body
@@ -135,15 +142,15 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
         const result = await response.json();
 
         if (response.ok || response.status === 207) {
-            let finalMessage = result.message || 'Operation processed.';
-            let dialogTitle = "Operation Complete";
+            let finalMessage = result.message || t('iv.operationProcessed');
+            let dialogTitle = t("iv.operationComplete");
             let showDialog = false;
 
             // BUGFIX: Always check for details first and build a detailed message.
             if (result.details && result.details.length > 0) {
                 const errorDetails = result.details.map(d => `• <strong>${d.path.split('/').pop()}</strong>:<br>  ${d.error}`).join('<br>');
-                finalMessage += `<br><br><strong>Error Details:</strong><br>${errorDetails}`;
-                dialogTitle = "Deletion Error";
+                finalMessage += `<br><br>${t('iv.errorDetails')}<br>${errorDetails}`;
+                dialogTitle = t("iv.deletionError");
                 showDialog = true;
             }
 
@@ -151,7 +158,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
             // If some failed, the dialog above will still show the errors.
             if (result.deleted_count > 0) {
                 window.holaf.toastManager.show({
-                    message: `${result.deleted_count} file(s) moved to trash.`,
+                    message: t('iv.movedToTrash', { count: result.deleted_count }),
                     type: 'success'
                 });
             } else if (!showDialog) {
@@ -163,7 +170,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
                 HolafPanelManager.createDialog({
                     title: dialogTitle,
                     message: finalMessage,
-                    buttons: [{ text: "OK" }],
+                    buttons: [{ text: t("iv.ok") }],
                     parentElement: document.body
                 });
             }
@@ -174,9 +181,9 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
         } else {
             // Handle fatal server errors (5xx, etc.)
             HolafPanelManager.createDialog({
-                title: "Server Error",
-                message: `Failed to delete images: ${result.message || 'Unknown server error.'}`,
-                buttons: [{ text: "OK" }],
+                title: t("iv.serverError"),
+                message: t('iv.deleteFailed', { message: result.message || t('iv.unknownServerError') }),
+                buttons: [{ text: t("iv.ok") }],
                 parentElement: document.body
             });
             return false;
@@ -184,9 +191,9 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling delete API:", error);
         HolafPanelManager.createDialog({
-            title: "API Error",
-            message: `Error communicating with server for delete operation: ${error.message}`,
-            buttons: [{ text: "OK" }],
+            title: t("iv.apiError"),
+            message: t('iv.apiErrorDeleteMsg', { message: error.message }),
+            buttons: [{ text: t("iv.ok") }],
             parentElement: document.body
         });
         return false;
@@ -223,11 +230,11 @@ export async function handleRestore(viewer) {
     const pathsToRestore = imagesToRestore.map(img => img.path_canon);
 
     if (await HolafPanelManager.createDialog({
-        title: "Confirm Restore",
-        message: `Are you sure you want to restore ${imagesToRestore.length} image(s) from the trashcan?`,
+        title: t("iv.confirmRestore"),
+        message: t('iv.confirmRestoreMsg', { count: imagesToRestore.length }),
         buttons: [
-            { text: "Cancel", value: false, type: "cancel" },
-            { text: "Restore", value: true, type: "confirm" }
+            { text: t("iv.cancel"), value: false, type: "cancel" },
+            { text: t("iv.restore"), value: true, type: "confirm" }
         ],
         parentElement: document.body
     })) {
@@ -241,9 +248,9 @@ export async function handleRestore(viewer) {
 
             if (response.ok || response.status === 207) {
                 HolafPanelManager.createDialog({
-                    title: "Restore Operation",
-                    message: result.message || "Restore operation processed.",
-                    buttons: [{ text: "OK", value: true }],
+                    title: t("iv.restoreOperation"),
+                    message: result.message || t('iv.restoreProcessed'),
+                    buttons: [{ text: t("iv.ok"), value: true }],
                     parentElement: document.body
                 });
                 imageViewerState.setState({
@@ -254,18 +261,18 @@ export async function handleRestore(viewer) {
                 viewer.loadFilteredImages();
             } else {
                 HolafPanelManager.createDialog({
-                    title: "Restore Error",
-                    message: `Failed to restore images: ${result.message || 'Unknown server error.'}`,
-                    buttons: [{ text: "OK", value: true }],
+                    title: t("iv.restoreError"),
+                    message: t('iv.restoreFailed', { message: result.message || t('iv.unknownServerError') }),
+                    buttons: [{ text: t("iv.ok"), value: true }],
                     parentElement: document.body
                 });
             }
         } catch (error) {
             console.error("[Holaf ImageViewer] Error calling restore API:", error);
             HolafPanelManager.createDialog({
-                title: "API Error",
-                message: `Error communicating with server for restore operation: ${error.message}`,
-                buttons: [{ text: "OK", value: true }],
+                title: t("iv.apiError"),
+                message: t('iv.apiErrorRestoreMsg', { message: error.message }),
+                buttons: [{ text: t("iv.ok"), value: true }],
                 parentElement: document.body
             });
         }
@@ -280,11 +287,11 @@ export async function handleRestore(viewer) {
 async function processNextConflict(viewer, operation) {
     if (!viewer.conflictQueue || viewer.conflictQueue.length === 0) {
         viewer.isProcessingConflicts = false;
-        const opDisplay = operation === 'extract' ? 'Extraction' : 'Injection';
+        const opDisplay = operation === 'extract' ? t('iv.opExtraction') : t('iv.opInjection');
         HolafPanelManager.createDialog({
-            title: "Process Finished",
-            message: `All metadata ${opDisplay.toLowerCase()} operations have been processed.`,
-            buttons: [{ text: "OK" }],
+            title: t("iv.processFinished"),
+            message: t('iv.allMetadataProcessed', { op: opDisplay.toLowerCase() }),
+            buttons: [{ text: t("iv.ok") }],
             parentElement: document.body
         });
         viewer.loadFilteredImages(); // Refresh the gallery
@@ -296,12 +303,12 @@ async function processNextConflict(viewer, operation) {
     const filename = conflict.path.split('/').pop();
 
     const choice = await HolafPanelManager.createDialog({
-        title: `Conflict on ${filename}`,
-        message: `For the image '${filename}':\n${conflict.error}\n\n${(conflict.details || []).join("\n")}\n\nDo you want to overwrite the existing data?`,
+        title: t('iv.conflictOn', { filename }),
+        message: t('iv.conflictMsg', { filename, error: conflict.error, details: (conflict.details || []).join("\n") }),
         buttons: [
-            { text: "Skip", value: 'skip', type: 'cancel' },
-            { text: "Cancel All", value: 'cancel_all' },
-            { text: "Overwrite", value: 'overwrite', type: 'danger' },
+            { text: t('iv.skip'), value: 'skip', type: 'cancel' },
+            { text: t('iv.cancelAll'), value: 'cancel_all' },
+            { text: t('iv.overwrite'), value: 'overwrite', type: 'danger' },
         ],
         parentElement: document.body
     });
@@ -316,11 +323,11 @@ async function processNextConflict(viewer, operation) {
             });
             const result = await response.json();
             if (!response.ok || result.results?.failures?.length > 0) {
-                const errorMsg = result.results?.failures[0]?.error || result.message || 'Unknown error during overwrite.';
-                HolafPanelManager.createDialog({ title: `Error Overwriting ${filename}`, message: errorMsg, parentElement: document.body });
+                const errorMsg = result.results?.failures[0]?.error || result.message || t('iv.unknownErrorDuringOverwrite');
+                HolafPanelManager.createDialog({ title: t('iv.errorOverwriting', { filename }), message: errorMsg, parentElement: document.body });
             }
         } catch (e) {
-             HolafPanelManager.createDialog({ title: `API Error`, message: `Failed to overwrite for ${filename}: ${e.message}`, parentElement: document.body });
+             HolafPanelManager.createDialog({ title: t('iv.apiError'), message: t('iv.overwriteFailed', { filename, message: e.message }), parentElement: document.body });
         }
     } else if (choice === 'cancel_all') {
         viewer.conflictQueue = [];
@@ -335,7 +342,7 @@ async function processNextConflict(viewer, operation) {
  */
 export async function handleExtractMetadata(viewer) {
     if (viewer.isProcessingConflicts) {
-        HolafPanelManager.createDialog({ title: "Process Busy", message: "Please resolve the current conflicts before starting a new operation.", parentElement: document.body });
+        HolafPanelManager.createDialog({ title: t("iv.processBusy"), message: t("iv.processBusyMsg"), parentElement: document.body });
         return;
     }
 
@@ -345,9 +352,9 @@ export async function handleExtractMetadata(viewer) {
 
     if (pngImages.length === 0) {
         HolafPanelManager.createDialog({
-            title: "Invalid Selection",
-            message: "The 'Extract' action only works on PNG images. Please select one or more PNG files.",
-            buttons: [{ text: "OK" }],
+            title: t("iv.invalidSelection"),
+            message: t("iv.extractPngOnlyMsg"),
+            buttons: [{ text: t("iv.ok") }],
             parentElement: document.body
         });
         return;
@@ -374,9 +381,9 @@ export async function handleExtractMetadata(viewer) {
         if (failures.length > 0) {
             const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
             HolafPanelManager.createDialog({
-                title: "Extraction Errors",
-                message: `Could not extract metadata for the following files:\n${failureMessage}`,
-                buttons: [{ text: "OK" }], parentElement: document.body
+                title: t("iv.extractionErrors"),
+                message: t('iv.extractionFailedMsg', { list: failureMessage }),
+                buttons: [{ text: t("iv.ok") }], parentElement: document.body
             });
         }
         
@@ -385,9 +392,9 @@ export async function handleExtractMetadata(viewer) {
         } else {
             if (successes.length > 0 && failures.length === 0) {
                  HolafPanelManager.createDialog({
-                    title: "Extraction Complete",
-                    message: `Successfully extracted metadata for ${successes.length} image(s).`,
-                    buttons: [{ text: "OK" }], parentElement: document.body
+                    title: t("iv.extractionComplete"),
+                    message: t('iv.extractionCompleteMsg', { count: successes.length }),
+                    buttons: [{ text: t("iv.ok") }], parentElement: document.body
                 });
             }
             viewer.loadFilteredImages();
@@ -395,9 +402,9 @@ export async function handleExtractMetadata(viewer) {
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling extract API:", error);
         HolafPanelManager.createDialog({
-            title: "API Error",
-            message: `Error communicating with server for extract operation: ${error.message}`,
-            buttons: [{ text: "OK" }], parentElement: document.body
+            title: t("iv.apiError"),
+            message: t('iv.apiErrorExtractMsg', { message: error.message }),
+            buttons: [{ text: t("iv.ok") }], parentElement: document.body
         });
     }
 }
@@ -408,7 +415,7 @@ export async function handleExtractMetadata(viewer) {
  */
 export async function handleInjectMetadata(viewer) {
     if (viewer.isProcessingConflicts) {
-        HolafPanelManager.createDialog({ title: "Process Busy", message: "Please resolve the current conflicts before starting a new operation.", parentElement: document.body });
+        HolafPanelManager.createDialog({ title: t("iv.processBusy"), message: t("iv.processBusyMsg"), parentElement: document.body });
         return;
     }
 
@@ -418,9 +425,9 @@ export async function handleInjectMetadata(viewer) {
 
     if (pngImages.length === 0) {
         HolafPanelManager.createDialog({
-            title: "Invalid Selection",
-            message: "The 'Inject' action only works on PNG images. Please select one or more PNG files.",
-            buttons: [{ text: "OK" }], parentElement: document.body
+            title: t("iv.invalidSelection"),
+            message: t("iv.injectPngOnlyMsg"),
+            buttons: [{ text: t("iv.ok") }], parentElement: document.body
         });
         return;
     }
@@ -446,9 +453,9 @@ export async function handleInjectMetadata(viewer) {
         if (failures.length > 0) {
             const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
             HolafPanelManager.createDialog({
-                title: "Injection Errors",
-                message: `Could not inject metadata for the following files:\n${failureMessage}`,
-                buttons: [{ text: "OK" }], parentElement: document.body
+                title: t("iv.injectionErrors"),
+                message: t('iv.injectionFailedMsg', { list: failureMessage }),
+                buttons: [{ text: t("iv.ok") }], parentElement: document.body
             });
         }
         
@@ -457,9 +464,9 @@ export async function handleInjectMetadata(viewer) {
         } else {
             if (successes.length > 0 && failures.length === 0) {
                  HolafPanelManager.createDialog({
-                    title: "Injection Complete",
-                    message: `Successfully injected metadata into ${successes.length} image(s).`,
-                    buttons: [{ text: "OK" }], parentElement: document.body
+                    title: t("iv.injectionComplete"),
+                    message: t('iv.injectionCompleteMsg', { count: successes.length }),
+                    buttons: [{ text: t("iv.ok") }], parentElement: document.body
                 });
             }
             viewer.loadFilteredImages();
@@ -468,9 +475,9 @@ export async function handleInjectMetadata(viewer) {
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling inject API:", error);
         HolafPanelManager.createDialog({
-            title: "API Error",
-            message: `Error communicating with server for inject operation: ${error.message}`,
-            buttons: [{ text: "OK" }], parentElement: document.body
+            title: t("iv.apiError"),
+            message: t('iv.apiErrorInjectMsg', { message: error.message }),
+            buttons: [{ text: t("iv.ok") }], parentElement: document.body
         });
     }
 }
@@ -532,11 +539,11 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
     overlay.innerHTML = `
         <div id="holaf-viewer-export-dialog">
             <div class="holaf-viewer-export-header">
-                Exporting ${imageCount} item(s)
+                ${t('iv.exportingItems', { count: imageCount })}
             </div>
             <div class="holaf-viewer-export-content">
                 <div class="holaf-viewer-export-option-group">
-                    <label>Format:</label>
+                    <label>${t('iv.format')}</label>
                     <div class="holaf-export-choices">
                         ${formatOptionsHTML}
                     </div>
@@ -544,25 +551,25 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
 
                 <!-- === QUALITY / COMPRESSION OPTIONS === -->
                 <div id="holaf-export-quality-group" class="holaf-viewer-export-option-group">
-                    <label>Quality / Compression:</label>
+                    <label>${t('iv.qualityCompression')}</label>
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         <!-- JPG Quality -->
                         <div id="holaf-export-jpg-quality-row" style="display: none; align-items: center; gap: 8px;">
-                            <label style="min-width: 90px;">JPG Quality:</label>
+                            <label style="min-width: 90px;">${t('iv.jpgQuality')}</label>
                             <input type="range" id="holaf-export-jpg-quality" min="1" max="100" value="95" style="flex:1;">
                             <span id="holaf-export-jpg-quality-val" style="min-width: 32px; text-align: right;">95</span>
                         </div>
                         <!-- MP4 CRF -->
                         <div id="holaf-export-mp4-crf-row" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <label style="min-width: 90px;">MP4 Quality:</label>
+                            <label style="min-width: 90px;">${t('iv.mp4Quality')}</label>
                             <input type="range" id="holaf-export-mp4-crf" min="0" max="51" value="23" style="flex:1; min-width: 80px;">
                             <span id="holaf-export-mp4-crf-val" style="min-width: 32px; text-align: right;">23</span>
-                            <select id="holaf-export-mp4-codec" style="width: 90px;" title="Video codec">
+                            <select id="holaf-export-mp4-codec" style="width: 90px;" title="${t('iv.videoCodec')}">
                                 <option value="libx264" selected>H.264</option>
                                 <option value="libx265">H.265</option>
                                 <option value="libsvtav1">AV1</option>
                             </select>
-                            <select id="holaf-export-mp4-preset" style="width: 100px;" title="Encoding speed preset">
+                            <select id="holaf-export-mp4-preset" style="width: 100px;" title="${t('iv.encodingPreset')}">
                                 <option value="ultrafast">Ultrafast</option>
                                 <option value="superfast">Superfast</option>
                                 <option value="veryfast">Veryfast</option>
@@ -574,48 +581,48 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                         </div>
                         <!-- GIF FPS -->
                         <div id="holaf-export-gif-fps-row" style="display: none; align-items: center; gap: 8px;">
-                            <label style="min-width: 90px;">GIF FPS:</label>
+                            <label style="min-width: 90px;">${t('iv.gifFps')}</label>
                             <input type="range" id="holaf-export-gif-fps" min="1" max="30" value="15" style="flex:1;">
                             <span id="holaf-export-gif-fps-val" style="min-width: 32px; text-align: right;">15</span>
                         </div>
                         <!-- WAV/MP3 Info -->
                         <div id="holaf-export-audio-info-row" style="display: none;">
-                            <span style="opacity: 0.6; font-size: 0.85em;">Audio format — file will be copied or transcoded.</span>
+                            <span style="opacity: 0.6; font-size: 0.85em;">${t('iv.audioCopiedOrTranscoded')}</span>
                         </div>
                         <!-- MP3 Bitrate -->
                         <div id="holaf-export-mp3-bitrate-row" style="display: none; align-items: center; gap: 8px;">
-                            <label style="min-width: 90px;">MP3 Bitrate:</label>
+                            <label style="min-width: 90px;">${t('iv.mp3Bitrate')}</label>
                             <input type="range" id="holaf-export-mp3-bitrate" min="64" max="320" value="192" step="32" style="flex:1;">
                             <span id="holaf-export-mp3-bitrate-val" style="min-width: 48px; text-align: right;">192kbps</span>
                         </div>
                         <!-- WAV Audio Info -->
                         <div id="holaf-export-wav-info-row" style="display: none;">
-                            <span style="opacity: 0.6; font-size: 0.85em;">Lossless audio — no quality setting needed.</span>
+                            <span style="opacity: 0.6; font-size: 0.85em;">${t('iv.losslessAudio')}</span>
                         </div>
                         <!-- PNG/TIFF Info -->
                         <div id="holaf-export-png-info-row" style="display: none;">
-                            <span style="opacity: 0.6; font-size: 0.85em;">Lossless format — no quality setting needed.</span>
+                            <span style="opacity: 0.6; font-size: 0.85em;">${t('iv.losslessFormat')}</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="holaf-viewer-export-option-group">
-                    <label>Metadata:</label>
+                    <label>${t('iv.metadata')}</label>
                     <div style="display: flex; flex-direction: column; gap: 10px;">
                         <label>
                             <input type="checkbox" id="holaf-export-include-meta" name="include-meta" ${savedSettings.export_include_meta ? 'checked' : ''}>
-                            Include Prompt & Workflow
+                            ${t('iv.includePromptWorkflow')}
                         </label>
                         <div id="holaf-export-meta-method-group" style="padding-left: 20px; display: flex; flex-direction: column; gap: 8px;">
-                            <label><input type="radio" name="meta-method" value="embed" ${savedSettings.export_meta_method === 'embed' ? 'checked' : ''}> Embed in file (if supported)</label>
-                            <label><input type="radio" name="meta-method" value="sidecar" ${savedSettings.export_meta_method === 'sidecar' ? 'checked' : ''}> Save as .txt/.json sidecar</label>
+                            <label><input type="radio" name="meta-method" value="embed" ${savedSettings.export_meta_method === 'embed' ? 'checked' : ''}> ${t('iv.embedInFile')}</label>
+                            <label><input type="radio" name="meta-method" value="sidecar" ${savedSettings.export_meta_method === 'sidecar' ? 'checked' : ''}> ${t('iv.saveSidecar')}</label>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="holaf-viewer-export-footer">
-                <button id="holaf-export-cancel-btn" class="comfy-button secondary">Cancel</button>
-                <button id="holaf-export-start-btn" class="comfy-button">Add to Export Queue</button>
+                <button id="holaf-export-cancel-btn" class="comfy-button secondary">${t('iv.cancel')}</button>
+                <button id="holaf-export-start-btn" class="comfy-button">${t('iv.addToExportQueue')}</button>
             </div>
         </div>
     `;
@@ -827,7 +834,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
         
         if (!imageViewerState.getState().status.isExporting) {
             window.holaf.toastManager.show({
-                id: toastId, message: `Preparing to export ${imageCount} image(s)...`,
+                id: toastId, message: t('iv.preparingExport', { count: imageCount }),
                 type: 'info', duration: 0, progress: true
             });
             imageViewerState.setState({ exporting: { activeToastId: toastId } });
@@ -855,11 +862,11 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
             const result = await response.json();
 
             if (!response.ok || result.status !== 'ok') {
-                throw new Error(result.message || 'Failed to prepare export on server.');
+                throw new Error(result.message || t('iv.failedToPrepareExport'));
             }
             
             if (result.errors && result.errors.length > 0) {
-                 const errorMessage = `Some files could not be prepared:<br>${result.errors.map(e => `- ${e.path.split('/').pop()}: ${e.error}`).join('<br>')}`;
+                 const errorMessage = t('iv.someFilesNotPrepared', { list: result.errors.map(e => `- ${e.path.split('/').pop()}: ${e.error}`).join('<br>') });
                  window.holaf.toastManager.show({ message: errorMessage, type: 'error', duration: 0 });
             }
 
@@ -878,7 +885,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                 const activeToastId = imageViewerState.getState().exporting.activeToastId;
                 if (activeToastId) {
                     window.holaf.toastManager.update(activeToastId, {
-                        message: `Added ${newFiles.length} file(s) to queue. Starting download...`,
+                        message: t('iv.addedToQueue', { count: newFiles.length }),
                         type: 'info'
                     });
                 }
@@ -894,7 +901,7 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
                  const activeToastId = imageViewerState.getState().exporting.activeToastId;
                  if (activeToastId) {
                      window.holaf.toastManager.update(activeToastId, {
-                        message: "No new files were added to the export queue.",
+                        message: t('iv.noNewFiles'),
                         type: 'info', progress: 100
                      });
                      setTimeout(() => window.holaf.toastManager.hide(activeToastId), 5000);
@@ -906,11 +913,11 @@ function _showExportOptionsDialog(viewer, imagesToExport) {
             const activeToastId = imageViewerState.getState().exporting.activeToastId;
             if (activeToastId) {
                 window.holaf.toastManager.update(activeToastId, {
-                    message: `<strong>Export Failed:</strong><br>${error.message}`,
+                    message: t('iv.exportFailedStrong', { message: error.message }),
                     type: 'error', progress: 100
                 });
             } else {
-                window.holaf.toastManager.show({ message: `Export Failed: ${error.message}`, type: 'error', duration: 0 });
+                window.holaf.toastManager.show({ message: t('iv.exportFailed', { message: error.message }), type: 'error', duration: 0 });
             }
         }
     });
@@ -941,12 +948,12 @@ export async function handleExport(viewer) {
 
     if (activeImageHasUnsavedChanges) {
         const choice = await HolafPanelManager.createDialog({
-            title: "Unsaved Changes Detected",
-            message: "The active image has unsaved edits. How would you like to proceed with the export?",
+            title: t("iv.unsavedChangesTitle"),
+            message: t("iv.unsavedChangesMsg"),
             buttons: [
-                { text: "Cancel", value: "cancel", type: "cancel" },
-                { text: "Export without Saving", value: "export_without_saving" },
-                { text: "Save & Export", value: "save_and_export", type: "confirm" }
+                { text: t("iv.cancel"), value: "cancel", type: "cancel" },
+                { text: t("iv.exportWithoutSaving"), value: "export_without_saving" },
+                { text: t("iv.saveAndExport"), value: "save_and_export", type: "confirm" }
             ],
             parentElement: viewer.panelElements.panelEl
         });

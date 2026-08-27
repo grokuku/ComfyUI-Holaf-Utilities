@@ -18,6 +18,7 @@
  *       deduplication of activeThumbnailLoads decrements, and idle-restart mechanism.
  */
 
+import "../aih/strings.js";
 import { imageViewerState } from "./image_viewer_state.js";
 import { showFullscreenView, getFullImageUrl } from './image_viewer_navigation.js';
 import {
@@ -26,6 +27,12 @@ import {
     setWindowLoaded, resetWindowCache, getImageAt, getMissingWindowStarts,
     forEachLoadedImage
 } from './image_viewer_data.js';
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 // --- Configuration ---
 const SCROLLBAR_DEBOUNCE_MS = 50;
@@ -216,7 +223,7 @@ function checkBenchmarkCompletion() {
 
             if (window.holaf.toastManager) {
                 window.holaf.toastManager.show({
-                    message: `<strong>Benchmark Result (${currentConcurrencyLimit} threads)</strong><br>Speed: ${speed} imgs/sec<br>Time: ${duration.toFixed(2)}s`,
+                    message: t('iv.benchmarkResult', { threads: currentConcurrencyLimit, speed, time: duration.toFixed(2) }),
                     type: 'success'
                 });
             }
@@ -466,7 +473,7 @@ function addFullscreenIcon(placeholder, image) {
         const fsIcon = document.createElement('div');
         fsIcon.className = 'holaf-viewer-fullscreen-icon';
         fsIcon.innerHTML = '⛶';
-        fsIcon.title = 'View fullscreen';
+        fsIcon.title = t('iv.viewFullscreen');
         // Click handled via delegation on galleryGridEl
         placeholder.appendChild(fsIcon);
     }
@@ -862,7 +869,7 @@ async function fetchThumbnail(placeholder, image, forceReload = false) {
                 unloadedVisiblePaths.delete(pathCanon);
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'holaf-viewer-error-overlay';
-                errorDiv.textContent = isTimeout ? 'Timeout' : 'Err';
+                errorDiv.textContent = isTimeout ? t('iv.timeout') : t('iv.err');
                 placeholder.appendChild(errorDiv);
             }
         } else {
@@ -920,15 +927,15 @@ function acquirePlaceholder(viewer, image, index) {
         actionIcon.classList.remove('active');
         if (isVideo) {
             actionIcon.innerHTML = '🎥';
-            actionIcon.title = "Play Video";
+            actionIcon.title = t('iv.playVideo');
             if (image.has_edit_file) actionIcon.classList.add('active');
         } else if (isAudio) {
             actionIcon.innerHTML = '\uD83C\uDFB5';
-            actionIcon.title = "Play Audio";
+            actionIcon.title = t('iv.playAudio');
             if (image.has_edit_file) actionIcon.classList.add('active');
         } else {
             actionIcon.innerHTML = '✎';
-            actionIcon.title = "Edit image";
+            actionIcon.title = t('iv.editImage');
             if (image.has_edit_file) actionIcon.classList.add('active');
         }
 
@@ -957,16 +964,16 @@ function acquirePlaceholder(viewer, image, index) {
 
         if (isVideo) {
             actionIcon.innerHTML = '🎥';
-            actionIcon.title = "Play Video";
+            actionIcon.title = t('iv.playVideo');
             if (image.has_edit_file) actionIcon.classList.add('active');
             placeholder._hoverCleanup = attachVideoHoverListeners(placeholder, image);
         } else if (isAudio) {
             actionIcon.innerHTML = '\uD83C\uDFB5';
-            actionIcon.title = "Play Audio";
+            actionIcon.title = t('iv.playAudio');
             if (image.has_edit_file) actionIcon.classList.add('active');
         } else {
             actionIcon.innerHTML = '✎';
-            actionIcon.title = "Edit image";
+            actionIcon.title = t('iv.editImage');
             if (image.has_edit_file) actionIcon.classList.add('active');
         }
         placeholder.appendChild(actionIcon);
@@ -974,7 +981,7 @@ function acquirePlaceholder(viewer, image, index) {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'holaf-viewer-thumb-checkbox';
-        checkbox.title = "Select image";
+        checkbox.title = t('iv.selectImage');
         placeholder._checkbox = checkbox;
         placeholder.appendChild(checkbox);
     }
@@ -1325,7 +1332,7 @@ function syncGallery(viewer, images) {
         const placeholder = document.createElement('div');
         placeholder.className = 'holaf-viewer-thumbnail-placeholder holaf-viewer-empty-message';
         placeholder.style.cssText = `position: absolute; top: 8px; left: 8px; right: 8px; height: 200px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box; border: 2px dashed var(--holaf-border-color); border-radius: var(--holaf-border-radius); color: var(--holaf-text-color-secondary);`;
-        placeholder.textContent = 'No images match the current filters.';
+        placeholder.textContent = t('iv.noImagesMatch');
         galleryGridEl.appendChild(placeholder);
     }
 }

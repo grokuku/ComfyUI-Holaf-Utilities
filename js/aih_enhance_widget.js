@@ -1,3 +1,11 @@
+import "./aih/strings.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente)
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
+
 /**
  * AIH Prompt Enhancer — Custom DOM widget for ComfyUI node AIHEnhanceNode.
  *
@@ -189,7 +197,7 @@
                 const templateDiv = document.createElement("div");
                 const templateSelect = document.createElement("select");
                 Object.assign(templateSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
-                templateDiv.appendChild(mkLabel("Template"));
+                templateDiv.appendChild(mkLabel(t("en.template")));
                 templateDiv.appendChild(templateSelect);
                 tsRow.appendChild(templateDiv);
 
@@ -198,7 +206,7 @@
                 Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center", width: "100%" });
                 const styleSelect = document.createElement("select");
                 Object.assign(styleSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
-                styleDiv.appendChild(mkLabel("Style"));
+                styleDiv.appendChild(mkLabel(t("en.style")));
                 styleRow.appendChild(styleSelect);
                 styleDiv.appendChild(styleRow);
                 tsRow.appendChild(styleDiv);
@@ -210,7 +218,7 @@
                     listWidgetName: 'style_shortlist',
                     apiPath: 'styles',
                     label: 'Style',
-                    placeholder: '-- Style --',
+                    placeholder: t("en.stylePlaceholder"),
                     idField: 'id',
                     nameField: 'name',
                     authorField: 'owner_name',
@@ -226,7 +234,7 @@
                 const presetSelect = document.createElement("select");
                 Object.assign(presetSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
                 presetSelect.style.flex = "1";
-                presetDiv.appendChild(mkLabel("Preset IA"));
+                presetDiv.appendChild(mkLabel(t("en.presetLabel")));
                 presetRow.appendChild(presetSelect);
 
                 // ---- Format (rich/basic) à côté du Preset IA ----
@@ -247,7 +255,7 @@
 
                 // ---- Bouton Test Enhance ----
                 const enhanceBtn = document.createElement("button");
-                enhanceBtn.textContent = "🔄  Test enhance";
+                enhanceBtn.textContent = t("en.testEnhance");
                 Object.assign(enhanceBtn.style, {
                     width: "100%", padding: "6px", borderRadius: "4px",
                     border: "none", background: "var(--holaf-accent-color, #D8700D)", color: "white",
@@ -266,9 +274,9 @@
                     padding: "4px", background: "#1a1a1e", color: "#fff",
                     fontSize: "11px", resize: "none", boxSizing: "border-box",
                 });
-                resultTextarea.placeholder = "Résultat de l'enhance...";
+                resultTextarea.placeholder = t("en.resultPlaceholder");
                 resultTextarea.readOnly = true;
-                container.appendChild(mkLabel("Prompt positif"));
+                container.appendChild(mkLabel(t("en.promptPositive")));
                 container.appendChild(resultTextarea);
 
                 // ---- Ajout au node ----
@@ -421,8 +429,8 @@
                 // ---- Initialisation ----
                 Promise.all([
                     stylePicker.init(),
-                    populateSelect(templateSelect, "prompts/templates", "-- Template --", "tmpl"),
-                    populateSelect(presetSelect, "presets", "-- Preset IA --", "presets"),
+                    populateSelect(templateSelect, "prompts/templates", t("en.templatePlaceholder"), "tmpl"),
+                    populateSelect(presetSelect, "presets", t("en.presetPlaceholder"), "presets"),
                 ]).then(() => {
                     const restored = restoreFromNativeWidgets();
                     if (restored) syncNativeWidgets();
@@ -452,8 +460,8 @@
                 });
 
                 // ---- mousedown : refresh cache ----
-                templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl", "-- Template --"));
-                presetSelect.addEventListener("mousedown", () => refreshIfStale(presetSelect, "presets", "presets", "-- Preset IA --"));
+                templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl", t("en.templatePlaceholder")));
+                presetSelect.addEventListener("mousedown", () => refreshIfStale(presetSelect, "presets", "presets", t("en.presetPlaceholder")));
 
                 // ---- Resize : largeur minimum seulement ----
                 // La hauteur du container est gérée nativement par la frontend (computeLayoutSize)
@@ -539,21 +547,21 @@
                     }
 
                     if (!payload.text && (!payload.ep_elements || payload.ep_elements.length === 0)) {
-                        resultTextarea.value = "Saisis au moins le prompt de base ou des éléments.";
+                        resultTextarea.value = t("en.needInput");
                         return;
                     }
 
                     // Vérifier si l'input image est connecté (ne peut pas être envoyé en mode Test)
                     const imageSlot = node.inputs?.find(i => i.name === "image");
                     if (imageSlot && imageSlot.link != null) {
-                        resultTextarea.value = "Note: L'image connectée n'est pas envoyée en mode Test. Lancez le workflow pour utiliser l'image.\n\nEnhancement en cours...";
+                        resultTextarea.value = t("en.imageNote");
                     } else {
-                        resultTextarea.value = "Enhancement en cours...";
+                        resultTextarea.value = t("en.enhancing");
                     }
                     // Comportement dégradé : sans serveur configuré, message
                     // explicite au lieu d'un POST vers une destination arbitraire.
                     if (!getApiUrl()) {
-                        resultTextarea.value = "⚠️ Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte » (le bouton Test appelle le serveur distant).";
+                        resultTextarea.value = t("en.notConfigured");
                         return;
                     }
                     try {
@@ -573,7 +581,7 @@
                                 if (chunk.status === "done") {
                                     output = chunk.output || "";
                                 } else if (chunk.status === "error") {
-                                    throw new Error(chunk.error || "Erreur inconnue");
+                                    throw new Error(chunk.error || t("en.unknownError"));
                                 }
                             } catch (e) {
                                 if (e instanceof SyntaxError) continue;
@@ -583,7 +591,7 @@
                         resultTextarea.value = output;
                         syncNativeWidgets();
                     } catch (err) {
-                        resultTextarea.value = "Erreur: " + err.message;
+                        resultTextarea.value = t("en.errorPrefix", { error: err.message });
                     }
                 };
 

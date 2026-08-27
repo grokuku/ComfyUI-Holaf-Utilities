@@ -10,6 +10,7 @@ import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { applyPersistedTheme } from "./holaf_themes.js";
 
 import "./holaf_themes.js";
+import "./aih/strings.js";
 import "./holaf_terminal.js";
 import "./holaf_model_manager.js";
 import "./holaf_nodes_manager.js";
@@ -20,8 +21,14 @@ import "./holaf_layout_tools.js";
 import "./holaf_shortcuts.js";
 import "./holaf_remote_comparer.js";
 
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
+
 const HolafModal = {
-    show(title, messageOrElement, onConfirm, confirmText = "Confirm", cancelText = "Cancel") {
+    show(title, messageOrElement, onConfirm, confirmText = t("dialog.confirm"), cancelText = t("dialog.cancel")) {
         const existingModal = document.getElementById("holaf-modal-overlay");
         if (existingModal) existingModal.remove();
 
@@ -151,7 +158,7 @@ const HolafUtilitiesMenu = {
 
         const mainButton = document.createElement("button");
         mainButton.id = "holaf-utilities-menu-button";
-        mainButton.textContent = "AI Helper ▾";
+        mainButton.textContent = t("menu.title");
 
         this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
@@ -230,37 +237,37 @@ const HolafUtilitiesMenu = {
         // piloté individuellement dans Settings → Applications WIP.
         const menuItems = [
             // Groupe « Galerie & Visualisation »
-            { type: 'subtitle', label: 'Galerie & Visualisation' },
-            { label: "Image Viewer", handlerName: "holafImageViewer" },
+            { type: 'subtitle', label: t('menu.sectionGallery') },
+            { label: t("menu.imageViewer"), handlerName: "holafImageViewer" },
 
             // Groupe « AIH / Distant »
-            { type: 'subtitle', label: 'AIH / Distant' },
-            { label: "🌐 Open Webpage", special: 'aih_webpage' },
-            { label: "📤 Workflows", special: 'aih_workflows' },
-            { label: "📦 Models", special: 'aih_models' },
-            { label: "👥 Membres", special: 'aih_members' },
+            { type: 'subtitle', label: t('menu.sectionAIH') },
+            { label: t("menu.openWebpage"), special: 'aih_webpage' },
+            { label: t("menu.workflows"), special: 'aih_workflows' },
+            { label: t("menu.models"), special: 'aih_models' },
+            { label: t("menu.members"), special: 'aih_members' },
 
             // Groupe « Outils & Dev » (items WIP pilotés individuellement)
-            { type: 'subtitle', label: 'Outils & Dev' },
-            { label: "Model Manager (WIP)", handlerName: "holafModelManager", wipFeature: 'model_manager' },
-            { label: "Custom Nodes Manager (WIP)", handlerName: "holafNodesManager", wipFeature: 'custom_nodes_manager' },
-            { label: "Workflow Profiler (WIP)", special: "profiler_standalone", wipFeature: 'workflow_profiler' },
+            { type: 'subtitle', label: t('menu.sectionTools') },
+            { label: t("menu.modelManager"), handlerName: "holafModelManager", wipFeature: 'model_manager' },
+            { label: t("menu.nodesManager"), handlerName: "holafNodesManager", wipFeature: 'custom_nodes_manager' },
+            { label: t("menu.workflowProfiler"), special: "profiler_standalone", wipFeature: 'workflow_profiler' },
             { special: 'aih_blobby_toggle', wipFeature: 'blobby' },
-            { label: "💬 Chat", special: 'aih_chat', wipFeature: 'chat' },
+            { label: t("menu.chat"), special: 'aih_chat', wipFeature: 'chat' },
 
             // Groupe « Utilitaires »
-            { type: 'subtitle', label: 'Utilitaires' },
-            { label: "Terminal", handlerName: "holafTerminal" },
-            { label: "Compact Menu Bar", special: "toggle_compact_menu" },
-            { label: "Toggle Layout Tools", special: "toggle_layout_tools" },
-            { label: "Toggle Shortcuts", special: "toggle_shortcuts" },
-            { label: "Toggle Remote Comparer", special: "toggle_remote_comparer" },
+            { type: 'subtitle', label: t('menu.sectionUtils') },
+            { label: t("menu.terminal"), handlerName: "holafTerminal" },
+            { label: t("menu.compactMenu"), special: "toggle_compact_menu" },
+            { label: t("menu.layoutTools"), special: "toggle_layout_tools" },
+            { label: t("menu.shortcuts"), special: "toggle_shortcuts" },
+            { label: t("menu.remoteComparer"), special: "toggle_remote_comparer" },
 
             // Groupe « Système »
-            { type: 'subtitle', label: 'Système' },
-            { label: "Settings", handlerName: "holafSettingsManager" },
-            { label: "🔄 AIH Update", special: 'aih_update' },
-            { label: "Restart ComfyUI", special: 'restart' }
+            { type: 'subtitle', label: t('menu.sectionSystem') },
+            { label: t("menu.settings"), handlerName: "holafSettingsManager" },
+            { label: t("menu.aihUpdate"), special: 'aih_update' },
+            { label: t("menu.restart"), special: 'restart' }
         ];
 
         // Regroupe les entrées consécutives en sections : chaque sous-titre
@@ -440,7 +447,7 @@ const HolafUtilitiesMenu = {
                     if (handler && typeof handler.show === 'function') {
                         handler.show();
                     } else {
-                        HolafPanelManager.createDialog({ title: "Not Implemented", message: `The panel for "${itemInfo.label}" is not available yet.`, buttons: [{ text: "OK", value: true }] });
+                        HolafPanelManager.createDialog({ title: t("main.notImplemented"), message: t("main.panelNotAvailable", { label: itemInfo.label }), buttons: [{ text: t("dialog.ok"), value: true }] });
                     }
                 }
 
@@ -458,7 +465,7 @@ const HolafUtilitiesMenu = {
         // rafraîchie à chaque ouverture du menu (voir updateAihDynamicItems).
         const statusLi = document.createElement("li");
         statusLi.id = "holaf-menu-aih-status";
-        statusLi.textContent = "Statut : vérification...";
+        statusLi.textContent = t("menu.statusChecking");
         Object.assign(statusLi.style, {
             borderTop: "1px solid var(--holaf-border-color, #3F3F3F)",
             marginTop: "5px",
@@ -491,7 +498,7 @@ const HolafUtilitiesMenu = {
         if (fnName && window.AIHMenu && typeof window.AIHMenu[fnName] === "function") {
             window.AIHMenu[fnName]();
         } else {
-            HolafPanelManager.createDialog({ title: "AIH", message: `The AIH module entry "${special}" is not available yet (js/aih_menu.js not loaded?).`, buttons: [{ text: "OK", value: true }] });
+            HolafPanelManager.createDialog({ title: t("menu.sectionAIH"), message: t("main.aihEntryNotAvailable", { special }), buttons: [{ text: t("dialog.ok"), value: true }] });
         }
     },
 
@@ -549,9 +556,9 @@ const HolafUtilitiesMenu = {
         if (blobbyLi) {
             const labelSpan = blobbyLi.querySelector(".holaf-aih-blobby-label");
             const pill = blobbyLi.querySelector(".holaf-aih-blobby-pill");
-            if (labelSpan) labelSpan.textContent = active ? "Blobby (test)" : "Activer Blobby";
+            if (labelSpan) labelSpan.textContent = active ? t("menu.blobbyActive") : t("menu.blobbyActivate");
             if (pill) {
-                pill.textContent = active ? "ON" : "OFF";
+                pill.textContent = active ? t("menu.blobbyOn") : t("menu.blobbyOff");
                 pill.style.background = active ? "#166534" : "#555";
                 pill.style.color = active ? "#86efac" : "#aaa";
             }
@@ -568,28 +575,28 @@ const HolafUtilitiesMenu = {
     // via the shared Utils mechanism POST /holaf/utilities/restart.
     checkForAIHUpdate() {
         const toast = window.holaf?.toastManager;
-        const waitId = toast ? toast.show({ message: "Checking for AIH update...", type: "info", duration: 0 }) : null;
+        const waitId = toast ? toast.show({ message: t("main.checkingUpdate"), type: "info", duration: 0 }) : null;
         fetch("/aih/update", { method: 'POST' })
             .then(res => res.json())
             .then(data => {
                 if (waitId && toast) toast.hide(waitId);
                 if (data.updated) {
                     HolafModal.show(
-                        "AIH Update",
-                        "Update installed on disk. Restart ComfyUI now to load the new version?",
+                        t("main.updateTitle"),
+                        t("main.updateInstalled"),
                         () => { this.startRestartFlow(); return false; },
-                        "Restart",
-                        "Later"
+                        t("main.restart"),
+                        t("main.later")
                     );
                 } else if (data.status === "error") {
-                    if (toast) toast.show({ message: "AIH update failed: " + (data.message || "unknown error"), type: "error" });
+                    if (toast) toast.show({ message: t("main.updateFailed") + (data.message || "unknown error"), type: "error" });
                 } else {
-                    if (toast) toast.show({ message: "AIH is already up to date.", type: "success" });
+                    if (toast) toast.show({ message: t("main.alreadyUpToDate"), type: "success" });
                 }
             })
             .catch(err => {
                 if (waitId && toast) toast.hide(waitId);
-                if (toast) toast.show({ message: "AIH update check failed: " + (err.message || "network error"), type: "error" });
+                if (toast) toast.show({ message: t("main.updateCheckFailed") + (err.message || "network error"), type: "error" });
             });
     },
 
@@ -600,12 +607,12 @@ const HolafUtilitiesMenu = {
         const restartDiv = document.createElement("div");
         const restartMsg = document.createElement("p");
         restartMsg.id = "holaf-restart-message";
-        restartMsg.textContent = "Are you sure you want to restart the ComfyUI server?";
+        restartMsg.textContent = t("main.restartConfirm");
         restartDiv.appendChild(restartMsg);
         const restartTimerLine = document.createElement("p");
         restartTimerLine.id = "holaf-restart-timer-line";
         restartTimerLine.style.cssText = "visibility: hidden; margin-top: 10px; height: 1.2em;";
-        restartTimerLine.appendChild(document.createTextNode("Time elapsed: "));
+        restartTimerLine.appendChild(document.createTextNode(t("main.timeElapsed")));
         const restartTimerSpan = document.createElement("span");
         restartTimerSpan.id = "holaf-restart-timer";
         restartTimerSpan.textContent = "0";
@@ -613,15 +620,15 @@ const HolafUtilitiesMenu = {
         restartTimerLine.appendChild(document.createTextNode("s"));
         restartDiv.appendChild(restartTimerLine);
 
-        HolafModal.show("Restart ComfyUI", restartDiv, () => {
+        HolafModal.show(t("menu.restart"), restartDiv, () => {
             const dialog = document.getElementById("holaf-modal-dialog");
             if (!dialog) return;
 
             const messageEl = document.getElementById("holaf-restart-message");
             const timerLineEl = document.getElementById("holaf-restart-timer-line");
 
-            dialog.querySelector(".holaf-utility-header span").textContent = "Restarting Server";
-            messageEl.textContent = "Sending restart command...";
+            dialog.querySelector(".holaf-utility-header span").textContent = t("main.restartingTitle");
+            messageEl.textContent = t("main.sendingRestart");
             timerLineEl.style.visibility = "visible";
 
             const footerEl = dialog.querySelector(".holaf-modal-footer");
@@ -629,12 +636,12 @@ const HolafUtilitiesMenu = {
             const restartCloseBtn = document.createElement("button");
             restartCloseBtn.id = "holaf-restart-close-btn";
             restartCloseBtn.className = "comfy-button secondary";
-            restartCloseBtn.textContent = "Close";
+            restartCloseBtn.textContent = t("main.close");
             const restartRefreshBtn = document.createElement("button");
             restartRefreshBtn.id = "holaf-restart-refresh-btn";
             restartRefreshBtn.className = "comfy-button";
             restartRefreshBtn.disabled = true;
-            restartRefreshBtn.textContent = "Refresh";
+            restartRefreshBtn.textContent = t("main.refresh");
             footerEl.appendChild(restartCloseBtn);
             footerEl.appendChild(restartRefreshBtn);
 
@@ -658,7 +665,7 @@ const HolafUtilitiesMenu = {
                     const refreshBtn = document.getElementById("holaf-restart-refresh-btn");
                     if (!messageEl || !timerEl || !refreshBtn) return;
 
-                    messageEl.textContent = "The server is restarting. Waiting for it to go offline...";
+                    messageEl.textContent = t("main.serverRestarting");
 
                     let seconds = 0;
                     window.holaf.restartTimerInterval = setInterval(() => {
@@ -679,23 +686,23 @@ const HolafUtilitiesMenu = {
 
                                         if (!messageEl || !refreshBtn) return;
 
-                                        messageEl.textContent = "✅ Server has rebooted successfully in " + seconds + " seconds."
+                                        messageEl.textContent = t("main.serverRebooted", { seconds })
                                         if (timerLineEl) timerLineEl.style.visibility = "hidden";
-                                        refreshBtn.textContent = "Refresh Page";
+                                        refreshBtn.textContent = t("main.refreshPage");
                                         refreshBtn.disabled = false;
                                         refreshBtn.onclick = () => location.reload();
                                         refreshBtn.focus();
                                     }
                                 } else {
                                     if (!serverIsDown) {
-                                        if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                        if (messageEl) messageEl.textContent = t("main.serverOffline");
                                         serverIsDown = true;
                                     }
                                 }
                             })
                             .catch(() => {
                                 if (!serverIsDown) {
-                                    if (messageEl) messageEl.textContent = "Server is offline. Monitoring for reconnection...";
+                                    if (messageEl) messageEl.textContent = t("main.serverOffline");
                                     serverIsDown = true;
                                 }
                             });
@@ -706,7 +713,7 @@ const HolafUtilitiesMenu = {
                 .catch(err => {
                     const errorP = document.createElement('p');
                     errorP.style.color = 'var(--holaf-error-color, #F44336)';
-                    errorP.textContent = "Failed to send restart command to the server: " + (err.message || "Unknown error") + ".";
+                    errorP.textContent = t("main.restartFailed") + (err.message || "Unknown error") + ".";
                     dialog.querySelector(".holaf-modal-content").replaceChildren(errorP);
                     const rb = dialog.querySelector("#holaf-restart-refresh-btn");
                     if (rb) rb.disabled = true;
@@ -829,9 +836,9 @@ const HolafUtilitiesMenu = {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(visualGraph)
                     });
-                    window.holaf.toastManager.show({ message: "Workflow synced with Profiler.", type: "success" });
+                    window.holaf.toastManager.show({ message: t("main.workflowSynced"), type: "success" });
                 } catch (e) {
-                    window.holaf.toastManager.show({ message: "Error syncing workflow.", type: "error" });
+                    window.holaf.toastManager.show({ message: t("main.workflowSyncError"), type: "error" });
                 }
             }
         };

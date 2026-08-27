@@ -1,5 +1,12 @@
 import "./aih_dialog.js";
+import "./aih/strings.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente)
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 /**
  * AIH Keywords Picker — Custom widget for ComfyUI node.
@@ -55,7 +62,7 @@ function apiHeaders() {
 async function apiCall(method, path, body) {
     const baseUrl = getApiUrl();
     if (!baseUrl) {
-        throw new Error("Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+        throw new Error(t("aih.notConfiguredError"));
     }
     const opts = { method, headers: apiHeaders() };
     if (body) opts.body = JSON.stringify(body);
@@ -131,8 +138,7 @@ function esc(str) {
     return d.innerHTML;
 }
 
-function showToast(title, msg) {
-    const type = title === "Succès" ? "success" : title === "Info" ? "info" : "error";
+function showToast(type, msg) {
     _getToast().show({ message: msg, type: type, duration: 4000 });
 }
 
@@ -284,7 +290,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                         // ne soit pas un échec silencieux (401, CORS, serveur down...)
                         node._aihKeywords = [];
                         node._aihTotal = 0;
-                        renderKeywords("⚠️ Erreur API : " + err.message);
+                        renderKeywords(t("kw.apiErrorPrefix", { error: err.message }));
                         syncKeywordsConfig();
                     }
                 }
@@ -334,11 +340,11 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     border: "1px solid #555", background: "#1a1a1e",
                     color: "#fff", fontSize: "11px", cursor: "pointer",
                 });
-                sectionSel.innerHTML = '<option value="">Section...</option>';
+                sectionSel.innerHTML = '<option value="">' + t("kw.sectionPlaceholder") + '</option>';
                 sectionSel.onchange = function () {
                     config.section = this.value;
                     config.subsection = ""; // Reset subsection quand section change
-                    subsectionSel.innerHTML = '<option value="">Sous-section...</option>';
+                    subsectionSel.innerHTML = '<option value="">' + t("kw.subsectionPlaceholder") + '</option>';
                     updateConfigAndFetch({ section: this.value, subsection: "" });
                     // Charger les sous-sections
                     if (this.value) loadSubsections(this.value);
@@ -351,7 +357,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     border: "1px solid #555", background: "#1a1a1e",
                     color: "#fff", fontSize: "11px", cursor: "pointer",
                 });
-                subsectionSel.innerHTML = '<option value="">Sous-section...</option>';
+                subsectionSel.innerHTML = '<option value="">' + t("kw.subsectionPlaceholder") + '</option>';
                 subsectionSel.onchange = function () {
                     updateConfigAndFetch({ subsection: this.value });
                 };
@@ -364,7 +370,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     try {
                         const data = await apiCall("GET", "sections");
                         const sections = Array.isArray(data) ? data : (data.sections || data.data || []);
-                        sectionSel.innerHTML = '<option value="">Section...</option>';
+                        sectionSel.innerHTML = '<option value="">' + t("kw.sectionPlaceholder") + '</option>';
                         // Trier par ordre alphabétique
                         sections.sort(function(a, b) {
                             var nameA = (typeof a === "string" ? a : (a.section_title || a.title || a.name || String(a.section_id ?? a.id ?? ""))).toString().toLowerCase();
@@ -388,7 +394,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     try {
                         const data = await apiCall("GET", `subsections?section=${encodeURIComponent(section)}`);
                         const subs = Array.isArray(data) ? data : (data.subsections || data.data || []);
-                        subsectionSel.innerHTML = '<option value="">Sous-section...</option>';
+                        subsectionSel.innerHTML = '<option value="">' + t("kw.subsectionPlaceholder") + '</option>';
                         // Trier par ordre alphabétique
                         subs.sort(function(a, b) {
                             var nameA = (typeof a === "string" ? a : (a.subsection_title || a.title || a.name || String(a.subsection_id ?? a.id ?? ""))).toString().toLowerCase();
@@ -440,14 +446,14 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     border: "1px solid #555", background: "#1a1a1e",
                     color: "#fff", fontSize: "11px", cursor: "pointer",
                 });
-                nsfwSel.innerHTML = '<option value="">Tout</option><option value="0">SFW</option><option value="1">NSFW</option>';
+                nsfwSel.innerHTML = '<option value="">' + t("kw.nsfwAll") + '</option><option value="0">SFW</option><option value="1">NSFW</option>';
                 nsfwSel.onchange = function () {
                     updateConfigAndFetch({ nsfw: this.value });
                 };
 
                 // Confidence label
                 const confLabel = document.createElement("span");
-                confLabel.textContent = "Confiance:";
+                confLabel.textContent = t("kw.confidence");
                 confLabel.style.cssText = "font-size:11px;color:#aaa;white-space:nowrap;";
 
                 // Confidence slider
@@ -493,7 +499,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     border: "1px solid #555", background: "#1a1a1e",
                     color: "#fff", fontSize: "11px", cursor: "pointer",
                 });
-                formatSel.innerHTML = '<option value="text">Text</option><option value="json">JSON</option><option value="markdown">Markdown</option>';
+                formatSel.innerHTML = '<option value="text">' + t("kw.formatText") + '</option><option value="json">' + t("kw.formatJson") + '</option><option value="markdown">' + t("kw.formatMarkdown") + '</option>';
                 formatSel.value = config.output_format || "text";
                 formatSel.onchange = function () {
                     updateConfigAndFetch({ output_format: this.value });
@@ -513,12 +519,12 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                 });
 
                 const includeLabel = document.createElement("span");
-                includeLabel.textContent = "Include:";
+                includeLabel.textContent = t("kw.include");
                 includeLabel.style.cssText = "font-size:11px;color:#aaa;white-space:nowrap;flex-shrink:0;";
 
                 const includeInput = document.createElement("input");
                 includeInput.type = "text";
-                includeInput.placeholder = "Mots-clés à inclure...";
+                includeInput.placeholder = t("kw.includePlaceholder");
                 Object.assign(includeInput.style, {
                     flex: "1", padding: "4px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#1a1a1e",
@@ -541,12 +547,12 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                 });
 
                 const excludeLabel = document.createElement("span");
-                excludeLabel.textContent = "Exclude:";
+                excludeLabel.textContent = t("kw.exclude");
                 excludeLabel.style.cssText = "font-size:11px;color:#aaa;white-space:nowrap;flex-shrink:0;";
 
                 const excludeInput = document.createElement("input");
                 excludeInput.type = "text";
-                excludeInput.placeholder = "Mots-clés à exclure...";
+                excludeInput.placeholder = t("kw.excludePlaceholder");
                 Object.assign(excludeInput.style, {
                     flex: "1", padding: "4px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#1a1a1e",
@@ -569,12 +575,12 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                 });
 
                 const semanticLabel = document.createElement("span");
-                semanticLabel.textContent = "Semantic:";
+                semanticLabel.textContent = t("kw.semantic");
                 semanticLabel.style.cssText = "font-size:11px;color:#aaa;white-space:nowrap;flex-shrink:0;";
 
                 const semanticInput = document.createElement("input");
                 semanticInput.type = "text";
-                semanticInput.placeholder = "Recherche sémantique...";
+                semanticInput.placeholder = t("kw.semanticPlaceholder");
                 Object.assign(semanticInput.style, {
                     flex: "1", padding: "4px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#1a1a1e",
@@ -618,9 +624,9 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     return b;
                 };
 
-                const loadBtn = mkBtn("📂 Load");
-                const resetBtn = mkBtn("🔁 Reset");
-                const saveBtn = mkBtn("💾 Save", true);
+                const loadBtn = mkBtn(t("kw.load"));
+                const resetBtn = mkBtn(t("kw.reset"));
+                const saveBtn = mkBtn(t("kw.save"), true);
 
                 row6.appendChild(loadBtn);
                 row6.appendChild(saveBtn);
@@ -634,7 +640,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                             loadFilter(filter.id);
                         });
                     } catch (err) {
-                        showToast("Erreur", "Impossible de charger les filtres : " + err.message);
+                        showToast("error", t("kw.loadFiltersFailed", { error: err.message }));
                     }
                 };
 
@@ -648,10 +654,10 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                             // déclenche fetchKeywords() (géré par doSetSectionSub)
                             applyConfigToUI(cfg);
                         } else {
-                            showToast("Erreur", "Réponse de filtre invalide.");
+                            showToast("error", t("kw.invalidFilterResponse"));
                         }
                     } catch (err) {
-                        showToast("Erreur", "Impossible de charger le filtre : " + err.message);
+                        showToast("error", t("kw.loadFilterFailed", { error: err.message }));
                     }
                 }
 
@@ -660,16 +666,16 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     const promptFn = window.aihShowPrompt || function (title, message, placeholder) {
                         return window.AIH.prompt(title, message, placeholder);
                     };
-                    promptFn("Sauvegarder le filtre", "Nom du filtre :", "").then(function (name) {
+                    promptFn(t("kw.saveFilterTitle"), t("kw.saveFilterPrompt"), "").then(function (name) {
                         if (!name) return;
                         const payload = {
                             name: name,
                             config: { ...config },
                         };
                         apiCall("POST", "filters", payload).then(() => {
-                            showToast("Succès", "Filtre \"" + name + "\" sauvegardé !");
+                            showToast("success", t("kw.saved", { name: name }));
                         }).catch(err => {
-                            showToast("Erreur", "Impossible de sauvegarder : " + err.message);
+                            showToast("error", t("kw.saveFailed", { error: err.message }));
                         });
                     });
                 };
@@ -682,7 +688,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
 
                     // Reset Subsection
                     config.subsection = "";
-                    subsectionSel.innerHTML = '<option value="">Sous-section...</option>';
+                    subsectionSel.innerHTML = '<option value="">' + t("kw.subsectionPlaceholder") + '</option>';
 
                     // Reset NSFW
                     config.nsfw = "";
@@ -739,7 +745,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                     if (items.length === 0) {
                         keywordsList.innerHTML = "";
                         const msgEl = document.createElement("span");
-                        msgEl.textContent = statusMsg || "Aucun mot-clé. Modifiez les filtres ci-dessus.";
+                        msgEl.textContent = statusMsg || t("kw.empty");
                         keywordsList.style.color = statusMsg && statusMsg.startsWith("⚠️") ? "#f87171" : "#666";
                         keywordsList.appendChild(msgEl);
                         return;
@@ -754,7 +760,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                         fontSize: "10px", color: "#888",
                         borderBottom: "1px solid #444",
                     });
-                    header.textContent = node._aihTotal + " mot(s)-clé(s)";
+                    header.textContent = t("kw.totalCount", { count: node._aihTotal });
                     keywordsList.appendChild(header);
 
                     items.forEach(function (kw) {
@@ -903,7 +909,7 @@ const NODE_TYPES = ["AIHKeywords", "AIHKeywordsNode"];
                         });
                     } else {
                         // Pas de section → vider les sous-sections
-                        subsectionSel.innerHTML = '<option value="">Sous-section...</option>';
+                        subsectionSel.innerHTML = '<option value="">' + t("kw.subsectionPlaceholder") + '</option>';
                         fetchKeywords();
                     }
                 }
@@ -1038,11 +1044,11 @@ function showFilterPicker(filters, onSelect) {
     if (filters.length > 0) {
         filters.forEach(function(f) {
             html += '<div class="aih-filter-item" data-id="' + f.id + '" style="padding:6px 8px;cursor:pointer;border-radius:4px;font-size:12px;color:#ccc;background:#3a3a3e;margin-bottom:2px;">' +
-                esc(f.name || f.filter_name || "Filtre #" + f.id) + (f.nsfw ? ' 🔞' : '') +
+                esc(f.name || f.filter_name || t("kw.filterLabel", { id: f.id })) + (f.nsfw ? ' 🔞' : '') +
                 ' <span style="color:#888;font-size:10px;">' + (f.owner_name || f.user_id?.substring(0,6) || "") + '</span></div>';
         });
     } else {
-        html += '<p style="font-size:12px;color:#666;">Aucun filtre disponible.</p>';
+        html += '<p style="font-size:12px;color:#666;">' + t("kw.noFilter") + '</p>';
     }
     html += '</div>';
 
@@ -1072,7 +1078,7 @@ function showFilterPicker(filters, onSelect) {
     };
 
     var m = modalFn({
-        title: "Charger un filtre",
+        title: t("kw.loadFilterTitle"),
         content: html,
         width: "380px",
         height: "auto",

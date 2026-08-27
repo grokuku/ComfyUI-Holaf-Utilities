@@ -13,7 +13,14 @@
  */
 
 import { HOLAF_THEMES } from "./holaf_themes.js";
+import "./aih/strings.js";
 import { makeDraggable, makeResizable, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel, aihWindowManager } from "./holaf_window_utils.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 // MODIFICATION: Track open dialog count instead of boolean for proper stacking
 export const dialogState = {
@@ -107,7 +114,7 @@ export const HolafPanelManager = {
         const closeButton = document.createElement("button");
         closeButton.className = "holaf-utility-close-button";
         closeButton.textContent = "✕";
-        closeButton.title = "Close";
+        closeButton.title = t("dialog.close");
         closeButton.style.marginLeft = "auto";
         if (options.headerContent) {
             closeButton.style.marginLeft = "10px";
@@ -252,7 +259,7 @@ export const HolafPanelManager = {
             const header = document.createElement("div");
             header.className = "holaf-utility-header";
             const titleSpan = document.createElement("span");
-            titleSpan.textContent = options.title || "Confirmation";
+            titleSpan.textContent = options.title || t("dialog.confirm_title");
             header.appendChild(titleSpan);
 
             const content = document.createElement("div");
@@ -277,7 +284,7 @@ export const HolafPanelManager = {
                 resolve(value);
             };
 
-            (options.buttons || [{ text: "OK", value: true, type: "confirm" }]).forEach(btnInfo => {
+            (options.buttons || [{ text: t("dialog.ok"), value: true, type: "confirm" }]).forEach(btnInfo => {
                 const button = document.createElement("button");
                 button.textContent = btnInfo.text;
                 button.className = "comfy-button";

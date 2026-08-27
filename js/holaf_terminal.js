@@ -27,11 +27,18 @@
  * === End Documentation ===
  */
 import "./aih_dialog.js";
+import "./aih/strings.js";
 import { app } from "./holaf_api_compat.js";
 import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { holafExtUrl } from "./holaf_ext_base.js";
 // CORRECTED IMPORT: No longer depends on panel_manager for themes.
 import { HOLAF_THEMES } from "./holaf_themes.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -133,7 +140,7 @@ const holafTerminal = {
             console.error("Holaf Utilities: Critical error loading xterm scripts", error);
             if (this.panelElements && this.panelElements.contentEl) {
                 const loadingView = this.panelElements.contentEl.querySelector('.holaf-terminal-non-terminal-view');
-                if (loadingView) loadingView.textContent = "Error: Could not load terminal components. Check console.";
+                if (loadingView) loadingView.textContent = t("term.componentsLoadError");
             }
             this.scriptsLoaded = false;
             return false;
@@ -156,7 +163,7 @@ const holafTerminal = {
         themeButtonContainer.style.position = 'relative';
         const themeButton = document.createElement("button");
         themeButton.className = "holaf-header-button";
-        themeButton.title = "Change Theme";
+        themeButton.title = t("term.theme");
         themeButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.55a9.42 9.42 0 0 1-9.45 9.45 9.42 9.42 0 0 1-9.45-9.45 9.42 9.42 0 0 1 9.45-9.45 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 1-2.5 2.5Z"/></svg>`;
         const themeMenu = this.createThemeMenu();
         themeButton.onclick = (e) => {
@@ -168,13 +175,13 @@ const holafTerminal = {
 
         const fontDecButton = document.createElement("button");
         fontDecButton.className = "holaf-header-button";
-        fontDecButton.title = "Decrease Font Size";
+        fontDecButton.title = t("term.fontDec");
         fontDecButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>`;
         fontDecButton.onclick = () => this.decreaseFontSize();
 
         const fontIncButton = document.createElement("button");
         fontIncButton.className = "holaf-header-button";
-        fontIncButton.title = "Increase Font Size";
+        fontIncButton.title = t("term.fontInc");
         fontIncButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`;
         fontIncButton.onclick = () => this.increaseFontSize();
 
@@ -185,7 +192,7 @@ const holafTerminal = {
                 // CRITIQUE : l'id `holaf-terminal-panel` est requis — tout le CSS
                 // terminal (holaf_terminal_styles.css) est scopé sous cet id.
                 id: "holaf-terminal-panel",
-                title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode("AIH Terminal")); return f; })(),
+                title: (() => { const f = document.createDocumentFragment(); const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("width", "18"); svg.setAttribute("height", "18"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.style.verticalAlign = "-3px"; svg.style.marginRight = "6px"; const p1 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p1.setAttribute("d", "M5 7L10 12L5 17"); p1.setAttribute("stroke", "currentColor"); p1.setAttribute("stroke-width", "2.5"); p1.setAttribute("stroke-linecap", "round"); p1.setAttribute("stroke-linejoin", "round"); svg.appendChild(p1); const p2 = document.createElementNS("http://www.w3.org/2000/svg", "path"); p2.setAttribute("d", "M12 17H19"); p2.setAttribute("stroke", "currentColor"); p2.setAttribute("stroke-width", "2.5"); p2.setAttribute("stroke-linecap", "round"); svg.appendChild(p2); f.appendChild(svg); f.appendChild(document.createTextNode(t("term.panelTitle"))); return f; })(),
                 headerContent: terminalHeaderControlsGroup,
                 zoom: {
                     key: "holaf-terminal-panel",
@@ -220,7 +227,7 @@ const holafTerminal = {
             });
         } catch (e) {
             console.error("[Holaf Terminal] Error during HolafPanelManager.createPanel:", e);
-            await window.AIH.alert("[AIH Terminal]", "Error creating panel. Check console.", "error");
+            await window.AIH.alert("[AIH Terminal]", t("term.createPanelError"), "error");
             return;
         }
 
@@ -275,7 +282,7 @@ const holafTerminal = {
         const scriptsReady = await this.ensureScriptsLoaded();
         if (!scriptsReady) {
             this.showView('loading');
-            if (this.loadingView) this.loadingView.textContent = "Error: Failed to load terminal scripts.";
+            if (this.loadingView) this.loadingView.textContent = t("term.scriptsLoadError");
             return;
         }
 
@@ -359,17 +366,17 @@ const holafTerminal = {
     createLoadingView() {
         const v = document.createElement("div");
         v.className = "holaf-terminal-non-terminal-view";
-        v.textContent = "Checking server status...";
+        v.textContent = t("term.checkingStatus");
         return v;
     },
     createLoginView() {
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view";
-        const ptitle = document.createElement("h4"); ptitle.textContent = "Terminal Access"; ptitle.style.marginTop = "0";
-        const label = document.createElement("label"); label.textContent = "Password:"; label.style.cssText = "display: block; margin-bottom: 5px;";
+        const ptitle = document.createElement("h4"); ptitle.textContent = t("term.loginTitle"); ptitle.style.marginTop = "0";
+        const label = document.createElement("label"); label.textContent = t("term.password"); label.style.cssText = "display: block; margin-bottom: 5px;";
         this.passwordInput = document.createElement("input"); this.passwordInput.type = "password"; this.passwordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 10px;";
         this.passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.authenticateAndConnect(); });
-        const connectButton = document.createElement("button"); connectButton.textContent = "Connect"; connectButton.className = "comfy-button";
+        const connectButton = document.createElement("button"); connectButton.textContent = t("term.connect"); connectButton.className = "comfy-button";
         connectButton.addEventListener("click", this.authenticateAndConnect.bind(this));
         this.loginStatusMessage = document.createElement("p"); this.loginStatusMessage.className = "holaf-terminal-status-message";
         view.append(ptitle, label, this.passwordInput, connectButton, this.loginStatusMessage);
@@ -378,14 +385,14 @@ const holafTerminal = {
     createSetupView() {
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view";
-        const title = document.createElement("h3"); title.textContent = "AIH Terminal Setup"; title.className = "holaf-terminal-title-success";
-        const p1 = document.createElement("p"); p1.textContent = "No password is set. Please create one to enable the terminal."; p1.style.marginBottom = "15px";
-        const passLabel = document.createElement("label"); passLabel.textContent = "New Password (min 4 chars):"; passLabel.style.display = "block"; passLabel.style.marginBottom = "2px";
+        const title = document.createElement("h3"); title.textContent = t("term.setupTitle"); title.className = "holaf-terminal-title-success";
+        const p1 = document.createElement("p"); p1.textContent = t("term.setupIntro"); p1.style.marginBottom = "15px";
+        const passLabel = document.createElement("label"); passLabel.textContent = t("term.newPassword"); passLabel.style.display = "block"; passLabel.style.marginBottom = "2px";
         this.newPasswordInput = document.createElement("input"); this.newPasswordInput.type = "password"; this.newPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 5px;";
-        const confirmLabel = document.createElement("label"); confirmLabel.textContent = "Confirm Password:"; confirmLabel.style.display = "block"; confirmLabel.style.marginBottom = "2px";
+        const confirmLabel = document.createElement("label"); confirmLabel.textContent = t("term.confirmPassword"); confirmLabel.style.display = "block"; confirmLabel.style.marginBottom = "2px";
         this.confirmPasswordInput = document.createElement("input"); this.confirmPasswordInput.type = "password"; this.confirmPasswordInput.style.cssText = "width: 200px; max-width: 80%; margin-bottom: 10px;";
         this.confirmPasswordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.setPassword(); });
-        const setButton = document.createElement("button"); setButton.textContent = "Set Password"; setButton.className = "comfy-button";
+        const setButton = document.createElement("button"); setButton.textContent = t("term.setPassword"); setButton.className = "comfy-button";
         setButton.addEventListener("click", this.setPassword.bind(this));
         this.setupStatusMessage = document.createElement("p"); this.setupStatusMessage.className = "holaf-terminal-status-message";
         view.append(title, p1, passLabel, this.newPasswordInput, confirmLabel, this.confirmPasswordInput, setButton, this.setupStatusMessage);
@@ -394,13 +401,13 @@ const holafTerminal = {
     createManualSetupView() {
         const view = document.createElement("div");
         view.className = "holaf-terminal-non-terminal-view"; view.style.fontSize = "12px";
-        const title = document.createElement("h3"); title.textContent = "Manual Setup Required"; title.className = "holaf-terminal-title-warning";
-        const p1 = document.createElement("p"); p1.innerHTML = "The server couldn't save <code>config.ini</code> due to file permissions.";
-        const p2 = document.createElement("p"); p2.innerHTML = "1. Manually create/edit <code>config.ini</code> inside this extension's folder<br>2. Add the following under a <code>[Security]</code> section:<br>"; p2.style.margin = "10px 0"; p2.style.textAlign = "left";
+        const title = document.createElement("h3"); title.textContent = t("term.manualSetupTitle"); title.className = "holaf-terminal-title-warning";
+        const p1 = document.createElement("p"); p1.innerHTML = t("term.manualSetupIntro");
+        const p2 = document.createElement("p"); p2.innerHTML = t("term.manualSetupSteps"); p2.style.margin = "10px 0"; p2.style.textAlign = "left";
         this.hashDisplay = document.createElement("input"); this.hashDisplay.type = "text"; this.hashDisplay.readOnly = true; this.hashDisplay.style.cssText = "width: 100%; font-family: monospace; margin: 5px 0; padding: 5px;";
-        const copyButton = document.createElement("button"); copyButton.textContent = "Copy Hash String"; copyButton.className = "comfy-button"; copyButton.style.marginTop = "5px";
+        const copyButton = document.createElement("button"); copyButton.textContent = t("term.copyHash"); copyButton.className = "comfy-button"; copyButton.style.marginTop = "5px";
         copyButton.addEventListener("click", () => { if (this.hashDisplay) { this.hashDisplay.select(); navigator.clipboard.writeText(this.hashDisplay.value).catch(() => document.execCommand("copy")); } });
-        const p3 = document.createElement("p"); p3.innerHTML = "3. Restart ComfyUI."; p3.style.textAlign = "left";
+        const p3 = document.createElement("p"); p3.innerHTML = t("term.manualSetupRestart"); p3.style.textAlign = "left";
         view.append(title, p1, p2, this.hashDisplay, copyButton, p3);
         return view;
     },
@@ -444,35 +451,35 @@ const holafTerminal = {
             d.password_is_set ? this.showView('login') : this.showView('setup');
         } catch (e) {
             console.error("[Holaf Terminal] Error checking server status:", e);
-            if (this.loadingView) this.loadingView.textContent = "Error: Could not contact server.";
+            if (this.loadingView) this.loadingView.textContent = t("term.cantContactServer");
         }
     },
     async setPassword() {
         if (!this.newPasswordInput || !this.confirmPasswordInput || !this.setupStatusMessage) return;
         const newPass = this.newPasswordInput.value; const confirmPass = this.confirmPasswordInput.value;
-        if (!newPass || newPass.length < 4) { this.setupStatusMessage.textContent = "Password must be at least 4 characters long."; return; }
-        if (newPass !== confirmPass) { this.setupStatusMessage.textContent = "Passwords do not match."; return; }
-        this.setupStatusMessage.textContent = "Setting password...";
+        if (!newPass || newPass.length < 4) { this.setupStatusMessage.textContent = t("term.passTooShort"); return; }
+        if (newPass !== confirmPass) { this.setupStatusMessage.textContent = t("term.passMismatch"); return; }
+        this.setupStatusMessage.textContent = t("term.settingPassword");
         try {
             const r = await fetch('/holaf/terminal/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: newPass }) });
             const d = await r.json();
             if (r.ok && d.status === "ok" && d.action === "reload") {
                 this.setupStatusMessage.textContent = ""; this.showView('login');
-                if (this.loginStatusMessage) this.loginStatusMessage.textContent = "Password set! Please log in.";
+                if (this.loginStatusMessage) this.loginStatusMessage.textContent = t("term.passwordSet");
             } else if (r.ok && d.status === "manual_required") {
                 if (this.hashDisplay) this.hashDisplay.value = `password_hash = ${d.hash}`; this.showView('manual_setup');
             } else {
-                this.setupStatusMessage.textContent = `Error: ${d.message || 'Unknown error'}`;
+                this.setupStatusMessage.textContent = `Error: ${d.message || t("term.unknownError")}`;
             }
         } catch (e) {
-            this.setupStatusMessage.textContent = `Error: Could not contact server.`; console.error("[Holaf Terminal] Error setting password:", e);
+            this.setupStatusMessage.textContent = t("term.cantContactServer"); console.error("[Holaf Terminal] Error setting password:", e);
         }
     },
     async authenticateAndConnect() {
         if (!this.passwordInput || !this.loginStatusMessage) return;
         const password = this.passwordInput.value;
-        if (!password) { this.loginStatusMessage.textContent = "Error: Password cannot be empty."; return; }
-        this.loginStatusMessage.textContent = "Authenticating...";
+        if (!password) { this.loginStatusMessage.textContent = t("term.passEmpty"); return; }
+        this.loginStatusMessage.textContent = t("term.authenticating");
         try {
             const r = await fetch('/holaf/terminal/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: password }) });
             const d = await r.json();
@@ -483,10 +490,10 @@ const holafTerminal = {
                 this.loginStatusMessage.textContent = "";
                 this.showView('setup');
             } else {
-                this.loginStatusMessage.textContent = `Error: ${d.message || 'Authentication Failed'}`;
+                this.loginStatusMessage.textContent = `Error: ${d.message || t("term.authFailed")}`;
             }
         } catch (e) {
-            this.loginStatusMessage.textContent = "Error: Could not reach server."; console.error("[Holaf Terminal] Error authenticating:", e);
+            this.loginStatusMessage.textContent = t("term.cantReachServer"); console.error("[Holaf Terminal] Error authenticating:", e);
         } finally {
             if (this.passwordInput) this.passwordInput.value = "";
         }
@@ -524,19 +531,19 @@ const holafTerminal = {
         this.closeSocket();
         this.disposeTerminal();
         if (this.panelElements && this.panelElements.panelEl.style.display === 'flex') {
-            if (this.loginStatusMessage) this.loginStatusMessage.textContent = "Session ended. Please log in again.";
+            if (this.loginStatusMessage) this.loginStatusMessage.textContent = t("term.sessionEnded");
             this.showView('login');
         }
     },
     // ------------------------------------------------------------------------
 
     async connectWebSocket(sessionToken) {
-        if (!sessionToken) { if (this.loginStatusMessage) this.loginStatusMessage.textContent = "Error: No session token."; this.showView('login'); return; }
+        if (!sessionToken) { if (this.loginStatusMessage) this.loginStatusMessage.textContent = t("term.noSessionToken"); this.showView('login'); return; }
 
         const scriptsReady = await this.ensureScriptsLoaded();
         if (!scriptsReady) {
             this.showView('loading');
-            if (this.loadingView) this.loadingView.textContent = "Error: Failed to load scripts for WebSocket.";
+            if (this.loadingView) this.loadingView.textContent = t("term.wsScriptsLoadError");
             return;
         }
 
@@ -545,7 +552,7 @@ const holafTerminal = {
 
             if (!window.Terminal || !window.FitAddon) {
                 console.error("[Holaf Terminal] xterm.js or FitAddon not loaded!");
-                if (this.loadingView) this.loadingView.textContent = "Error: Terminal library not loaded.";
+                if (this.loadingView) this.loadingView.textContent = t("term.terminalLibNotLoaded");
                 this.showView('loading'); return;
             }
 
@@ -569,7 +576,7 @@ const holafTerminal = {
 
             if (!this._xterm_container || !this._xterm_container.isConnected) {
                 console.error("[Holaf Terminal] _xterm_container is not ready for terminal.open().");
-                if (this.loadingView) this.loadingView.textContent = "Error: Terminal container not ready.";
+                if (this.loadingView) this.loadingView.textContent = t("term.terminalContainerNotReady");
                 this.showView('loading'); return;
             }
             this.terminal.open(this._xterm_container);
@@ -582,7 +589,7 @@ const holafTerminal = {
             this.terminal.attachCustomKeyEventHandler(e => { if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && e.type === 'keydown') { if (this.terminal.hasSelection()) { try { navigator.clipboard.writeText(this.terminal.getSelection()); } catch (err) { } return false; } } if (e.ctrlKey && (e.key === 'v' || e.key === 'V') && e.type === 'keydown') { try { navigator.clipboard.readText().then(text => { if (text && this.terminal) this.terminal.paste(text); }); } catch (err) { } return false; } return true; });
         } catch (e) {
             console.error("Holaf Utilities: Terminal component instantiation error", e);
-            if (this.loadingView) this.loadingView.textContent = "Error: Terminal creation failed.";
+            if (this.loadingView) this.loadingView.textContent = t("term.terminalCreationFailed");
             this.showView('loading'); return;
         }
 
@@ -652,7 +659,7 @@ const holafTerminal = {
         socket.onerror = (event) => {
             if (this.socket !== socket) return;
             console.error("Holaf Utilities: Terminal WebSocket error.", event);
-            if (this.terminal) { try { this.terminal.writeln("\r\n\r\n--- CONNECTION ERROR ---"); } catch (e) { } }
+            if (this.terminal) { try { this.terminal.writeln("\r\n\r\n" + t("term.connectionError")); } catch (e) { } }
             // No reset here: the close event always follows and performs it.
         };
     },

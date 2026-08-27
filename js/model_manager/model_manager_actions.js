@@ -6,7 +6,14 @@
  * Replaced with a simple file size check on the server side.
  */
 
+import "../aih/strings.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 // --- UPLOAD LOGIC ---
 
@@ -21,7 +28,7 @@ export function addFilesToUploadQueue(manager) {
     const subfolder = subfolderInput.value.trim();
 
     if (files.length === 0) {
-        statusMessage.textContent = "Please select at least one file.";
+        statusMessage.textContent = t("mma.selectFile");
         return;
     }
 
@@ -112,7 +119,7 @@ async function uploadFile(manager, job) {
                         const response = await fetch('/holaf/models/upload-chunk', { method: 'POST', body: formData });
                         if (!response.ok) {
                             const errorData = await response.json().catch(() => ({}));
-                            throw new Error(errorData.message || `Chunk ${chunkIndex} failed.`);
+                            throw new Error(errorData.message || t("mma.chunkFailed", { chunk: chunkIndex }));
                         }
                         job.chunksSent++;
                         job.sentBytes += chunk.size;
@@ -156,7 +163,7 @@ async function finalizeUpload(manager, job) {
             })
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.message || 'Finalization failed.');
+        if (!response.ok) throw new Error(result.message || t("mma.finalizationFailed"));
         job.status = 'done';
         manager.refreshAfterUpload = true;
     } catch (error) {
@@ -171,7 +178,7 @@ async function finalizeUpload(manager, job) {
 export function addSelectedToDownloadQueue(manager) {
     const pathsToDownload = getAvailablePathsForAction(manager, manager.selectedModelPaths);
     if (pathsToDownload.length === 0) {
-        HolafPanelManager.createDialog({ title: "Download Models", message: "No available models selected for download." });
+        HolafPanelManager.createDialog({ title: t("mma.downloadTitle"), message: t("mma.downloadNone") });
         return;
     }
 
@@ -265,7 +272,7 @@ async function downloadFile(manager, job) {
         await assembleAndSaveFile(job);
     } catch (error) {
         job.status = 'error';
-        job.errorMessage = error.message || "Unknown download error";
+        job.errorMessage = error.message || t("mma.unknownDownloadError");
     }
 }
 
@@ -274,7 +281,7 @@ async function assembleAndSaveFile(job) {
     try {
         const finalBlob = new Blob(job.chunksData, { type: 'application/octet-stream' });
         if (finalBlob.size !== job.model.size_bytes) {
-            throw new Error(`Assembled size mismatch. Expected ${job.model.size_bytes}, got ${finalBlob.size}.`);
+            throw new Error(t("mma.assembleMismatch", { expected: job.model.size_bytes, got: finalBlob.size }));
         }
         const url = window.URL.createObjectURL(finalBlob);
         const a = Object.assign(document.createElement('a'), { href: url, download: job.model.name, style: "display:none" });
@@ -295,7 +302,7 @@ export function addSelectedToScanQueue(manager) {
     const allSelected = Array.from(manager.selectedModelPaths);
     const pathsToScan = getAvailablePathsForAction(manager, allSelected.filter(p => p.toLowerCase().endsWith('.safetensors')));
     if (pathsToScan.length === 0) {
-        HolafPanelManager.createDialog({ title: "Deep Scan", message: "No eligible (.safetensors) and available models selected for scanning." });
+        HolafPanelManager.createDialog({ title: t("mma.scanTitle"), message: t("mma.scanNone") });
         return;
     }
     manager.scanQueue.push(...pathsToScan);
@@ -325,7 +332,7 @@ export async function processScanQueue(manager) {
         if (!response.ok) throw new Error(result.message || `HTTP error ${response.status}`);
         if (result.details?.errors?.length > 0) console.error("[Holaf MM] Deep Scan Errors:", result.details.errors);
     } catch (error) {
-        HolafPanelManager.createDialog({ title: "Deep Scan Error", message: `A scan batch failed:\n${error.message}` });
+        HolafPanelManager.createDialog({ title: t("mma.scanError"), message: t("mma.scanErrorMsg", { message: error.message }) });
     } finally {
         processScanQueue(manager); // Process next batch or finish
     }
@@ -334,13 +341,13 @@ export async function processScanQueue(manager) {
 export async function performDelete(manager) {
     const pathsToDelete = getAvailablePathsForAction(manager, manager.selectedModelPaths);
     if (pathsToDelete.length === 0) {
-        HolafPanelManager.createDialog({ title: "Delete Models", message: "No available models selected for deletion." });
+        HolafPanelManager.createDialog({ title: t("mma.deleteTitle"), message: t("mma.deleteNone") });
         return;
     }
     const confirmed = await HolafPanelManager.createDialog({
-        title: "Confirm Deletion",
-        message: `PERMANENTLY delete ${pathsToDelete.length} model(s)? This cannot be undone.`,
-        buttons: [{ text: "Cancel", value: false }, { text: "Delete Permanently", value: true, type: "danger" }]
+        title: t("mma.confirmDelete"),
+        message: t("mma.confirmDeleteMsg", { count: pathsToDelete.length }),
+        buttons: [{ text: t("mma.cancel"), value: false }, { text: t("mma.deletePermanent"), value: true, type: "danger" }]
     });
     if (!confirmed) return;
 
@@ -354,14 +361,14 @@ export async function performDelete(manager) {
         });
         const result = await response.json();
         if (!response.ok && response.status !== 207) throw new Error(result.message || `HTTP error ${response.status}`);
-        let message = `${result.details?.deleted_count || 0} model(s) processed for deletion.`;
+        let message = t("mma.deletedCount", { count: result.details?.deleted_count || 0 });
         if (result.details?.errors?.length > 0) {
-            message += `\n\n${result.details.errors.length} error(s) occurred. Check console.`;
+            message += t("mma.errorsOccurred", { count: result.details.errors.length });
             console.error("[Holaf MM] Delete Errors:", result.details.errors);
         }
-        await HolafPanelManager.createDialog({ title: "Deletion Complete", message });
+        await HolafPanelManager.createDialog({ title: t("mma.deleteComplete"), message });
     } catch (error) {
-        await HolafPanelManager.createDialog({ title: "Deletion Error", message: `Delete failed:\n${error.message}` });
+        await HolafPanelManager.createDialog({ title: t("mma.deleteError"), message: t("mma.deleteErrorMsg", { message: error.message }) });
     } finally {
         manager.isLoading = false;
         manager.selectedModelPaths.clear();
@@ -377,7 +384,7 @@ function getAvailablePathsForAction(manager, selectedPaths) {
     const availablePaths = allSelected.filter(path => !isPathInActiveTransfer(manager, path));
     const skippedCount = allSelected.length - availablePaths.length;
     if (skippedCount > 0) {
-        HolafPanelManager.createDialog({ title: "Notice", message: `${skippedCount} file(s) were skipped as they are currently being transferred.` });
+        HolafPanelManager.createDialog({ title: t("mma.notice"), message: t("mma.skippedTransfer", { count: skippedCount }) });
     }
     return availablePaths;
 }

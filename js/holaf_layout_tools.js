@@ -1,7 +1,12 @@
 /* holaf_layout_tools.js */
     import { app } from "./holaf_api_compat.js";
-    import { HolafPanelManager } from "./holaf_panel_manager.js";
-    import { makeDraggable } from "./holaf_window_utils.js";
+    import { makeDraggable, makeContentZoomable, aihWindowManager } from "./holaf_window_utils.js";
+
+    // Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+    const t = (key, params) => {
+        const I = window.AIH && window.AIH.I18n;
+        return I && typeof I.t === "function" ? I.t(key, params) : key;
+    };
     
     const HolafLayoutTools = {
         coordDisplay: null,
@@ -35,30 +40,39 @@
             if (this.container) {
                 this.container.style.display = this.isVisible ? "flex" : "none";
                 if (this.isVisible) {
-                    HolafPanelManager.bringToFront(this.container);
+                    aihWindowManager().bringToFront(this.container);
                 } else {
-                    HolafPanelManager.unregister(this.container);
+                    aihWindowManager().unregister(this.container);
                 }
             }
             // Persist visibility state
             localStorage.setItem(this.VISIBILITY_KEY, this.isVisible);
             return this.isVisible;
         },
-    
+
+        hide() {
+            this.isVisible = false;
+            if (this.container) {
+                aihWindowManager().unregister(this.container);
+                this.container.style.display = "none";
+            }
+            localStorage.setItem(this.VISIBILITY_KEY, this.isVisible);
+        },
+
         createFloatingToolbar() {
             if (document.getElementById("holaf-layout-toolbar")) return;
-    
+
             this.container = document.createElement("div");
             this.container.id = "holaf-layout-toolbar";
             this.container.classList.add("holaf-floating-window");
-            
+
             Object.assign(this.container.style, {
                 position: "fixed",
                 zIndex: "10000",
                 display: this.isVisible ? "flex" : "none",
-                alignItems: "center",
-                gap: "8px",
-                padding: "4px 8px",
+                flexDirection: "column",
+                boxSizing: "border-box",
+                overflow: "hidden",
                 backgroundColor: "var(--comfy-menu-bg)",
                 borderRadius: "8px",
                 border: "1px solid var(--border-color)",
@@ -68,7 +82,7 @@
                 color: "var(--fg-color, #ccc)",
                 userSelect: "none"
             });
-    
+
             // Load reference position from storage
             const saved = localStorage.getItem(this.STORAGE_KEY);
             if (saved) {
@@ -78,24 +92,61 @@
                     this.storedPos.bottom = parseInt(parsed.bottom);
                 } catch (e) { console.warn("[Holaf Layout] Restore failed", e); }
             }
-    
+
             document.body.appendChild(this.container);
-            this.injectDragHandle(this.container);
-    
+
+            // ─── Barre de titre standard (nom + zoom −/+ + ✕) ───────────────
+            const header = document.createElement("div");
+            header.className = "holaf-utility-header";
+
+            const title = document.createElement("span");
+            title.innerText = t("lt.title");
+
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "holaf-utility-close-button";
+            closeBtn.textContent = "✕";
+            closeBtn.title = t("dialog.close");
+            closeBtn.onmousedown = (e) => e.stopPropagation();
+            closeBtn.onclick = () => this.hide();
+
+            header.appendChild(title);
+
+            // ─── Contenu zoomable (toolbar) hors header ─────────────────────
+            const content = document.createElement("div");
+            content.classList.add("holaf-zoom-content");
+            Object.assign(content.style, {
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "4px 8px"
+            });
+
             this.coordDisplay = document.createElement("div");
             this.coordDisplay.innerText = "X: 0 | Y: 0";
             this.coordDisplay.style.marginRight = "8px";
             this.coordDisplay.style.minWidth = "120px";
             this.coordDisplay.style.textAlign = "right";
             this.coordDisplay.style.pointerEvents = "none";
-            this.container.appendChild(this.coordDisplay);
-    
+            content.appendChild(this.coordDisplay);
+
             const sep = document.createElement("div");
             Object.assign(sep.style, { width: "1px", height: "20px", backgroundColor: "var(--border-color)" });
-            this.container.appendChild(sep);
-    
-            this.injectButtons(this.container);
-            
+            content.appendChild(sep);
+
+            this.injectButtons(content);
+
+            // Boutons zoom standard (− / +) : zoom sur le contenu, persistés
+            // sous la clé de fenêtre de la barre d'outils.
+            const zoomGroup = makeContentZoomable(content, { key: this.STORAGE_KEY });
+            header.insertBefore(zoomGroup, closeBtn);
+            header.appendChild(closeBtn);
+
+            this.container.appendChild(header);
+            this.container.appendChild(content);
+
+            // Drag par la barre de titre (ancrage droite/bas persisté)
+            this.enableWindowDragging(header);
+
             // Initial visual application
             this.updateVisualPosition();
         },
@@ -124,14 +175,11 @@
             this.container.style.bottom = visualBottom + "px";
         },
     
-        injectDragHandle(container) {
-            const handle = document.createElement("div");
-            Object.assign(handle.style, { width: "12px", height: "24px", cursor: "grab", display: "flex", alignItems: "center", opacity: "0.5", marginRight: "4px" });
-            handle.innerHTML = `<svg viewBox="0 0 6 14" width="6" height="14" fill="currentColor"><circle cx="1" cy="1" r="1"/><circle cx="1" cy="7" r="1"/><circle cx="1" cy="13" r="1"/><circle cx="5" cy="1" r="1"/><circle cx="5" cy="7" r="1"/><circle cx="5" cy="13" r="1"/></svg>`;
-
-            makeDraggable(container, {
-                handle,
+        enableWindowDragging(header) {
+            makeDraggable(this.container, {
+                handle: header,
                 anchor: 'right-bottom',
+                ignore: 'button, input, select, textarea, a',
                 state: this.storedPos,
                 updateVisualPosition: () => this.updateVisualPosition(),
                 saveState: () => {
@@ -140,14 +188,12 @@
                 cursor: 'grabbing',
                 cursorRestore: 'grab',
             });
-
-            container.appendChild(handle);
         },
     
         injectButtons(container) {
             const button = document.createElement("button");
             button.className = "holaf-layout-btn";
-            button.title = "Move Visible Workflow to Origin (0,0)";
+            button.title = t("lt.moveToOrigin");
             Object.assign(button.style, { width: "32px", height: "32px", cursor: "pointer", backgroundColor: "var(--comfy-input-bg)", border: "1px solid var(--border-color)", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", padding: "4px" });
             button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:100%; height:100%; color: var(--fg-color, white);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`;
             button.onclick = () => this.moveGraphToOrigin();
@@ -210,7 +256,7 @@
             }
     
             if (window.holaf?.toastManager) {
-                window.holaf.toastManager.show({ message: `Recentered ${allEntities.length} elements`, type: "success" });
+                window.holaf.toastManager.show({ message: t("lt.recentered", { count: allEntities.length }), type: "success" });
             }
         }
     };

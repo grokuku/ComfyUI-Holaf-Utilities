@@ -1,5 +1,12 @@
 import "./aih_dialog.js";
+import "./aih/strings.js";
 import { HolafToastManager } from "./holaf_toast_manager.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente)
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 /**
  * AIH Elements Picker — Custom widget for ComfyUI node.
@@ -50,7 +57,7 @@ function apiHeaders() {
 async function apiCall(method, path, body) {
     const baseUrl = getApiUrl();
     if (!baseUrl) {
-        throw new Error("Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+        throw new Error(t("aih.notConfiguredError"));
     }
     const opts = { method, headers: apiHeaders() };
     if (body) opts.body = JSON.stringify(body);
@@ -259,7 +266,7 @@ function _parseConceptSyntax(text, defaultCount) {
                 });
 
                 const presetSelect = document.createElement("select");
-                presetSelect.innerHTML = '<option value="0">-- Preset IA --</option>';
+                presetSelect.innerHTML = '<option value="0">' + t("el.presetPlaceholder") + '</option>';
                 Object.assign(presetSelect.style, {
                     flex: "1", padding: "3px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#3a3a3e",
@@ -268,7 +275,7 @@ function _parseConceptSyntax(text, defaultCount) {
 
                 const llmCountLabel = document.createElement("span");
                 llmCountLabel.textContent = "||N:";
-                llmCountLabel.title = "Nombre par défaut quand on utilise ||concept sans préciser le nombre";
+                llmCountLabel.title = t("el.llmCountTitle");
                 Object.assign(llmCountLabel.style, {
                     fontSize: "10px", color: "#888", whiteSpace: "nowrap", flexShrink: "0",
                 });
@@ -296,7 +303,7 @@ function _parseConceptSyntax(text, defaultCount) {
                 });
 
                 const epPresetSelect = document.createElement("select");
-                epPresetSelect.innerHTML = '<option value="">-- EP Preset --</option>';
+                epPresetSelect.innerHTML = '<option value="">' + t("el.epPresetPlaceholder") + '</option>';
                 Object.assign(epPresetSelect.style, {
                     flex: "1", padding: "3px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#3a3a3e",
@@ -304,7 +311,7 @@ function _parseConceptSyntax(text, defaultCount) {
                 });
 
                 const epPresetSaveBtn = document.createElement("button");
-                epPresetSaveBtn.textContent = "💾 Save";
+                epPresetSaveBtn.textContent = t("el.save");
                 Object.assign(epPresetSaveBtn.style, {
                     padding: "3px 10px", borderRadius: "4px",
                     border: "1px solid #555", background: "#3a3a3e",
@@ -425,7 +432,7 @@ function _parseConceptSyntax(text, defaultCount) {
                         });
                         _epPresetNames = presets.map(p => p.name);
                         const oldVal = epPresetSelect.value;
-                        epPresetSelect.innerHTML = '<option value="">-- EP Preset --</option>';
+                        epPresetSelect.innerHTML = '<option value="">' + t("el.epPresetPlaceholder") + '</option>';
                         presets.forEach(p => {
                             const o = document.createElement("option");
                             o.value = p.name;
@@ -451,7 +458,7 @@ function _parseConceptSyntax(text, defaultCount) {
                                 const visible = e.visible !== false;
                                 if (e.type === "filter") {
                                     return {
-                                        type: "filter", id: e.id, name: e.name || `Filtre #${e.id}`,
+                                        type: "filter", id: e.id, name: e.name || t("el.filterLabel", { id: e.id }),
                                         author: e.author || "?", is_public: !!e.is_public, hint: e.hint || "", visible,
                                     };
                                 }
@@ -498,7 +505,7 @@ function _parseConceptSyntax(text, defaultCount) {
                         clearDirty();
                         node._aihLoadedPresetName = epPresetSelect.value;
                     } catch (err) {
-                        showToast("Erreur", "Impossible de charger le preset : " + err.message);
+                        showToast("error", t("el.loadPresetFailed", { error: err.message }));
                     }
                 }
 
@@ -522,19 +529,19 @@ function _parseConceptSyntax(text, defaultCount) {
                     const presetName = node._aihLoadedPresetName || "";
 
                     const html = '<div style="display:flex;flex-direction:column;gap:12px;padding:12px;">' +
-                        '<label style="font-size:12px;color:#aaa;">Preset name</label>' +
+                        '<label style="font-size:12px;color:#aaa;">' + t("el.presetNameLabel") + '</label>' +
                         '<input list="ep-preset-names" id="ep-preset-input" ' +
                         'style="padding:6px 8px;border-radius:4px;border:1px solid #555;background:#1a1a1e;color:#fff;font-size:12px;" ' +
-                        'placeholder="My preset" value="' + esc(presetName) + '" />' +
+                        'placeholder="' + t("el.presetNamePlaceholder") + '" value="' + esc(presetName) + '" />' +
                         '<datalist id="ep-preset-names">' + datalistOptions + '</datalist>' +
                         '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
-                        '<button id="ep-preset-delete" style="padding:6px 12px;border-radius:4px;border:1px solid #f87171;background:transparent;color:#f87171;font-size:11px;cursor:pointer;">🗑 Delete</button>' +
-                        '<button id="ep-preset-cancel" style="padding:6px 12px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:11px;cursor:pointer;">Cancel</button>' +
-                        '<button id="ep-preset-save" style="padding:6px 12px;border-radius:4px;border:none;background:var(--aih-accent, #D8700D);color:white;font-size:11px;cursor:pointer;font-weight:600;">Save</button>' +
+                        '<button id="ep-preset-delete" style="padding:6px 12px;border-radius:4px;border:1px solid #f87171;background:transparent;color:#f87171;font-size:11px;cursor:pointer;">' + t("el.delete") + '</button>' +
+                        '<button id="ep-preset-cancel" style="padding:6px 12px;border-radius:4px;border:1px solid #555;background:#3a3a3e;color:#ccc;font-size:11px;cursor:pointer;">' + t("el.cancel") + '</button>' +
+                        '<button id="ep-preset-save" style="padding:6px 12px;border-radius:4px;border:none;background:var(--aih-accent, #D8700D);color:white;font-size:11px;cursor:pointer;font-weight:600;">' + t("el.save") + '</button>' +
                         '</div></div>';
 
                     var m = aihOpenModalV2({
-                        title: "Save EP Preset",
+                        title: t("el.saveTitle"),
                         content: html,
                         width: "360px",
                         height: "auto",
@@ -582,14 +589,14 @@ function _parseConceptSyntax(text, defaultCount) {
                             epPresetSelect.value = name;
                             m.close();
                         } catch (err) {
-                            showToast("Erreur", "Save failed: " + err.message);
+                            showToast("error", t("el.saveFailed", { error: err.message }));
                         }
                     };
 
                     deleteBtn.onclick = async () => {
                         const name = input.value.trim();
                         if (!name || !_epPresetNames.includes(name)) return;
-                        if (!(await window.AIH.confirm('Delete preset "' + name + '"?'))) return;
+                        if (!(await window.AIH.confirm(t("el.deletePresetConfirm", { name: name })))) return;
                         try {
                             await apiCall("DELETE", "elements-presets/" + encodeURIComponent(name));
                             _epPresetNames = _epPresetNames.filter(n => n !== name);
@@ -599,9 +606,9 @@ function _parseConceptSyntax(text, defaultCount) {
                                 epPresetSelect.value = "";
                             }
                             updateDeleteBtn();
-                            showToast("Info", "Preset deleted: " + name);
+                            showToast("info", t("el.presetDeleted", { name: name }));
                         } catch (err) {
-                            showToast("Erreur", "Delete failed: " + err.message);
+                            showToast("error", t("el.deleteFailed", { error: err.message }));
                         }
                     };
 
@@ -625,7 +632,7 @@ function _parseConceptSyntax(text, defaultCount) {
                         if (!Array.isArray(items)) return;
                         const oldVal = presetSelect.value;
                         const pendingId = presetSelect.dataset.pendingId;
-                        presetSelect.innerHTML = '<option value="0">-- Preset IA --</option>';
+                        presetSelect.innerHTML = '<option value="0">' + t("el.presetPlaceholder") + '</option>';
                         // Trier par ordre alphabétique
                         items.sort(function(a, b) {
                             var nameA = (a.name || a.title || a.text || a).toString().toLowerCase();
@@ -716,8 +723,8 @@ function _parseConceptSyntax(text, defaultCount) {
                     return b;
                 };
 
-                const addFilterBtn = mkBtn("+ Add saved filter");
-                const addTextBtn = mkBtn("+ Add custom text");
+                const addFilterBtn = mkBtn(t("el.addFilter"));
+                const addTextBtn = mkBtn(t("el.addText"));
 
                 tb.appendChild(addFilterBtn);
                 tb.appendChild(addTextBtn);
@@ -739,7 +746,7 @@ function _parseConceptSyntax(text, defaultCount) {
                 function renderList() {
                     const items = node._aihElements || [];
                     if (items.length === 0) {
-                        listEl.innerHTML = "Aucun élément. Ajoutez des filtres ou du texte custom.";
+                        listEl.innerHTML = t("el.emptyList");
                         listEl.style.color = "#666";
                         return;
                     }
@@ -769,7 +776,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             cursor: "grab", color: "#666", fontSize: "10px", flexShrink: "0",
                             userSelect: "none", marginRight: "2px", touchAction: "none",
                         });
-                        grip.title = "Glisser-déposer pour réorganiser";
+                        grip.title = t("el.dragTitle");
                         grip.onpointerdown = (e) => startDrag(e, idx, row);
 
                         // Icône œil (visible / masqué)
@@ -784,7 +791,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             background: "none", border: "none", color: "#ccc",
                             cursor: "pointer", fontSize: "12px", padding: "0 2px", flexShrink: "0",
                         });
-                        eyeBtn.title = isHidden ? "Activer cette entrée" : "Masquer cette entrée";
+                        eyeBtn.title = isHidden ? t("el.eyeShow") : t("el.eyeHide");
                         eyeBtn.onclick = () => {
                             // Toggle : visible (true ou undefined) → false, false → true
                             if (item.visible === false) {
@@ -812,7 +819,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             filter: brainOn ? "none" : "grayscale(1) opacity(0.4)",
                             color: brainOn ? "var(--aih-accent, #D8700D)" : "#666",
                         });
-                        brainBtn.title = brainOn ? "Mode intelligent ON" : "Mode intelligent OFF";
+                        brainBtn.title = brainOn ? t("el.brainOn") : t("el.brainOff");
                         brainBtn.onclick = () => {
                             item.brain = !item.brain;
                             markDirty();
@@ -831,7 +838,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             const textInput = document.createElement("input");
                             textInput.type = "text";
                             textInput.value = item.text || "";
-                            textInput.placeholder = "Texte... ou {A::B::C} pour alternatives au hasard";
+                            textInput.placeholder = t("el.textPlaceholder");
                             Object.assign(textInput.style, {
                                 flex: "1", minWidth: "0",
                                 padding: "2px 6px", borderRadius: "3px",
@@ -852,8 +859,10 @@ function _parseConceptSyntax(text, defaultCount) {
                                 } else {
                                     const counts = blocks.map(b => b.length);
                                     choiceBadge.textContent = "🔀" + counts.join("·");
-                                    choiceBadge.title = blocks.length + " bloc(s) de choix : " +
-                                        blocks.map(b => "{" + b.join("::") + "}").join(" ");
+                                    choiceBadge.title = t("el.choiceBadgeTitle", {
+                                        count: blocks.length,
+                                        blocks: blocks.map(b => "{" + b.join("::") + "}").join(" "),
+                                    });
                                 }
                             }
                             textInput.oninput = () => {
@@ -869,13 +878,13 @@ function _parseConceptSyntax(text, defaultCount) {
                             // Filtre : nom + meta
                             const label = document.createElement("span");
                             label.style.cssText = "flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-                            label.textContent = item.name || `Filtre #${item.id}`;
+                            label.textContent = item.name || t("el.filterLabel", { id: item.id });
                             row.appendChild(label);
 
                             // Hint input optionnel (à côté du nom du filtre)
                             var hintInput = document.createElement("input");
                             hintInput.type = "text";
-                            hintInput.placeholder = "hint (optional)";
+                            hintInput.placeholder = t("el.hintPlaceholder");
                             hintInput.value = item.hint || "";
                             hintInput.style.cssText = "flex:1; min-width:60px; background:#1a1a1e; border:1px solid #444; color:#ccc; border-radius:3px; padding:2px 6px; font-size:11px;";
                             hintInput.oninput = function() {
@@ -1125,7 +1134,7 @@ function _parseConceptSyntax(text, defaultCount) {
                                 type: "filter",
                                 id: filter.id,
                                 name: filter.name,
-                                author: filter.user_id === currentUserId ? "vous" : (filter.owner_name || filter.user_id?.substring(0,6) || "?"),
+                                author: filter.user_id === currentUserId ? t("el.filterAuthorYou") : (filter.owner_name || filter.user_id?.substring(0,6) || "?"),
                                 is_public: !!filter.is_public,
                             });
                             markDirty();
@@ -1133,7 +1142,7 @@ function _parseConceptSyntax(text, defaultCount) {
                             syncElementsWidget(true);
                         });
                     } catch (err) {
-                        showToast("Erreur", "Impossible de charger les filtres : " + err.message);
+                        showToast("error", t("el.loadFiltersFailed", { error: err.message }));
                     }
                 };
 
@@ -1177,7 +1186,7 @@ function _parseConceptSyntax(text, defaultCount) {
                 const randLabel = document.createElement("label");
                 randLabel.style.fontSize = "11px";
                 randLabel.htmlFor = randCb.id;
-                randLabel.textContent = "Add random";
+                randLabel.textContent = t("el.addRandom");
 
                 // Séparateur visuel
                 const randSep = document.createElement("span");
@@ -1228,7 +1237,7 @@ function _parseConceptSyntax(text, defaultCount) {
                 randN.oninput = () => { syncElementsWidget(true); markDirty(); };
 
                 // ---- Test generation button (hauteur fixe) ----
-                const genBtn = mkBtn("🔄  Test generation", true);
+                const genBtn = mkBtn(t("el.testGeneration"), true);
                 genBtn.style.width = "100%";
                 genBtn.style.padding = "6px";
                 genBtn.style.marginBottom = "8px";
@@ -1301,7 +1310,7 @@ function _parseConceptSyntax(text, defaultCount) {
                     const visibleElements = allElements.filter(e => e.visible !== false);
 
                     if (visibleElements.length === 0 && !randCb.checked) {
-                        result.value = "Ajoutez au moins un élément visible ou activez Add random.";
+                        result.value = t("el.emptyVisible");
                         return;
                     }
 
@@ -1314,9 +1323,9 @@ function _parseConceptSyntax(text, defaultCount) {
 
                     // Indiquer que la génération est en cours
                     var originalBtnText = genBtn.textContent;
-                    genBtn.textContent = "⏳ Génération en cours...";
+                    genBtn.textContent = t("el.generating");
                     genBtn.disabled = true;
-                    result.value = "Génération en cours...";
+                    result.value = t("el.generating");
 
                     // 2. Traiter chaque élément séquentiellement
                     for (var i = 0; i < elements.length; i++) {
@@ -1331,9 +1340,9 @@ function _parseConceptSyntax(text, defaultCount) {
                             var count = parsed.count;
                             var hint = parsed.hint;
                             var instruction = brainOn && context.length > 0
-                                ? "Génère " + count + " " + concept + " cohérents avec le contexte. Retourne uniquement une liste séparée par des virgules."
-                                : "Génère " + count + " " + concept + ". Retourne uniquement une liste séparée par des virgules.";
-                            var inputText = brainOn && context.length > 0 ? "Contexte: [" + context.join(", ") + "]" : "";
+                                ? t("el.llmInstructionCtx", { count: count, concept: concept })
+                                : t("el.llmInstruction", { count: count, concept: concept });
+                            var inputText = brainOn && context.length > 0 ? t("el.contextPrefix", { context: context.join(", ") }) : "";
 
                             try {
                                 var resp = await apiCall("POST", "keywords/llm-process", {
@@ -1367,8 +1376,8 @@ function _parseConceptSyntax(text, defaultCount) {
                                     try {
                                         var resp2 = await apiCall("POST", "keywords/llm-process", {
                                             preset_id: presetId,
-                                            instruction: "Filtre cette liste pour garder uniquement les éléments cohérents avec le contexte. Retourne uniquement une liste séparée par des virgules.",
-                                            input_text: "Contexte: [" + context.join(", ") + "]\nListe: [" + allChoices.join(", ") + "]"
+                                            instruction: t("el.llmFilterInstruction"),
+                                            input_text: t("el.llmFilterInput", { context: context.join(", "), list: allChoices.join(", ") })
                                         });
                                         var filtered = (resp2.output || "").split(/[,\n]/).map(function(s) { return s.trim(); }).filter(Boolean);
                                         if (filtered.length > 0) {
@@ -1431,7 +1440,7 @@ function _parseConceptSyntax(text, defaultCount) {
                         syncElementsWidget(true);
                         syncApiConfigWidget();
                     } catch (err) {
-                        if (n._resultArea) n._resultArea.value = "Erreur : " + err.message;
+                        if (n._resultArea) n._resultArea.value = t("el.resultError", { error: err.message });
                     } finally {
                         genBtn.textContent = originalBtnText;
                         genBtn.disabled = false;
@@ -1455,7 +1464,7 @@ function _parseConceptSyntax(text, defaultCount) {
                     boxSizing: "border-box",
                     flex: "0 0 auto",          // Ne s'étend pas, fixé en bas
                 });
-                result.placeholder = "Résultat...";
+                result.placeholder = t("el.resultPlaceholder");
                 result.readOnly = true;
 
                 // ---- Assemble ----
@@ -1554,7 +1563,7 @@ function _parseConceptSyntax(text, defaultCount) {
                                     return {
                                         type: "filter",
                                         id: e.id,
-                                        name: e.name || `Filtre #${e.id}`,
+                                        name: e.name || t("el.filterLabel", { id: e.id }),
                                         author: e.author || "?",
                                         is_public: !!e.is_public,
                                         hint: e.hint || "",
@@ -1764,26 +1773,26 @@ function showFilterPicker(filters, currentUserId, onSelect) {
     var html = '<div style="max-height:50vh;overflow-y:auto;">';
 
     if (mine.length > 0) {
-        html += '<p style="margin:8px 0 4px;font-size:11px;color:#888;">Mes filtres</p>';
+        html += '<p style="margin:8px 0 4px;font-size:11px;color:#888;">' + t("el.myFilters") + '</p>';
         mine.forEach(function(f) {
             html += '<div class="aih-filter-item" data-id="' + f.id + '" style="padding:6px 8px;cursor:pointer;border-radius:4px;font-size:12px;color:#ccc;background:#3a3a3e;margin-bottom:2px;">' +
                 esc(f.name) + (f.nsfw ? ' 🔞' : '') + '</div>';
         });
     }
     if (pub.length > 0) {
-        html += '<p style="margin:8px 0 4px;font-size:11px;color:#888;">Filtres publics</p>';
+        html += '<p style="margin:8px 0 4px;font-size:11px;color:#888;">' + t("el.publicFilters") + '</p>';
         pub.forEach(function(f) {
             html += '<div class="aih-filter-item" data-id="' + f.id + '" style="padding:6px 8px;cursor:pointer;border-radius:4px;font-size:12px;color:#ccc;background:#3a3a3e;margin-bottom:2px;">' +
-                esc(f.name) + (f.nsfw ? ' 🔞' : '') + ' <span style="color:#888;font-size:10px;">par ' + esc(f.user_id ? f.user_id.substring(0,6) : '?') + '</span></div>';
+                esc(f.name) + (f.nsfw ? ' 🔞' : '') + ' <span style="color:#888;font-size:10px;">' + t("el.by") + esc(f.user_id ? f.user_id.substring(0,6) : '?') + '</span></div>';
         });
     }
     if (filters.length === 0) {
-        html += '<p style="font-size:12px;color:#666;">Aucun filtre disponible.</p>';
+        html += '<p style="font-size:12px;color:#666;">' + t("el.noFilter") + '</p>';
     }
     html += '</div>';
 
     var m = aihOpenModalV2({
-        title: "Choisir un filtre",
+        title: t("el.filterPickerTitle"),
         content: html,
         width: "380px",
         height: "auto",
@@ -1814,8 +1823,7 @@ function showPrompt(title, msg, placeholder, cb) {
     });
 }
 
-function showToast(title, msg) {
-    const type = title === "Succès" ? "success" : title === "Info" ? "info" : "error";
+function showToast(type, msg) {
     let toast = window.holaf && window.holaf.toastManager;
     if (!toast) toast = new HolafToastManager();
     toast.show({ message: msg, type: type, duration: 4000 });

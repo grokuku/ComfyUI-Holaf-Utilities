@@ -1,6 +1,11 @@
 import { app, api } from "./holaf_api_compat.js";
-import { HolafPanelManager } from "./holaf_panel_manager.js";
-import { makeDraggable, makeResizable } from "./holaf_window_utils.js";
+import { makeDraggable, makeResizable, makeContentZoomable, aihWindowManager } from "./holaf_window_utils.js";
+
+// Helper i18n central : traduit via AIH.I18n (clé brute si absente).
+const t = (key, params) => {
+    const I = window.AIH && window.AIH.I18n;
+    return I && typeof I.t === "function" ? I.t(key, params) : key;
+};
 
 const HolafShortcuts = {
     name: "Holaf.Shortcuts",
@@ -133,7 +138,7 @@ const HolafShortcuts = {
         if (!app.canvas || !app.canvas.ds) return;
         
         const newId = Date.now().toString(36);
-        const name = `View ${this.shortcuts.length + 1}`;
+        const name = t("sc.defaultView", { count: this.shortcuts.length + 1 });
         const path = this.getCurrentGraphPath();
 
         this.shortcuts.push({
@@ -205,7 +210,7 @@ const HolafShortcuts = {
         header.style.cursor = "move";
         
         const title = document.createElement("span");
-        title.innerText = "Shortcuts";
+        title.innerText = t("sc.title");
         // Title style handled by .holaf-utility-header CSS
         
         const addBtn = document.createElement("button");
@@ -219,7 +224,7 @@ const HolafShortcuts = {
         const closeBtn = document.createElement("button");
         closeBtn.className = "holaf-utility-close-button";
         closeBtn.textContent = "✕";
-        closeBtn.title = "Close";
+        closeBtn.title = t("dialog.close");
         closeBtn.onmousedown = (e) => e.stopPropagation();
         closeBtn.onclick = () => this.hide();
 
@@ -228,6 +233,7 @@ const HolafShortcuts = {
         header.appendChild(closeBtn);
 
         this.listElement = document.createElement("div");
+        this.listElement.classList.add("holaf-zoom-content");
         Object.assign(this.listElement.style, {
             flex: "1",
             overflowY: "auto",
@@ -235,6 +241,11 @@ const HolafShortcuts = {
         });
 
         this.createResizeHandles();
+
+        // Boutons zoom standard (− / +) : appliqués au contenu (liste, hors
+        // header), persistés sous la clé de fenêtre des raccourcis.
+        const zoomGroup = makeContentZoomable(this.listElement, { key: this.STORAGE_KEY });
+        header.insertBefore(zoomGroup, closeBtn);
 
         this.rootElement.appendChild(header);
         this.rootElement.appendChild(this.listElement);
@@ -251,7 +262,7 @@ const HolafShortcuts = {
         this.listElement.innerHTML = "";
 
         if (this.shortcuts.length === 0) {
-            this.listElement.innerHTML = `<div style="text-align:center; font-size:11px; margin-top:10px; color:var(--holaf-text-secondary);">No shortcuts</div>`;
+            this.listElement.innerHTML = `<div style="text-align:center; font-size:11px; margin-top:10px; color:var(--holaf-text-secondary);">${t("sc.noShortcuts")}</div>`;
             return;
         }
 
@@ -266,7 +277,7 @@ const HolafShortcuts = {
             
             const isDeep = s.path && s.path.length > 0;
             if (isDeep) {
-                nameLabel.title = `Subgraph View (${s.path.length} level(s))`;
+                nameLabel.title = t("sc.subgraphView", { count: s.path.length });
                 nameLabel.innerText = ""; // Clear before appending DOM nodes
                 const small = document.createElement("small");
                 small.style.color = "var(--holaf-accent-color)";
@@ -299,13 +310,13 @@ const HolafShortcuts = {
 
             const updateBtn = document.createElement("button");
             updateBtn.innerHTML = "\U0001f4be"; 
-            updateBtn.title = "Update with current view";
+            updateBtn.title = t("sc.update");
             updateBtn.className = "holaf-shortcut-btn update-btn";
             updateBtn.onclick = (e) => { e.stopPropagation(); this.updateShortcut(s.id); };
 
             const delBtn = document.createElement("button");
             delBtn.innerHTML = "✕";
-            delBtn.title = "Delete";
+            delBtn.title = t("sc.delete");
             delBtn.className = "holaf-shortcut-btn";
             delBtn.onmouseenter = () => delBtn.style.color = "#ff5555";
             delBtn.onmouseleave = () => delBtn.style.color = "var(--holaf-text-secondary)";
@@ -403,13 +414,14 @@ const HolafShortcuts = {
         if (!this.rootElement) this.createHostElement();
         this.rootElement.style.display = "flex";
         this.isVisible = true;
+        aihWindowManager().bringToFront(this.rootElement);
         this.updateVisualPosition();
         this.renderList();
     },
 
     hide() {
         if (this.rootElement) {
-            HolafPanelManager.unregister(this.rootElement);
+            aihWindowManager().unregister(this.rootElement);
             this.rootElement.style.display = "none";
         }
         this.isVisible = false;

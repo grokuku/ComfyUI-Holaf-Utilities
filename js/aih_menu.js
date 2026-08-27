@@ -41,10 +41,17 @@
  * /aih/credentials, /holaf/utilities/restart (cf. aih/routes.py).
  */
 import "./aih_dialog.js";
+import "./aih/strings.js";
 (function () {
     "use strict";
 
     const STORAGE_KEY = "AIH_config";
+
+    // ── Helper i18n central : traduit via AIH.I18n (clé brute si absente) ──
+    const t = (key, params) => {
+        const I = window.AIH && window.AIH.I18n;
+        return I && typeof I.t === "function" ? I.t(key, params) : key;
+    };
 
     function getConfig() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
@@ -66,11 +73,11 @@ import "./aih_dialog.js";
         // configuré, on invite l'utilisateur à le faire dans Settings.
         const baseUrl = (getConfig().serverUrl || "").replace(/\/+$/, "");
         if (!baseUrl) {
-            const msg = "Aucune URL de serveur AIH configurée. Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte » (champ « URL du serveur »).";
+            const msg = t("menu.urlNotConfiguredMsg");
             if (window.holaf?.toastManager) {
                 window.holaf.toastManager.show({ message: msg, type: "info", duration: 8000 });
             } else if (window.aihShowAlert) {
-                window.aihShowAlert("Serveur non configuré", msg, "info");
+                window.aihShowAlert(t("aih.notConfiguredTitle"), msg, "info");
             }
             return;
         }
@@ -81,7 +88,7 @@ import "./aih_dialog.js";
         if (window.openWorkflowManager) {
             window.openWorkflowManager();
         } else {
-            if (window.aihShowAlert) window.aihShowAlert("Info", "Workflow Sharing pas encore chargé. Réessaie.", "info");
+            if (window.aihShowAlert) window.aihShowAlert(t("aih.info"), t("aih.workflowsNotLoaded"), "info");
         }
     }
 
@@ -89,7 +96,7 @@ import "./aih_dialog.js";
         if (window.openModelBrowser) {
             window.openModelBrowser();
         } else {
-            if (window.aihShowAlert) window.aihShowAlert("Info", "Model Browser pas encore chargé.", "info");
+            if (window.aihShowAlert) window.aihShowAlert(t("aih.info"), t("aih.modelBrowserNotLoaded"), "info");
         }
     }
 
@@ -122,8 +129,8 @@ import "./aih_dialog.js";
         const apiKey = cfg.apiKey || "";
 
         const modal = window.aihOpenModalV2({
-            title: "👥 Membres",
-            content: "<p style='color:#888;font-size:12px;'>Chargement...</p>",
+            title: t("menu.membersTitle"),
+            content: "<p style='color:#888;font-size:12px;'>" + t('menu.loading') + "</p>",
             width: "560px",
             height: "auto",
             minHeight: "200px",
@@ -135,7 +142,7 @@ import "./aih_dialog.js";
         // Comportement dégradé : pas d'URL configurée → invitation au lieu
         // d'une requête vers une destination arbitraire.
         if (!baseUrl) {
-            modal.body.innerHTML = `<div style="padding:16px;color:#facc15;font-size:12px;line-height:1.6;">⚠️ Aucune URL de serveur AIH configurée.<br>Renseigne-la dans AIH Utilities ▸ Settings ▸ onglet « AIH · Compte ».</div>`;
+            modal.body.innerHTML = `<div style="padding:16px;color:#facc15;font-size:12px;line-height:1.6;">${t("menu.membersNotConfigured")}</div>`;
             return;
         }
 
@@ -157,10 +164,10 @@ import "./aih_dialog.js";
             let html = `<table style="width:100%;border-collapse:collapse;font-size:12px;color:#ccc;">
                 <thead>
                     <tr style="border-bottom:1px solid #555;">
-                        <th style="text-align:left;padding:6px 8px;color:#888;font-weight:600;">Membre</th>
-                        <th style="text-align:center;padding:6px 4px;color:#888;font-weight:600;">Rôle</th>
-                        <th style="text-align:center;padding:6px 4px;color:#888;font-weight:600;">Filtres</th>
-                        <th style="text-align:center;padding:6px 4px;color:#888;font-weight:600;">Prompts</th>
+                        <th style="text-align:left;padding:6px 8px;color:#888;font-weight:600;">${t("menu.colMember")}</th>
+                        <th style="text-align:center;padding:6px 4px;color:#888;font-weight:600;">${t("menu.colRole")}</th>
+                        <th style="text-align:center;padding:6px 4px;color:#888;font-weight:600;">${t("menu.colFilters")}</th>
+                        <th style="text-align:center;padding:6px 4px;color:#888;font-weight:600;">${t("menu.colPrompts")}</th>
                     </tr>
                 </thead><tbody>`;
 
@@ -171,7 +178,7 @@ import "./aih_dialog.js";
                     ? '<span style="background:var(--aih-accent, #D8700D);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">admin</span>'
                     : m.role === "kw_editor"
                       ? '<span style="background:#d97706;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">kw_editor</span>'
-                      : '<span style="color:#888;font-size:11px;">membre</span>';
+                      : '<span style="color:#888;font-size:11px;">' + t('menu.memberBadge') + '</span>';
 
                 html += `<tr style="border-bottom:1px solid #333;">
                     <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
@@ -187,7 +194,7 @@ import "./aih_dialog.js";
             html += "</tbody></table>";
             modal.body.innerHTML = html;
         } catch (err) {
-            modal.body.innerHTML = `<p style="color:#f87171;font-size:12px;">Erreur : ${err.message}</p>`;
+            modal.body.innerHTML = `<p style="color:#f87171;font-size:12px;">${t("menu.membersError", { error: err.message })}</p>`;
         }
     }
 
@@ -204,7 +211,7 @@ import "./aih_dialog.js";
             el.innerHTML = "";
             el.style.display = "flex";
             el.style.alignItems = "center";
-            el.textContent = "⚪  Serveur AIH non configuré (Settings ▸ AIH · Compte)";
+            el.textContent = t("menu.serverNotConfiguredStatus");
             el.style.color = "#888";
             return;
         }
@@ -263,17 +270,17 @@ import "./aih_dialog.js";
 
                 el.style.color = "#4ade80";
             } else if (serverOk) {
-                el.textContent = "🟢  Serveur en ligne (non connecté)";
+                el.textContent = t("menu.serverOnline");
                 el.style.color = "#4ade80";
             } else if (statsResp) {
-                el.textContent = "🟡  Serveur répond (HTTP " + statsResp.status + ")";
+                el.textContent = t("menu.serverResponds", { status: statsResp.status });
                 el.style.color = "#facc15";
             } else {
-                el.textContent = "🔴  Serveur hors ligne";
+                el.textContent = t("menu.serverOffline");
                 el.style.color = "#f87171";
             }
         } catch {
-            el.textContent = "🔴  Serveur hors ligne";
+            el.textContent = t("menu.serverOffline");
             el.style.color = "#f87171";
         }
     }
@@ -295,11 +302,11 @@ import "./aih_dialog.js";
         }
         // Fallback : le panneau Settings AIH n'est pas disponible
         // (holaf_settings_manager.js pas encore chargé).
-        const msg = "Le panneau Settings AIH n'est pas disponible. Ouvre AIH Utilities ▸ Settings pour configurer le compte AIH.";
+        const msg = t("aih.settingsUnavailable");
         if (window.holaf?.toastManager) {
             window.holaf.toastManager.show({ message: msg, type: "info", duration: 6000 });
         } else if (window.aihShowAlert) {
-            window.aihShowAlert("Info", msg, "info");
+            window.aihShowAlert(t("aih.info"), msg, "info");
         }
     }
 
@@ -320,7 +327,7 @@ import "./aih_dialog.js";
         // automatiquement. Sans URL configurée : erreur explicite.
         const baseUrl = (cfg.serverUrl || "").replace(/\/+$/, "");
         if (!baseUrl) {
-            throw new Error("Serveur AIH non configuré — AIH Utilities ▸ Settings ▸ onglet « AIH · Compte »");
+            throw new Error(t("aih.notConfiguredError"));
         }
         const headers = { "Content-Type": "application/json" };
         if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
@@ -364,24 +371,24 @@ import "./aih_dialog.js";
         // Status du fichier de credentials
         const status = document.createElement("p");
         status.style.cssText = "margin:0 0 12px; font-size:11px; color:#888;";
-        status.textContent = "Chargement...";
+        status.textContent = t("menu.loading");
         section.appendChild(status);
 
         const lbl1 = document.createElement("label");
-        lbl1.textContent = "URL du serveur";
+        lbl1.textContent = t("menu.urlServer");
         lbl1.style.cssText = _aihStyle.label;
         section.appendChild(lbl1);
 
         const inputUrl = document.createElement("input");
         inputUrl.type = "url";
         inputUrl.value = cfg.serverUrl || "";
-        inputUrl.placeholder = "https://mon-serveur-aih.example.com";
+        inputUrl.placeholder = t("menu.serverUrlPlaceholder");
         inputUrl.style.cssText = _aihStyle.input;
         inputUrl.style.marginBottom = "12px";
         section.appendChild(inputUrl);
 
         const lbl2 = document.createElement("label");
-        lbl2.textContent = "Clé API";
+        lbl2.textContent = t("menu.apiKey");
         lbl2.style.cssText = _aihStyle.label;
         section.appendChild(lbl2);
 
@@ -393,11 +400,11 @@ import "./aih_dialog.js";
         section.appendChild(inputKey);
 
         const hint = document.createElement("p");
-        hint.textContent = "Générez votre clé sur le site web → Settings → Clé API";
+        hint.textContent = t("menu.apiKeyHint");
         Object.assign(hint.style, { margin: "0 0 12px", fontSize: "11px", color: "#888" });
         section.appendChild(hint);
 
-        const saveBtn = mkBtn("Sauvegarder", _aihStyle.btn(), async () => {
+        const saveBtn = mkBtn(t("menu.save"), _aihStyle.btn(), async () => {
             saveBtn.disabled = true;
             saveBtn.textContent = "...";
             try {
@@ -416,21 +423,21 @@ import "./aih_dialog.js";
                         serverUrl: inputUrl.value.trim(),
                         apiKey: inputKey.value.trim(),
                     });
-                    status.textContent = `✓ Sauvegardé dans ${data.path}`;
+                    status.textContent = t("menu.savedIn", { path: data.path });
                     status.style.color = "#4ade80";
-                    saveBtn.textContent = "✓ Sauvegardé";
+                    saveBtn.textContent = t("menu.saved");
                 } else {
-                    status.textContent = `✗ Erreur : ${data.message || "inconnue"}`;
+                    status.textContent = t("menu.saveErr", { error: data.message || t("aih.unknown") });
                     status.style.color = "#ef4444";
-                    saveBtn.textContent = "Erreur";
+                    saveBtn.textContent = t("dialog.error");
                 }
             } catch (err) {
-                status.textContent = `✗ Erreur réseau : ${err.message}`;
+                status.textContent = t("menu.networkError", { error: err.message });
                 status.style.color = "#ef4444";
-                saveBtn.textContent = "Erreur";
+                saveBtn.textContent = t("dialog.error");
             } finally {
                 saveBtn.disabled = false;
-                setTimeout(() => { saveBtn.textContent = "Sauvegarder"; }, 2000);
+                setTimeout(() => { saveBtn.textContent = t("menu.save"); }, 2000);
             }
         });
         section.appendChild(saveBtn);
@@ -444,13 +451,13 @@ import "./aih_dialog.js";
                     if (data.server_url) inputUrl.value = data.server_url;
                     if (data.api_key) inputKey.value = data.api_key;
                     if (data.path) {
-                        status.textContent = `Fichier : ${data.path}`;
+                        status.textContent = t("menu.file", { path: data.path });
                         status.style.color = "#888";
                     }
                     // Auto-migration : si le fichier n'existe pas mais que
                     // localStorage a une cle, on migre silencieusement.
                     if (!data.exists && cfg.apiKey) {
-                        status.textContent = "⟳ Migration depuis localStorage...";
+                        status.textContent = t("menu.migrating");
                         status.style.color = "#facc15";
                         return fetch("/aih/credentials", {
                             method: "POST",
@@ -461,21 +468,21 @@ import "./aih_dialog.js";
                             }),
                         }).then(r => r.json()).then(saveData => {
                             if (saveData.status === "ok") {
-                                status.textContent = `✓ Migré depuis localStorage vers ${saveData.path}`;
+                                status.textContent = t("menu.migrated", { path: saveData.path });
                                 status.style.color = "#4ade80";
                             } else {
-                                status.textContent = `✗ Échec migration : ${saveData.message || "inconnu"}`;
+                                status.textContent = t("menu.migrationFailed", { error: saveData.message || t("menu.unknown") });
                                 status.style.color = "#ef4444";
                             }
                         });
                     }
                 } else {
-                    status.textContent = `✗ Impossible de lire le fichier : ${data.message || "inconnu"}`;
+                    status.textContent = t("menu.readFileFailed", { error: data.message || t("menu.unknown") });
                     status.style.color = "#ef4444";
                 }
             })
             .catch(err => {
-                status.textContent = `✗ Erreur de chargement : ${err.message}`;
+                status.textContent = t("menu.loadError", { error: err.message });
                 status.style.color = "#ef4444";
             });
     }
@@ -496,7 +503,7 @@ import "./aih_dialog.js";
         const listSection = document.createElement("div");
         listSection.style.cssText = _aihStyle.section;
         const listTitle = document.createElement("h3");
-        listTitle.textContent = "MES PRESETS";
+        listTitle.textContent = t("menu.myPresets");
         Object.assign(listTitle.style, { margin: "0 0 8px", fontSize: "11px", color: "#888", fontWeight: "600" });
         listSection.appendChild(listTitle);
         container.appendChild(listSection);
@@ -505,12 +512,12 @@ import "./aih_dialog.js";
             const presets = await _aihFetchApi("presets");
             listSection.innerHTML = "";
             const t = document.createElement("h3");
-            t.textContent = "MES PRESETS";
+            t.textContent = t("menu.myPresets");
             Object.assign(t.style, { margin: "0 0 8px", fontSize: "11px", color: "#888", fontWeight: "600" });
             listSection.appendChild(t);
             if (presets.length === 0) {
                 const empty = document.createElement("p");
-                empty.textContent = "Aucun preset. Créez-en un ci-dessous.";
+                empty.textContent = t("menu.noPresets");
                 Object.assign(empty.style, { color: "#888", fontSize: "12px", margin: "0" });
                 listSection.appendChild(empty);
                 return;
@@ -522,27 +529,27 @@ import "./aih_dialog.js";
                     padding: "6px 8px", borderBottom: "1px solid #2a2a2e", fontSize: "12px",
                 });
                 const left = document.createElement("div");
-                const scope = p.is_global ? "global" : (p.owner_name ? `(${p.owner_name})` : "personnel");
+                const scope = p.is_global ? t("menu.scopeGlobal") : (p.owner_name ? `(${p.owner_name})` : t("menu.scopePersonal"));
                 const clientBadge = p.is_client_side ? " <span style='color:#f59e0b;'>🖥️</span>" : "";
                 left.innerHTML = `<strong style='color:#fff;'>${p.name}</strong> <span style='color:#888;'>[${scope}]</span> ${clientBadge}<br><span style='color:#888;font-size:10px;'>${p.model} @ ${p.base_url}</span>`;
                 const actions = document.createElement("div");
                 Object.assign(actions.style, { display: "flex", gap: "4px" });
-                const editBtn = mkBtn("Edit", _aihStyle.btnSecondary, () => fillForm(p));
-                const dupBtn = mkBtn("Dup", _aihStyle.btnSecondary, async () => {
+                const editBtn = mkBtn(t("menu.edit"), _aihStyle.btnSecondary, () => fillForm(p));
+                const dupBtn = mkBtn(t("menu.dup"), _aihStyle.btnSecondary, async () => {
                     const body = { ...p };
                     delete body.id;
-                    body.name = p.name + " (copie)";
+                    body.name = p.name + t("menu.dupCopy");
                     try {
                         await _aihFetchApi("presets", { method: "POST", body });
                         reloadPresets();
-                    } catch (e) { await window.aihShowAlert("Erreur", "Erreur duplication : " + e.message, "error"); }
+                    } catch (e) { await window.aihShowAlert(t("dialog.error"), t("menu.dupError", { error: e.message }), "error"); }
                 });
-                const delBtn = mkBtn("Del", "padding:6px 12px;border-radius:4px;border:none;background:#7f1d1d;color:white;cursor:pointer;font-size:12px;", async () => {
-                    var ok = await window.aihShowConfirm("Supprimer", "Supprimer " + p.name + " ?"); if (!ok) return;
+                const delBtn = mkBtn(t("menu.del"), "padding:6px 12px;border-radius:4px;border:none;background:#7f1d1d;color:white;cursor:pointer;font-size:12px;", async () => {
+                    var ok = await window.aihShowConfirm(t("dialog.delete"), t("menu.delConfirm", { name: p.name })); if (!ok) return;
                     try {
                         await _aihFetchApi(`presets/${p.id}`, { method: "DELETE" });
                         reloadPresets();
-                    } catch (e) { await window.aihShowAlert("Erreur", "Erreur suppression : " + e.message, "error"); }
+                    } catch (e) { await window.aihShowAlert(t("dialog.error"), t("menu.delError", { error: e.message }), "error"); }
                 });
                 actions.append(editBtn, dupBtn, delBtn);
                 row.append(left, actions);
@@ -559,7 +566,7 @@ import "./aih_dialog.js";
 
         const formTitle = document.createElement("h3");
         formTitle.id = "aih-preset-form-title";
-        formTitle.textContent = "Nouveau preset";
+        formTitle.textContent = t("menu.newPreset");
         Object.assign(formTitle.style, { margin: "0 0 10px", fontSize: "11px", color: "#888", fontWeight: "600" });
         form.appendChild(formTitle);
 
@@ -579,13 +586,13 @@ import "./aih_dialog.js";
             return { wrap, input };
         };
 
-        const fName = mkField("Nom du preset", "text", "", "");
+        const fName = mkField(t("menu.presetName"), "text", "", "");
         form.appendChild(fName.wrap);
 
-        const fUrl = mkField("URL du serveur", "url", "", "http://localhost:11434/v1");
+        const fUrl = mkField(t("menu.urlServer"), "url", "", t("menu.urlPlaceholder"));
         form.appendChild(fUrl.wrap);
 
-        const fKey = mkField("API Key (optionnel)", "password", "", "");
+        const fKey = mkField(t("menu.apiKeyOptional"), "password", "", "");
         form.appendChild(fKey.wrap);
 
         // Modele + bouton Lister
@@ -594,20 +601,20 @@ import "./aih_dialog.js";
         const fModelWrap = document.createElement("div");
         fModelWrap.style.cssText = "flex:1;";
         const lblModel = document.createElement("label");
-        lblModel.textContent = "Modele";
+        lblModel.textContent = t("menu.model");
         lblModel.style.cssText = _aihStyle.label;
         fModelWrap.appendChild(lblModel);
         const fModel = document.createElement("input");
         fModel.type = "text";
-        fModel.placeholder = "llama3";
+        fModel.placeholder = t("menu.modelPlaceholder");
         fModel.style.cssText = _aihStyle.input;
         fModelWrap.appendChild(fModel);
         modelRow.appendChild(fModelWrap);
 
-        const listModelsBtn = mkBtn("Lister", "padding:6px 10px;border-radius:4px;border:1px solid #ff8c00;background:transparent;color:#ff8c00;cursor:pointer;font-size:11px;flex:0 0 auto;height:28px;");
+        const listModelsBtn = mkBtn(t("menu.list"), "padding:6px 10px;border-radius:4px;border:1px solid #ff8c00;background:transparent;color:#ff8c00;cursor:pointer;font-size:11px;flex:0 0 auto;height:28px;");
         listModelsBtn.onclick = async () => {
             const url = fUrl.input.value.trim();
-            if (!url) { await window.aihShowAlert("Info", "Saisis l'URL d'abord", "info"); return; }
+            if (!url) { await window.aihShowAlert(t("aih.info"), t("menu.listUrlFirst"), "info"); return; }
             try {
                 let models;
                 const isClient = fClientInput.checked;
@@ -630,10 +637,10 @@ import "./aih_dialog.js";
                     models = resp;
                 }
                 // Proposer un select inline pour choisir
-                var choice = await window.aihShowPrompt("Choisir un modèle", "Modèles trouvés :\n" + models.map(m => "- " + m.id).join("\n") + "\n\nColle l'ID du modèle désiré :", models[0]?.id || "");
+                var choice = await window.aihShowPrompt(t("menu.chooseModel"), t("menu.chooseModelMsg", { list: models.map(m => "- " + m.id).join("\n") }), models[0]?.id || "");
                 if (choice) fModel.value = choice.trim();
             } catch (e) {
-                await window.aihShowAlert("Erreur", "Erreur listage modèles : " + e.message, "error");
+                await window.aihShowAlert(t("dialog.error"), t("menu.listModelsError", { error: e.message }), "error");
             }
         };
         modelRow.appendChild(listModelsBtn);
@@ -652,8 +659,8 @@ import "./aih_dialog.js";
             w.appendChild(document.createTextNode(label));
             return { wrap: w, input: i };
         };
-        const fGlobal = mkCheck("Global (visible par tous)", false);
-        const fClient = mkCheck("Client-side", false);
+        const fGlobal = mkCheck(t("menu.globalCheck"), false);
+        const fClient = mkCheck(t("menu.clientSide"), false);
         const fClientInput = fClient.input;
         checks.append(fGlobal.wrap, fClient.wrap);
         form.appendChild(checks);
@@ -665,10 +672,10 @@ import "./aih_dialog.js";
             editingId.value = null;
             fName.input.value = ""; fUrl.input.value = ""; fKey.input.value = "";
             fModel.value = ""; fGlobal.input.checked = false; fClientInput.checked = false;
-            formTitle.textContent = "Nouveau preset";
+            formTitle.textContent = t("menu.newPreset");
         };
-        const cancelBtn = mkBtn("Annuler", _aihStyle.btnSecondary, resetForm);
-        const saveBtn = mkBtn("Sauvegarder", _aihStyle.btn(), async () => {
+        const cancelBtn = mkBtn(t("dialog.cancel"), _aihStyle.btnSecondary, resetForm);
+        const saveBtn = mkBtn(t("menu.save"), _aihStyle.btn(), async () => {
             const body = {
                 name: fName.input.value.trim(),
                 base_url: fUrl.input.value.trim(),
@@ -678,7 +685,7 @@ import "./aih_dialog.js";
                 is_client_side: fClientInput.checked ? 1 : 0,
             };
             if (!body.name || !body.base_url || !body.model) {
-                await window.aihShowAlert("Info", "Nom, URL et modèle sont requis", "info"); return;
+                await window.aihShowAlert(t("aih.info"), t("menu.requiredFields"), "info"); return;
             }
             try {
                 if (editingId.value) {
@@ -689,7 +696,7 @@ import "./aih_dialog.js";
                 resetForm();
                 reloadPresets();
             } catch (e) {
-                await window.aihShowAlert("Erreur", "Erreur sauvegarde : " + e.message, "error");
+                await window.aihShowAlert(t("dialog.error"), t("menu.saveError", { error: e.message }), "error");
             }
         });
         btnRow.append(cancelBtn, saveBtn);
@@ -704,7 +711,7 @@ import "./aih_dialog.js";
             fModel.value = p.model || "";
             fGlobal.input.checked = !!p.is_global;
             fClientInput.checked = !!p.is_client_side;
-            formTitle.textContent = "Modifier preset";
+            formTitle.textContent = t("menu.editPreset");
         }
     }
 
@@ -722,11 +729,11 @@ import "./aih_dialog.js";
     async function openUpdate() {
         // Modale d'attente
         const modal = window.aihOpenModalV2({
-            title: "🔄 Update AIH",
+            title: t("menu.updateTitle"),
             content: `
             <div style="padding:8px 0;">
                 <p style="color:#ccc; font-size:13px; margin:0 0 12px;">
-                    Mise à jour du repo <code style="background:#1a1a1e; padding:1px 5px; border-radius:3px;">AIH_Tools</code> en cours...
+                    ${t("menu.updatingRepo")}
                 </p>
                 <div id="aih-update-spinner" style="text-align:center; padding:20px;">
                     <span style="display:inline-block; width:32px; height:32px; border:3px solid #444; border-top-color:#ff8c00; border-radius:50%; animation:aih-spin 1s linear infinite;"></span>
@@ -751,7 +758,7 @@ import "./aih_dialog.js";
             const data = await resp.json();
             spinnerEl.style.display = "none";
             logEl.style.display = "block";
-            logEl.textContent = data.log || "(pas de log)";
+            logEl.textContent = data.log || t("menu.noLog");
 
             if (data.status === "ok" && data.updated) {
                 // Mise à jour effectuée : proposer de redémarrer
@@ -759,11 +766,11 @@ import "./aih_dialog.js";
                 restartSection.style.cssText = "margin-top:14px; padding:12px; background:#1a2e1a; border:1px solid #2d5a2d; border-radius:6px;";
                 restartSection.innerHTML = `
                     <p style="color:#4ade80; font-size:13px; margin:0 0 8px;">
-                        ✓ Mise à jour installée. Un redémarrage de ComfyUI est nécessaire pour charger les nouveaux fichiers.
+                        ${t("menu.updateInstalledMsg")}
                     </p>
                     <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button id="aih-update-later" style="padding:6px 14px; border-radius:6px; border:1px solid #555; background:transparent; color:#ccc; cursor:pointer; font-size:12px;">Plus tard</button>
-                        <button id="aih-update-restart" style="padding:6px 14px; border-radius:6px; border:none; background:#ff8c00; color:white; cursor:pointer; font-size:12px; font-weight:600;">Redémarrer ComfyUI</button>
+                        <button id="aih-update-later" style="padding:6px 14px; border-radius:6px; border:1px solid #555; background:transparent; color:#ccc; cursor:pointer; font-size:12px;">' + t('menu.later') + '</button>
+                        <button id="aih-update-restart" style="padding:6px 14px; border-radius:6px; border:none; background:#ff8c00; color:white; cursor:pointer; font-size:12px; font-weight:600;">' + t('menu.restartComfy') + '</button>
                     </div>
                 `;
                 modal.body.appendChild(restartSection);
@@ -788,7 +795,7 @@ import "./aih_dialog.js";
                     // on ne recrée PAS de polling/reload local.
                     if (window.holaf && window.holaf.toastManager) {
                         window.holaf.toastManager.show({
-                            message: "Redémarrage commun indisponible pour l'instant. " +
+                            message: t("menu.restartUnavailable") + " " +
                                 "<a href='#' onclick='event.preventDefault(); location.reload(); " +
                                 "return false;' style='color:inherit;'>Recharger manuellement</a>",
                             type: "error"
@@ -801,9 +808,9 @@ import "./aih_dialog.js";
                 // Déjà à jour
                 const okSection = document.createElement("div");
                 okSection.style.cssText = "margin-top:14px; padding:12px; background:#1a2e1a; border:1px solid #2d5a2d; border-radius:6px; text-align:center;";
-                okSection.innerHTML = `<p style="color:#4ade80; font-size:13px; margin:0 0 8px;">✓ Vous êtes déjà à jour.</p>`;
+                okSection.innerHTML = `<p style="color:#4ade80; font-size:13px; margin:0 0 8px;">${t("menu.upToDate")}</p>`;
                 const closeBtn = document.createElement("button");
-                closeBtn.textContent = "Fermer";
+                closeBtn.textContent = t("menu.close");
                 Object.assign(closeBtn.style, { padding: "6px 14px", borderRadius: "6px", border: "1px solid #555", background: "transparent", color: "#ccc", cursor: "pointer", fontSize: "12px" });
                 closeBtn.onclick = () => modal.close();
                 okSection.appendChild(closeBtn);
@@ -812,9 +819,9 @@ import "./aih_dialog.js";
                 // Erreur
                 const errSection = document.createElement("div");
                 errSection.style.cssText = "margin-top:14px; padding:12px; background:#2e1a1a; border:1px solid #5a2d2d; border-radius:6px; text-align:center;";
-                errSection.innerHTML = `<p style="color:#f87171; font-size:13px; margin:0 0 8px;">✗ ${data.message || "Erreur inconnue"}</p>`;
+                errSection.innerHTML = `<p style="color:#f87171; font-size:13px; margin:0 0 8px;">✗ ${data.message || t("menu.updateError")}</p>`;
                 const closeBtn = document.createElement("button");
-                closeBtn.textContent = "Fermer";
+                closeBtn.textContent = t("menu.close");
                 Object.assign(closeBtn.style, { padding: "6px 14px", borderRadius: "6px", border: "1px solid #555", background: "transparent", color: "#ccc", cursor: "pointer", fontSize: "12px" });
                 closeBtn.onclick = () => modal.close();
                 errSection.appendChild(closeBtn);
@@ -823,7 +830,7 @@ import "./aih_dialog.js";
         } catch (err) {
             spinnerEl.style.display = "none";
             logEl.style.display = "block";
-            logEl.textContent = "Erreur réseau : " + err.message;
+            logEl.textContent = t("menu.networkError", { error: err.message });
         }
     }
 
