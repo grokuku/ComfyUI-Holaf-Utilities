@@ -769,8 +769,8 @@ import "./aih_strings.js";
                         ${t("menu.updateInstalledMsg")}
                     </p>
                     <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button id="aih-update-later" style="padding:6px 14px; border-radius:6px; border:1px solid #555; background:transparent; color:#ccc; cursor:pointer; font-size:12px;">' + t('menu.later') + '</button>
-                        <button id="aih-update-restart" style="padding:6px 14px; border-radius:6px; border:none; background:#ff8c00; color:white; cursor:pointer; font-size:12px; font-weight:600;">' + t('menu.restartComfy') + '</button>
+                        <button id="aih-update-later" style="padding:6px 14px; border-radius:6px; border:1px solid #555; background:transparent; color:#ccc; cursor:pointer; font-size:12px;">${t("menu.later")}</button>
+                        <button id="aih-update-restart" style="padding:6px 14px; border-radius:6px; border:none; background:#ff8c00; color:white; cursor:pointer; font-size:12px; font-weight:600;">${t("menu.restartComfy")}</button>
                     </div>
                 `;
                 modal.body.appendChild(restartSection);
