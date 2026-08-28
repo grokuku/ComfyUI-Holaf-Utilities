@@ -37,12 +37,23 @@ The node tries three extraction strategies in order:
 If Pinterest blocks the request (HTTP 403/429) or changes its structure so no
 image URL can be found, a clear ``ValueError`` is raised so the failure is
 visible in the ComfyUI console instead of silently producing garbage.
+
+ANTI-DUPLICATE (random mode only)
+---------------------------------
+In RANDOM mode (``seed == 0``) the node keeps an in-memory, per-theme history
+of the URLs already picked and avoids re-picking them while the current pool
+still has unseen URLs. This history is bounded to the 50 most recent picks per
+theme and is reset automatically when the whole current pool has been covered.
+It lives only in RAM, so it is lost when ComfyUI restarts. When ``seed != 0``
+this memory is completely ignored so reproducibility stays strict (same seed ->
+same image).
 """
 
 import os
 import re
 import json
 import random
+import threading
 import logging
 import hashlib
 import urllib.parse
@@ -76,6 +87,19 @@ from holaf_node_helpers import pil_to_tensor  # noqa: E402  (requires _NODE_DIR 
 from holaf_utils import sanitize_filename  # noqa: E402  (requires _PACK_ROOT above)
 
 logger = logging.getLogger("Holaf.PinterestRandomImage")
+
+# --- Anti-duplicate memory (random mode only) --------------------------------
+# In-memory, per-theme history of the URLs already picked in RANDOM mode
+# (``seed == 0``). It is used to avoid returning the same image twice in a row
+# while the current pool still has unseen URLs. It is bounded to the 50 most
+# recent picks per theme and is reset automatically when the pool is exhausted.
+# This memory lives only in RAM: it is lost when ComfyUI restarts, and it is
+# completely ignored when ``seed != 0`` so reproducibility stays strict.
+_RECENT_PICKS: dict[str, list[str]] = {}
+_RECENT_LOCK = threading.Lock()
+
+#: Maximum number of remembered picks per theme (most recent kept).
+_RECENT_MAX = 50
 
 # --- Constants ---------------------------------------------------------------
 _USER_AGENT = (
@@ -340,8 +364,14 @@ class HolafPinterestRandomImage:
     """Fetch a random image from Pinterest for a given theme.
 
     - ``seed == 0``  -> a random seed is drawn each run (non-reproducible).
+      In this mode an in-memory anti-duplicate history (per theme, bounded to
+      the 50 most recent picks, reset when the pool is exhausted, lost on
+      ComfyUI restart) avoids re-picking the same image while the current pool
+      still has unseen URLs.
     - ``seed != 0``  -> the same seed always picks the same image for the same
       search results (reproducible, as long as Pinterest returns the same set).
+      The anti-duplicate memory is IGNORED in this mode so reproducibility
+      stays strict.
     """
 
     @classmethod
@@ -360,6 +390,15 @@ class HolafPinterestRandomImage:
     CATEGORY = "AIH/IO"
 
     def load_random_image(self, theme, seed, save_to_input):
+        """Load a random Pinterest image for ``theme``.
+
+        In RANDOM mode (``seed == 0``) an in-memory anti-duplicate history
+        (per theme, bounded to the 50 most recent picks, reset when the pool is
+        exhausted, lost on ComfyUI restart) avoids re-picking the same image
+        while the current pool still has unseen URLs. In REPRODUCIBLE mode
+        (``seed != 0``) this memory is ignored so the same seed always yields
+        the same image for the same search results.
+        """
         # 1. Collect candidate image URLs (SearchResource first, HTML fallback).
         urls = _collect_image_urls(theme)
 
@@ -372,10 +411,38 @@ class HolafPinterestRandomImage:
 
         # 3. Rank by size preference and pick one deterministically from the seed.
         urls = _rank_urls(urls)
-        if seed == 0:
+        is_random = (seed == 0)
+        if is_random:
             seed = random.randint(0, 2**31 - 1)
+            # Anti-duplicate: avoid re-picking URLs already drawn for this theme
+            # while the current pool still has unseen URLs.
+            with _RECENT_LOCK:
+                recent = _RECENT_PICKS.get(theme, [])
+                recent_set = set(recent)
+                candidates = [u for u in urls if u not in recent_set]
+                if not candidates:
+                    # Pool exhausted: reset the theme history and use the full pool.
+                    _RECENT_PICKS[theme] = []
+                    candidates = urls
+                    logger.info(
+                        f"Pool épuisé pour le thème '{theme}', "
+                        "réinitialisation de l'historique anti-doublon"
+                    )
+        else:
+            # Reproducible mode: ignore the anti-duplicate memory entirely.
+            candidates = urls
+
         rng = random.Random(seed)
-        url = urls[rng.randrange(len(urls))]
+        url = candidates[rng.randrange(len(candidates))]
+
+        if is_random:
+            # Remember this pick (bounded to the 50 most recent per theme).
+            with _RECENT_LOCK:
+                recent = _RECENT_PICKS.get(theme, [])
+                recent.append(url)
+                if len(recent) > _RECENT_MAX:
+                    recent = recent[-_RECENT_MAX:]
+                _RECENT_PICKS[theme] = recent
 
         # 4. Download and decode the image.
         content = _download_image(url)
