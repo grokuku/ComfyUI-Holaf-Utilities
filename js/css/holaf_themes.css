@@ -60,7 +60,9 @@
     --aih-accent-light: #B45A08;        /* variante light (plus sombre) */
     --aih-accent-light-hover: #9A4D06;
     --aih-accent-text: #FFFFFF;
-    --aih-halo-color: rgba(216, 112, 13, 0.5);
+    --aih-halo-intensity: 50;
+    --aih-highlight-intensity: 100;
+    --aih-halo-color: color-mix(in srgb, var(--aih-accent) calc(var(--aih-halo-intensity) * 1%), transparent);
 
     /* Accent résolu selon le mode (dérivé par .aih-mode-*) */
     --aih-accent-active: var(--aih-accent);
@@ -72,7 +74,7 @@
 
     /* ───────────── HIGHLIGHT (contour coloré de la fenêtre active) ─────────────
        Par défaut = accent actif (dérivé du mode). Neutralisée par .aih-highlight-off. */
-    --aih-highlight: var(--aih-accent-active);
+    --aih-highlight: color-mix(in srgb, var(--aih-accent-active) calc(var(--aih-highlight-intensity) * 1%), transparent);
 
     /* ───────────── Formes & ombres ───────────── */
     --aih-radius: 10px;
@@ -242,7 +244,7 @@
     --aih-accent-light: #B45A08;
     --aih-accent-light-hover: #9A4D06;
     --aih-accent-text: #FFFFFF;
-    --aih-halo-color: rgba(216, 112, 13, 0.5);
+    --aih-halo-color: color-mix(in srgb, var(--aih-accent) calc(var(--aih-halo-intensity) * 1%), transparent);
 }
 
 .aih-accent-blue {

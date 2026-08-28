@@ -29,12 +29,14 @@
     --aih-input-focus: var(--aih-accent);
 
     /* HALO : lueur des fenêtres actives (neutralisée par .aih-halo-off) */
-    --aih-halo-color: rgba(216, 112, 13, 0.5);
+    --aih-halo-intensity: 50;
+    --aih-highlight-intensity: 100;
+    --aih-halo-color: color-mix(in srgb, var(--aih-accent) calc(var(--aih-halo-intensity) * 1%), transparent);
     --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
 
     /* HIGHLIGHT : contour coloré de la fenêtre active (neutralisé par
        .aih-highlight-off). INDÉPENDANT du halo (box-shadow). */
-    --aih-highlight: var(--aih-accent-active);
+    --aih-highlight: color-mix(in srgb, var(--aih-accent-active) calc(var(--aih-highlight-intensity) * 1%), transparent);
 
     /* Surfaces */
     --aih-bg: #1E1E1E;

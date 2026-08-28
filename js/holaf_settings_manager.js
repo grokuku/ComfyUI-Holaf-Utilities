@@ -256,11 +256,19 @@ const HolafSettingsManager = {
                         <input type="checkbox" id="holaf-halo-toggle" ${state.halo ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--holaf-accent-color);">
                         <label for="holaf-halo-toggle" style="font-size:12px;cursor:pointer;">${t("settings.halo")}</label>
                     </div>
+                    <div style="display:flex; align-items:center; gap:8px; margin:4px 0 10px 23px;">
+                        <input type="range" id="holaf-halo-intensity" min="0" max="100" step="5" value="${state.haloIntensity ?? 50}" style="flex:1; cursor:pointer; accent-color:var(--holaf-accent-color);">
+                        <span id="holaf-halo-intensity-val" style="font-size:11px; color:var(--holaf-text-secondary); min-width:34px; text-align:right;">${state.haloIntensity ?? 50}%</span>
+                    </div>
 
                     <!-- Axe 4 : HIGHLIGHT (contour coloré des fenêtres actives, indépendant du halo) -->
                     <div class="holaf-settings-field" style="display:flex;align-items:center;gap:8px;">
                         <input type="checkbox" id="holaf-highlight-toggle" ${state.highlight ? "checked" : ""} style="cursor:pointer;width:15px;height:15px;accent-color:var(--holaf-accent-color);">
                         <label for="holaf-highlight-toggle" style="font-size:12px;cursor:pointer;">${t("settings.highlight")}</label>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; margin:4px 0 10px 23px;">
+                        <input type="range" id="holaf-highlight-intensity" min="0" max="100" step="5" value="${state.highlightIntensity ?? 100}" style="flex:1; cursor:pointer; accent-color:var(--holaf-accent-color);">
+                        <span id="holaf-highlight-intensity-val" style="font-size:11px; color:var(--holaf-text-secondary); min-width:34px; text-align:right;">${state.highlightIntensity ?? 100}%</span>
                     </div>
 
                     <!-- LANGUE : sélecteur FR / EN, appliqué immédiatement -->
@@ -325,10 +333,29 @@ const HolafSettingsManager = {
         });
 
         // 3. HALO : case activable.
+        const haloSlider = container.querySelector("#holaf-halo-intensity");
+        haloSlider.addEventListener("input", (e) => {
+            const val = parseInt(e.target.value, 10) || 0;
+            st.haloIntensity = val;
+            const lbl = container.querySelector("#holaf-halo-intensity-val");
+            if (lbl) lbl.textContent = val + "%";
+            applyThemeState(document.body, st);
+            saveThemeState(st);
+        });
+        const highlightSlider = container.querySelector("#holaf-highlight-intensity");
+        highlightSlider.addEventListener("input", (e) => {
+            const val = parseInt(e.target.value, 10) || 0;
+            st.highlightIntensity = val;
+            const lbl = container.querySelector("#holaf-highlight-intensity-val");
+            if (lbl) lbl.textContent = val + "%";
+            applyThemeState(document.body, st);
+            saveThemeState(st);
+        });
         const haloToggle = container.querySelector("#holaf-halo-toggle");
         haloToggle.addEventListener("change", (e) => {
             const st = loadThemeState();
             st.halo = e.target.checked;
+            st.haloIntensity = state.haloIntensity ?? 50;
             applyTheme(st);
         });
 
@@ -337,6 +364,7 @@ const HolafSettingsManager = {
         highlightToggle.addEventListener("change", (e) => {
             const st = loadThemeState();
             st.highlight = e.target.checked;
+            st.highlightIntensity = state.highlightIntensity ?? 100;
             applyTheme(st);
         });
 

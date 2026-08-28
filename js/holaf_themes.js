@@ -138,6 +138,8 @@ export const THEME_STORAGE = {
     accent: "AIH_Accent",
     halo: "AIH_Halo",
     highlight: "AIH_Highlight",
+    haloIntensity: "AIH_Halo_Intensity",
+    highlightIntensity: "AIH_Highlight_Intensity",
 };
 
 // Migration depuis l'ancienne clé combinée `Holaf_Theme` (désormais obsolète).
@@ -149,7 +151,7 @@ const LEGACY_THEME_MAP = {
     "holaf-theme-ashy-light":       { mode: "light", accent: "blue"   },
 };
 
-export const AIH_THEME_DEFAULT = { mode: AIH_DEFAULT_MODE, accent: AIH_DEFAULT_ACCENT, halo: true, highlight: true };
+export const AIH_THEME_DEFAULT = { mode: AIH_DEFAULT_MODE, accent: AIH_DEFAULT_ACCENT, halo: true, haloIntensity: 50, highlight: true, highlightIntensity: 100 };
 
 /**
  * Applique l'état {mode, accent, halo, highlight} sur un élément cible
@@ -180,7 +182,14 @@ export function applyThemeState(target, state) {
     // Highlight : classe neutralisante toggle (indépendante du halo).
     el.classList.toggle("aih-highlight-off", !highlight);
 
-    return { mode, accent, halo, highlight };
+    // Intensités (0-100) : posées en inline style sur la cible, héritées par
+    // les panneaux et dialogues descendants. Clampées pour éviter les abus.
+    const haloIntensity = Math.max(0, Math.min(100, parseInt(s.haloIntensity ?? 50, 10) || 0));
+    const highlightIntensity = Math.max(0, Math.min(100, parseInt(s.highlightIntensity ?? 100, 10) || 0));
+    el.style.setProperty("--aih-halo-intensity", String(haloIntensity));
+    el.style.setProperty("--aih-highlight-intensity", String(highlightIntensity));
+
+    return { mode, accent, halo, haloIntensity, highlight, highlightIntensity };
 }
 
 /**
@@ -192,6 +201,8 @@ export function loadThemeState() {
     let accent = AIH_DEFAULT_ACCENT;
     let halo = true;
     let highlight = true;
+    let haloIntensity = 50;
+    let highlightIntensity = 100;
 
     try {
         const m = localStorage.getItem(THEME_STORAGE.mode);
@@ -202,6 +213,10 @@ export function loadThemeState() {
         if (h !== null) halo = h !== "0" && h !== "false";
         const hl = localStorage.getItem(THEME_STORAGE.highlight);
         if (hl !== null) highlight = hl !== "0" && hl !== "false";
+        const hi = localStorage.getItem(THEME_STORAGE.haloIntensity);
+        if (hi !== null) haloIntensity = Math.max(0, Math.min(100, parseInt(hi, 10) || 0));
+        const hli = localStorage.getItem(THEME_STORAGE.highlightIntensity);
+        if (hli !== null) highlightIntensity = Math.max(0, Math.min(100, parseInt(hli, 10) || 0));
     } catch (e) { /* silencieux */ }
 
     // Migration d'une ancienne clé Holaf_Theme (si rien n'est encore persisté).
@@ -218,7 +233,7 @@ export function loadThemeState() {
         }
     } catch (e) { /* silencieux */ }
 
-    return { mode, accent, halo, highlight };
+    return { mode, accent, halo, haloIntensity, highlight, highlightIntensity };
 }
 
 /**
@@ -231,6 +246,8 @@ export function saveThemeState(state) {
         if (s.accent !== undefined) localStorage.setItem(THEME_STORAGE.accent, s.accent);
         if (s.halo !== undefined) localStorage.setItem(THEME_STORAGE.halo, s.halo ? "1" : "0");
         if (s.highlight !== undefined) localStorage.setItem(THEME_STORAGE.highlight, s.highlight ? "1" : "0");
+        if (s.haloIntensity !== undefined) localStorage.setItem(THEME_STORAGE.haloIntensity, String(Math.max(0, Math.min(100, parseInt(s.haloIntensity, 10) || 0))));
+        if (s.highlightIntensity !== undefined) localStorage.setItem(THEME_STORAGE.highlightIntensity, String(Math.max(0, Math.min(100, parseInt(s.highlightIntensity, 10) || 0))));
     } catch (e) { /* silencieux */ }
 }
 

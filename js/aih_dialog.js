@@ -116,8 +116,10 @@ import {
 :root {
     --aih-accent: #D8700D; --aih-accent-hover: #F08020; --aih-accent-light: #B45A08; --aih-accent-light-hover: #9A4D06; --aih-accent-text: #FFFFFF;
     --aih-accent-active: var(--aih-accent); --aih-accent-hover-active: var(--aih-accent-hover);
-    --aih-halo-color: rgba(216,112,13,0.5); --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
-    --aih-highlight: var(--aih-accent-active);
+    --aih-halo-intensity: 50; --aih-highlight-intensity: 100;
+    --aih-halo-color: color-mix(in srgb, var(--aih-accent) calc(var(--aih-halo-intensity) * 1%), transparent);
+    --aih-halo: 0 0 0 1px var(--aih-halo-color), 0 0 22px 2px var(--aih-halo-color);
+    --aih-highlight: color-mix(in srgb, var(--aih-accent-active) calc(var(--aih-highlight-intensity) * 1%), transparent);
     --aih-bg: #1E1E1E; --aih-bg-secondary: #2B2B2B; --aih-bg-input: #1A1A1A; --aih-bg-hover: #353535;
     --aih-text: #E0E0E0; --aih-text-secondary: #A0A0A0;
     --aih-border: #3F3F3F; --aih-border-strong: #555555;
@@ -309,6 +311,8 @@ import {
             let accent = AIH_THEME_DEFAULT.accent;
             let halo = true;
             let highlight = true;
+            let haloIntensity = AIH_THEME_DEFAULT.haloIntensity;
+            let highlightIntensity = AIH_THEME_DEFAULT.highlightIntensity;
             if (el) {
                 if (el.classList.contains(AIH_MODES.light.className)) mode = "light";
                 else mode = "dark";
@@ -317,8 +321,10 @@ import {
                 });
                 halo = !el.classList.contains("aih-halo-off");
                 highlight = !el.classList.contains("aih-highlight-off");
+                haloIntensity = Math.max(0, Math.min(100, parseInt(el.style.getPropertyValue("--aih-halo-intensity") || AIH_THEME_DEFAULT.haloIntensity, 10) || 0));
+                highlightIntensity = Math.max(0, Math.min(100, parseInt(el.style.getPropertyValue("--aih-highlight-intensity") || AIH_THEME_DEFAULT.highlightIntensity, 10) || 0));
             }
-            return { mode, accent, halo, highlight };
+            return { mode, accent, halo, haloIntensity, highlight, highlightIntensity };
         },
 
         // Applique {mode, accent, halo, highlight} sur un élément (souvent body).
@@ -331,7 +337,7 @@ import {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
             const m = (mode && AIH_MODES[mode]) ? mode : AIH_THEME_DEFAULT.mode;
-            const applied = applyThemeState(el, { mode: m, accent: state.accent, halo: state.halo, highlight: state.highlight });
+            const applied = applyThemeState(el, { mode: m, accent: state.accent, halo: state.halo, haloIntensity: state.haloIntensity, highlight: state.highlight, highlightIntensity: state.highlightIntensity });
             saveThemeState({ mode: m });
             return applied;
         },
@@ -340,7 +346,7 @@ import {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
             const a = (accent && AIH_ACCENTS[accent]) ? accent : AIH_THEME_DEFAULT.accent;
-            const applied = applyThemeState({ mode: state.mode, accent: a, halo: state.halo, highlight: state.highlight }, el);
+            const applied = applyThemeState(el, { mode: state.mode, accent: a, halo: state.halo, haloIntensity: state.haloIntensity, highlight: state.highlight, highlightIntensity: state.highlightIntensity });
             saveThemeState({ accent: a });
             return applied;
         },
@@ -348,7 +354,7 @@ import {
         setHalo(on, target) {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
-            const applied = applyThemeState({ mode: state.mode, accent: state.accent, halo: !!on, highlight: state.highlight }, el);
+            const applied = applyThemeState(el, { mode: state.mode, accent: state.accent, halo: !!on, haloIntensity: state.haloIntensity, highlight: state.highlight, highlightIntensity: state.highlightIntensity });
             saveThemeState({ halo: !!on });
             return applied;
         },
@@ -356,7 +362,7 @@ import {
         setHighlight(on, target) {
             const el = target || (typeof document !== "undefined" ? document.body : null);
             const state = this.getState(el);
-            const applied = applyThemeState({ mode: state.mode, accent: state.accent, halo: state.halo, highlight: !!on }, el);
+            const applied = applyThemeState(el, { mode: state.mode, accent: state.accent, halo: state.halo, haloIntensity: state.haloIntensity, highlight: !!on, highlightIntensity: state.highlightIntensity });
             saveThemeState({ highlight: !!on });
             return applied;
         },
