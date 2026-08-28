@@ -632,11 +632,11 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
       } catch (e) { workflowStr = ""; }
 
       if (!workflowStr) {
-        container.innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.noWorkflow') + '</p>'';
+        container.innerHTML = '<p style="color:#f87171;font-size:13px;text-align:center;padding:30px 0;">' + t('wf.noWorkflow') + '</p>';
         return;
       }
 
-      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:#888;font-size:13px;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #555;border-top-color:var(--aih-accent, #D8700D);border-radius:50%;animation:aih-spin 0.8s linear infinite;"></span> ' + t('wf.analyzingDeps') + '</div>'';
+      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:30px 0;color:#888;font-size:13px;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #555;border-top-color:var(--aih-accent, #D8700D);border-radius:50%;animation:aih-spin 0.8s linear infinite;"></span> ' + t('wf.analyzingDeps') + '</div>';
       var deps = await detectDependencies(workflowJSON);
       var existingId = null;
 
@@ -686,7 +686,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
             var pk = deps.nodes[i];
             var nodeCount = pk.node_types ? pk.node_types.length : 1;
             depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(pk.name) +
-              (nodeCount > 1 ?  ' + t('wf.nodeCount', { count: nodeCount }) + ' : '') +
+              (nodeCount > 1 ? ' (' + t('wf.nodeCount', { count: nodeCount }) + ') ' : '') +
               (pk.url ? ' <span style="color:#34d399;font-size:10px;">✓ ' + esc(pk.url) + '</span>' : ' <span style="color:#f87171;font-size:10px;">' + t('wf.noGitUrl') + '</span>') +
               '</div>';
           }
@@ -1073,7 +1073,7 @@ import { HolafToastManager } from "./holaf_toast_manager.js";
                   depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<input type="checkbox" class="wf-dep-cb" checked data-type="node" data-name="' + esc(n.name) + '" data-url="' + esc(n.url || '') + '" style="accent-color:var(--aih-accent, #D8700D);">' +
                     '<span style="flex:1;">' + esc(n.name) +
-                    (nodeCount > 1 ?  ' + t('wf.nodeCount', { count: nodeCount }) + ' : '') +
+                    (nodeCount > 1 ? ' (' + t('wf.nodeCount', { count: nodeCount }) + ') ' : '') +
                     (installed ? t('wf.alreadyInstalled') : '') + '</span>' +
                     (n.url && !installed ? '<button onclick="window._wfInstallNode(\'' + esc(n.url) + '\', \'' + esc(n.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">' + t('wf.install') + '</button>' : '') +
                     (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:var(--aih-accent, #D8700D);text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +

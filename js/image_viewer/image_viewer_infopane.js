@@ -197,18 +197,6 @@ async function displayInfoForImage(image) {
             } else {
                 const msg = document.createElement('p');
                 msg.className = 'holaf-viewer-message';
-                msg.innerHTML = '<em>Not available.</em>';
-                finalMetadataContainer.appendChild(msg);
-            }
-        } else {
-            const msg = document.createElement('p');
-            msg.className = 'holaf-viewer-message';
-            msg.innerHTML = '<em>Not available.</em>';
-            finalMetadataContainer.appendChild(msg);
-        }
-
-                const msg = document.createElement('p');
-                msg.className = 'holaf-viewer-message';
                 msg.innerHTML = `<em>${t('iv.notAvailable')}</em>`;
                 finalMetadataContainer.appendChild(msg);
             }
