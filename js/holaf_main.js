@@ -116,49 +116,55 @@ const HolafUtilitiesMenu = {
     _compactWatchdog: null,
 
     init() {
-        this.loadSharedCss();
-        this.initBridgeListener();
-        this.injectCompactCSS(); 
+        try {
+            console.info("[AIH] Menu init starting…");
+            this.loadSharedCss();
+            this.initBridgeListener();
+            this.injectCompactCSS();
 
-        this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
-        if (this.isCompactMode) {
-            this.waitForUIAndApplyCompact();
-            this.startCompactWatchdog();
-        }
+            this.isCompactMode = localStorage.getItem("Holaf_CompactMenu") === "true";
+            if (this.isCompactMode) {
+                this.waitForUIAndApplyCompact();
+                this.startCompactWatchdog();
+            }
 
-        if (!document.body.className.includes("holaf-theme-")) {
-            document.body.classList.add("holaf-theme-graphite-orange");
-        }
+            if (!document.body.className.includes("holaf-theme-")) {
+                document.body.classList.add("holaf-theme-graphite-orange");
+            }
 
-        // THEMING 4-axes (mode/accent/halo/highlight) : applique l'état persisté
-        // sur <body>. Les panneaux et dialogues héritent des variables via CSS.
-        try { applyPersistedTheme(document.body); } catch (e) { /* silencieux */ }
+            // THEMING 4-axes (mode/accent/halo/highlight) : applique l'état persisté
+            // sur <body>. Les panneaux et dialogues héritent des variables via CSS.
+            try { applyPersistedTheme(document.body); } catch (e) { console.warn("[AIH] applyPersistedTheme failed:", e); }
 
-        if (!window.holaf) {
-            window.holaf = {};
-        }
-        window.holaf.toastManager = new HolafToastManager();
-        
-        window.holaf.rebuildMenu = () => this.buildMenu();
-        // Expose le flux de redémarrage partagé (compteur à rebours) pour que
-        // js/aih_menu.js (chargé AVANT holaf_main.js) puisse le réutiliser pour
-        // le redémarrage post-update. Accessible via window.holaf.startRestartFlow.
-        window.holaf.startRestartFlow = () => this.startRestartFlow();
+            if (!window.holaf) {
+                window.holaf = {};
+            }
+            window.holaf.toastManager = new HolafToastManager();
 
-        let menuContainer = document.getElementById("holaf-utilities-menu-container");
-        if (menuContainer) {
+            window.holaf.rebuildMenu = () => this.buildMenu();
+            // Expose le flux de redémarrage partagé (compteur à rebours) pour que
+            // js/aih_menu.js (chargé AVANT holaf_main.js) puisse le réutiliser pour
+            // le redémarrage post-update. Accessible via window.holaf.startRestartFlow.
+            window.holaf.startRestartFlow = () => this.startRestartFlow();
+
+            let menuContainer = document.getElementById("holaf-utilities-menu-container");
+            if (menuContainer) {
+                return;
+            }
+
+            menuContainer = document.createElement("div");
+            menuContainer.id = "holaf-utilities-menu-container";
+            menuContainer.style.position = "relative";
+            menuContainer.style.display = "inline-block";
+            menuContainer.style.margin = "0 4px";
+
+            const mainButton = document.createElement("button");
+            mainButton.id = "holaf-utilities-menu-button";
+            mainButton.textContent = t("menu.title");
+        } catch (err) {
+            console.error("[AIH] Menu init FAILED — the menu button will not appear:", err);
             return;
         }
-
-        menuContainer = document.createElement("div");
-        menuContainer.id = "holaf-utilities-menu-container";
-        menuContainer.style.position = "relative";
-        menuContainer.style.display = "inline-block";
-        menuContainer.style.margin = "0 4px";
-
-        const mainButton = document.createElement("button");
-        mainButton.id = "holaf-utilities-menu-button";
-        mainButton.textContent = t("menu.title");
 
         this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
