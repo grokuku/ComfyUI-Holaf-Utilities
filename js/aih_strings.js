@@ -15,7 +15,7 @@
  * fallback clé brute si absente du dictionnaire.
  */
 
-import "../aih_i18n.js";
+import "./aih_i18n.js";
 
 (function () {
     "use strict";

@@ -209,6 +209,31 @@ const HolafUtilitiesMenu = {
         const settingsButton = app.menu?.settingsGroup?.element;
         if (settingsButton) {
             settingsButton.before(menuContainer);
+            // Nouveau frontend Vue : settingsGroup.element peut être un noeud
+            // DETACHE du DOM au moment de l'injection (monte plus tard par le
+            // composant TopMenuSection). Si on insère dans un noeud détaché,
+            // le bouton existe mais n'est jamais visible. On vérifie donc la
+            // connexion réelle au document et on retente jusqu'à attachement.
+            if (!menuContainer.isConnected) {
+                let attempts = 0;
+                const maxAttempts = 60; // ~30 s à 500 ms
+                const reattachTimer = setInterval(() => {
+                    attempts++;
+                    try {
+                        settingsButton.before(menuContainer);
+                    } catch (e) {
+                        console.warn("[AIH] Menu re-injection failed:", e);
+                    }
+                    if (menuContainer.isConnected || attempts >= maxAttempts) {
+                        clearInterval(reattachTimer);
+                        if (menuContainer.isConnected) {
+                            console.info("[AIH] Menu button attached to the ComfyUI toolbar.");
+                        } else {
+                            console.warn("[AIH] Could not attach menu button after " + attempts + " attempts.");
+                        }
+                    }
+                }, 500);
+            }
         } else {
             const comfyMenu = document.querySelector(".comfy-menu");
             if (comfyMenu) {
