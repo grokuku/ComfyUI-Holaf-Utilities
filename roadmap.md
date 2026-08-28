@@ -148,6 +148,46 @@ Quatre ajustements post-fusion réalisés directement sur **main** en commits co
 
 ---
 
+#### 🔀 Fusion — Unification UI complète (theming, dialogues, i18n, zoom)
+
+Grand chantier d'unification réalisé après la Phase 2, pour faire disparaître l'origine multi-packs :
+
+* **Thème en 4 axes orthogonaux** — MODE (`aih-mode-dark/light`, fenêtres grises) · ACCENT (`aih-accent-orange/blue/green/purple`, avec variante par mode pour la lisibilité) · HALO (lueur, case + **slider d'intensité** via `color-mix`) · HIGHLIGHT (contour coloré, case + **slider d'intensité**, indépendant du halo). Variables `--aih-*` = source de vérité, aliassées vers `--holaf-*` (panneaux). `AIH.Theme` : setMode/setAccent/setHalo/setHighlight + intensités, persistées (`AIH_Mode`, `AIH_Accent`, `AIH_Halo`, `AIH_Halo_Intensity`, `AIH_Highlight`, `AIH_Highlight_Intensity`).
+* **Système de dialogues unifié `AIH.Dialog`** (`js/aih_dialog.js`) — open/alert/confirm/prompt/choose/busy ; garde keep-open ; autorité z-index ; wrappers de compat (`aihOpenModalV2` = shim fin vers AIH.Dialog ; `HolafModal` et `createDialog` conservés). Famille 3 (login/GitHub-search nodes manager) **volontairement non migrée** (createDialog insuffisant).
+* **`aihWindowManager`** (holaf_window_utils.js) — autorité UNIQUE de z-index + état actif/halo partagée entre dialogues AIH et panneaux holaf (plus deux groupes séparés). Helpers partagés : `makeDraggable/makeResizable/makeContentZoomable/saveWindowRect/loadWindowRect`.
+* **i18n complet** — `js/aih_i18n.js` (AIH.I18n : t/setLocale/addDict, FR défaut + EN) + dictionnaire central **`js/aih_strings.js`** (~1000 clés FR/EN, tous les modules migrés) + **sélecteur de langue** dans Settings ▸ General. Pattern : `import "./aih_strings.js"` + `t(k,p)` fallback clé brute. ⚠️ Pièges : i18n dans un template literal (backticks) = interpolation `${t(...)}`, PAS de concat `' + t(...) + '` (s'affiche littéralement).
+* **Persistance unifiée** des positions/tailles (store `aih_window_rects` + migration legacy) ; dialogues transitoires (confirm/alert) restent centrés.
+* **Zoom unifié** — variable canonique `--aih-zoom-factor` (contenu seul, header fixe, pattern Nodes Manager), boutons +/− standard dans TOUTES les barres de titre, persistance par fenêtre (`aih_zoom_levels`).
+* **Renommage AIH** — tous les textes visibles « Holaf » → « AIH » (Model Manager, Nodes Manager, Image Viewer, Settings, Profiler, Terminal → AIH Terminal). Identifiants techniques (fichiers `holaf_*.js`, `registerExtension "Holaf.*"`, classes `holaf-*`, alias legacy de nodes) volontairement CONSERVÉS.
+
+---
+
+### GUIDE DE REPRISE (nouvelle session — conventions & architecture)
+
+**Workflow :** tout travail DIRECTEMENT sur `main` ; l'utilisateur commit/push lui-même via son outil (les sessions ne font JAMAIS de `git commit`) ; l'outil de push ne détecte que les fichiers modifiés déjà suivis — penser à `git add` les fichiers NEUFS (ex. `aih_strings.js` avait été raté).
+
+**Architecture UI (à connaître absolument) :**
+* `AIH.Dialog` (js/aih_dialog.js) : système unique de dialogues + `AIH.Theme` (4 axes + intensités) + wrappers compat.
+* `aihWindowManager` (holaf_window_utils.js) : z-index unique, fenêtre active unique (halo), drag/resize partagés, zoom (`--aih-zoom-factor`).
+* `holaf_window_utils.js` : helpers de fenêtre + `saveWindowRect/loadWindowRect` (store `aih_window_rects`, clamps viewport).
+* Thème : variables `--aih-*` sur `:root` (défauts dark) + classes body `aih-mode-*` / `aih-accent-*` / `aih-halo-off` / `aih-highlight-off` ; les panneaux holaf consomment les alias `--holaf-*`. Intensités halo/contour via `color-mix`.
+* i18n : `AIH.I18n` + dictionnaire `js/aih_strings.js` (préfixes menu./settings./mb./wf./bl./nm./term./iv./mmu./mma./pr./rc./sc./lt./el./kw./en.). Langue persistée `aih_locale`, défaut FR.
+* ⚠️ **WEB_DIRECTORY "js" est monté DIRECTEMENT à /extensions/<pack>/** : jamais de segment `js/` dans les URLs (cause du bug MIME historique). Les imports relatifs entre fichiers js/ racine fonctionnent ; le profiler (route alias `/holaf/profiler/app.js`) doit utiliser des imports DYNAMIQUES via `holafPackUrl`/`HOLAF_EXT_BASE` (les imports statiques relatifs y cassent le MIME).
+* ⚠️ Les widgets AIH ont été **convertis en modules ES** (ils importent `aih_dialog.js`/`aih_strings.js`) ; l'ordre de chargement passe par le graphe d'imports.
+* ⚠️ Firefox (utilisateur sur Floorp) applique strictement le MIME des modules et parse différemment : toujours valider avec `node --check --input-type=module`.
+
+**Reste à faire (fusion & infra)** :
+1. **Rename repo GitHub → ComfyUI-Ai-Helper** — EN COURS (l'utilisateur le fait maintenant) ; ensuite `git remote set-url origin <nouvelle URL>` + réinstallation des utilisateurs.
+2. Désinstaller les anciens packs séparés (CUI-Holaf, AIH_Tools) chez les utilisateurs finaux.
+3. Tests terrain restants : SFTP models, `/aih/local/`, auth Blobby (401 → invite login terminal).
+4. `pip show spandrel` au déploiement (confirmer licence, MIT attendu).
+5. Famille 3 (dialogues login/GitHub-search nodes manager) : non migrés vers AIH.Dialog — createDialog insuffisant, refonte dédiée si un jour nécessaire.
+6. i18n : ajouter d'autres langues = un simple `addDict` par langue.
+
+**Infra connue** : le proxy sd.holaf.fr a des soucis MIME sur certains chemins (.js imbriqués/404 → octet-stream) ; Authentik SSO protège pi.holaf.fr (hors scope pack) ; l'instance ComfyUI tourne sur 10.10.0.5:9001 (Python 3.14).
+
+---
+
 ### FONCTIONNALITÉS IMPLÉMENTÉES
 
 #### 🎨 Éditeur d'images
