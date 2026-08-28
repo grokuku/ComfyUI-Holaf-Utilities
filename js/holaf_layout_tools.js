@@ -70,7 +70,8 @@
                 position: "fixed",
                 zIndex: "10000",
                 display: this.isVisible ? "flex" : "none",
-                flexDirection: "column",
+                flexDirection: "row",
+                alignItems: "center",
                 boxSizing: "border-box",
                 overflow: "hidden",
                 backgroundColor: "var(--comfy-menu-bg)",
@@ -95,31 +96,17 @@
 
             document.body.appendChild(this.container);
 
-            // ─── Barre de titre standard (nom + zoom −/+ + ✕) ───────────────
-            const header = document.createElement("div");
-            header.className = "holaf-utility-header";
-
-            const title = document.createElement("span");
-            title.innerText = t("lt.title");
-
-            const closeBtn = document.createElement("button");
-            closeBtn.className = "holaf-utility-close-button";
-            closeBtn.textContent = "✕";
-            closeBtn.title = t("dialog.close");
-            closeBtn.onmousedown = (e) => e.stopPropagation();
-            closeBtn.onclick = () => this.hide();
-
-            header.appendChild(title);
-
-            // ─── Contenu zoomable (toolbar) hors header ─────────────────────
-            const content = document.createElement("div");
-            content.classList.add("holaf-zoom-content");
-            Object.assign(content.style, {
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "4px 8px"
-            });
+            // ─── Forme compacte : poignée de drag + contenu + fermeture ──────
+            // (toolbar minuscule : pas de barre de titre — drag via le grip)
+            const grip = document.createElement("div");
+            grip.title = t("lt.title");
+            grip.style.cursor = "grab";
+            grip.style.userSelect = "none";
+            grip.style.padding = "0 4px";
+            grip.style.color = "var(--descriptive-text, #888)";
+            grip.style.fontSize = "14px";
+            grip.textContent = "⠿";
+            this.container.appendChild(grip);
 
             this.coordDisplay = document.createElement("div");
             this.coordDisplay.innerText = "X: 0 | Y: 0";
@@ -127,27 +114,29 @@
             this.coordDisplay.style.minWidth = "120px";
             this.coordDisplay.style.textAlign = "right";
             this.coordDisplay.style.pointerEvents = "none";
-            content.appendChild(this.coordDisplay);
+            this.container.appendChild(this.coordDisplay);
 
             const sep = document.createElement("div");
             Object.assign(sep.style, { width: "1px", height: "20px", backgroundColor: "var(--border-color)" });
-            content.appendChild(sep);
+            this.container.appendChild(sep);
 
-            this.injectButtons(content);
+            this.injectButtons(this.container);
 
-            // Boutons zoom standard (− / +) : zoom sur le contenu, persistés
-            // sous la clé de fenêtre de la barre d'outils.
-            const zoomGroup = makeContentZoomable(content, { key: this.STORAGE_KEY });
-            // closeBtn doit être enfant de header AVANT insertBefore (sinon
-            // DOMException: Child to insert before is not a child of this node).
-            header.appendChild(closeBtn);
-            header.insertBefore(zoomGroup, closeBtn);
+            // Fermeture discrète en fin de barre
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "holaf-header-button";
+            closeBtn.textContent = "✕";
+            closeBtn.title = t("dialog.close");
+            Object.assign(closeBtn.style, { background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px", color: "var(--fg-color, #ccc)" });
+            closeBtn.onmousedown = (e) => e.stopPropagation();
+            closeBtn.onclick = () => this.hide();
+            this.container.appendChild(closeBtn);
 
-            this.container.appendChild(header);
-            this.container.appendChild(content);
+            // Drag par la poignée (ancrage droite/bas persisté)
+            this.enableWindowDragging(grip);
 
-            // Drag par la barre de titre (ancrage droite/bas persisté)
-            this.enableWindowDragging(header);
+            // Enregistré dans l'autorité de fenêtres unifiée (halo/z-index cohérents)
+            if (this.isVisible) aihWindowManager().register(this.container);
 
             // Initial visual application
             this.updateVisualPosition();
