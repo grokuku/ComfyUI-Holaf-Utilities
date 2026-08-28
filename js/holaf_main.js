@@ -161,12 +161,8 @@ const HolafUtilitiesMenu = {
             const mainButton = document.createElement("button");
             mainButton.id = "holaf-utilities-menu-button";
             mainButton.textContent = t("menu.title");
-        } catch (err) {
-            console.error("[AIH] Menu init FAILED — the menu button will not appear:", err);
-            return;
-        }
 
-        this.dropdownMenuEl = document.createElement("ul");
+            this.dropdownMenuEl = document.createElement("ul");
         this.dropdownMenuEl.id = "holaf-utilities-dropdown-menu";
         this.dropdownMenuEl.style.display = 'none';
         this.dropdownMenuEl.style.zIndex = '10005';
@@ -247,6 +243,10 @@ const HolafUtilitiesMenu = {
             } else {
                 document.body.prepend(menuContainer);
             }
+        }
+        } catch (err) {
+            console.error("[AIH] Menu init FAILED — the menu button will not appear:", err);
+            return;
         }
     },
 
