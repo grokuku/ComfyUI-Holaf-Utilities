@@ -415,6 +415,15 @@ def process_deep_scan_request(model_paths_from_client_canon: list):
         conn = _get_db_connection()
         cursor = conn.cursor()
         for client_path_canon in model_paths_from_client_canon: 
+            # Security: reject paths outside the allowed model directories
+            # BEFORE any os.path.join / os.path.isfile / file read. is_path_safe
+            # builds its allowlist from folder_paths.folder_names_and_paths (which
+            # includes the roots from extra_model_paths.yaml) and resolves '..'
+            # via normpath, so scanning external model folders keeps working.
+            if not is_path_safe(client_path_canon, is_directory_model=False):
+                results["errors"].append({"path": client_path_canon, "message": "Path is outside allowed model directories."})
+                continue
+
             abs_model_fs_path = os.path.normpath(os.path.join(comfyui_base_path_norm, client_path_canon))
 
             if not os.path.isfile(abs_model_fs_path):

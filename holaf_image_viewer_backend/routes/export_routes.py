@@ -217,16 +217,30 @@ async def download_export_chunk_route(request: web.Request):
     try:
         export_id = holaf_utils.sanitize_upload_id(request.query.get("export_id"))
         file_path_rel = request.query.get("file_path")
-        chunk_index = int(request.query.get("chunk_index"))
-        chunk_size = int(request.query.get("chunk_size"))
 
-        if not all([export_id, file_path_rel, chunk_index is not None, chunk_size]):
+        if not export_id or not file_path_rel:
             return web.Response(status=400, text="Missing parameters.")
 
-        base_export_dir = os.path.normpath(holaf_utils.TEMP_EXPORT_DIR)
-        target_file_abs = os.path.normpath(os.path.join(base_export_dir, export_id, file_path_rel))
+        # Validate client-controlled chunk parameters (bounds + type safety)
+        try:
+            chunk_index = int(request.query.get("chunk_index"))
+            chunk_size = int(request.query.get("chunk_size"))
+        except (TypeError, ValueError):
+            return web.Response(status=400, text="Invalid chunk parameters.")
+        if chunk_index < 0:
+            return web.Response(status=400, text="Invalid chunk_index.")
+        if chunk_size <= 0 or chunk_size > 64 * 1024 * 1024:
+            return web.Response(status=400, text="Invalid chunk_size.")
 
-        if not target_file_abs.startswith(base_export_dir):
+        # Robust containment check (realpath + commonpath, aligned with path_validation.py)
+        base_export_dir = os.path.realpath(holaf_utils.TEMP_EXPORT_DIR)
+        target_file_abs = os.path.realpath(os.path.join(base_export_dir, export_id, file_path_rel))
+
+        try:
+            common = os.path.commonpath([target_file_abs, base_export_dir])
+        except ValueError:
+            return web.Response(status=403, text="Access forbidden.")
+        if common != base_export_dir:
             return web.Response(status=403, text="Access forbidden.")
         if not os.path.isfile(target_file_abs):
             return web.Response(status=404, text="Export file not found.")

@@ -478,7 +478,18 @@ def sync_image_database_blocking():
     current_time = time.time()
     conn = None
     sync_exception = None
-    
+
+    # --- SAFETY: if the output directory is missing or unreadable, bail out
+    # WITHOUT cleaning stale entries. Otherwise the os.walk branch below is
+    # skipped, disk_images_canons stays empty, and every non-trashed DB record
+    # would be treated as stale and purged (along with its thumbnails). A
+    # transient episode (unmounted network mount, sleeping disk, bad config)
+    # must not wipe the whole database. Keep the existing state untouched.
+    if not os.path.isdir(output_dir) or not os.access(output_dir, os.R_OK):
+        print(f"🟡 [Holaf-ImageViewer] Output directory missing or unreadable ({output_dir}); "
+              f"skipping sync and preserving existing database state.")
+        return
+
     # --- BATCH OPTIMIZATION CONFIG ---
     BATCH_SIZE = 50 # Commit to DB every 50 operations to release write lock for UI interactions
     ops_counter = 0

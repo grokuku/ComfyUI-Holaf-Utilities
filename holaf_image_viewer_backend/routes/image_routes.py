@@ -300,15 +300,22 @@ async def list_images_route(request: web.Request):
         joins = ""
         
         # Folder & Trash Filters (largely unchanged, but aliased to 'i')
-        folder_filters = filters.get('folder_filters', [])
-        if logic.TRASHCAN_DIR_NAME in folder_filters:
+        # NOTE: an explicitly empty folder_filters list means the user deselected
+        # ALL folders → return ZERO images. A null/absent value means "no folder
+        # filter" → show all non-trashed images.
+        folder_filters = filters.get('folder_filters')
+        if folder_filters is None:
+            where_clauses.append("i.is_trashed = 0")
+        elif logic.TRASHCAN_DIR_NAME in folder_filters:
             where_clauses.append("i.is_trashed = 1")
+        elif not folder_filters:
+            where_clauses.append("i.is_trashed = 0")
+            where_clauses.append("1 = 0")
         else:
             where_clauses.append("i.is_trashed = 0")
-            if folder_filters:
-                placeholders = ','.join('?' * len(folder_filters))
-                where_clauses.append(f"i.top_level_subfolder IN ({placeholders})")
-                params.extend(folder_filters)
+            placeholders = ','.join('?' * len(folder_filters))
+            where_clauses.append(f"i.top_level_subfolder IN ({placeholders})")
+            params.extend(folder_filters)
 
         # Basic Filters
         format_filters = filters.get('format_filters', [])
@@ -393,7 +400,7 @@ async def list_images_route(request: web.Request):
         # forces a real COUNT query. When none is active (the common "all"
         # gallery view), reuse the cached total_db_count and skip the expensive
         # ~10s full COUNT entirely.
-        has_folder_filter = bool(folder_filters)
+        has_folder_filter = folder_filters is not None
         has_format_filter = bool(format_filters)
         has_date_filter = bool(filters.get('startDate') or filters.get('endDate'))
         has_text_search = bool(

@@ -489,7 +489,7 @@ const holafImageViewer = {
             // nothing to display → just refresh the filter options (and loadFilteredImages'
             // own early-return clears the gallery, matching the pre-existing flow).
             const { folder_filters } = imageViewerState.getState().filters;
-            if (!folder_filters || folder_filters.length === 0) {
+            if (Array.isArray(folder_filters) && folder_filters.length === 0) {
                 await this.loadAndPopulateFilters(false, true);
                 await this.loadFilteredImages();
                 return;
@@ -835,7 +835,10 @@ const holafImageViewer = {
 
         try {
             const { filters } = imageViewerState.getState();
-            if (!filters.folder_filters || filters.folder_filters.length === 0) {
+            // An explicitly empty folder_filters array means the user deselected ALL
+            // folders → show zero images (placeholder). A null/undefined value means
+            // "no folder filter" → keep the normal (all folders) behaviour.
+            if (Array.isArray(filters.folder_filters) && filters.folder_filters.length === 0) {
                 resetWindowCache();
                 imageViewerState.setState({
                     images: [],

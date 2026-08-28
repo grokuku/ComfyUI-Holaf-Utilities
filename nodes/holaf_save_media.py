@@ -14,6 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import re
 import json
 import time
 import shutil
@@ -116,11 +117,60 @@ class HolafSaveMedia:
         """
         return validate_subfolder(base_path, subfolder, allowed_base)
 
+    @staticmethod
+    def _sanitize_base_filename(name):
+        """Sanitize a base filename to prevent path traversal.
+
+        The ``filename`` widget is a free-form STRING passed through
+        ``now.strftime()`` and then joined into the output path. Unlike
+        ``subfolder`` (validated by ``validate_subfolder``) and ``base_path``
+        (validated by ``validate_base_path``), the filename was never checked,
+        so a value like ``"../secret"`` or ``"..\\secret"`` could write
+        outside the output directory.
+
+        This removes path separators ('/' and '\\') and any '..' component so
+        the formatted name cannot escape the output directory, while keeping
+        legitimate characters (spaces, accents, dashes, underscores).
+        """
+        if not name:
+            return "untitled"
+        name = str(name)
+        # Block path separators (both platforms) — they would allow traversal.
+        name = name.replace('/', '_').replace('\\', '_')
+        # Remove any '..' path-traversal component.
+        name = name.replace('..', '')
+        # Strip leading/trailing separators and whitespace.
+        name = name.strip(' /\\')
+        # Remove characters illegal on common filesystems.
+        name = re.sub(r'[<>:"|?*\x00-\x1f]', '', name)
+        if not name:
+            return "untitled"
+        return name
+
+    @staticmethod
+    def _is_within_directory(directory, path):
+        """Return True if ``path`` resolves inside ``directory``.
+
+        Uses ``os.path.realpath`` + ``os.path.commonpath`` so symlinks and
+        '..' components are resolved before the containment check.
+        """
+        try:
+            real_dir = os.path.realpath(directory)
+            real_path = os.path.realpath(path)
+            return os.path.commonpath([real_dir, real_path]) == real_dir
+        except (ValueError, OSError):
+            return False
+
     def get_unique_filepath(self, directory, base_filename, ext):
         filepath = os.path.join(directory, f"{base_filename}{ext}")
+        # Security: ensure the resolved path stays within the output directory.
+        if not self._is_within_directory(directory, filepath):
+            raise ValueError(f"Resolved output path escapes the output directory: {filepath}")
         counter = 1
         while os.path.exists(filepath):
             filepath = os.path.join(directory, f"{base_filename}_{counter:04d}{ext}")
+            if not self._is_within_directory(directory, filepath):
+                raise ValueError(f"Resolved output path escapes the output directory: {filepath}")
             counter += 1
         return filepath, os.path.basename(filepath)
 
@@ -352,6 +402,9 @@ class HolafSaveMedia:
             formatted_filename_base = now.strftime(filename)
         except Exception:
             formatted_filename_base = now.strftime('%Y-%m-%d-%Hh%Mm%Ss')
+        # Security: sanitize the formatted base filename so it cannot contain
+        # path separators or '..' components (path-traversal protection).
+        formatted_filename_base = self._sanitize_base_filename(formatted_filename_base)
 
         output_path = os.path.join(base_path, formatted_subfolder)
         os.makedirs(output_path, exist_ok=True)

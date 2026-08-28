@@ -835,6 +835,7 @@ if model_manager_helper:
             return web.json_response({"error": str(e)}, status=500)
 
     @routes.post("/holaf/models/deep-scan-local")
+    @holaf_auth.require_auth
     async def model_deep_scan_route(request: web.Request):
         try:
             data = await request.json()
@@ -902,8 +903,17 @@ if model_manager_helper:
         try:
             data = await request.json()
             path_canon = data.get("path")
-            chunk_index = int(data.get("chunk_index"))
-            chunk_size = int(data.get("chunk_size"))
+
+            # Validate client-controlled chunk parameters (bounds + type safety)
+            try:
+                chunk_index = int(data.get("chunk_index"))
+                chunk_size = int(data.get("chunk_size"))
+            except (TypeError, ValueError):
+                return web.Response(status=400, text="Invalid chunk parameters.")
+            if chunk_index < 0:
+                return web.Response(status=400, text="Invalid chunk_index.")
+            if chunk_size <= 0 or chunk_size > 64 * 1024 * 1024:
+                return web.Response(status=400, text="Invalid chunk_size.")
 
             if not model_manager_helper.is_path_safe(path_canon, is_directory_model=False):
                 return web.Response(status=403, text="Access forbidden.")
@@ -1129,6 +1139,7 @@ if nodes_manager_helper:
     @holaf_auth.require_auth
     async def nm_update_route(r): return await _handle_node_action_batch(r, "update_node_from_git")
     @routes.post("/holaf/nodes/delete")
+    @holaf_auth.require_auth
     async def nm_delete_route(r): return await _handle_node_action_batch(r, "delete_node_folder")
     @routes.post("/holaf/nodes/install-requirements")
     @holaf_auth.require_auth

@@ -1296,7 +1296,13 @@ function syncGallery(viewer, images) {
     }
 
     if (!needsFullRebuild) {
-        // Same images, maybe just metadata changed — just re-render without destroying cache
+        // Same images, maybe just metadata changed — just re-render without destroying cache.
+        // IMPORTANT: loadFilteredImages updates state.images BEFORE calling syncGallery, so the
+        // diff above sees no change and skips the full rebuild that normally clears the grid.
+        // That leaves the "no images match" placeholder stuck under the thumbnails when we go
+        // from an empty result back to a populated one. Remove it explicitly here.
+        const emptyMsg = galleryGridEl.querySelector('.holaf-viewer-empty-message');
+        if (emptyMsg) emptyMsg.remove();
         updateLayout(true);
         return;
     }
