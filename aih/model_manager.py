@@ -272,16 +272,19 @@ def upload_model_to_server(filepath, file_type="model", on_progress=None):
             logging.warning(f"[AIH] Fingerprint check failed: {e}")
 
     # 2. Init upload — on preserve le type original (UNET, LoRA, etc.) pour le Model Browser
-    # Normaliser le type pour le Model Browser (singulier, pas de _models)
+    # Normaliser le type pour le Model Browser (singulier, pas de _models).
+    # Aligné sur la whitelist /api/files/init (backend files.py) : model, node,
+    # screenshot, checkpoint, lora, vae, clip, clip_vision, controlnet, unet,
+    # unet_gguf, upscale, gligen, hypernetwork, text_encoder, style_model.
     _type_normalization = {
         'checkpoints': 'checkpoint',
         'loras': 'lora',
         'upscale_models': 'upscale',
         'text_encoders': 'text_encoder',
         'style_models': 'style_model',
-        'diffusion_models': 'diffusion_model',
+        'diffusion_models': 'unet',
         'hypernetworks': 'hypernetwork',
-        'embeddings': 'embedding',
+        'embeddings': 'model',
         'clip_vision': 'clip_vision',
         'controlnet': 'controlnet',
         'gligen': 'gligen',
@@ -289,7 +292,7 @@ def upload_model_to_server(filepath, file_type="model", on_progress=None):
         'unet_gguf': 'unet_gguf',
         'vae': 'vae',
         'clip': 'clip',
-        'configs': 'config',
+        'configs': 'model',
         'model': 'model',
     }
     backend_type = _type_normalization.get(file_type, file_type)
@@ -492,6 +495,9 @@ def download_model_from_server(upload_id, filename, file_type="model", dest_path
         'hypernetwork': 'hypernetworks',
         'text_encoder': 'text_encoders',
         'style_model': 'style_models',
+        'diffusion_model': 'diffusion_models',
+        'embedding': 'embeddings',
+        'config': 'configs',
         'model': 'checkpoints',  # fallback
     }
 

@@ -507,7 +507,7 @@ def flush_outbox(api_url, api_key, limit=200):
             op = {
                 "op_id": op_id,
                 "entity_type": r["entity_type"],
-                "client_id": r["entity_client_id"],
+                "entity_client_id": r["entity_client_id"],
                 "op": r["op"],
                 "payload": payload,
             }

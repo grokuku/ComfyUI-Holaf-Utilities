@@ -191,7 +191,6 @@ class HolafBaseNode extends LGraphNode {
         this.isVirtualNode = false;
         this.isDropEnabled = false;
         this.removed = false;
-        this.configuring = false;
         this._tempWidth = 0;
         this.__constructed__ = false;
 
@@ -235,11 +234,8 @@ class HolafBaseNode extends LGraphNode {
         return this.__constructed__;
     }
 
-    configure(info) {
-        this.configuring = true;
-        super.configure(info);
+    onConfigure(info) {
         for (const w of this.widgets || []) { w.last_y = w.last_y || 0; }
-        this.configuring = false;
     }
 
     clone() {

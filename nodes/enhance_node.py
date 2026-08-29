@@ -247,6 +247,19 @@ class AIHEnhanceNode:
             template_id = int(template_id) if template_id != "" else 0
         except (ValueError, TypeError):
             template_id = 0
+
+        # En mode cloud (use_llm sans llm_config local), le backend exige un
+        # template (backend/routes/enhance.py:_validate_enhance_inputs →
+        # 'template_id requis'). On échoue tôt avec un message clair plutôt
+        # qu'un 400 obscur du backend.
+        if use_llm and not llm_config and template_id == 0:
+            logging.warning(
+                "[AIH Enhance] template_id requis en mode cloud — "
+                "définissez un template (widget)"
+            )
+            raise ValueError(
+                "template_id requis en mode cloud — définissez un template (widget)"
+            )
         try:
             preset_id = int(preset_id) if preset_id != "" else 0
         except (ValueError, TypeError):

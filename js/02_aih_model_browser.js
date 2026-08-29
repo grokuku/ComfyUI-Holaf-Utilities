@@ -852,10 +852,10 @@ import "./aih_strings.js";
                     'hypernetworks':   'hypernetwork',
                     'text_encoders':   'text_encoder',
                     'style_models':    'style_model',
-                    'diffusion_models':'diffusion_model',
-                    'configs':         'other',
-                    'embeddings':      'embedding',
-                    'bbxe/models':     'other',
+                    'diffusion_models':'unet',
+                    'configs':         'model',
+                    'embeddings':      'model',
+                    'bbxe/models':     'model',
                 };
                 Object.keys(itemsObj).forEach(function (category) {
                     (itemsObj[category] || []).forEach(function (item) {
@@ -1311,7 +1311,7 @@ import "./aih_strings.js";
 
     // ─── getEffectiveType ───────────────────────────────────────────────────────
     function getEffectiveType(item) {
-        return item._overrideType || item.type || 'other';
+        return item._overrideType || item.type || 'model';
     }
 
     // ─── getTypeInfo ────────────────────────────────────────────────────────────
@@ -1353,7 +1353,7 @@ import "./aih_strings.js";
             method: 'POST',
             body: JSON.stringify({
                 path: filepath,
-                type: fileType || 'other',
+                type: fileType || 'model',
             }),
         })
             .then(function (r) {
@@ -1393,7 +1393,7 @@ import "./aih_strings.js";
             body: JSON.stringify({
                 upload_id: uploadId,
                 filename: filename,
-                type: fileType || 'other',
+                type: fileType || 'model',
                 dest_path: destSubdir || '',
             }),
         })
@@ -1458,7 +1458,7 @@ import "./aih_strings.js";
         var body = {
             upload_id: uploadId,
             filename: filename,
-            type: fileType || 'other',
+            type: fileType || 'model',
             dest_path: destSubdir || '',
             conflict_resolution: resolution,
         };
