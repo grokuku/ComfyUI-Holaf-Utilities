@@ -19,6 +19,29 @@
 
 ---
 
+### 🔐 Sensitive routes require a password
+
+Beyond the Terminal, the following sensitive endpoints are **always** protected
+by the same password-based session authentication (`holaf_session` cookie):
+
+* `POST /holaf/utilities/restart`
+* `POST /holaf/models/upload-chunk`, `POST /holaf/models/finalize-upload`, `POST /holaf/models/delete`
+* `GET/POST /aih/credentials`, `GET /aih/openai/keys`
+* `POST /aih/update`
+* `POST /api/aih/custom-nodes/install`
+* `POST/GET /aih/blobby/save`, `/aih/blobby/load`, `POST /aih/blobby/exec`
+
+There is **no local-only exemption**: these routes require a valid session even
+when ComfyUI is bound to `127.0.0.1`. This is intentional — a reverse proxy on
+the same host (e.g. Caddy) can still forward requests to a loopback-bound
+ComfyUI, so a bind-address check cannot reliably distinguish local access from
+proxied access. **You MUST set a password** (via the Terminal setup panel or by
+writing a `password_hash` into `config.ini`) for these features to work. Without
+a configured password, the login endpoint refuses all sessions and these routes
+return `401`.
+
+---
+
 ## Included Utilities
 
 *   **Holaf Terminal:** A functional, floating terminal panel, accessible from the "Utilities" menu. It runs within the ComfyUI environment, giving you access to the correct Python virtual environment.

@@ -23,11 +23,11 @@ au ``sys.path``, rendant les imports absolus ``from aih import X`` valides).
   de décorateurs aiohttp) — le même que celui utilisé par toutes les routes
   ``/holaf/*`` d'Utils.
 - ``require_auth``  : le décorateur d'authentification partagé Holaf
-  (``holaf_auth.require_auth``), passé par le ``__init__.py`` racine. Il sert
-  uniquement à sécuriser ``POST /aih/blobby/exec`` (voir groupe « blobby »).
-  S'il n'est pas fourni, la garde fail-closed ``_fail_closed_auth_guard``
-  remplace la route par un refus permanent (503) : jamais de shell ouvert
-  par défaut.
+  (``holaf_auth.require_auth``), passé par le ``__init__.py`` racine. Il
+  sécurise les routes sensibles du pack (credentials, clés OpenAI, update,
+  install de custom nodes, blobby save/load/exec). S'il n'est pas fourni,
+  la garde fail-closed ``_fail_closed_auth_guard`` remplace la route de
+  shell par un refus permanent (503) : jamais de shell ouvert par défaut.
 
 Les groupes sont enregistrés indépendamment : l'échec d'un groupe est
 journalisé mais ne prive pas les autres (robustesse héritée de la source).
@@ -160,7 +160,7 @@ def _fail_closed_auth_guard(handler):
 # GROUPE 1 — Credentials & clés & presets (chemins de données inchangés)
 # ══════════════════════════════════════════════════════════════════════
 
-def _register_credentials_group(r):
+def _register_credentials_group(r, require_auth):
     """GET/POST /aih/credentials, /aih/elements/presets*, /aih/openai/keys."""
 
     # ── Credentials (lecture / ecriture du fichier local) ──────────────
@@ -169,6 +169,7 @@ def _register_credentials_group(r):
     # Les nodes Python lisent ce fichier via aih.credentials.
 
     @r.get("/aih/credentials")
+    @require_auth
     async def aih_get_credentials_route(request):
         try:
             creds = credentials._load_aih_credentials(use_cache=False)
@@ -187,6 +188,7 @@ def _register_credentials_group(r):
             }, status=500)
 
     @r.post("/aih/credentials")
+    @require_auth
     async def aih_save_credentials_route(request):
         try:
             data = await request.json()
@@ -328,6 +330,7 @@ def _register_credentials_group(r):
     # ── OpenAI API Keys (stockage local par base_url) ──────────────────
 
     @r.get("/aih/openai/keys")
+    @require_auth
     async def aih_get_openai_keys(request):
         """Retourne les clés API stockées, optionnellement filtrées par base_url."""
         try:
@@ -379,7 +382,7 @@ def _register_credentials_group(r):
 # ══════════════════════════════════════════════════════════════════════
 # GROUPE 2 — Update (POST /aih/update, SANS auto-restart)
 
-def _register_update_group(r):
+def _register_update_group(r, require_auth):
     """POST /aih/update — git fetch + reset --hard FETCH_HEAD.
 
     Contrat pour le chantier D (widgets JS) :
@@ -398,6 +401,7 @@ def _register_update_group(r):
     from aih import update_manager as _update_manager
 
     @r.post("/aih/update")
+    @require_auth
     async def aih_update_route(request):
         try:
             result = _update_manager.update_repo()
@@ -447,8 +451,9 @@ def _register_blobby_group(r, require_auth):
     """Routes du Blobby Companion.
 
     - POST /aih/blobby/save + GET /aih/blobby/load : stockage JSON clé→valeur
-      des paramètres du companion (fichier local, portage fidèle — pas
-      d'authentification à la source, CSRF middleware global d'Utils actif).
+      des paramètres du companion (fichier local). SÉCURISÉES derrière
+      ``require_auth`` (même cookie de session signé que /aih/blobby/exec) :
+      lecture/écriture des paramètres du companion exigent une session valide.
     - POST /aih/blobby/exec : exécution shell locale. 🔴 À la source, cette
       route était OUVERTE (aucune auth). Elle est ici PORTÉE UNIQUEMENT
       SÉCURISÉE derrière l'authentification par mot de passe du terminal
@@ -463,6 +468,7 @@ def _register_blobby_group(r, require_auth):
     """
 
     @r.post("/aih/blobby/save")
+    @require_auth
     async def aih_blobby_save_route(request):
         try:
             body = await request.json()
@@ -485,6 +491,7 @@ def _register_blobby_group(r, require_auth):
             return web.json_response({"error": str(e)}, status=500)
 
     @r.get("/aih/blobby/load")
+    @require_auth
     async def aih_blobby_load_route(request):
         try:
             key = request.query.get("key")
@@ -551,7 +558,7 @@ def _register_blobby_group(r, require_auth):
 
 # GROUPE 4 — Models SFTP chunked + fingerprint & Custom Nodes
 
-def _register_models_group(r):
+def _register_models_group(r, require_auth):
     """Routes /api/aih/models/* (via aih.model_manager) et /api/aih/custom-nodes*
     (via aih.custom_nodes_manager). Contrats identiques à la source AI-Helper ;
     les transferts SFTP (paramiko) et HTTP sont lancés dans un executor pour ne
@@ -573,6 +580,7 @@ def _register_models_group(r):
             return web.json_response({"error": str(e)}, status=500)
 
     @r.post("/api/aih/custom-nodes/install")
+    @require_auth
     async def aih_install_node(request):
         try:
             body = await request.json()
@@ -1724,8 +1732,12 @@ def register(server_routes, require_auth=None):
     Args:
         server_routes: ``server.PromptServer.instance.routes``.
         require_auth: décorateur d'authentification partagé Holaf
-            (``holaf_auth.require_auth``). Utilisé exclusivement par
-            /aih/blobby/exec ; absent → garde fail-closed (503).
+            (``holaf_auth.require_auth``). Il sécurise les routes sensibles
+            (credentials, clés OpenAI, update, install de custom nodes,
+            blobby save/load/exec). S'il n'est pas fourni, la garde
+            fail-closed ``_fail_closed_auth_guard`` remplace la route de
+            shell par un refus permanent (503) : jamais de shell ouvert
+            par défaut.
 
     Returns:
         int: nombre de routes effectivement enregistrées.
@@ -1742,10 +1754,10 @@ def register(server_routes, require_auth=None):
             return False
 
     print("--- Registering AIH HTTP routes (aih/routes.py) ---")
-    _safe("credentials", _register_credentials_group, r)
-    _safe("update", _register_update_group, r)
+    _safe("credentials", _register_credentials_group, r, require_auth)
+    _safe("update", _register_update_group, r, require_auth)
     _safe("blobby", _register_blobby_group, r, require_auth)
-    _safe("models", _register_models_group, r)
+    _safe("models", _register_models_group, r, require_auth)
     if _safe("local", _register_local_group, r):
         # Comportement d'origine de la source : le moteur de synchronisation
         # daemon du mode miroir démarre avec le chargement des routes local.

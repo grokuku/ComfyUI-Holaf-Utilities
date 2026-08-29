@@ -28,8 +28,10 @@ protégé par authentification) ou manuellement ; un message explicite est renvo
 
 import os
 import logging
+import re
 import subprocess
 import configparser
+from urllib.parse import urlparse
 
 try:
     import folder_paths
@@ -37,6 +39,67 @@ try:
     _CUSTOM_NODES_DIR = os.path.join(_BASE_DIR, "custom_nodes")
 except Exception:
     _CUSTOM_NODES_DIR = None
+
+
+# Trusted Git origins for custom node installation. Only HTTPS clones from
+# these hosts are allowed. This blocks RCE via attacker-supplied file://,
+# git://, ssh:// or http:// clone URLs (porté depuis nodes/holaf_nodes_manager.py).
+ALLOWED_GIT_HOSTS = {'github.com', 'www.github.com'}
+
+
+def _validate_repo_url(repo_url):
+    """Validate a clone URL for custom node install.
+
+    Returns (normalized_url, None) on success or (None, error_message) on
+    failure. Only HTTPS URLs on trusted hosts are accepted.
+    """
+    if not isinstance(repo_url, str) or not repo_url.strip():
+        return None, "Repository URL is required."
+
+    repo_url = repo_url.strip()
+    try:
+        parsed = urlparse(repo_url)
+    except ValueError:
+        return None, "Invalid repository URL."
+
+    if parsed.scheme != 'https':
+        return None, "Only HTTPS repository URLs are allowed."
+
+    if parsed.username is not None or parsed.password is not None:
+        return None, "Repository URLs with embedded credentials are not allowed."
+
+    hostname = (parsed.hostname or '').lower()
+    if hostname not in ALLOWED_GIT_HOSTS:
+        return None, "Repository host is not allowed."
+
+    if not parsed.path or parsed.path.rstrip('/') == '':
+        return None, "Repository URL is missing a repository path."
+
+    return repo_url, None
+
+
+def _sanitize_node_name(node_name_from_client: str) -> str | None:
+    """Sanitize a node folder name to prevent path traversal.
+
+    Allows only alphanumeric characters, underscores, hyphens, and dots.
+    Ensures the name is a single path component (rejects ``..`` and any
+    path separator).
+    """
+    if not node_name_from_client:
+        return None
+
+    if "/" in node_name_from_client or "\\" in node_name_from_client:
+        return None
+
+    if ".." in node_name_from_client:
+        return None
+
+    sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '', node_name_from_client)
+
+    if not sanitized or all(c == '.' for c in sanitized):
+        return None
+
+    return sanitized
 
 
 def _read_git_url(node_dir):
@@ -216,11 +279,23 @@ def _install_custom_node(git_url, name=""):
     if not git_url:
         return {"success": False, "message": "git_url required"}
 
+    # SECURITY: validate the clone URL (HTTPS only, trusted hosts) before it
+    # is ever passed to git clone — porté depuis nodes/holaf_nodes_manager.py.
+    git_url, url_err = _validate_repo_url(git_url)
+    if not git_url:
+        return {"success": False, "message": url_err}
+
     # Déduire le nom depuis l'URL si non fourni
     if not name:
         name = git_url.rstrip('/').split('/')[-1]
         if name.endswith('.git'):
             name = name[:-4]
+
+    # SECURITY: sanitize the folder name to a single path component so the
+    # clone can never escape custom_nodes/ (anti path-traversal).
+    name = _sanitize_node_name(name)
+    if not name:
+        return {"success": False, "message": "Invalid node name."}
 
     target = os.path.join(_CUSTOM_NODES_DIR, name)
     if os.path.isdir(target):

@@ -662,6 +662,7 @@ async def holaf_save_all_settings_route(request: web.Request):
         return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 @routes.post("/holaf/utilities/restart")
+@holaf_auth.require_auth
 async def holaf_restart_server_route(request: web.Request):
     return await holaf_server_management.restart_server_route(request)
 
@@ -737,6 +738,7 @@ async def get_model_types_config_route(request: web.Request):
         return web.json_response(json.load(f))
 
 @routes.post("/holaf/models/upload-chunk")
+@holaf_auth.require_auth
 async def upload_model_chunk_route(request: web.Request):
     try:
         data = await request.post()
@@ -761,6 +763,7 @@ async def upload_model_chunk_route(request: web.Request):
         return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 @routes.post("/holaf/models/finalize-upload")
+@holaf_auth.require_auth
 async def finalize_upload_model_route(request: web.Request):
     try:
         data = await request.json()
@@ -850,6 +853,7 @@ if model_manager_helper:
             return web.json_response({"error": str(e)}, status=500)
 
     @routes.post("/holaf/models/delete") # This is for Model Manager, distinct from Image Viewer delete
+    @holaf_auth.require_auth
     async def delete_model_route(request: web.Request):
         try:
             data = await request.json()
