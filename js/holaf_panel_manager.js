@@ -359,6 +359,11 @@ export const HolafPanelManager = {
             dialog.append(header, content, footer);
             overlay.appendChild(dialog);
 
+            // Fenêtre déplaçable (comme les panels) : centrée par défaut via
+            // CSS (translate -50%,-50%), la position devient left/top au premier
+            // drag (bakeTransform) — clamp viewport + bringToFront inclus.
+            HolafPanelManager.makeDraggable(dialog, header);
+
             // FIX: Clicking the overlay backdrop closes/cancels the dialog
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {

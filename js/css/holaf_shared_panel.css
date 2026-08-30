@@ -443,14 +443,17 @@
    ========================================================================== */
 
 .holaf-dialog-inline {
-    position: relative !important;
-    transform: none !important;
+    /* Fenêtre déplaçable : centrée par défaut. Le premier drag convertit la
+       position centrée (transform translate) en left/top via makeDraggable
+       → bakeTransform (d'où l'absence de !important sur position/transform). */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     width: auto !important;
     min-width: 300px !important;
     max-width: 500px !important;
     height: auto !important;
-    top: auto !important;
-    left: auto !important;
     /* Keep footer visible by constraining height to viewport */
     max-height: 90vh;
     display: flex;
