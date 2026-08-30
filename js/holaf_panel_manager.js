@@ -403,6 +403,19 @@ export const HolafPanelManager = {
 
             document.body.appendChild(overlay);
 
+            // ── Centrage JS explicite (indépendant de la cascade CSS) ──────
+            // On mesure la fenêtre APRÈS insertion puis on la place en pixels
+            // dans le viewport. Un éventuel souci de chargement CSS, de
+            // spécificité ou de transform ne peut plus décentrer les dialogs.
+            // Le drag (left/top) fonctionne ensuite sans étape de bake.
+            const _rect = dialog.getBoundingClientRect();
+            const _vw = window.innerWidth;
+            const _vh = window.innerHeight;
+            dialog.style.position = 'fixed';
+            dialog.style.left = `${Math.max(10, Math.round((_vw - _rect.width) / 2))}px`;
+            dialog.style.top = `${Math.max(10, Math.round((_vh - _rect.height) / 2))}px`;
+            dialog.style.transform = 'none';
+
             if (buttons.length > 0) {
                 updateFocusedButton(buttons.length - 1);
             }
