@@ -9,6 +9,7 @@
 
 import "../aih_strings.js";
 import { HolafPanelManager } from "../holaf_panel_manager.js";
+import { escapeHtml } from "../holaf_dom_utils.js";
 import { imageViewerState } from './image_viewer_state.js';
 import { getThumbnailUrl } from './image_viewer_gallery.js';
 
@@ -23,12 +24,64 @@ function _controlTypeLabel(id) {
     return t('iv.ctrl' + id.charAt(0).toUpperCase() + id.slice(1));
 }
 
-const CONTROL_TYPES = [
-    { id: 'brightness', label: 'Brightness', default: 1, min: 0, max: 200, step: 1 },
-    { id: 'contrast',   label: 'Contrast',   default: 1, min: 0, max: 200, step: 1 },
-    { id: 'saturation', label: 'Saturation', default: 1, min: 0, max: 200, step: 1 },
-    { id: 'hue',        label: 'Hue',        default: 0, min: -180, max: 180, step: 1 },
+// Catégories des contrôles d'édition (rangement « dossier » du picker).
+// Ajouter une catégorie = entrée ici + champ `category` sur les contrôles.
+const CONTROL_CATEGORIES = [
+    { id: 'basic', labelKey: 'iv.catBasic', icon: '⚙️' },
+    { id: 'color', labelKey: 'iv.catColor', icon: '🎨' },
 ];
+
+const CONTROL_TYPES = [
+    { id: 'brightness', label: 'Brightness', category: 'basic', default: 1, min: 0, max: 200, step: 1 },
+    { id: 'contrast',   label: 'Contrast',   category: 'basic', default: 1, min: 0, max: 200, step: 1 },
+    { id: 'saturation', label: 'Saturation', category: 'color', default: 1, min: 0, max: 200, step: 1 },
+    { id: 'hue',        label: 'Hue',        category: 'color', default: 0, min: -180, max: 180, step: 1 },
+];
+
+// ── Pickeur « liste structurée » (AIH.Dialog) ───────────────────────────────
+// groups: [{ label?, items: [{ id, label, hint? }] }] — clic ou Entrée sélectionne.
+function _buildPickerHTML(groups) {
+    let html = '<div class="aih-picker">';
+    groups.forEach((g) => {
+        if (g.label) {
+            html += `<div class="aih-picker-cat">${escapeHtml(g.label)}</div>`;
+        }
+        g.items.forEach((it) => {
+            html += `<div class="aih-picker-item" data-pick="${it.id}" role="button" tabindex="0">`
+                + `<span class="aih-picker-item-name">${escapeHtml(it.label)}</span>`
+                + (it.hint ? `<span class="aih-picker-item-hint">${escapeHtml(it.hint)}</span>` : '')
+                + '</div>';
+        });
+    });
+    html += '</div>';
+    return html;
+}
+
+function _pickFromList(title, groups, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+        const ctrl = AIH.Dialog.open({
+            title: title,
+            modal: true,
+            draggable: true,
+            resizable: false,
+            width: opts.width || '380px',
+            _onResolve: (v) => resolve(v),
+            content: (body) => { body.innerHTML = _buildPickerHTML(groups); },
+            buttons: [{ text: t('iv.cancel'), value: null, type: 'cancel' }],
+        });
+        const items = ctrl.el.querySelectorAll('[data-pick]');
+        const pick = (item) => () => ctrl.close(item.dataset.pick);
+        items.forEach((item) => {
+            const handler = pick(item);
+            item.addEventListener('click', handler);
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); }
+            });
+        });
+        if (items[0]) items[0].focus();
+    });
+}
 
 const DEFAULT_EDIT_STATE = () => ({
     controls: [],
@@ -491,23 +544,29 @@ export class ImageEditor {
         const addBtn = this.panelEl.querySelector('#holaf-editor-add-btn');
         if (addBtn) {
             addBtn.onclick = async () => {
-                const typeButtons = CONTROL_TYPES.map(ct => ({ text: _controlTypeLabel(ct.id), value: ct.id, type: 'confirm' }));
-                typeButtons.push({ text: t('iv.cancel'), value: null, type: 'cancel' });
-                const chosenType = await AIH.ask({
-                    title: t('iv.addControlTitle'), message: t('iv.chooseControlType'), buttons: typeButtons
-                });
+                // Liste structurée par catégories (évolutive) : clic sélectionne
+                const groups = CONTROL_CATEGORIES.map((cat) => ({
+                    label: t(cat.labelKey),
+                    items: CONTROL_TYPES
+                        .filter((ct) => ct.category === cat.id)
+                        .map((ct) => ({ id: ct.id, label: _controlTypeLabel(ct.id) })),
+                })).filter((g) => g.items.length > 0);
+                const chosenType = await _pickFromList(t('iv.addControlTitle'), groups);
                 if (!chosenType) return;
 
-                const rangeOptions = [
-                    { text: t('iv.all'), value: 'all' }, { text: t('iv.shadows'), value: 'shadows' },
-                    { text: t('iv.midtones'), value: 'midtones' }, { text: t('iv.highlights'), value: 'highlights' },
-                ];
-                const rangeButtons = rangeOptions.map(r => ({ text: r.text, value: r.value, type: 'confirm' }));
-                rangeButtons.push({ text: t('iv.cancel'), value: null, type: 'cancel' });
-                const chosenRange = await AIH.ask({
-                    title: t('iv.rangeTitle', { label: _controlTypeLabel(chosenType) }),
-                    message: t('iv.chooseRange'), buttons: rangeButtons
-                });
+                // Portée du réglage — même picker
+                const rangeGroups = [{
+                    items: [
+                        { id: 'all', label: t('iv.all') },
+                        { id: 'shadows', label: t('iv.shadows') },
+                        { id: 'midtones', label: t('iv.midtones') },
+                        { id: 'highlights', label: t('iv.highlights') },
+                    ],
+                }];
+                const chosenRange = await _pickFromList(
+                    t('iv.rangeTitle', { label: _controlTypeLabel(chosenType) }),
+                    rangeGroups
+                );
                 if (!chosenRange) return;
                 this._addControl(chosenType, chosenRange);
             };

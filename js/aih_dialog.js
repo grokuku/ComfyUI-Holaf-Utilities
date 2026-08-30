@@ -848,7 +848,7 @@ import {
             ].join("");
             const ctrl = open({
                 title: title || L("dialog.alert_title", null, ""),
-                width: "320px",
+                width: "auto",
                 modal: true,
                 resizable: false,
                 draggable: true,
@@ -949,7 +949,7 @@ import {
             }
             const ctrl = open({
                 title: title || "",
-                width: opts.width || "360px",
+                width: opts.width || "auto",
                 modal: true,
                 resizable: opts.resizable !== undefined ? opts.resizable : false,
                 draggable: opts.draggable !== undefined ? opts.draggable : true,

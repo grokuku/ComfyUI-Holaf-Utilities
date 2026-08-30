@@ -109,6 +109,8 @@
     overflow: hidden;
     min-width: 280px;
     min-height: 120px;
+    max-width: 90vw;
+    max-height: 85vh;
     color: var(--aih-text);
     font-size: var(--aih-font-size);
     line-height: 1.5;
@@ -227,6 +229,8 @@
     background: var(--aih-bg-secondary);
     border-radius: 0 0 var(--aih-radius-footer) var(--aih-radius-footer);
     flex-shrink: 0;
+    /* Beaucoup de boutons → passage à la ligne au lieu de déborder */
+    flex-wrap: wrap;
 }
 
 .aih-dialog-btn {

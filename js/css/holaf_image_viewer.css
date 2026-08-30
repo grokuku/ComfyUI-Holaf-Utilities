@@ -1150,3 +1150,57 @@ video::-webkit-media-controls {
     0%, 100% { opacity: 0.45; }
     50% { opacity: 0.9; }
 }
+/* ==========================================================================
+   Picker « liste structurée » (AIH.Dialog) — rangement par catégories
+   ========================================================================== */
+.aih-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 300px;
+    max-height: 45vh;
+    overflow-y: auto;
+}
+
+.aih-picker-cat {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--aih-text-secondary);
+    padding: 8px 8px 4px;
+    border-bottom: 1px solid var(--aih-border);
+    margin-top: 4px;
+}
+
+.aih-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--aih-text);
+    transition: background 0.12s;
+}
+
+.aih-picker-item:hover {
+    background: var(--aih-bg-hover);
+}
+
+.aih-picker-item:focus-visible {
+    outline: 2px solid var(--aih-accent-active);
+    outline-offset: -2px;
+}
+
+.aih-picker-item-name {
+    font-size: var(--aih-font-size);
+}
+
+.aih-picker-item-hint {
+    font-size: 11px;
+    color: var(--aih-text-secondary);
+    text-align: right;
+}
