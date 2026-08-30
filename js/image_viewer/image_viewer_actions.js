@@ -170,6 +170,8 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
                 HolafPanelManager.createDialog({
                     title: dialogTitle,
                     message: finalMessage,
+                    html: true,           // finalMessage contient <strong>/<br>
+                    maxWidth: 620,        // les détails d'erreurs ont besoin de place
                     buttons: [{ text: t("iv.ok") }],
                     parentElement: document.body
                 });

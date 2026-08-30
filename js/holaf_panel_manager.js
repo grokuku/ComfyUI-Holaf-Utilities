@@ -179,7 +179,13 @@ export const HolafPanelManager = {
     },
 
     _bakePosition(panel) {
-        if (panel.style.transform && panel.style.transform !== 'none') {
+        // Utilise la valeur calculée (getComputedStyle) et pas seulement le
+        // style inline : le transform peut venir du CSS (.holaf-dialog-inline
+        // est centré via translate). Au premier drag, on convertit la position
+        // centrée en left/top explicites, sinon le drag déraille de la moitié
+        // de la taille de la fenêtre.
+        const t = getComputedStyle(panel).transform;
+        if (t && t !== 'none') {
             const rect = panel.getBoundingClientRect();
             panel.style.top = `${rect.top}px`;
             panel.style.left = `${rect.left}px`;
@@ -267,12 +273,22 @@ export const HolafPanelManager = {
             // FIX: Support both plain text (message) and custom DOM (messageElement)
             if (options.messageElement instanceof HTMLElement) {
                 content.appendChild(options.messageElement);
+            } else if (options.html) {
+                // Message avec balises HTML (ex: détails d'erreurs de suppression)
+                content.innerHTML = options.message || "";
             } else {
                 content.textContent = options.message || "";
             }
 
             const footer = document.createElement("div");
             footer.className = "holaf-dialog-footer";
+
+            // Tailles configurables par fenêtre (le contenu varie) — les
+            // défauts CSS (.holaf-dialog-inline) sont écrasés par ces inline.
+            if (options.width) dialog.style.width = `${options.width}px`;
+            if (options.minWidth) dialog.style.minWidth = `${options.minWidth}px`;
+            if (options.maxWidth) dialog.style.maxWidth = `${options.maxWidth}px`;
+            if (options.maxHeight) dialog.style.maxHeight = `${options.maxHeight}px`;
 
             const buttons = [];
             let focusedButtonIndex = -1;
@@ -362,10 +378,19 @@ export const HolafPanelManager = {
             // Fenêtre déplaçable (comme les panels) : centrée par défaut via
             // CSS (translate -50%,-50%), la position devient left/top au premier
             // drag (bakeTransform) — clamp viewport + bringToFront inclus.
-            HolafPanelManager.makeDraggable(dialog, header);
+            // On retient qu'un drag a eu lieu pour ne pas fermer le dialog si
+            // le clic de fin de drag retombe sur l'overlay (fond).
+            let wasDragged = false;
+            HolafPanelManager.makeDraggable(dialog, header, () => { wasDragged = true; });
 
             // FIX: Clicking the overlay backdrop closes/cancels the dialog
+            // (sauf si on vient de déplacer la fenêtre : un drag qui se
+            // termine sur le fond ne doit pas fermer le dialog).
             overlay.addEventListener('click', (e) => {
+                if (wasDragged) {
+                    wasDragged = false;
+                    return;
+                }
                 if (e.target === overlay) {
                     const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
                     if (cancelButton) {
