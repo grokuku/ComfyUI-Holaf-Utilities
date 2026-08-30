@@ -325,6 +325,8 @@
         var data = await res.json();
         if (data.token) {
           input.value = data.token;
+        } else if (data && data.exists) {
+          input.value = 'Clé masquée — clique sur « Regénérer » pour en afficher une nouvelle.';
         } else {
           input.value = 'Erreur : pas de token';
         }

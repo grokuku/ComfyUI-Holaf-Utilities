@@ -21,6 +21,7 @@
 
 import base64
 import binascii
+import collections
 import functools
 import hashlib
 import hmac
@@ -37,6 +38,21 @@ from . import holaf_config
 SESSION_COOKIE_NAME = "holaf_session"
 SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60  # 30 days
 PBKDF2_ITERATIONS = 260000
+
+# --- Brute-force rate limiting (login attempts) ---
+# Bloque les attaques en ligne sur le mot de passe du terminal :
+#   - par IP : RATE_LIMIT_MAX_FAILURES échecs dans la fenêtre → lockout ;
+#   - global  : backstop contre le spoofing X-Forwarded-For (rotation d'IP).
+# Surchargeable via l'environnement (défauts raisonnables : 5 / 15 min).
+RATE_LIMIT_MAX_FAILURES = int(os.environ.get("AIH_RATE_LIMIT_MAX_FAILURES", "5"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("AIH_RATE_LIMIT_WINDOW_SECONDS", "900"))  # 15 min
+RATE_LIMIT_GLOBAL_MAX = int(os.environ.get("AIH_RATE_LIMIT_GLOBAL_MAX", "50"))
+RATE_LIMIT_GLOBAL_WINDOW_SECONDS = int(os.environ.get("AIH_RATE_LIMIT_GLOBAL_WINDOW_SECONDS", "60"))
+RATE_LIMIT_MAX_TRACKED_IPS = 1024
+
+_rate_limit_lock = threading.Lock()
+_failed_logins = collections.defaultdict(collections.deque)  # ip -> timestamps (monotonic)
+_global_failures = collections.deque()  # timestamps (monotonic), toutes IP confondues
 
 _session_secret_lock = threading.Lock()
 _session_secret_cache = None
@@ -232,6 +248,11 @@ def require_auth(handler):
 # --- Unified auth endpoints ---
 async def login_route(request: web.Request, global_config) -> web.Response:
     """POST /holaf/auth/login"""
+    if is_rate_limited(request):
+        return web.json_response(
+            {"success": False, "error": "Too many attempts. Try again later."},
+            status=429,
+        )
     password_hash = global_config.get('password_hash')
     password = None
     try:
@@ -243,14 +264,68 @@ async def login_route(request: web.Request, global_config) -> web.Response:
 
     # Generic message on purpose: do not reveal whether a password is set.
     if not password_hash or not verify_password(password_hash, password):
+        record_failed_login(request)
         return web.json_response(
             {"success": False, "error": "Invalid credentials."},
             status=401,
         )
 
+    clear_failed_logins(request)
     response = web.json_response({"success": True})
     set_session_cookie(response, request)
     return response
+
+
+# --- Rate limiting helpers (exposés pour les autres routes d'auth) ---
+
+def _client_ip(request: web.Request) -> str:
+    """IP du client, best-effort : 1er X-Forwarded-For (proxy Caddy) sinon peer."""
+    xff = request.headers.get('X-Forwarded-For', '')
+    first = xff.split(',')[0].strip() if xff else ''
+    if first and len(first) <= 64:
+        return first
+    return request.remote or 'unknown'
+
+
+def _prune_older_than(dq, now, window):
+    while dq and now - dq[0] > window:
+        dq.popleft()
+
+
+def is_rate_limited(request: web.Request) -> bool:
+    """True si la requête est en lockout (trop d'échecs récents, par IP ou global)."""
+    now = time.monotonic()
+    with _rate_limit_lock:
+        _prune_older_than(_global_failures, now, RATE_LIMIT_GLOBAL_WINDOW_SECONDS)
+        if len(_global_failures) >= RATE_LIMIT_GLOBAL_MAX:
+            return True
+        ip = _client_ip(request)
+        dq = _failed_logins[ip]
+        _prune_older_than(dq, now, RATE_LIMIT_WINDOW_SECONDS)
+        return len(dq) >= RATE_LIMIT_MAX_FAILURES
+
+
+def record_failed_login(request: web.Request) -> None:
+    """Enregistre un échec d'authentification (bucket par IP + compteur global)."""
+    now = time.monotonic()
+    ip = _client_ip(request)
+    with _rate_limit_lock:
+        _global_failures.append(now)
+        _failed_logins[ip].append(now)
+        # Borne la mémoire : purge les entrées IP inactives au-delà du seuil.
+        if len(_failed_logins) > RATE_LIMIT_MAX_TRACKED_IPS:
+            for key in list(_failed_logins):
+                dq = _failed_logins[key]
+                _prune_older_than(dq, now, RATE_LIMIT_WINDOW_SECONDS)
+                if not dq:
+                    del _failed_logins[key]
+
+
+def clear_failed_logins(request: web.Request) -> None:
+    """Réinitialise le compteur d'échecs de l'IP (login réussi)."""
+    ip = _client_ip(request)
+    with _rate_limit_lock:
+        _failed_logins.pop(ip, None)
 
 
 async def logout_route(request: web.Request) -> web.Response:

@@ -62,9 +62,15 @@ def is_running_in_venv():
     venv_path = os.environ.get('VIRTUAL_ENV')
     return venv_path and sys.executable.startswith(os.path.normpath(venv_path))
 
+# Longueur minimale du mot de passe du terminal (brute-force en ligne).
+# Ne s'applique qu'aux nouveaux mots de passe — les hashes existants restent valides.
+MIN_PASSWORD_LENGTH = int(os.environ.get("AIH_MIN_PASSWORD_LENGTH", "12"))
+
 # --- API Route Handlers ---
 async def set_password_route(request: web.Request, global_app_config):
     # The lock is handled inside save_setting_to_config; removing it here prevents a deadlock.
+    if holaf_auth.is_rate_limited(request):
+        return web.json_response({"status": "error", "message": "Too many attempts. Try again later."}, status=429)
     try:
         try:
             data = await request.json()
@@ -82,6 +88,7 @@ async def set_password_route(request: web.Request, global_app_config):
             # hijacking the terminal by overwriting the password.
             current_password = data.get('current_password')
             if not current_password or not _verify_password(current_hash, current_password):
+                holaf_auth.record_failed_login(request)
                 return web.json_response({"status": "error", "message": "Current password is incorrect."}, status=403)
 
         # No password is configured yet: first-time setup is allowed. This is
@@ -90,14 +97,15 @@ async def set_password_route(request: web.Request, global_app_config):
         # On instances exposed WITHOUT an authenticated proxy, pre-configure
         # 'password_hash' in config.ini to avoid a first-come-first-served takeover.
         password = data.get('password')
-        if not password or len(password) < 4:
-            return web.json_response({"status": "error", "message": "New password is too short."}, status=400)
+        if not password or len(password) < MIN_PASSWORD_LENGTH:
+            return web.json_response({"status": "error", "message": f"New password is too short (min {MIN_PASSWORD_LENGTH} characters)."}, status=400)
 
         new_hash = _hash_password(password)
 
         try:
             await holaf_config.save_setting_to_config('Security', 'password_hash', new_hash)
             global_app_config['password_hash'] = new_hash # Update live global config
+            holaf_auth.clear_failed_logins(request)
             if current_hash:
                 print("🔑 [Holaf-Terminal] The terminal password has been changed via the UI.")
             else:
@@ -125,6 +133,8 @@ async def auth_route(request: web.Request, global_app_config):
     # POST /holaf/auth/login + cookie-only auth.
     if not global_app_config.get('password_hash'):
         return web.json_response({"status": "error", "message": "Terminal is not configured. No password is set."}, status=503)
+    if holaf_auth.is_rate_limited(request):
+        return web.json_response({"status": "error", "message": "Too many attempts. Try again later."}, status=429)
     try:
         data = await request.json()
         password = data.get('password')
@@ -132,8 +142,10 @@ async def auth_route(request: web.Request, global_app_config):
         return web.json_response({"status": "error", "message": "Invalid request."}, status=400)
 
     if not _verify_password(global_app_config['password_hash'], password):
+        holaf_auth.record_failed_login(request)
         return web.json_response({"status": "error", "message": "Invalid password."}, status=403)
 
+    holaf_auth.clear_failed_logins(request)
     session_token = str(uuid.uuid4())
     with SESSION_TOKENS_LOCK:
         SESSION_TOKENS.add(session_token)

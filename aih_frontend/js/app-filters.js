@@ -193,6 +193,7 @@
         var res = await fetch(API + '/auth/token');
         var data = await safeJson(res);
         if (data && data.token) keyEl.value = data.token;
+        else if (data && data.exists) keyEl.placeholder = 'Clé masquée — régénère-la pour l\'afficher';
       } catch {}
     }
 
@@ -216,8 +217,8 @@
         if (!Array.isArray(list)) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun style</p>'; return; }
         var html = '';
         list.forEach(function(s){
-          var name = s.name || '?';
-          var author = s.owner_name || '?';
+          var name = escapeHtml(s.name || '?');
+          var author = escapeHtml(s.owner_name || '?');
           var pub = s.is_public ? ' 🌐' : ' 🔒';
           var canEdit = s.user_id === (currentUser ? currentUser.id : '') || (currentUser && (currentUser.role === 'admin' || currentUser.role === 'kw_editor') && !s.user_id);
           var canClone = canEdit || (s.is_public && currentUser && s.user_id !== currentUser.id);
@@ -297,11 +298,11 @@
       presets.forEach(function(p) {
         var canEdit = (!p.is_global && p.user_id === (currentUser ? currentUser.id : '')) || (currentUser && (currentUser.role === 'admin' || currentUser.role === 'kw_editor'));
         html += '<div class="flex items-center justify-between py-1 px-2 rounded text-xs ' + (p.is_global ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-slate-50 dark:bg-slate-800/50') + '">';
-        html += '<div><span class="font-medium text-slate-700 dark:text-slate-200">' + p.name + '</span>';
+        html += '<div><span class="font-medium text-slate-700 dark:text-slate-200">' + escapeHtml(p.name) + '</span>';
         if (p.is_global) html += ' <span class="text-indigo-500">🌐 global</span>';
         if (p.is_client_side) html += ' <span class="text-amber-500">🖥️ client</span>';
-        if (p.owner_name && !p.is_global) html += ' <span class="text-slate-400">(' + p.owner_name + ')</span>';
-        html += '<br><span class="text-slate-400">' + p.model + ' @ ' + p.base_url + '</span></div>';
+        if (p.owner_name && !p.is_global) html += ' <span class="text-slate-400">(' + escapeHtml(p.owner_name) + ')</span>';
+        html += '<br><span class="text-slate-400">' + escapeHtml(p.model) + ' @ ' + escapeHtml(p.base_url) + '</span></div>';
         html += '<div class="flex gap-1">';
         if (canEdit) {
           html += '<button onclick="editPreset(' + p.id + ')" class="text-xs text-indigo-500 hover:text-indigo-700">Edit</button>';
@@ -511,8 +512,8 @@
         if (!Array.isArray(list)) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun template</p>'; return; }
         var html = '';
         list.forEach(function(t){
-          var name = t.name || ('Template ' + t.id);
-          var author = t.owner_name || '—';
+          var name = escapeHtml(t.name || ('Template ' + t.id));
+          var author = escapeHtml(t.owner_name || '—');
           var pub = t.is_public ? ' 🌐' : ' 🔒';
           var isDefault = !!t.is_default;
           var isAdmin = currentUser && currentUser.role === 'admin';

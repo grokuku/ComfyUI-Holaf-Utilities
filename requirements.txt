@@ -3,37 +3,43 @@
 # This file lists external Python packages required by the Holaf Utilities extension.
 # To install, run the following command in your ComfyUI's Python environment:
 # pip install -r requirements.txt
+#
+# Les versions sont épinglées avec un plancher (>=) : le minimum intègre les
+# correctifs de sécurité connus (CVE). pip n'upgrade que si la version
+# installée est sous le plancher.
 
 # psutil is used for fetching system/process utilization (CPU, memory)
 # in a cross-platform way. Required for the System Monitor.
-psutil
+psutil>=5.9.0
 
 # pywinpty provides a PTY-like interface for Windows, enabling full terminal
 # functionality (resizing, colors, echo) by using the ConPTY API.
 # It is only used on Windows.
-pywinpty; sys_platform == 'win32'
-aiofiles
-orjson
-watchdog
+pywinpty>=2.0.10; sys_platform == 'win32'
+aiofiles>=23.0.0
+orjson>=3.9.0
+watchdog>=3.0.0
 
 # python-xmp-toolkit is used for reading/writing XMP metadata (tags) in images.
-python-xmp-toolkit
+python-xmp-toolkit>=2.0.1
 
-aiohttp
-Pillow
-pynvml
+# aiohttp >= 3.9 : fixes CVE-2023-37276 (DoS) et CVE-2023-47641 (HTTP desync).
+aiohttp>=3.9.0
+# Pillow >= 10.3 : fixes de sécurité CVE multiples (décodage d'images).
+Pillow>=10.3.0
+pynvml>=11.5.0
 
 # --- Nodes imported from CUI-Holaf (fusion) ---
 # numpy: tensor/image conversions in the shared node helpers and several nodes.
-numpy
+numpy>=1.24.0
 # spandrel: model loading for the Upscale node (AIHUpscale).
-spandrel
+spandrel>=0.2.1
 # av (PyAV): video decoding/encoding for Load Image/Video and Save Media.
-av
+av>=10.0.0
 
 # --- Nodes & infrastructure imported from AIH / AI-Helper (fusion) ---
 # requests: backend AIH distant calls from the AIH nodes (Elements, Enhance,
 # Ideogram 4, Music...) and the sync engine.
-requests
-# paramiko: SFTP chunked transfers + fingerprint for the /api/aih/models routes.
-paramiko
+requests>=2.31.0
+# paramiko >= 3.4 : fix CVE-2023-48795 « Terrapin » (intégrité SSH).
+paramiko>=3.4.0

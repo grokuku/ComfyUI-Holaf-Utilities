@@ -40,6 +40,23 @@ writing a `password_hash` into `config.ini`) for these features to work. Without
 a configured password, the login endpoint refuses all sessions and these routes
 return `401`.
 
+### 🔒 Brute-force protection (login rate limiting)
+
+Login endpoints (`/holaf/auth/login`, `/holaf/terminal/auth`, and the
+`current_password` check of `/holaf/terminal/set-password`) are rate-limited to
+thwart online brute-force attacks on the terminal password:
+
+* **Per IP**: `AIH_RATE_LIMIT_MAX_FAILURES` (default `5`) failures within
+  `AIH_RATE_LIMIT_WINDOW_SECONDS` (default `900` = 15 min) lock the IP out.
+* **Global backstop**: `AIH_RATE_LIMIT_GLOBAL_MAX` (default `50`) failures
+  within `AIH_RATE_LIMIT_GLOBAL_WINDOW_SECONDS` (default `60`) lock everyone
+  briefly — this prevents bypassing the per-IP limit by rotating spoofed
+  `X-Forwarded-For` headers.
+* A successful login resets the per-IP counter.
+
+New terminal passwords must be at least `AIH_MIN_PASSWORD_LENGTH` (default
+`12`) characters (existing hashes are unaffected).
+
 ---
 
 ## Included Utilities
@@ -93,6 +110,18 @@ return `401`.
 3.  You can show/hide the panel by clicking the menu item again.
 
 ---
+
+## Tests
+
+```bash
+./run_tests.sh                 # pytest (nécessite aiohttp + pytest dans l'environnement)
+PYTHON=/path/to/venv/bin/python ./run_tests.sh
+```
+
+Les tests couvrent le rate-limiting d'authentification (`tests/test_rate_limit.py`).
+Le script lance pytest depuis un répertoire temporaire : le `__init__.py` racine
+est le point d'entrée de l'extension (il importe `server` de ComfyUI) et ne doit
+pas être importé par pytest.
 
 ## Project Roadmap & Status
 

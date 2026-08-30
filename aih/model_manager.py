@@ -56,6 +56,51 @@ except Exception:
 # Chunk size pour l'upload (doit correspondre au backend)
 CHUNK_SIZE = 25 * 1024 * 1024  # 25 MB
 
+
+# ── Connexion SFTP sécurisée (TOFU sur la host key, anti-MITM) ────────
+
+def _sftp_connect(sftp_config):
+    """Connexion SFTP avec host key TOFU (Trust On First Use).
+
+    La 1re clé d'hôte rencontrée est mémorisée dans un fichier known_hosts
+    persistant ; toute clé différente ensuite est refusée (BadHostKeyException)
+    au lieu d'être acceptée silencieusement (AutoAddPolicy).
+    Emplacement : ``AIH_SFTP_KNOWN_HOSTS`` ou ``<pack>/.sftp_known_hosts``.
+    """
+    import paramiko  # lazy : uniquement si le backend sert du SFTP
+
+    class _TOFUMissingHostKeyPolicy(paramiko.MissingHostKeyPolicy):
+        def __init__(self, path):
+            self._path = path
+
+        def missing_host_key(self, client, hostname, key):
+            client.get_host_keys().add(hostname, key.get_name(), key)
+            try:
+                client.get_host_keys().save(self._path)
+                logging.info("[model_manager] Host key mémorisée (TOFU) pour %s → %s",
+                             hostname, self._path)
+            except OSError as exc:
+                raise paramiko.SSHException(
+                    f"Impossible de persister la host key TOFU ({self._path}) : {exc}"
+                ) from exc
+
+    known_hosts = os.environ.get("AIH_SFTP_KNOWN_HOSTS") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", ".sftp_known_hosts"
+    )
+    ssh = paramiko.SSHClient()
+    if os.path.exists(known_hosts):
+        ssh.load_host_keys(known_hosts)
+    ssh.set_missing_host_key_policy(_TOFUMissingHostKeyPolicy(known_hosts))
+    if sftp_config.get('key_path'):
+        ssh.connect(sftp_config['host'], port=sftp_config['port'],
+                    username=sftp_config['username'],
+                    key_filename=sftp_config['key_path'], timeout=15)
+    else:
+        ssh.connect(sftp_config['host'], port=sftp_config['port'],
+                    username=sftp_config['username'],
+                    password=sftp_config['password'], timeout=15)
+    return ssh
+
 # Progression des uploads en cours : filepath → {chunk, total, speed_mbs, start}
 _upload_progress = {}
 
@@ -323,17 +368,7 @@ def upload_model_to_server(filepath, file_type="model", on_progress=None):
             'bytes_sent': 0, 'bytes_total': size,
         }
         try:
-            import paramiko  # lazy : uniquement si le backend sert du SFTP
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            if sftp_config.get('key_path'):
-                ssh.connect(sftp_config['host'], port=sftp_config['port'],
-                            username=sftp_config['username'],
-                            key_filename=sftp_config['key_path'], timeout=15)
-            else:
-                ssh.connect(sftp_config['host'], port=sftp_config['port'],
-                            username=sftp_config['username'],
-                            password=sftp_config['password'], timeout=15)
+            ssh = _sftp_connect(sftp_config)
             sftp = ssh.open_sftp()
             sftp.sftp_chunk_size = 2 * 1024 * 1024  # 2MB buffer
 
@@ -551,17 +586,7 @@ def download_model_from_server(upload_id, filename, file_type="model", dest_path
             'speed_mbs': 0.0, 'start': time.time(), 'last_time': time.time(),
         }
         try:
-            import paramiko  # lazy : uniquement si le backend sert du SFTP
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            if sftp_cfg.get('key_path'):
-                ssh.connect(sftp_cfg['host'], port=sftp_cfg['port'],
-                            username=sftp_cfg['username'],
-                            key_filename=sftp_cfg['key_path'], timeout=15)
-            else:
-                ssh.connect(sftp_cfg['host'], port=sftp_cfg['port'],
-                            username=sftp_cfg['username'],
-                            password=sftp_cfg['password'], timeout=15)
+            ssh = _sftp_connect(sftp_cfg)
             sftp = ssh.open_sftp()
             sftp.sftp_chunk_size = 2 * 1024 * 1024
 

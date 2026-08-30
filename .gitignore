@@ -2,3 +2,22 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+
+# ── Config sensitive (mot de passe terminal hashé + session_secret) ──
+config.ini
+config.ini.tmp
+
+# ── Données personnelles (prompts / workflows / profiler) ────────────
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+
+# ── Cache & artefacts temporaires (téléchargements, exports, binaires) ─
+.cache/
+temp_uploads/
+temp_exports/
+bin/
+
+# ── Host keys SFTP (TOFU) ────────────────────────────────────────────
+.sftp_known_hosts

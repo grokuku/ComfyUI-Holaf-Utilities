@@ -59,9 +59,10 @@
         var data = await safeJson(res);
         if (data && data.token) {
           previewState.apiKey = data.token;
-          return previewState.apiKey;
         }
-        throw new Error('Pas de token');
+        // Token non récupérable (stocké hashé) : les requêtes same-origin
+        // passent par le cookie de session, la clé n'est pas indispensable.
+        return previewState.apiKey || null;
       } finally {
         previewState.tokenLoading = false;
       }
@@ -72,15 +73,11 @@
     async function previewLoad() {
       if (LOCAL_MODE || !previewState.active) return;
       try {
-        var key = await previewGetApiKey();
-        if (!key) {
-          if (!previewState.apiKey) {
-            previewShowError('Authentification requise. Connecte-toi pour voir les images.');
-            return;
-          }
-        }
+        await previewGetApiKey();
+        // Sans clé récupérable, on tente quand même : les requêtes same-origin
+        // s'authentifient via le cookie de session.
         var res = await fetch(API + '/preview/recent', {
-          headers: { 'Authorization': 'Bearer ' + previewState.apiKey }
+          headers: { 'Authorization': 'Bearer ' + (previewState.apiKey || '') }
         });
         if (!res.ok) {
           if (res.status === 401) {

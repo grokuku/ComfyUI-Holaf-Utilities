@@ -100,7 +100,7 @@
           if (dd) {
             var item = document.createElement('label');
             item.className = 'flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer';
-            item.innerHTML = '<input type="checkbox" value="' + escapeHtml(sec.section_id) + '" class="accent-indigo-500 rounded" onchange="toggleSection(\'' + sec.section_id.replace(/'/g, "\\'") + '\', \'' + displayName.replace(/'/g, "\\'") + '\')">'
+            item.innerHTML = '<input type="checkbox" value="' + escapeHtml(sec.section_id) + '" class="accent-indigo-500 rounded" onchange="toggleSection(\'' + sec.section_id.replace(/'/g, "\\'") + '\')">'
               + '<span class="truncate">' + escapeHtml(displayName) + '</span>';
             dd.appendChild(item);
           }
@@ -122,7 +122,7 @@
           if (dd) {
             var item = document.createElement('label');
             item.className = 'flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer';
-            item.innerHTML = '<input type="checkbox" value="' + escapeHtml(sub.subsection_id) + '" class="accent-indigo-500 rounded" onchange="toggleSubsection(\'' + sub.subsection_id.replace(/'/g, "\\'") + '\', \'' + displayName.replace(/'/g, "\\'") + '\')">'
+            item.innerHTML = '<input type="checkbox" value="' + escapeHtml(sub.subsection_id) + '" class="accent-indigo-500 rounded" onchange="toggleSubsection(\'' + sub.subsection_id.replace(/'/g, "\\'") + '\')">'
               + '<span class="truncate">' + escapeHtml(displayName) + '</span>';
             dd.appendChild(item);
           }
@@ -2097,15 +2097,15 @@ async function kwBulkConfirm() {
         resultDiv.classList.remove('hidden');
         if (res.ok) {
             resultDiv.className = 'text-xs p-2 rounded border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300';
-            resultDiv.innerHTML = '✅ <b>' + data.message + '</b>';
+            resultDiv.innerHTML = '✅ <b>' + escapeHtml(data.message || '') + '</b>';
             if (data.errors && data.errors.length > 0) {
-                resultDiv.innerHTML += '<br><br><b>Erreurs :</b><br>' + data.errors.slice(0, 10).join('<br>');
+                resultDiv.innerHTML += '<br><br><b>Erreurs :</b><br>' + data.errors.slice(0, 10).map(escapeHtml).join('<br>');
             }
             kwLoadList();
             setTimeout(() => closeBulkImport(), 3000);
         } else {
             resultDiv.className = 'text-xs p-2 rounded border border-rose-300 bg-rose-50 dark:bg-rose-900/30 dark:border-rose-700 text-rose-800 dark:text-rose-300';
-            resultDiv.innerHTML = '❌ ' + (data.error || 'Erreur inconnue');
+            resultDiv.innerHTML = '❌ ' + escapeHtml(data.error || 'Erreur inconnue');
         }
     } catch (e) {
         showModal('Erreur', e.message, 'error');
