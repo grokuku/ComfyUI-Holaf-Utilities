@@ -213,7 +213,7 @@ async function displayInfoForImage(image) {
         
         // --- BUTTON: Load Workflow with BRIDGE Support ---
         workflowActions.appendChild(createButton(t('iv.loadWorkflow'), async () => {
-            if (await HolafPanelManager.createDialog({
+            if (await AIH.ask({
                     title: t('iv.loadWorkflowTitle'),
                     message: t('iv.loadWorkflowMsg'),
                     buttons: [{ text: t('iv.cancel'), value: false }, { text: t('iv.load'), value: true }]

@@ -493,7 +493,7 @@ export class ImageEditor {
             addBtn.onclick = async () => {
                 const typeButtons = CONTROL_TYPES.map(ct => ({ text: _controlTypeLabel(ct.id), value: ct.id, type: 'confirm' }));
                 typeButtons.push({ text: t('iv.cancel'), value: null, type: 'cancel' });
-                const chosenType = await HolafPanelManager.createDialog({
+                const chosenType = await AIH.ask({
                     title: t('iv.addControlTitle'), message: t('iv.chooseControlType'), buttons: typeButtons
                 });
                 if (!chosenType) return;
@@ -504,7 +504,7 @@ export class ImageEditor {
                 ];
                 const rangeButtons = rangeOptions.map(r => ({ text: r.text, value: r.value, type: 'confirm' }));
                 rangeButtons.push({ text: t('iv.cancel'), value: null, type: 'cancel' });
-                const chosenRange = await HolafPanelManager.createDialog({
+                const chosenRange = await AIH.ask({
                     title: t('iv.rangeTitle', { label: _controlTypeLabel(chosenType) }),
                     message: t('iv.chooseRange'), buttons: rangeButtons
                 });
@@ -599,7 +599,7 @@ export class ImageEditor {
 
     async _resetEdits() {
         if (!this.activeImage) return;
-        if (!await HolafPanelManager.createDialog({
+        if (!await AIH.ask({
             title: t('iv.confirmReset'), message: t('iv.resetMsg'),
             buttons: [{ text: t('iv.cancel'), value: false }, { text: t('iv.reset'), value: true, type: "danger" }]
         })) return;
@@ -637,7 +637,7 @@ export class ImageEditor {
             if (r.ok) {
                 this._showToast(d.stats ? t('iv.previewReady', { duration: d.stats.duration }) : t('iv.previewGenerated'), 'success');
                 if (this.activeImage?.path_canon === path) await this._loadEditsForCurrentImage();
-            } else HolafPanelManager.createDialog({ title: t('iv.processError'), message: d.message });
+            } else AIH.ask({ title: t('iv.processError'), message: d.message });
         } catch (e) { this._showToast(t('iv.processFailed', { message: e.message }), 'error'); }
         finally { document.dispatchEvent(new Event('holaf-video-processing-end')); }
     }

@@ -104,7 +104,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
     
     const isAnyFileTrashed = imagesForDeletion.some(img => img.is_trashed);
     if (isAnyFileTrashed) {
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.actionNotAllowed"),
             message: t("iv.actionNotAllowedMsg"),
             buttons: [{ text: t("iv.ok") }],
@@ -120,7 +120,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
         : t("iv.confirmDeleteMsg", { count: imagesForDeletion.length });
     const confirmButtonText = permanent ? t("iv.permanentlyDelete") : t("iv.delete");
 
-    const confirmed = await HolafPanelManager.createDialog({
+    const confirmed = await AIH.ask({
         title: dialogTitle,
         message: dialogMessage,
         buttons: [
@@ -167,7 +167,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
             }
 
             if (showDialog) {
-                HolafPanelManager.createDialog({
+                AIH.ask({
                     title: dialogTitle,
                     message: finalMessage,
                     html: true,           // finalMessage contient <strong>/<br>
@@ -182,7 +182,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
 
         } else {
             // Handle fatal server errors (5xx, etc.)
-            HolafPanelManager.createDialog({
+            AIH.ask({
                 title: t("iv.serverError"),
                 message: t('iv.deleteFailed', { message: result.message || t('iv.unknownServerError') }),
                 buttons: [{ text: t("iv.ok") }],
@@ -192,7 +192,7 @@ export async function handleDeletion(viewer, permanent = false, imagesToProcess 
         }
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling delete API:", error);
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.apiError"),
             message: t('iv.apiErrorDeleteMsg', { message: error.message }),
             buttons: [{ text: t("iv.ok") }],
@@ -231,7 +231,7 @@ export async function handleRestore(viewer) {
     if (imagesToRestore.length === 0) return;
     const pathsToRestore = imagesToRestore.map(img => img.path_canon);
 
-    if (await HolafPanelManager.createDialog({
+    if (await AIH.ask({
         title: t("iv.confirmRestore"),
         message: t('iv.confirmRestoreMsg', { count: imagesToRestore.length }),
         buttons: [
@@ -249,7 +249,7 @@ export async function handleRestore(viewer) {
             const result = await response.json();
 
             if (response.ok || response.status === 207) {
-                HolafPanelManager.createDialog({
+                AIH.ask({
                     title: t("iv.restoreOperation"),
                     message: result.message || t('iv.restoreProcessed'),
                     buttons: [{ text: t("iv.ok"), value: true }],
@@ -262,7 +262,7 @@ export async function handleRestore(viewer) {
                 });
                 viewer.loadFilteredImages();
             } else {
-                HolafPanelManager.createDialog({
+                AIH.ask({
                     title: t("iv.restoreError"),
                     message: t('iv.restoreFailed', { message: result.message || t('iv.unknownServerError') }),
                     buttons: [{ text: t("iv.ok"), value: true }],
@@ -271,7 +271,7 @@ export async function handleRestore(viewer) {
             }
         } catch (error) {
             console.error("[Holaf ImageViewer] Error calling restore API:", error);
-            HolafPanelManager.createDialog({
+            AIH.ask({
                 title: t("iv.apiError"),
                 message: t('iv.apiErrorRestoreMsg', { message: error.message }),
                 buttons: [{ text: t("iv.ok"), value: true }],
@@ -290,7 +290,7 @@ async function processNextConflict(viewer, operation) {
     if (!viewer.conflictQueue || viewer.conflictQueue.length === 0) {
         viewer.isProcessingConflicts = false;
         const opDisplay = operation === 'extract' ? t('iv.opExtraction') : t('iv.opInjection');
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.processFinished"),
             message: t('iv.allMetadataProcessed', { op: opDisplay.toLowerCase() }),
             buttons: [{ text: t("iv.ok") }],
@@ -304,7 +304,7 @@ async function processNextConflict(viewer, operation) {
     const conflict = viewer.conflictQueue.shift();
     const filename = conflict.path.split('/').pop();
 
-    const choice = await HolafPanelManager.createDialog({
+    const choice = await AIH.ask({
         title: t('iv.conflictOn', { filename }),
         message: t('iv.conflictMsg', { filename, error: conflict.error, details: (conflict.details || []).join("\n") }),
         buttons: [
@@ -326,10 +326,10 @@ async function processNextConflict(viewer, operation) {
             const result = await response.json();
             if (!response.ok || result.results?.failures?.length > 0) {
                 const errorMsg = result.results?.failures[0]?.error || result.message || t('iv.unknownErrorDuringOverwrite');
-                HolafPanelManager.createDialog({ title: t('iv.errorOverwriting', { filename }), message: errorMsg, parentElement: document.body });
+                AIH.ask({ title: t('iv.errorOverwriting', { filename }), message: errorMsg, parentElement: document.body });
             }
         } catch (e) {
-             HolafPanelManager.createDialog({ title: t('iv.apiError'), message: t('iv.overwriteFailed', { filename, message: e.message }), parentElement: document.body });
+             AIH.ask({ title: t('iv.apiError'), message: t('iv.overwriteFailed', { filename, message: e.message }), parentElement: document.body });
         }
     } else if (choice === 'cancel_all') {
         viewer.conflictQueue = [];
@@ -344,7 +344,7 @@ async function processNextConflict(viewer, operation) {
  */
 export async function handleExtractMetadata(viewer) {
     if (viewer.isProcessingConflicts) {
-        HolafPanelManager.createDialog({ title: t("iv.processBusy"), message: t("iv.processBusyMsg"), parentElement: document.body });
+        AIH.ask({ title: t("iv.processBusy"), message: t("iv.processBusyMsg"), parentElement: document.body });
         return;
     }
 
@@ -353,7 +353,7 @@ export async function handleExtractMetadata(viewer) {
     const pngImages = targetImages.filter(img => img.format.toLowerCase() === 'png');
 
     if (pngImages.length === 0) {
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.invalidSelection"),
             message: t("iv.extractPngOnlyMsg"),
             buttons: [{ text: t("iv.ok") }],
@@ -382,7 +382,7 @@ export async function handleExtractMetadata(viewer) {
         
         if (failures.length > 0) {
             const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
-            HolafPanelManager.createDialog({
+            AIH.ask({
                 title: t("iv.extractionErrors"),
                 message: t('iv.extractionFailedMsg', { list: failureMessage }),
                 buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -393,7 +393,7 @@ export async function handleExtractMetadata(viewer) {
             processNextConflict(viewer, 'extract');
         } else {
             if (successes.length > 0 && failures.length === 0) {
-                 HolafPanelManager.createDialog({
+                 AIH.ask({
                     title: t("iv.extractionComplete"),
                     message: t('iv.extractionCompleteMsg', { count: successes.length }),
                     buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -403,7 +403,7 @@ export async function handleExtractMetadata(viewer) {
         }
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling extract API:", error);
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.apiError"),
             message: t('iv.apiErrorExtractMsg', { message: error.message }),
             buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -417,7 +417,7 @@ export async function handleExtractMetadata(viewer) {
  */
 export async function handleInjectMetadata(viewer) {
     if (viewer.isProcessingConflicts) {
-        HolafPanelManager.createDialog({ title: t("iv.processBusy"), message: t("iv.processBusyMsg"), parentElement: document.body });
+        AIH.ask({ title: t("iv.processBusy"), message: t("iv.processBusyMsg"), parentElement: document.body });
         return;
     }
 
@@ -426,7 +426,7 @@ export async function handleInjectMetadata(viewer) {
     const pngImages = targetImages.filter(img => img.format.toLowerCase() === 'png');
 
     if (pngImages.length === 0) {
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.invalidSelection"),
             message: t("iv.injectPngOnlyMsg"),
             buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -454,7 +454,7 @@ export async function handleInjectMetadata(viewer) {
 
         if (failures.length > 0) {
             const failureMessage = failures.map(f => `- ${f.path.split('/').pop()}: ${f.error}`).join('\n');
-            HolafPanelManager.createDialog({
+            AIH.ask({
                 title: t("iv.injectionErrors"),
                 message: t('iv.injectionFailedMsg', { list: failureMessage }),
                 buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -465,7 +465,7 @@ export async function handleInjectMetadata(viewer) {
             processNextConflict(viewer, 'inject');
         } else {
             if (successes.length > 0 && failures.length === 0) {
-                 HolafPanelManager.createDialog({
+                 AIH.ask({
                     title: t("iv.injectionComplete"),
                     message: t('iv.injectionCompleteMsg', { count: successes.length }),
                     buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -476,7 +476,7 @@ export async function handleInjectMetadata(viewer) {
 
     } catch (error) {
         console.error("[Holaf ImageViewer] Error calling inject API:", error);
-        HolafPanelManager.createDialog({
+        AIH.ask({
             title: t("iv.apiError"),
             message: t('iv.apiErrorInjectMsg', { message: error.message }),
             buttons: [{ text: t("iv.ok") }], parentElement: document.body
@@ -949,7 +949,7 @@ export async function handleExport(viewer) {
                                          imagesToExport.some(img => img.path_canon === editor.activeImage.path_canon);
 
     if (activeImageHasUnsavedChanges) {
-        const choice = await HolafPanelManager.createDialog({
+        const choice = await AIH.ask({
             title: t("iv.unsavedChangesTitle"),
             message: t("iv.unsavedChangesMsg"),
             buttons: [

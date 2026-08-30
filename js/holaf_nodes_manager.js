@@ -141,7 +141,7 @@ const holafNodesManager = {
             return true;
         } catch (error) {
             console.error("[Holaf NodesManager] Critical error loading marked.js script", error);
-            HolafPanelManager.createDialog({ title: t("nm.componentError"), message: t("nm.componentErrorMsg") });
+            AIH.ask({ title: t("nm.componentError"), message: t("nm.componentErrorMsg") });
             return false;
         }
     },
@@ -263,7 +263,7 @@ const holafNodesManager = {
             this.applyCurrentZoom();
         } catch (e) {
             console.error("[Holaf NodesManager] Error creating panel:", e);
-            HolafPanelManager.createDialog({ title: t("nm.panelError"), message: t("nm.panelErrorMsg") });
+            AIH.ask({ title: t("nm.panelError"), message: t("nm.panelErrorMsg") });
         }
     },
 
@@ -965,11 +965,11 @@ const holafNodesManager = {
 
     async _executeNodeAction(actionPath, nodePayloads, actionName, confirmMessage, requiresAuth = false) {
         if (this.isActionInProgress) {
-            HolafPanelManager.createDialog({ title: t("nm.actionInProgress"), message: t("nm.actionInProgressMsg") });
+            AIH.ask({ title: t("nm.actionInProgress"), message: t("nm.actionInProgressMsg") });
             return;
         }
         if (!nodePayloads || nodePayloads.length === 0) {
-            HolafPanelManager.createDialog({ title: actionName, message: t("nm.noNodesSelected") });
+            AIH.ask({ title: actionName, message: t("nm.noNodesSelected") });
             return;
         }
 
@@ -980,7 +980,7 @@ const holafNodesManager = {
 
         const nodeNamesForDisplay = nodePayloads.map(p => p.name).join(', ');
 
-        const confirm = await HolafPanelManager.createDialog({
+        const confirm = await AIH.ask({
             title: t("nm.confirmAction", { action: actionName }),
             message: t("nm.nodesList", { confirmMessage, nodes: nodeNamesForDisplay }),
             buttons: [{ text: t("nm.cancel"), value: false, type: "cancel" }, { text: actionName, value: true, type: actionName === "Delete" ? "danger" : "confirm" }]
@@ -1049,7 +1049,7 @@ const holafNodesManager = {
                 removeInProgressDialog();
                 const reconnected = await this._showLoginModal(t("nm.sessionExpired"));
                 if (!reconnected) {
-                    HolafPanelManager.createDialog({ title: t("nm.actionCancelled", { action: actionName }), message: t("nm.authRequiredForAction") });
+                    AIH.ask({ title: t("nm.actionCancelled", { action: actionName }), message: t("nm.authRequiredForAction") });
                     return;
                 }
                 showInProgressDialog();
@@ -1060,7 +1060,7 @@ const holafNodesManager = {
                 });
                 if (response.status === 401) {
                     removeInProgressDialog();
-                    HolafPanelManager.createDialog({ title: t("nm.actionError", { action: actionName }), message: t("nm.authFailedNotExecuted") });
+                    AIH.ask({ title: t("nm.actionError", { action: actionName }), message: t("nm.authFailedNotExecuted") });
                     return;
                 }
             }
@@ -1095,7 +1095,7 @@ const holafNodesManager = {
                 summaryMessage += t("nm.serverResponse", { status: result.status || t("nm.unknown"), message: result.message || t("nm.noDetails") });
             }
 
-            HolafPanelManager.createDialog({ title: t("nm.actionComplete", { action: actionName }), message: summaryMessage });
+            AIH.ask({ title: t("nm.actionComplete", { action: actionName }), message: summaryMessage });
 
             if (refreshNeeded) {
                 await this.refreshNodesList();
@@ -1118,7 +1118,7 @@ const holafNodesManager = {
         } catch (error) {
             removeInProgressDialog();
             console.error(`[Holaf NodesManager] Error during ${actionName}:`, error);
-            HolafPanelManager.createDialog({ title: t("nm.actionError", { action: actionName }), message: t("nm.errorOccurred", { message: error.message }) });
+            AIH.ask({ title: t("nm.actionError", { action: actionName }), message: t("nm.errorOccurred", { message: error.message }) });
         } finally {
             removeInProgressDialog();
             this.isActionInProgress = false;
@@ -1140,7 +1140,7 @@ const holafNodesManager = {
             .filter(payload => payload !== null);
 
         if (nodesToUpdatePayloads.length === 0) {
-            HolafPanelManager.createDialog({ title: t("nm.updateNodes"), message: t("nm.noUpdateNodes") });
+            AIH.ask({ title: t("nm.updateNodes"), message: t("nm.noUpdateNodes") });
             return;
         }
 
@@ -1385,7 +1385,7 @@ const holafNodesManager = {
                 removeInstallOverlay();
                 const reconnected = await this._showLoginModal(t("nm.sessionExpired"));
                 if (!reconnected) {
-                    HolafPanelManager.createDialog({ title: t("nm.installCancelled"), message: t("nm.authRequiredInstall") });
+                    AIH.ask({ title: t("nm.installCancelled"), message: t("nm.authRequiredInstall") });
                     return;
                 }
                 showInstallOverlay();
@@ -1396,7 +1396,7 @@ const holafNodesManager = {
                 });
                 if (response.status === 401) {
                     removeInstallOverlay();
-                    HolafPanelManager.createDialog({ title: t("nm.installFailed"), message: t("nm.authFailedNotInstalled") });
+                    AIH.ask({ title: t("nm.installFailed"), message: t("nm.authFailedNotInstalled") });
                     return;
                 }
             }
@@ -1406,14 +1406,14 @@ const holafNodesManager = {
             removeInstallOverlay();
 
             if (response.ok && result.status === 'success') {
-                HolafPanelManager.createDialog({ title: t("nm.installComplete"), message: t("nm.installCompleteMsg", { url }) });
+                AIH.ask({ title: t("nm.installComplete"), message: t("nm.installCompleteMsg", { url }) });
                 this.refreshNodesList();
             } else {
                 throw new Error(result.message || t("nm.unknownError"));
             }
         } catch (e) {
             removeInstallOverlay();
-            HolafPanelManager.createDialog({ title: t("nm.installFailed"), message: t("nm.installErrorMsg", { message: e.message }) });
+            AIH.ask({ title: t("nm.installFailed"), message: t("nm.installErrorMsg", { message: e.message }) });
         } finally {
             removeInstallOverlay();
             this.isActionInProgress = false;

@@ -178,7 +178,7 @@ async function finalizeUpload(manager, job) {
 export function addSelectedToDownloadQueue(manager) {
     const pathsToDownload = getAvailablePathsForAction(manager, manager.selectedModelPaths);
     if (pathsToDownload.length === 0) {
-        HolafPanelManager.createDialog({ title: t("mma.downloadTitle"), message: t("mma.downloadNone") });
+        AIH.ask({ title: t("mma.downloadTitle"), message: t("mma.downloadNone") });
         return;
     }
 
@@ -302,7 +302,7 @@ export function addSelectedToScanQueue(manager) {
     const allSelected = Array.from(manager.selectedModelPaths);
     const pathsToScan = getAvailablePathsForAction(manager, allSelected.filter(p => p.toLowerCase().endsWith('.safetensors')));
     if (pathsToScan.length === 0) {
-        HolafPanelManager.createDialog({ title: t("mma.scanTitle"), message: t("mma.scanNone") });
+        AIH.ask({ title: t("mma.scanTitle"), message: t("mma.scanNone") });
         return;
     }
     manager.scanQueue.push(...pathsToScan);
@@ -332,7 +332,7 @@ export async function processScanQueue(manager) {
         if (!response.ok) throw new Error(result.message || `HTTP error ${response.status}`);
         if (result.details?.errors?.length > 0) console.error("[Holaf MM] Deep Scan Errors:", result.details.errors);
     } catch (error) {
-        HolafPanelManager.createDialog({ title: t("mma.scanError"), message: t("mma.scanErrorMsg", { message: error.message }) });
+        AIH.ask({ title: t("mma.scanError"), message: t("mma.scanErrorMsg", { message: error.message }) });
     } finally {
         processScanQueue(manager); // Process next batch or finish
     }
@@ -341,10 +341,10 @@ export async function processScanQueue(manager) {
 export async function performDelete(manager) {
     const pathsToDelete = getAvailablePathsForAction(manager, manager.selectedModelPaths);
     if (pathsToDelete.length === 0) {
-        HolafPanelManager.createDialog({ title: t("mma.deleteTitle"), message: t("mma.deleteNone") });
+        AIH.ask({ title: t("mma.deleteTitle"), message: t("mma.deleteNone") });
         return;
     }
-    const confirmed = await HolafPanelManager.createDialog({
+    const confirmed = await AIH.ask({
         title: t("mma.confirmDelete"),
         message: t("mma.confirmDeleteMsg", { count: pathsToDelete.length }),
         buttons: [{ text: t("mma.cancel"), value: false }, { text: t("mma.deletePermanent"), value: true, type: "danger" }]
@@ -366,9 +366,9 @@ export async function performDelete(manager) {
             message += t("mma.errorsOccurred", { count: result.details.errors.length });
             console.error("[Holaf MM] Delete Errors:", result.details.errors);
         }
-        await HolafPanelManager.createDialog({ title: t("mma.deleteComplete"), message });
+        await AIH.ask({ title: t("mma.deleteComplete"), message });
     } catch (error) {
-        await HolafPanelManager.createDialog({ title: t("mma.deleteError"), message: t("mma.deleteErrorMsg", { message: error.message }) });
+        await AIH.ask({ title: t("mma.deleteError"), message: t("mma.deleteErrorMsg", { message: error.message }) });
     } finally {
         manager.isLoading = false;
         manager.selectedModelPaths.clear();
@@ -384,7 +384,7 @@ function getAvailablePathsForAction(manager, selectedPaths) {
     const availablePaths = allSelected.filter(path => !isPathInActiveTransfer(manager, path));
     const skippedCount = allSelected.length - availablePaths.length;
     if (skippedCount > 0) {
-        HolafPanelManager.createDialog({ title: t("mma.notice"), message: t("mma.skippedTransfer", { count: skippedCount }) });
+        AIH.ask({ title: t("mma.notice"), message: t("mma.skippedTransfer", { count: skippedCount }) });
     }
     return availablePaths;
 }

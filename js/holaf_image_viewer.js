@@ -365,7 +365,7 @@ const holafImageViewer = {
 
         } catch (e) {
             console.error("[Holaf ImageViewer] Error creating panel:", e);
-            HolafPanelManager.createDialog({ title: t("iv.panelError"), message: t("iv.panelErrorMsg") });
+            AIH.ask({ title: t("iv.panelError"), message: t("iv.panelErrorMsg") });
         }
     },
 
@@ -389,7 +389,7 @@ const holafImageViewer = {
     handleInjectMetadata: function () { return Actions.handleInjectMetadata(this); },
 
     async _handleEmptyTrash() {
-        if (await HolafPanelManager.createDialog({
+        if (await AIH.ask({
             title: t("iv.confirmEmptyTrashTitle"),
             message: t("iv.confirmEmptyTrashMsg"),
             buttons: [
@@ -405,14 +405,14 @@ const holafImageViewer = {
                 const result = await response.json();
 
                 if (response.ok) {
-                    HolafPanelManager.createDialog({
+                    AIH.ask({
                         title: t("iv.trashEmptiedTitle"),
                         message: result.message || t("iv.trashEmptiedMsg"),
                         buttons: [{ text: t("iv.ok"), value: true }]
                     });
                     this.loadAndPopulateFilters();
                 } else {
-                    HolafPanelManager.createDialog({
+                    AIH.ask({
                         title: t("iv.error"),
                         message: t("iv.emptyTrashFailed", { message: result.message || t("iv.unknownServerError") }),
                         buttons: [{ text: t("iv.ok"), value: true }]
@@ -420,7 +420,7 @@ const holafImageViewer = {
                 }
             } catch (error) {
                 console.error("[Holaf ImageViewer] Error calling empty-trashcan API:", error);
-                HolafPanelManager.createDialog({
+                AIH.ask({
                     title: t("iv.apiError"),
                     message: t("iv.apiErrorMsg", { message: error.message }),
                     buttons: [{ text: t("iv.ok"), value: true }]
@@ -614,7 +614,7 @@ const holafImageViewer = {
             return;
         }
 
-        const choice = await HolafPanelManager.createDialog({
+        const choice = await AIH.ask({
             title: t("iv.resetFiltersConfirmTitle"),
             message: t("iv.resetFiltersConfirmMsg"),
             buttons: [

@@ -338,6 +338,42 @@ assert.ok(dangerBtn, "bouton danger choisi");
 dangerBtn.dispatch("click", { preventDefault() {}, stopPropagation() {} });
 assert.strictEqual(await chooseP, "b", "choose résout la valeur du bouton");
 
+/* ── 4b. Les dialogs transitoires sont DRAGGABLES (makeDraggable attaché) ── */
+// ré-ouvre un choose : son header doit porter un listener mousedown (drag)
+const chooseDrag = globalThis.window.AIH.choose("Drag", "Test drag", [{ text: "OK", value: 1 }]);
+const dragEl = fakeDocument.body._allDescendants([]).find((n) => n.classList.contains("aih-dialog-root"));
+assert.ok(dragEl, "dialog AIH créé");
+const dragHeader = dragEl.children.find((c) => c.classList.contains("aih-dialog-header"));
+assert.ok(dragHeader, "header AIH trouvé");
+assert.ok(
+    Array.isArray(dragHeader._listeners.mousedown) && dragHeader._listeners.mousedown.length > 0,
+    "makeDraggable attaché sur le header (draggable: true)"
+);
+// position initiale : left/top en px (centrage) → un drag déplace l'élément
+assert.ok(parseInt(dragEl.style.left, 10) > 0 && parseInt(dragEl.style.top, 10) > 0, "dialog positionné en px");
+
+/* ── 4c. Le drag fonctionne (mousedown header → mousemove → déplacement) ── */
+const beforeLeft = parseInt(dragEl.style.left, 10);
+const beforeTop = parseInt(dragEl.style.top, 10);
+dragHeader.dispatch("mousedown", { clientX: 100, clientY: 100, target: dragHeader, preventDefault() {} });
+fakeDocument.dispatch("mousemove", { clientX: 230, clientY: 170 });
+const midLeft = parseInt(dragEl.style.left, 10);
+const midTop = parseInt(dragEl.style.top, 10);
+assert.notStrictEqual(midLeft, beforeLeft, "left modifié pendant le drag");
+assert.notStrictEqual(midTop, beforeTop, "top modifié pendant le drag");
+fakeDocument.dispatch("mouseup", { clientX: 230, clientY: 170 });
+
+// Relâcher sur le fond ne ferme PAS le dialog (wasDragged) ; le dialog existe encore
+const overlayEl = fakeDocument.body._allDescendants([]).find((n) => n.classList.contains("aih-dialog-overlay"));
+assert.ok(overlayEl, "overlay présent");
+overlayEl.dispatch("click", { target: overlayEl });
+assert.ok(fakeDocument.body._allDescendants([]).some((n) => n.classList.contains("aih-dialog-root")), "dialog pas fermé après drag (clic fond ignoré)");
+
+// Fermer proprement pour ne pas polluer les tests suivants
+const closeBtn = dragEl._allDescendants([]).find((n) => n.classList && n.classList.contains("aih-dialog-close") || (n._attrs && "data-aih-close" in n._attrs));
+if (closeBtn) closeBtn.dispatch("click", { preventDefault() {}, stopPropagation() {} });
+
+
 /* ── 4b. Libellés i18n (FR par défaut, puis EN) ───────────────────────── */
 function btnText(btn) {
     if (!btn) return "";
@@ -400,14 +436,24 @@ assert.ok(!keepResolved, "garde keepOpen → pas de résolution");
 assert.ok(gkeep.el.parentNode !== null, "garde keepOpen → dialogue reste ouvert");
 gkeep.close();
 
-/* ── 7. HolafPanelManager.createDialog wrapper ──────────────────────────── */
-const HPM = (await import("./holaf_panel_manager.js")).HolafPanelManager;
-const cdP = HPM.createDialog({ title: "T", message: "M", buttons: [{ text: "OK", value: true }] });
+/* ── 7. AIH.ask : API unifiée de dialog (options style) ──────────────────── */
+const askP = globalThis.window.AIH.ask({ title: "T", message: "M", buttons: [{ text: "OK", value: true }] });
 // single OK → alert → après click OK
 const cdOk = fakeDocument.body._allDescendants([]).find((n) => "data-aih-ok" in n._attrs);
-assert.ok(cdOk, "createDialog wrapper → alert");
+assert.ok(cdOk, "AIH.ask single OK → alert");
 cdOk.dispatch("click", { preventDefault() {}, stopPropagation() {} });
-assert.strictEqual(await cdP, true, "createDialog résout true");
+assert.strictEqual(await askP, true, "AIH.ask résout true");
+
+// multi-boutons → choose (résout la valeur du bouton cliqué)
+const askMulti = globalThis.window.AIH.ask({
+    title: "T2", message: "M2",
+    buttons: [{ text: "Annuler", value: false, type: "cancel" }, { text: "Suppr", value: true, type: "danger" }],
+    maxWidth: 420,
+});
+const dangerBtn2 = fakeDocument.body._allDescendants([]).find((n) => n.tagName === "BUTTON" && n.classList.contains("aih-dialog-btn-danger"));
+assert.ok(dangerBtn2, "AIH.ask multi → bouton danger présent");
+dangerBtn2.dispatch("click", { preventDefault() {}, stopPropagation() {} });
+assert.strictEqual(await askMulti, true, "AIH.ask multi résout la valeur du bouton");
 
 /* ── 8. Auto-injection CSS (contexte standalone, CSS absente) ───────────── */
 // aih_dialog.js doit être auto-suffisant : quand aih_dialog.css n'est pas déjà

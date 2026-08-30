@@ -478,7 +478,7 @@ const HolafUtilitiesMenu = {
                     if (handler && typeof handler.show === 'function') {
                         handler.show();
                     } else {
-                        HolafPanelManager.createDialog({ title: t("main.notImplemented"), message: t("main.panelNotAvailable", { label: itemInfo.label }), buttons: [{ text: t("dialog.ok"), value: true }] });
+                        AIH.ask({ title: t("main.notImplemented"), message: t("main.panelNotAvailable", { label: itemInfo.label }), buttons: [{ text: t("dialog.ok"), value: true }] });
                     }
                 }
 
@@ -529,7 +529,7 @@ const HolafUtilitiesMenu = {
         if (fnName && window.AIHMenu && typeof window.AIHMenu[fnName] === "function") {
             window.AIHMenu[fnName]();
         } else {
-            HolafPanelManager.createDialog({ title: t("menu.sectionAIH"), message: t("main.aihEntryNotAvailable", { special }), buttons: [{ text: t("dialog.ok"), value: true }] });
+            AIH.ask({ title: t("menu.sectionAIH"), message: t("main.aihEntryNotAvailable", { special }), buttons: [{ text: t("dialog.ok"), value: true }] });
         }
     },
 

@@ -180,8 +180,8 @@ export const HolafPanelManager = {
 
     _bakePosition(panel) {
         // Utilise la valeur calculée (getComputedStyle) et pas seulement le
-        // style inline : le transform peut venir du CSS (.holaf-dialog-inline
-        // est centré via translate). Au premier drag, on convertit la position
+        // style inline : le transform peut venir d'une CSS (ex: centrage via
+        // translate sur les fenêtres). Au premier drag, on convertit la position
         // centrée en left/top explicites, sinon le drag déraille de la moitié
         // de la taille de la fenêtre.
         const t = getComputedStyle(panel).transform;
@@ -232,197 +232,16 @@ export const HolafPanelManager = {
         if (onFullscreenToggle) {
             onFullscreenToggle(isFullscreen);
         }
-    },
-
-    createDialog(options) {
-        return new Promise((resolve) => {
-            dialogState.openCount++;
-
-            const overlay = document.createElement("div");
-            overlay.className = "holaf-dialog-overlay";
-
-            const dialog = document.createElement("div");
-            dialog.className = "holaf-utility-panel holaf-dialog-inline";
-
-            let themeClass = 'holaf-theme-graphite-orange';
-            // First check any open panel, then fallback to body class
-            const anyPanel = document.querySelector('.holaf-utility-panel');
-            if (anyPanel) {
-                for (const theme of HOLAF_THEMES) {
-                    if (anyPanel.classList.contains(theme.className)) {
-                        themeClass = theme.className;
-                        break;
-                    }
-                }
-            } else {
-                // No panel open — check the body for the global theme class
-                const bodyClasses = document.body.className;
-                const match = bodyClasses.match(/holaf-theme-\S+/);
-                if (match) themeClass = match[0];
-            }
-            dialog.classList.add(themeClass);
-
-            const header = document.createElement("div");
-            header.className = "holaf-utility-header";
-            const titleSpan = document.createElement("span");
-            titleSpan.textContent = options.title || t("dialog.confirm_title");
-            header.appendChild(titleSpan);
-
-            const content = document.createElement("div");
-            content.className = "holaf-dialog-content";
-            // FIX: Support both plain text (message) and custom DOM (messageElement)
-            if (options.messageElement instanceof HTMLElement) {
-                content.appendChild(options.messageElement);
-            } else if (options.html) {
-                // Message avec balises HTML (ex: détails d'erreurs de suppression)
-                content.innerHTML = options.message || "";
-            } else {
-                content.textContent = options.message || "";
-            }
-
-            const footer = document.createElement("div");
-            footer.className = "holaf-dialog-footer";
-
-            // Tailles configurables par fenêtre (le contenu varie) — les
-            // défauts CSS (.holaf-dialog-inline) sont écrasés par ces inline.
-            if (options.width) dialog.style.width = `${options.width}px`;
-            if (options.minWidth) dialog.style.minWidth = `${options.minWidth}px`;
-            if (options.maxWidth) dialog.style.maxWidth = `${options.maxWidth}px`;
-            if (options.maxHeight) dialog.style.maxHeight = `${options.maxHeight}px`;
-
-            const buttons = [];
-            let focusedButtonIndex = -1;
-
-            const closeDialog = (value) => {
-                document.removeEventListener("keydown", handleDialogKeyDown);
-                dialogState.openCount--;
-                document.body.removeChild(overlay);
-                resolve(value);
-            };
-
-            (options.buttons || [{ text: t("dialog.ok"), value: true, type: "confirm" }]).forEach(btnInfo => {
-                const button = document.createElement("button");
-                button.textContent = btnInfo.text;
-                button.className = "comfy-button";
-                if (btnInfo.type === 'cancel') {
-                    button.style.backgroundColor = 'var(--holaf-tag-background)';
-                } else if (btnInfo.type === 'danger') {
-                    button.style.backgroundColor = 'var(--holaf-error-color, #c44)';
-                }
-                button.onclick = () => {
-                    if (btnInfo.onClick) btnInfo.onClick();
-                    closeDialog(btnInfo.value);
-                };
-                footer.appendChild(button);
-                buttons.push(button);
-            });
-
-            const updateFocusedButton = (newIndex) => {
-                if (focusedButtonIndex > -1) {
-                    buttons[focusedButtonIndex].classList.remove('dialog-button-focused');
-                }
-                buttons[newIndex].classList.add('dialog-button-focused');
-                buttons[newIndex].focus();
-                focusedButtonIndex = newIndex;
-            };
-
-            const handleDialogKeyDown = (e) => {
-                // Tab trap: cycle focus within the dialog's focusable elements
-                if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const focusable = dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-                    if (focusable.length === 0) return;
-                    // Find current position in the focusable list
-                    const currentIndex = Array.from(focusable).indexOf(document.activeElement);
-                    if (e.shiftKey) {
-                        // Shift+Tab: move backward, wrap to last if at first
-                        const prevIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
-                        focusable[prevIndex].focus();
-                    } else {
-                        // Tab: move forward, wrap to first if at last
-                        const nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
-                        focusable[nextIndex].focus();
-                    }
-                    return;
-                }
-
-                if (buttons.length === 0) return;
-
-                if (e.key === 'ArrowLeft') {
-                    e.preventDefault();
-                    let newIndex = (focusedButtonIndex - 1 + buttons.length) % buttons.length;
-                    updateFocusedButton(newIndex);
-                } else if (e.key === 'ArrowRight') {
-                    e.preventDefault();
-                    let newIndex = (focusedButtonIndex + 1) % buttons.length;
-                    updateFocusedButton(newIndex);
-                } else if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    if (focusedButtonIndex > -1) {
-                        buttons[focusedButtonIndex].click();
-                    }
-                } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
-                    if (cancelButton) {
-                        cancelButton.click();
-                    }
-                }
-            };
-
-            document.addEventListener("keydown", handleDialogKeyDown);
-
-            dialog.append(header, content, footer);
-            overlay.appendChild(dialog);
-
-            // Fenêtre déplaçable : tout le dialog sert de poignée (le header
-            // ET le contenu), sauf les éléments interactifs (boutons, inputs,
-            // liens — liste `ignore` de makeDraggable). Centré par défaut via
-            // CSS (translate -50%,-50%), la position devient left/top au
-            // premier drag (bakeTransform) — clamp viewport + bringToFront.
-            // On retient qu'un drag a eu lieu pour ne pas fermer le dialog si
-            // le clic de fin de drag retombe sur l'overlay (fond).
-            let wasDragged = false;
-            HolafPanelManager.makeDraggable(dialog, dialog, () => { wasDragged = true; });
-
-            // FIX: Clicking the overlay backdrop closes/cancels the dialog
-            // (sauf si on vient de déplacer la fenêtre : un drag qui se
-            // termine sur le fond ne doit pas fermer le dialog).
-            overlay.addEventListener('click', (e) => {
-                if (wasDragged) {
-                    wasDragged = false;
-                    return;
-                }
-                if (e.target === overlay) {
-                    const cancelButton = buttons.find(btn => btn.textContent.toLowerCase() === 'cancel' || btn.textContent.toLowerCase() === 'annuler');
-                    if (cancelButton) {
-                        cancelButton.click();
-                    } else {
-                        closeDialog(false);
-                    }
-                }
-            });
-
-            document.body.appendChild(overlay);
-
-            // ── Centrage JS explicite (indépendant de la cascade CSS) ──────
-            // On mesure la fenêtre APRÈS insertion puis on la place en pixels
-            // dans le viewport. Un éventuel souci de chargement CSS, de
-            // spécificité ou de transform ne peut plus décentrer les dialogs.
-            // Le drag (left/top) fonctionne ensuite sans étape de bake.
-            const _rect = dialog.getBoundingClientRect();
-            const _vw = window.innerWidth;
-            const _vh = window.innerHeight;
-            dialog.style.position = 'fixed';
-            dialog.style.left = `${Math.max(10, Math.round((_vw - _rect.width) / 2))}px`;
-            dialog.style.top = `${Math.max(10, Math.round((_vh - _rect.height) / 2))}px`;
-            dialog.style.transform = 'none';
-
-            if (buttons.length > 0) {
-                updateFocusedButton(buttons.length - 1);
-            }
-        });
     }
+
+    /*
+     * NOTE — les dialogs (confirmations, erreurs…) utilisent l'API unifiée
+     * AIH.ask (options style) ou AIH.Dialog (alert/confirm/prompt/choose),
+     * implémentée dans aih_dialog.js. Ce module ne fournit QUE les fenêtres
+     * réelles (createPanel) : il n'existe plus de createDialog ici.
+     * (Historique : deux systèmes coexistaient après la fusion de packs ;
+     *  l'implémentation dupliquée a été supprimée au profit d'AIH.)
+     */
 };
 
 // Global capture-phase listener: any click on a Holaf floating window brings it to front.

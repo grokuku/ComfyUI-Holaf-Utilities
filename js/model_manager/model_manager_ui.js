@@ -84,7 +84,7 @@ export function createPanel(manager) {
         });
     } catch (e) {
         console.error("[Holaf ModelManager] Error during HolafPanelManager.createPanel:", e);
-        HolafPanelManager.createDialog({ title: t("mmu.panelError"), message: t("mmu.panelErrorMsg") });
+        AIH.ask({ title: t("mmu.panelError"), message: t("mmu.panelErrorMsg") });
         return;
     }
 
@@ -247,7 +247,7 @@ export function createUploadDialog(manager) {
  */
 function showUploadDialog(manager) {
     if (manager.isLoading) {
-        HolafPanelManager.createDialog({ title: t("mmu.opInProgress"), message: t("mmu.opInProgressMsg") });
+        AIH.ask({ title: t("mmu.opInProgress"), message: t("mmu.opInProgressMsg") });
         return;
     }
     if (!manager.uploadDialog) {

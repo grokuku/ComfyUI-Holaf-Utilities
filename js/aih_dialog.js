@@ -6,7 +6,7 @@
  * étape. Le module expose un contrat d'API unifié sous window.AIH.Dialog et
  * window.AIH.Theme, puis rebranche les API historiques comme wrappers :
  *   - aihOpenModalV2 / aihShowAlert / aihShowConfirm / aihShowPrompt
- *   - HolafPanelManager.createDialog
+ *   - AIH.ask (options style)
  *   - window.HolafModal.show (forward-compatible)
  *
  * Le drag / resize réutilise js/holaf_window_utils.js (makeDraggable /
@@ -25,7 +25,6 @@
 
 import "./aih_i18n.js";
 import { makeDraggable, makeResizable, saveWindowRect, loadWindowRect, makeContentZoomable, applyContentZoom, loadZoomLevel, saveZoomLevel, aihWindowManager } from "./holaf_window_utils.js";
-import { HolafPanelManager } from "./holaf_panel_manager.js";
 import { holafExtUrl } from "./holaf_ext_base.js";
 import {
     AIH_MODES,
@@ -605,7 +604,7 @@ import {
             const pw = parseInt(el.style.width, 10) || 400;
             const ph = parseInt(el.style.height, 10) || 300;
             el.style.left = Math.max(20, (window.innerWidth - pw) / 2) + "px";
-            el.style.top = Math.max(20, (window.innerHeight - ph) / 3) + "px";
+            el.style.top = Math.max(20, (window.innerHeight - ph) / 2) + "px";
         }
 
         // ── Busy overlay (spinner) ──────────────────────────────────────────
@@ -702,8 +701,13 @@ import {
         if (!busy) closeBtn.addEventListener("click", () => close());
 
         // ── Overlay click (modal) ───────────────────────────────────────────
+        // Un drag qui se termine sur le fond ne doit pas fermer le dialog :
+        // on retient qu'un drag a eu lieu (flag posé au mousedown du header)
+        // et on ignore le clic de relâchement consécutif.
+        let wasDragged = false;
         if (overlay && closeOnOverlay && !busy) {
             overlay.addEventListener("click", (e) => {
+                if (wasDragged) { wasDragged = false; return; }
                 if (e.target === overlay) close();
             });
         }
@@ -717,6 +721,7 @@ import {
                 margin: 10,
                 ignore: "button, input, select, textarea, a",
                 bringToFront: () => bringToFront(),
+                onDragStart: () => { wasDragged = true; },
                 cursor: "grabbing",
                 cursorRestore: "",
                 saveState: (rect) => {
@@ -846,7 +851,7 @@ import {
                 width: "320px",
                 modal: true,
                 resizable: false,
-                draggable: false,
+                draggable: true,
                 content: content,
                 _onResolve: (v) => resolve(v),
             });
@@ -872,7 +877,7 @@ import {
                 width: "360px",
                 modal: true,
                 resizable: false,
-                draggable: false,
+                draggable: true,
                 guard: opts.guard,
                 content: content,
                 _onResolve: (v) => resolve(v === true),
@@ -915,7 +920,7 @@ import {
                 width: "360px",
                 modal: true,
                 resizable: false,
-                draggable: false,
+                draggable: true,
                 content: content,
                 _onResolve: (v) => resolve(v),
             });
@@ -947,7 +952,7 @@ import {
                 width: opts.width || "360px",
                 modal: true,
                 resizable: opts.resizable !== undefined ? opts.resizable : false,
-                draggable: opts.draggable !== undefined ? opts.draggable : false,
+                draggable: opts.draggable !== undefined ? opts.draggable : true,
                 guard: opts.guard,
                 className: opts.className,
                 content: (body) => {
@@ -1071,19 +1076,20 @@ import {
         return prompt(title, message, placeholder);
     };
 
-    // ── HolafPanelManager.createDialog → AIH.choose/alert ───────────────────
-    // On enveloppe la méthode du module exporté (même référence d'objet), donc
-    // les consommateurs qui importent HolafPanelManager profitent du wrapper
-    // sans rien modifier. Retour Promise<value> compatible, ids/overlay gardés
-    // par AIH.Dialog (className "holaf-dialog-inline").
-    const _origCreateDialog = HolafPanelManager.createDialog;
-    HolafPanelManager.createDialog = function (options) {
+    // ── AIH.ask : API « style options » des dialogs (unifiée) ───────────────
+    // Forme : AIH.ask({ title, message, messageElement?, buttons?, width? })
+    //   - un seul bouton affirmatif  → alert()   (résout true)
+    //   - plusieurs boutons           → choose()  (résout la valeur du bouton)
+    // C'est l'API unique pour les confirmations/boîtes simples de TOUTE
+    // l'extension (image viewer, nodes manager, model manager…).
+    AIH.ask = function (options) {
         options = options || {};
         const buttons = (options.buttons && options.buttons.length)
             ? options.buttons
             : [{ text: L("dialog.ok", null, "OK"), value: true, type: "confirm" }];
         const message = isNode(options.messageElement) ? options.messageElement : (options.message || "");
         const title = options.title || L("dialog.confirm_title", null, "Confirmation");
+        const opts = { width: options.width || options.maxWidth };
 
         // Cas simple : un seul bouton affirmatif → alert-style, résout true.
         if (buttons.length === 1 && buttons[0].value === true) {
@@ -1096,7 +1102,7 @@ import {
             else if (b.type === "cancel") type = "cancel";
             return { text: b.text, value: b.value, type: type, onClick: b.onClick };
         });
-        return choose(title, message, mapped, { className: "holaf-dialog-inline" });
+        return choose(title, message, mapped, opts);
     };
 
     // ── window.HolafModal.show → AIH.choose (forward-compatible) ────────────
@@ -1126,7 +1132,6 @@ import {
         };
     }
 
-    // Garde une référence à la fonction d'origine accessible pour débug/défaillance.
-    if (!window.AIH) window.AIH = {};
-    window.AIH._origCreateDialog = _origCreateDialog;
+    // (aucune implémentation « d'origine » à conserver : createDialog a été
+    // unifié sur AIH.Dialog — voir le pont ci-dessus)
 })();
