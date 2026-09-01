@@ -224,6 +224,12 @@ export class ImageEditor {
         this._getPreviewElements().forEach(el => { if (el) el.style.filter = 'none'; });
         this._compareCleanup();
         this._clearCanvasCache();
+        // Nettoyage mask (overlay + toolbar)
+        const ov = document.getElementById('holaf-mask-overlay');
+        if (ov) ov.remove();
+        if (this._maskBar) { this._maskBar.remove(); this._maskBar = null; }
+        this._maskOverlay = null;
+        this._maskPreview = null;
         this.activeImage = null;
     }
 
@@ -270,9 +276,13 @@ export class ImageEditor {
                         c.height = img.naturalHeight;
                         c.getContext('2d').drawImage(img, 0, 0);
                         this._maskPreview = c;
+                        this._showMaskOverlay();
                         this.applyPreview();
                     };
                     img.src = d.edits.mask_base64;
+                } else {
+                    const ov = document.getElementById('holaf-mask-overlay');
+                    if (ov) ov.remove();
                 }
                 if (this.nativeFps > 0 && this.currentState.targetFps == null)
                     this.currentState.targetFps = Math.round(this.nativeFps * (this.currentState.playbackRate || 1.0));
@@ -549,8 +559,8 @@ export class ImageEditor {
                 ctx2.putImageData(new ImageData(out, w, h), 0, 0);
             }
 
-            // Mask : les effets ne s'appliquent que dans le mask (featheré)
-            if (this._maskPreview && this._maskPreview.width === w && this._maskPreview.height === h) {
+            // ── Mask : les effets ne s'appliquent que dans le mask (featheré) ──
+            if (this._maskPreview) {
                 const maskCanvas = document.createElement('canvas');
                 maskCanvas.width = w; maskCanvas.height = h;
                 const mctx = maskCanvas.getContext('2d');
@@ -629,12 +639,31 @@ export class ImageEditor {
         if (!container) return;
         const controls = this.currentState.controls || [];
 
-        if (controls.length === 0) {
+        let html = '';
+
+        // ── Ligne « Masque » (outil global, feather + édition) ──
+        if (this.currentState.mask) {
+            const feather = this.currentState.mask.feather || 0;
+            html += `
+                <div class="holaf-editor-slider-container" data-mask-row>
+                    <label>🎭 ${t('iv.maskLabel')}</label>
+                    <span class="holaf-editor-range-label" style="font-size:11px;opacity:0.6;">${t('iv.featherLabel')}</span>
+                    <input type="range" min="0" max="50" step="1" value="${feather}" data-mask-feather>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <span class="holaf-editor-slider-value" style="min-width:36px;">${Math.round(feather)}px</span>
+                        <button class="holaf-editor-remove-ctrl" data-mask-edit title="${t('iv.editMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-accent-color,#4682B4);padding:0 2px;font-size:14px;line-height:1;">✏️</button>
+                        <button class="holaf-editor-remove-ctrl" data-mask-clear title="${t('iv.clearMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">🗑</button>
+                    </div>
+                </div>
+                <div style="height:4px;"></div>`;
+        }
+
+        if (controls.length === 0 && !this.currentState.mask) {
             container.innerHTML = `<p style="opacity:0.5;font-size:12px;text-align:center;padding:12px 0;">${t('iv.noControlsYet')}</p>`;
             return;
         }
 
-        container.innerHTML = controls.map(c => {
+        html += controls.map(c => {
             const def = CONTROL_TYPES.find(t => t.id === c.type);
             if (!def) return '';
             const meta = _ctrlSliderMeta(def, c.value);
@@ -652,6 +681,241 @@ export class ImageEditor {
                     </div>
                 </div>`;
         }).join('');
+
+        container.innerHTML = html;
+    }
+
+    // ── Mask editor (dessin sur l'image : formes + lasso + gomme + feather) ──
+
+    _maskImageEl() {
+        return document.querySelector('#holaf-viewer-zoom-view img');
+    }
+
+    _showMaskOverlay() {
+        const zoomView = document.getElementById('holaf-viewer-zoom-view');
+        const img = this._maskImageEl();
+        if (!zoomView || !img || !this._maskPreview) return;
+        let overlay = document.getElementById('holaf-mask-overlay');
+        if (!overlay) {
+            overlay = document.createElement('canvas');
+            overlay.id = 'holaf-mask-overlay';
+            zoomView.appendChild(overlay);
+        }
+        overlay.width = Math.max(1, img.offsetWidth || img.naturalWidth || 100);
+        overlay.height = Math.max(1, img.offsetHeight || img.naturalHeight || 100);
+        overlay.style.cssText = `position:absolute;left:${img.offsetLeft}px;top:${img.offsetTop}px;z-index:60;pointer-events:none;opacity:0.45;`;
+        overlay.style.transform = img.style.transform || 'none';
+        overlay.style.transformOrigin = '0 0';
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        ctx.drawImage(this._maskPreview, 0, 0, overlay.width, overlay.height);
+    }
+
+    _openMaskEditor() {
+        if (!this.activeImage) return;
+        const zoomView = document.getElementById('holaf-viewer-zoom-view');
+        const img = this._maskImageEl();
+        if (!zoomView || !img) { this._showToast(t('iv.maskNoImage'), 'error'); return; }
+
+        this._finishMaskEditor(false); // nettoie un éditeur déjà ouvert
+
+        const overlay = document.getElementById('holaf-mask-overlay') || document.createElement('canvas');
+        overlay.id = 'holaf-mask-overlay';
+        if (!overlay.parentNode) zoomView.appendChild(overlay);
+        overlay.width = Math.max(1, img.offsetWidth || img.naturalWidth || 100);
+        overlay.height = Math.max(1, img.offsetHeight || img.naturalHeight || 100);
+        overlay.style.cssText = `position:absolute;left:${img.offsetLeft}px;top:${img.offsetTop}px;z-index:60;cursor:crosshair;opacity:0.5;`;
+        overlay.style.transform = img.style.transform || 'none';
+        overlay.style.transformOrigin = '0 0';
+        const octx = overlay.getContext('2d');
+        octx.clearRect(0, 0, overlay.width, overlay.height);
+        if (this._maskPreview) octx.drawImage(this._maskPreview, 0, 0, overlay.width, overlay.height);
+
+        const bar = document.createElement('div');
+        bar.id = 'holaf-mask-toolbar';
+        bar.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(20,20,28,0.92);border:1px solid var(--holaf-border-color,#444);border-radius:8px;color:var(--holaf-text-primary,#eee);font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:96vw;flex-wrap:wrap;';
+        bar.innerHTML = `
+            <button data-mask-tool="rect" class="comfy-button" style="padding:3px 8px;">▭ ${t('iv.maskRect')}</button>
+            <button data-mask-tool="ellipse" class="comfy-button" style="padding:3px 8px;">⬭ ${t('iv.maskEllipse')}</button>
+            <button data-mask-tool="lasso" class="comfy-button" style="padding:3px 8px;">✏️ ${t('iv.maskLasso')}</button>
+            <button data-mask-tool="erase" class="comfy-button" style="padding:3px 8px;">🧽 ${t('iv.maskErase')}</button>
+            <button data-mask-clear class="comfy-button" style="padding:3px 8px;">🗑 ${t('iv.maskClear')}</button>
+            <span style="opacity:.7;margin-left:6px;">${t('iv.featherLabel')}</span>
+            <input type="range" data-mask-feather-edit min="0" max="50" step="1" value="${(this.currentState.mask && this.currentState.mask.feather) || 0}" style="width:80px;">
+            <button data-mask-ok class="comfy-button" style="padding:3px 10px;background:var(--holaf-accent-color,#4682B4);color:#fff;">${t('iv.maskValidate')}</button>
+            <button data-mask-cancel class="comfy-button" style="padding:3px 10px;">${t('iv.cancel')}</button>
+        `;
+        zoomView.appendChild(bar);
+
+        this._maskOverlay = overlay;
+        this._maskBar = bar;
+        this._maskTool = 'rect';
+        this._maskFeather = (this.currentState.mask && this.currentState.mask.feather) || 0;
+        this._maskPrev = this.currentState.mask ? { ...this.currentState.mask } : null;
+        this._maskPrevPreview = this._maskPreview ? this._cloneCanvas(this._maskPreview) : null;
+
+        bar.addEventListener('click', (e) => {
+            const tool = e.target.closest('[data-mask-tool]');
+            if (tool) { this._maskTool = tool.dataset.maskTool; return; }
+            if (e.target.closest('[data-mask-clear]')) { this._clearMaskOverlay(); return; }
+            if (e.target.closest('[data-mask-ok]')) { this._finishMaskEditor(true); return; }
+            if (e.target.closest('[data-mask-cancel]')) { this._finishMaskEditor(false); return; }
+        });
+        bar.addEventListener('input', (e) => {
+            if (e.target.hasAttribute('data-mask-feather-edit')) this._maskFeather = parseFloat(e.target.value) || 0;
+        });
+
+        overlay.addEventListener('mousedown', (e) => this._maskOnDown(e));
+        overlay.addEventListener('mousemove', (e) => this._maskOnMove(e));
+        overlay.addEventListener('mouseup', (e) => this._maskOnUp(e));
+        overlay.addEventListener('mouseleave', (e) => this._maskOnUp(e));
+    }
+
+    _cloneCanvas(c) {
+        const out = document.createElement('canvas');
+        out.width = c.width; out.height = c.height;
+        out.getContext('2d').drawImage(c, 0, 0);
+        return out;
+    }
+
+    _maskLocal(e) {
+        const r = this._maskOverlay.getBoundingClientRect();
+        return {
+            x: (e.clientX - r.left) * (this._maskOverlay.width / Math.max(1, r.width)),
+            y: (e.clientY - r.top) * (this._maskOverlay.height / Math.max(1, r.height)),
+        };
+    }
+
+    _maskOnDown(e) {
+        if (!this._maskOverlay) return;
+        e.preventDefault();
+        this._maskDrawing = true;
+        const p = this._maskLocal(e);
+        this._maskStart = p;
+        this._maskPath = [p];
+        // snapshot pour le live-redraw des formes (pas pour la gomme)
+        this._maskSnap = this._maskTool === 'erase' ? null : this._cloneCanvas(this._maskOverlay);
+    }
+
+    _maskOnMove(e) {
+        if (!this._maskDrawing || !this._maskOverlay) return;
+        const p = this._maskLocal(e);
+        const ctx = this._maskOverlay.getContext('2d');
+        if (this._maskTool === 'erase') {
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI * 2); ctx.fill();
+            return;
+        }
+        if (this._maskTool === 'lasso') {
+            this._maskPath.push(p);
+        }
+        // redraw depuis le snapshot
+        if (this._maskSnap) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.clearRect(0, 0, this._maskOverlay.width, this._maskOverlay.height);
+            ctx.drawImage(this._maskSnap, 0, 0);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        const s = this._maskStart;
+        if (this._maskTool === 'rect') {
+            ctx.fillStyle = '#f00';
+            ctx.fillRect(Math.min(s.x, p.x), Math.min(s.y, p.y), Math.abs(p.x - s.x), Math.abs(p.y - s.y));
+        } else if (this._maskTool === 'ellipse') {
+            ctx.fillStyle = '#f00';
+            ctx.beginPath();
+            ctx.ellipse((s.x + p.x) / 2, (s.y + p.y) / 2, Math.abs(p.x - s.x) / 2, Math.abs(p.y - s.y) / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (this._maskTool === 'lasso') {
+            ctx.strokeStyle = '#f00'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+            ctx.beginPath(); ctx.moveTo(s.x, s.y);
+            this._maskPath.forEach(pt => ctx.lineTo(pt.x, pt.y));
+            ctx.stroke();
+        }
+    }
+
+    _maskOnUp() {
+        if (!this._maskDrawing || !this._maskOverlay) return;
+        this._maskDrawing = false;
+        const ctx = this._maskOverlay.getContext('2d');
+        if (this._maskTool === 'lasso' && this._maskPath && this._maskPath.length > 1) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = 'rgba(255,0,0,0.85)';
+            ctx.beginPath(); ctx.moveTo(this._maskStart.x, this._maskStart.y);
+            this._maskPath.forEach(pt => ctx.lineTo(pt.x, pt.y));
+            ctx.closePath(); ctx.fill();
+        }
+        this._maskSnap = null;
+        this._maskPath = null;
+    }
+
+    _clearMaskOverlay() {
+        if (!this._maskOverlay) return;
+        this._maskOverlay.getContext('2d').clearRect(0, 0, this._maskOverlay.width, this._maskOverlay.height);
+    }
+
+    _bakeMaskToFull() {
+        const img = this._maskImageEl();
+        const nw = (img && img.naturalWidth) || this._maskOverlay.width;
+        const nh = (img && img.naturalHeight) || this._maskOverlay.height;
+        // Borne mémoire : on ne dépasse pas 4096 px de côté
+        const maxDim = 4096;
+        const sc = Math.min(1, maxDim / Math.max(nw, nh));
+        const fw = Math.max(1, Math.round(nw * sc));
+        const fh = Math.max(1, Math.round(nh * sc));
+        const full = document.createElement('canvas');
+        full.width = fw; full.height = fh;
+        const fctx = full.getContext('2d');
+        fctx.drawImage(this._maskOverlay, 0, 0, fw, fh);
+        // Convertir en gris (canal R = valeur du mask)
+        const d = fctx.getImageData(0, 0, fw, fh).data;
+        const gray = fctx.createImageData(fw, fh);
+        for (let i = 0; i < d.length; i += 4) {
+            const v = d[i];
+            gray.data[i] = gray.data[i + 1] = gray.data[i + 2] = v;
+            gray.data[i + 3] = 255;
+        }
+        fctx.putImageData(gray, 0, 0);
+        return full;
+    }
+
+    _finishMaskEditor(commit) {
+        if (commit && this._maskOverlay) {
+            this._maskPreview = this._bakeMaskToFull();
+            this.currentState.mask = {
+                feather: this._maskFeather || 0,
+                file: (this.currentState.mask && this.currentState.mask.file) || undefined,
+            };
+            // overlay → affichage passif du mask
+            this._maskOverlay.style.pointerEvents = 'none';
+            this._maskOverlay.style.opacity = '0.45';
+            this._maskOverlay.style.cursor = 'default';
+            this._scheduleAutoSave();
+            this.applyPreview();
+            this._updateUIFromState();
+        } else {
+            // annulation : restaure l'état précédent
+            this.currentState.mask = this._maskPrev ? { ...this._maskPrev } : null;
+            this._maskPreview = this._maskPrevPreview;
+            if (this._maskOverlay) { this._maskOverlay.remove(); }
+        }
+        if (this._maskBar) { this._maskBar.remove(); this._maskBar = null; }
+        this._maskOverlay = null;
+        this._maskBar = null;
+        this._maskSnap = null;
+        this._maskPath = null;
+        this.applyPreview();
+        this._updateUIFromState();
+    }
+
+    _clearMask() {
+        this.currentState.mask = null;
+        this._maskPreview = null;
+        const ov = document.getElementById('holaf-mask-overlay');
+        if (ov) ov.remove();
+        this._scheduleAutoSave();
+        this.applyPreview();
+        this._updateUIFromState();
     }
 
     // ── UI sync ──
@@ -691,8 +955,26 @@ export class ImageEditor {
                         .filter((ct) => ct.category === cat.id)
                         .map((ct) => ({ id: ct.id, label: _controlTypeLabel(ct.id) })),
                 })).filter((g) => g.items.length > 0);
+                // Item spécial « Masque » (outil global, pas un contrôle de réglage)
+                if (this.currentState.mask) {
+                    groups.push({
+                        label: t('iv.maskGroup'),
+                        items: [{ id: 'mask', label: t('iv.editMask') }],
+                    });
+                } else {
+                    groups.push({
+                        label: t('iv.maskGroup'),
+                        items: [{ id: 'mask', label: t('iv.createMask') }],
+                    });
+                }
                 const chosenType = await _pickFromList(t('iv.addControlTitle'), groups);
                 if (!chosenType) return;
+
+                // Masque : outil global → ouvre l'éditeur de mask
+                if (chosenType === 'mask') {
+                    this._openMaskEditor();
+                    return;
+                }
 
                 // Portée du réglage — même picker
                 const rangeGroups = [{
@@ -746,10 +1028,24 @@ export class ImageEditor {
                 this._scheduleAutoSave();
             });
 
-            // Remove button → remove control
+            // Remove button → remove control (ou actions mask)
             list.addEventListener('click', (e) => {
                 const btn = e.target.closest('.holaf-editor-remove-ctrl');
-                if (btn) this._removeControl(btn.dataset.ctrlId);
+                if (!btn) return;
+                if (btn.hasAttribute('data-mask-edit')) { this._openMaskEditor(); return; }
+                if (btn.hasAttribute('data-mask-clear')) { this._clearMask(); return; }
+                this._removeControl(btn.dataset.ctrlId);
+            });
+
+            // Feather du mask (liste)
+            list.addEventListener('input', (e) => {
+                const f = e.target.closest('[data-mask-feather]');
+                if (!f || !this.currentState.mask) return;
+                this.currentState.mask.feather = parseFloat(f.value) || 0;
+                const valEl = e.target.parentNode.querySelector('.holaf-editor-slider-value');
+                if (valEl) valEl.textContent = this.currentState.mask.feather + 'px';
+                this._schedulePreview();
+                this._scheduleAutoSave();
             });
         }
 
