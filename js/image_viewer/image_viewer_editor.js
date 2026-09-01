@@ -234,6 +234,7 @@ export class ImageEditor {
     }
 
     _hide() {
+        if (this._maskTransformObserver) { this._maskTransformObserver.disconnect(); this._maskTransformObserver = null; }
         if (this.panelEl) this.panelEl.style.display = 'none';
         this._dispatchVideoOverride(null);
         this._getPreviewElements().forEach(el => { if (el) el.style.filter = 'none'; });
@@ -845,6 +846,36 @@ export class ImageEditor {
         };
     }
 
+    // Convertit un canvas de mask (niveaux de gris ou tracés rouges) en
+    // rendu rouge-alpha (R=255, G=0, B=0, A=valeur du mask) pour l'overlay.
+    _maskTinted(maskCanvas, w, h) {
+        const out = document.createElement('canvas');
+        out.width = w || maskCanvas.width; out.height = h || maskCanvas.height;
+        const ctx = out.getContext('2d');
+        ctx.drawImage(maskCanvas, 0, 0, out.width, out.height);
+        const d = ctx.getImageData(0, 0, out.width, out.height);
+        const px = d.data;
+        for (let i = 0; i < px.length; i += 4) {
+            const v = px[i]; // valeur du mask (canal R)
+            px[i] = 255; px[i + 1] = 0; px[i + 2] = 0;
+            px[i + 3] = Math.round(v * 0.55);
+        }
+        ctx.putImageData(new ImageData(px, out.width, out.height), 0, 0);
+        return out;
+    }
+
+    // Maintient la synchro du transform de l'overlay avec celui de l'img
+    // (pan/zoom) via un MutationObserver sur l'attribut style de l'img.
+    _observeMaskTransform(img) {
+        if (this._maskTransformObserver) this._maskTransformObserver.disconnect();
+        this._maskTransformObserver = new MutationObserver(() => {
+            const ov = document.getElementById('holaf-mask-overlay');
+            const im = this._maskImageEl();
+            if (ov && im) ov.style.transform = im.style.transform || 'none';
+        });
+        if (img) this._maskTransformObserver.observe(img, { attributes: true, attributeFilter: ['style'] });
+    }
+
     _showMaskOverlay(maskId) {
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const img = this._maskImageEl();
@@ -859,12 +890,13 @@ export class ImageEditor {
         const r = this._maskImageRect(img);
         overlay.width = r.width; overlay.height = r.height;
         overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;pointer-events:none;opacity:0.45;`;
-        overlay.style.transform = 'none';
+        overlay.style.transform = img.style.transform || 'none';
         overlay.style.transformOrigin = '0 0';
         const ctx = overlay.getContext('2d');
         ctx.clearRect(0, 0, overlay.width, overlay.height);
-        ctx.drawImage(maskCanvas, 0, 0, overlay.width, overlay.height);
+        ctx.drawImage(this._maskTinted(maskCanvas, overlay.width, overlay.height), 0, 0);
         this._activeOverlayMaskId = maskId;
+        this._observeMaskTransform(img);
     }
 
     _openMaskEditor(maskId) {
@@ -889,11 +921,11 @@ export class ImageEditor {
         const r = this._maskImageRect(img);
         overlay.width = r.width; overlay.height = r.height;
         overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;cursor:crosshair;opacity:0.5;`;
-        overlay.style.transform = 'none';
+        overlay.style.transform = img.style.transform || 'none';
         overlay.style.transformOrigin = '0 0';
         const octx = overlay.getContext('2d');
         octx.clearRect(0, 0, overlay.width, overlay.height);
-        if (this._maskCanvases[maskId]) octx.drawImage(this._maskCanvases[maskId], 0, 0, overlay.width, overlay.height);
+        if (this._maskCanvases[maskId]) octx.drawImage(this._maskTinted(this._maskCanvases[maskId], overlay.width, overlay.height), 0, 0);
 
         const maskCtrl = this.currentState.controls.find(c => c.id === maskId);
         const feather = (maskCtrl && maskCtrl.value) || 0;
@@ -933,10 +965,14 @@ export class ImageEditor {
             if (e.target.hasAttribute('data-mask-feather-edit')) this._maskFeather = parseFloat(e.target.value) || 0;
         });
 
-        overlay.addEventListener('mousedown', (e) => this._maskOnDown(e));
-        overlay.addEventListener('mousemove', (e) => this._maskOnMove(e));
-        overlay.addEventListener('mouseup', (e) => this._maskOnUp(e));
-        overlay.addEventListener('mouseleave', (e) => this._maskOnUp(e));
+        overlay.addEventListener('pointerdown', (e) => {
+            this._maskOnDown(e);
+            try { overlay.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+        overlay.addEventListener('pointermove', (e) => this._maskOnMove(e));
+        overlay.addEventListener('pointerup', (e) => this._maskOnUp(e));
+        overlay.addEventListener('pointercancel', (e) => this._maskOnUp(e));
+        this._observeMaskTransform(img);
     }
 
     _cloneCanvas(c) {
@@ -1018,6 +1054,7 @@ export class ImageEditor {
     }
 
     _clearMaskOverlay() {
+        if (this._maskTransformObserver) { this._maskTransformObserver.disconnect(); this._maskTransformObserver = null; }
         if (!this._maskOverlay) return;
         this._maskOverlay.getContext('2d').clearRect(0, 0, this._maskOverlay.width, this._maskOverlay.height);
     }
@@ -1048,6 +1085,7 @@ export class ImageEditor {
     }
 
     _finishMaskEditor(commit) {
+        if (this._maskTransformObserver) { this._maskTransformObserver.disconnect(); this._maskTransformObserver = null; }
         if (commit && this._maskOverlay && this._activeMaskId) {
             this._maskCanvases[this._activeMaskId] = this._bakeMaskToFull();
             const maskCtrl = this.currentState.controls.find(c => c.id === this._activeMaskId);

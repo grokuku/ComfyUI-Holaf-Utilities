@@ -49,6 +49,8 @@ export function resetTransform(state, element) {
     element.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
     element.style.cursor = 'grab';
     element.style.transformOrigin = '0 0'; // Ensure origin is consistent
+    const maskOv = document.getElementById('holaf-mask-overlay');
+    if (maskOv) maskOv.style.transform = element.style.transform;
 }
 
 // --- Batch preload: load N images ahead when user stops navigating ---
@@ -630,7 +632,11 @@ export function setupZoomAndPan(state, container, element) {
     // Set origin to top-left to make math easier
     element.style.transformOrigin = '0 0';
 
-    const updateTransform = () => { element.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; };
+    const updateTransform = () => {
+        element.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`;
+        const maskOv = document.getElementById('holaf-mask-overlay');
+        if (maskOv) maskOv.style.transform = element.style.transform;
+    };
 
     // Attach wheel event to the container (the viewport)
     container.onwheel = (e) => {
