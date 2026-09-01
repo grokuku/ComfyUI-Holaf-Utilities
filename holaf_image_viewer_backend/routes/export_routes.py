@@ -166,7 +166,11 @@ async def prepare_export_route(request: web.Request):
                     # Image Export (Pillow)
                     with Image.open(source_abs_path) as img:
                         img_to_save = img.copy()
-                        if edit_data: img_to_save = logic.apply_edits_to_image(img_to_save, edit_data)
+                        if edit_data:
+                            img_to_save = logic.apply_edits_to_image(
+                                img_to_save, edit_data,
+                                logic._load_edit_mask(edit_data, source_abs_path),
+                            )
                         save_params = {}
 
                         if export_format == 'png' and include_meta and effective_meta_method == 'embed':

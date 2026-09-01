@@ -81,6 +81,19 @@ async def load_edits_route(request: web.Request):
                 content = await f.read()
                 edit_data = json.loads(content)
 
+        # ── Mask : renvoyer le PNG au frontend (data URL) pour affichage/édition ──
+        if isinstance(edit_data, dict) and edit_data.get('mask', {}).get('file'):
+            try:
+                import base64
+                mask_path = os.path.normpath(
+                    os.path.join(os.path.dirname(new_path), os.path.basename(edit_data['mask']['file']))
+                )
+                if os.path.isfile(mask_path):
+                    with open(mask_path, 'rb') as mf:
+                        edit_data['mask_base64'] = 'data:image/png;base64,' + base64.b64encode(mf.read()).decode('ascii')
+            except Exception as e:
+                print(f"🟡 [Holaf-Edit] Failed to load mask image: {e}")
+
         # --- ENRICH WITH METADATA (FPS & SIDE-LOAD) ---
         response_data = {"status": "ok", "edits": edit_data}
 
@@ -137,6 +150,34 @@ async def save_edits_route(request: web.Request):
 
         if not new_path.startswith(os.path.normpath(output_dir)):
             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
+
+        # ── Mask : écriture du PNG sidecar si le frontend envoie mask_base64 ──
+        base_name = os.path.splitext(os.path.basename(safe_path))[0]
+        mask_filename = f"{base_name}_mask.png"
+        if isinstance(edits, dict):
+            mask_b64 = edits.pop('mask_base64', None)
+            if mask_b64:
+                import base64
+                if ',' in mask_b64:
+                    mask_b64 = mask_b64.split(',', 1)[1]
+                mask_abs = os.path.join(os.path.dirname(new_path), mask_filename)
+                with open(mask_abs, 'wb') as mf:
+                    mf.write(base64.b64decode(mask_b64))
+                feather = (edits.get('mask') or {}).get('feather', 0)
+                edits['mask'] = {"file": os.path.join(EDIT_DIR_NAME, mask_filename).replace("\\", "/"), "feather": feather}
+            elif edits.get('mask'):
+                # Mask existant (changement de feather) : préserver la référence fichier
+                if not edits['mask'].get('file'):
+                    edits['mask']['file'] = os.path.join(EDIT_DIR_NAME, mask_filename).replace("\\", "/")
+            else:
+                # Mask supprimé : retirer la référence + nettoyer le PNG orphelin
+                edits.pop('mask', None)
+                try:
+                    old_mask = os.path.join(os.path.dirname(new_path), mask_filename)
+                    if os.path.isfile(old_mask):
+                        os.remove(old_mask)
+                except Exception:
+                    pass
 
         # Ensure 'edit' directory exists
         if not os.path.exists(edit_dir):

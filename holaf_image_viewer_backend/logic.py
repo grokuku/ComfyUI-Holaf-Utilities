@@ -11,7 +11,8 @@ import sqlite3
 import subprocess
 import threading
 import tempfile
-from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance, ImageFont
+import numpy as np
+from PIL import PngImagePlugin, Image, ImageOps, UnidentifiedImageError, ImageEnhance, ImageFilter, ImageFont
 import folder_paths
 
 # --- Per-path lock to prevent concurrent video processing of the same file ---
@@ -1003,10 +1004,14 @@ def _migrate_edit_data(edit_data):
     return edit_data  # No known keys, return as-is
 
 
-def apply_edits_to_image(image, edit_data):
+def apply_edits_to_image(image, edit_data, mask_image=None):
     """
-    Applies adjustments (brightness, contrast, saturation, hue) to a PIL Image.
-    Supports both old flat format and new controls array format.
+    Applies adjustments (brightness, contrast, saturation, hue, blur, pixelate,
+    vignette, sharpen) to a PIL Image. Supports both old flat format and new
+    controls array format.
+
+    ``mask_image`` (optionnel, image 'L') : quand un mask est défini, tous les
+    effets ne s'appliquent QUE dans le mask (feather global appliqué ici).
     """
     if not isinstance(edit_data, dict):
         return image
@@ -1073,7 +1078,79 @@ def apply_edits_to_image(image, edit_data):
             except Exception as e:
                 print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
 
+        elif ctype == 'blur':
+            radius = max(0.0, float(value))
+            if radius > 0:
+                result = result.filter(ImageFilter.GaussianBlur(radius))
+
+        elif ctype == 'pixelate':
+            size = max(2, int(value))
+            w, h = result.size
+            result = result.resize((max(1, w // size), max(1, h // size)), Image.Resampling.NEAREST)
+            result = result.resize((w, h), Image.Resampling.NEAREST)
+
+        elif ctype == 'vignette':
+            result = _apply_vignette(result, float(value))
+
+        elif ctype == 'sharpen':
+            amount = float(value)
+            if amount > 0:
+                result = result.filter(ImageFilter.UnsharpMask(radius=2, percent=round(min(300, amount * 100)), threshold=2))
+
+    # ── Mask : les effets ne s'appliquent que dans le mask (feather global) ──
+    if mask_image is not None:
+        try:
+            feather = float(((edit_data.get('mask') or {}).get('feather', 0) or 0))
+            if feather > 0:
+                mask_image = mask_image.filter(ImageFilter.GaussianBlur(feather))
+            if mask_image.size != result.size:
+                mask_image = mask_image.resize(result.size, Image.Resampling.BILINEAR)
+            result = Image.composite(result, image, mask_image)
+        except Exception as e:
+            print(f"🟡 [Holaf-Logic] Failed to apply edit mask: {e}")
+
     return result
+
+
+def _apply_vignette(img, intensity):
+    """Assombrit les bords de l'image radialement (intensité 0-1)."""
+    if intensity <= 0:
+        return img
+    alpha = img.getchannel('A') if img.mode in ('RGBA', 'LA') else None
+    arr = np.asarray(img.convert('RGB'), dtype=np.float32)
+    h, w = arr.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    cx, cy = w / 2, h / 2
+    # Distance normalisée (0 au centre → ≥1 aux bords), mise à l'échelle
+    d = np.sqrt(((xx - cx) / max(cx, 1)) ** 2 + ((yy - cy) / max(cy, 1)) ** 2)
+    # Dégradé doux qui ne démarre qu'après ~55% du rayon
+    falloff = np.clip((d - 0.55) / 0.9, 0, 1)
+    factor = np.clip(intensity * 0.7 * falloff, 0, 1)[..., None]
+    out = arr * (1.0 - factor)
+    out_img = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+    if alpha is not None:
+        out_img.putalpha(alpha)
+    return out_img
+
+
+def _load_edit_mask(edit_data, original_path_abs):
+    """Charge le mask PNG (éventuel) référencé par le .edt.
+
+    Le champ ``mask.file`` est relatif au dossier de l'image
+    (ex: ``edit/<nom>_mask.png``). Retourne une image 'L' (0-255) ou None.
+    """
+    try:
+        mask_info = (edit_data or {}).get('mask') or {}
+        file_ref = mask_info.get('file')
+        if not file_ref:
+            return None
+        mask_path = os.path.normpath(os.path.join(os.path.dirname(original_path_abs), str(file_ref)))
+        if not os.path.isfile(mask_path):
+            return None
+        return Image.open(mask_path).convert('L')
+    except Exception as e:
+        print(f"🟡 [Holaf-Logic] Failed to load edit mask: {e}")
+        return None
 
 
 def build_ffmpeg_filter_string(edit_data):
@@ -1135,6 +1212,33 @@ def build_ffmpeg_filter_string(edit_data):
             h_val = float(flat['hue'])
             if abs(h_val) > 0.01:
                 filters.append(f"hue=h={h_val}")
+        except ValueError:
+            pass
+
+    # blur → gblur
+    if 'blur' in flat:
+        try:
+            r = float(flat['blur'])
+            if r > 0:
+                filters.append(f"gblur=sigma={max(0.5, r)}")
+        except ValueError:
+            pass
+
+    # sharpen → unsharp
+    if 'sharpen' in flat:
+        try:
+            a = float(flat['sharpen'])
+            if a > 0:
+                filters.append(f"unsharp=5:5:{min(1.5, a * 0.5)}")
+        except ValueError:
+            pass
+
+    # vignette → ffmpeg vignette (angle en radians)
+    if 'vignette' in flat:
+        try:
+            v = float(flat['vignette'])
+            if v > 0:
+                filters.append(f"vignette=angle={0.2 + v * 0.6}")
         except ValueError:
             pass
 
@@ -1430,7 +1534,7 @@ def _create_thumbnail_blocking(original_path_abs, thumb_path_abs, image_path_can
             # sinon on resize directement (évite un décodage/copie complet inutile).
             if edit_data:
                 img_copy = img.copy()
-                img_copy = apply_edits_to_image(img_copy, edit_data)
+                img_copy = apply_edits_to_image(img_copy, edit_data, _load_edit_mask(edit_data, original_path_abs))
             else:
                 img_copy = img
 

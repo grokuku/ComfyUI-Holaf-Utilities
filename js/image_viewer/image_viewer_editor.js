@@ -27,16 +27,41 @@ function _controlTypeLabel(id) {
 // Catégories des contrôles d'édition (rangement « dossier » du picker).
 // Ajouter une catégorie = entrée ici + champ `category` sur les contrôles.
 const CONTROL_CATEGORIES = [
-    { id: 'basic', labelKey: 'iv.catBasic', icon: '⚙️' },
-    { id: 'color', labelKey: 'iv.catColor', icon: '🎨' },
+    { id: 'basic',   labelKey: 'iv.catBasic',   icon: '⚙️' },
+    { id: 'color',   labelKey: 'iv.catColor',   icon: '🎨' },
+    { id: 'effects', labelKey: 'iv.catEffects', icon: '✨' },
 ];
 
+// Modèle de valeur :
+//   - défaut : `value` = ratio (1 = 100%) ; le slider affiche value*100
+//   - `raw: true` : `value` est utilisé tel quel (degrés hue, px blur/pixelate)
+//   - `unit` : suffixe d'affichage ('px', '%', '°')
 const CONTROL_TYPES = [
-    { id: 'brightness', label: 'Brightness', category: 'basic', default: 1, min: 0, max: 200, step: 1 },
-    { id: 'contrast',   label: 'Contrast',   category: 'basic', default: 1, min: 0, max: 200, step: 1 },
-    { id: 'saturation', label: 'Saturation', category: 'color', default: 1, min: 0, max: 200, step: 1 },
-    { id: 'hue',        label: 'Hue',        category: 'color', default: 0, min: -180, max: 180, step: 1 },
+    { id: 'brightness', label: 'Brightness', category: 'basic',   default: 1, min: 0, max: 200, step: 1 },
+    { id: 'contrast',   label: 'Contrast',   category: 'basic',   default: 1, min: 0, max: 200, step: 1 },
+    { id: 'saturation', label: 'Saturation', category: 'color',   default: 1, min: 0, max: 200, step: 1 },
+    { id: 'hue',        label: 'Hue',        category: 'color',   default: 0, min: -180, max: 180, step: 1, raw: true },
+    { id: 'blur',       label: 'Blur',       category: 'effects', default: 8, min: 0, max: 50, step: 0.5, raw: true, unit: 'px' },
+    { id: 'pixelate',   label: 'Pixelate',   category: 'effects', default: 12, min: 2, max: 64, step: 1, raw: true, unit: 'px' },
+    { id: 'vignette',   label: 'Vignette',   category: 'effects', default: 0.5, min: 0, max: 100, step: 1, unit: '%' },
+    { id: 'sharpen',    label: 'Sharpen',    category: 'effects', default: 1, min: 0, max: 300, step: 5, unit: '%' },
 ];
+
+// ── Méta slider : traduit value ↔ slider et formate l'affichage ─────────────
+function _ctrlSliderMeta(def, value) {
+    if (def.raw) {
+        return {
+            sliderVal: value,
+            display: def.unit ? `${Math.round(value * 10) / 10}${def.unit}` : String(value),
+            fromSlider: (s) => parseFloat(s),
+        };
+    }
+    return {
+        sliderVal: value * 100,
+        display: def.unit ? `${Math.round(value * 100)}${def.unit}` : String(Math.round(value * 100)),
+        fromSlider: (s) => parseFloat(s) / 100,
+    };
+}
 
 // ── Pickeur « liste structurée » (AIH.Dialog) ───────────────────────────────
 // groups: [{ label?, items: [{ id, label, hint? }] }] — clic ou Entrée sélectionne.
@@ -235,6 +260,20 @@ export class ImageEditor {
                         this.currentState.controls = d.edits.controls.map(c => ({ ...c }));
                     }
                 }
+                // ── Mask : charger le PNG serveur dans un canvas de préview ──
+                this._maskPreview = null;
+                if (d.edits && d.edits.mask && d.edits.mask_base64) {
+                    const img = new Image();
+                    img.onload = () => {
+                        const c = document.createElement('canvas');
+                        c.width = img.naturalWidth;
+                        c.height = img.naturalHeight;
+                        c.getContext('2d').drawImage(img, 0, 0);
+                        this._maskPreview = c;
+                        this.applyPreview();
+                    };
+                    img.src = d.edits.mask_base64;
+                }
                 if (this.nativeFps > 0 && this.currentState.targetFps == null)
                     this.currentState.targetFps = Math.round(this.nativeFps * (this.currentState.playbackRate || 1.0));
             }
@@ -268,9 +307,16 @@ export class ImageEditor {
             this.currentState.playbackRate = this.currentState.targetFps / this.nativeFps;
 
         try {
+            // ── Mask : inclure le PNG (data URL) pour la sauvegarde sidecar ──
+            const payload = { path_canon: path, edits: this.currentState };
+            if (this.currentState.mask && this._maskPreview) {
+                payload.edits = { ...this.currentState, mask_base64: this._maskPreview.toDataURL('image/png') };
+            } else if (!this.currentState.mask) {
+                payload.edits = { ...this.currentState, mask: null };
+            }
             const r = await fetch('/holaf/images/save-edits', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path_canon: path, edits: this.currentState })
+                body: JSON.stringify(payload)
             });
             if (r.ok) {
                 this._updateGlobalImageState(path, true);
@@ -304,7 +350,9 @@ export class ImageEditor {
 
         if (this._rangedPreviewPending) { this._rangedPreviewPending = false; }
 
-        if (this._hasRangedAdjustments()) {
+        // Préview canvas : rangés OU effets spatiaux (blur/pixelate/vignette/
+        // sharpen) OU mask — sinon CSS filters (rapide).
+        if (this._hasRangedAdjustments() || this._requiresCanvasPreview()) {
             this._rangedPreviewPending = true;
             this._processRangedPreviewOnCanvas(els);
         } else {
@@ -349,6 +397,14 @@ export class ImageEditor {
     _hasRangedAdjustments() {
         if (this.nativeFps > 0) return false;
         return (this.currentState.controls || []).some(c => c.range && c.range !== 'all');
+    }
+
+    // Effets qui ne peuvent pas passer par les CSS filters (spatiaux) ou mask
+    _requiresCanvasPreview() {
+        if (this.nativeFps > 0) return false;
+        const spatial = ['blur', 'pixelate', 'vignette', 'sharpen'];
+        return (this.currentState.controls || []).some(c => spatial.includes(c.type))
+            || !!this.currentState.mask;
     }
 
     async _processRangedPreviewOnCanvas(els) {
@@ -430,6 +486,92 @@ export class ImageEditor {
             }
 
             this._previewCanvas.getContext('2d').putImageData(new ImageData(dst, w, h), 0, 0);
+
+            // ── Effets spatiaux (canvas) + mask ─────────────────────────────
+            const ctx2 = this._previewCanvas.getContext('2d');
+            const controls2 = this.currentState.controls || [];
+
+            // Pixelate : downscale + upscale NEAREST
+            const pix = controls2.find(c => c.type === 'pixelate' && c.value > 1);
+            if (pix) {
+                const s = Math.max(2, pix.value);
+                const tmp = document.createElement('canvas');
+                tmp.width = Math.max(1, Math.round(w / s));
+                tmp.height = Math.max(1, Math.round(h / s));
+                const tctx = tmp.getContext('2d');
+                tctx.imageSmoothingEnabled = false;
+                tctx.drawImage(this._previewCanvas, 0, 0, tmp.width, tmp.height);
+                ctx2.imageSmoothingEnabled = false;
+                ctx2.drawImage(tmp, 0, 0, w, h);
+                ctx2.imageSmoothingEnabled = true;
+            }
+
+            // Blur : ctx.filter
+            const blr = controls2.find(c => c.type === 'blur' && c.value > 0);
+            if (blr) {
+                ctx2.filter = `blur(${Math.max(0.5, blr.value)}px)`;
+                ctx2.drawImage(this._previewCanvas, 0, 0);
+                ctx2.filter = 'none';
+            }
+
+            // Vignette : assombrissement radial
+            const vig = controls2.find(c => c.type === 'vignette' && c.value > 0);
+            if (vig) {
+                const cx = w / 2, cy = h / 2;
+                const maxR = Math.sqrt(cx * cx + cy * cy) * 1.05;
+                const grad = ctx2.createRadialGradient(cx, cy, maxR * 0.35, cx, cy, maxR);
+                grad.addColorStop(0, 'rgba(0,0,0,0)');
+                grad.addColorStop(1, `rgba(0,0,0,${Math.min(0.85, vig.value * 0.7)})`);
+                ctx2.fillStyle = grad;
+                ctx2.fillRect(0, 0, w, h);
+            }
+
+            // Sharpen : unsharp mask (original + (original - flou) * quantité)
+            const shp = controls2.find(c => c.type === 'sharpen' && c.value > 0);
+            if (shp) {
+                const tmp = document.createElement('canvas');
+                tmp.width = w; tmp.height = h;
+                const tctx = tmp.getContext('2d');
+                tctx.filter = 'blur(2px)';
+                tctx.drawImage(this._previewCanvas, 0, 0);
+                tctx.filter = 'none';
+                const cur = ctx2.getImageData(0, 0, w, h).data;
+                const blrD = tctx.getImageData(0, 0, w, h).data;
+                const out = new Uint8ClampedArray(cur.length);
+                const amount = Math.min(3, shp.value);
+                for (let i = 0; i < cur.length; i += 4) {
+                    for (let ch = 0; ch < 3; ch++) {
+                        const d = cur[i + ch] - blrD[i + ch];
+                        out[i + ch] = Math.max(0, Math.min(255, cur[i + ch] + d * amount));
+                    }
+                    out[i + 3] = cur[i + 3];
+                }
+                ctx2.putImageData(new ImageData(out, w, h), 0, 0);
+            }
+
+            // Mask : les effets ne s'appliquent que dans le mask (featheré)
+            if (this._maskPreview && this._maskPreview.width === w && this._maskPreview.height === h) {
+                const maskCanvas = document.createElement('canvas');
+                maskCanvas.width = w; maskCanvas.height = h;
+                const mctx = maskCanvas.getContext('2d');
+                const feather = (this.currentState.mask && this.currentState.mask.feather) || 0;
+                if (feather > 0) { mctx.filter = `blur(${feather}px)`; }
+                mctx.drawImage(this._maskPreview, 0, 0, w, h);
+                mctx.filter = 'none';
+                const maskData = mctx.getImageData(0, 0, w, h).data;
+                const cur = ctx2.getImageData(0, 0, w, h).data;
+                const orig = this._originalImgData.data;
+                const out = new Uint8ClampedArray(cur.length);
+                for (let i = 0; i < cur.length; i += 4) {
+                    const ma = maskData[i] / 255; // 0 (hors mask) → 1 (dans mask)
+                    out[i] = orig[i] * (1 - ma) + cur[i] * ma;
+                    out[i + 1] = orig[i + 1] * (1 - ma) + cur[i + 1] * ma;
+                    out[i + 2] = orig[i + 2] * (1 - ma) + cur[i + 2] * ma;
+                    out[i + 3] = cur[i + 3];
+                }
+                ctx2.putImageData(new ImageData(out, w, h), 0, 0);
+            }
+
             const blob = await new Promise(r => this._previewCanvas.toBlob(r, 'image/jpeg', 0.92));
             if (!blob) return;
             if (this._previewBlobUrl) URL.revokeObjectURL(this._previewBlobUrl);
@@ -495,18 +637,16 @@ export class ImageEditor {
         container.innerHTML = controls.map(c => {
             const def = CONTROL_TYPES.find(t => t.id === c.type);
             if (!def) return '';
-            const val = c.value;
-            const displayVal = c.type === 'hue' ? val : Math.round(val * 100);
-            const sliderVal = c.type === 'hue' ? val : val * 100;
+            const meta = _ctrlSliderMeta(def, c.value);
             const rangeLabel = c.range === 'all' ? t('iv.all') : c.range.charAt(0).toUpperCase() + c.range.slice(1);
             const rangeStyle = c.range === 'all' ? 'opacity:0.5;' : 'color:var(--holaf-accent-color,#4682B4);font-weight:bold;';
             return `
                 <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}">
                     <label>${_controlTypeLabel(c.type)}</label>
                     <span class="holaf-editor-range-label" style="font-size:11px;${rangeStyle}">${rangeLabel}</span>
-                    <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${sliderVal}">
+                    <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${meta.sliderVal}">
                     <div style="display:flex;align-items:center;gap:4px;">
-                        <span class="holaf-editor-slider-value" style="min-width:36px;">${displayVal}</span>
+                        <span class="holaf-editor-slider-value" style="min-width:36px;">${meta.display}</span>
                         <button class="holaf-editor-remove-ctrl" data-ctrl-id="${c.id}" title="${t('iv.removeCtrlTitle', { label: _controlTypeLabel(c.type) })}"
                                 style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">✕</button>
                     </div>
@@ -583,10 +723,10 @@ export class ImageEditor {
                 const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
                 if (!ctrl) return;
                 const def = CONTROL_TYPES.find(t => t.id === ctrl.type);
-                const rawVal = parseFloat(slider.value);
-                ctrl.value = ctrl.type === 'hue' ? rawVal : rawVal / 100;
+                const meta = _ctrlSliderMeta(def, ctrl.value);
+                ctrl.value = meta.fromSlider(parseFloat(slider.value));
                 const valEl = container.querySelector('.holaf-editor-slider-value');
-                if (valEl) valEl.textContent = ctrl.type === 'hue' ? rawVal : Math.round(rawVal);
+                if (valEl) valEl.textContent = _ctrlSliderMeta(def, ctrl.value).display;
                 this._schedulePreview();
                 this._scheduleAutoSave();
             });
