@@ -12,6 +12,7 @@ import { HolafPanelManager } from "../holaf_panel_manager.js";
 import { escapeHtml } from "../holaf_dom_utils.js";
 import { imageViewerState } from './image_viewer_state.js';
 import { getThumbnailUrl } from './image_viewer_gallery.js';
+import { resetTransform } from './image_viewer_navigation.js';
 
 // Helper i18n central : traduit via AIH.I18n (clé brute si absente).
 const t = (key, params) => {
@@ -126,6 +127,11 @@ export class ImageEditor {
         this.saveInProgress = false;
         this.nativeFps = 0;
         this.processedVideoUrl = null;
+        // État UI de la liste : contrôle déplié + visibilité de l'overlay mask
+        this._expandedCtrlId = null;
+        this._maskHidden = false;
+        this._lastToggledCtrlId = null; // mémo pour le dblclick reset après re-render
+        this._lastToggledAt = 0;
     }
 
     init() {
@@ -213,6 +219,9 @@ export class ImageEditor {
         // Use DEFAULT_EDIT_STATE() (function call = fresh deep copy) to prevent
         // shared reference mutation between different images
         this.currentState = DEFAULT_EDIT_STATE();
+        // Nouvelle image → UI de liste fraîche : tout replié, overlay mask visible
+        this._expandedCtrlId = null;
+        this._maskHidden = false;
         this._updateUIFromState();
         this.applyPreview();
         await this._loadEditsForCurrentImage();
@@ -276,7 +285,7 @@ export class ImageEditor {
                         c.height = img.naturalHeight;
                         c.getContext('2d').drawImage(img, 0, 0);
                         this._maskPreview = c;
-                        this._showMaskOverlay();
+                        if (!this._maskHidden) this._showMaskOverlay();
                         this.applyPreview();
                     };
                     img.src = d.edits.mask_base64;
@@ -418,7 +427,7 @@ export class ImageEditor {
     }
 
     async _processRangedPreviewOnCanvas(els) {
-        const imgEl = els[0];
+        const imgEl = els.find(e => e && e.tagName === 'IMG' && (e.dataset.originalSrc || e.src)) || els[0];
         if (!imgEl || imgEl.tagName !== 'IMG') return;
         const originalUrl = imgEl.dataset.originalSrc || imgEl.src;
         if (!originalUrl) return;
@@ -621,7 +630,9 @@ export class ImageEditor {
         const def = CONTROL_TYPES.find(c => c.id === typeId);
         if (!def) return;
         _ctrlIdCounter++;
-        this.currentState.controls = [...this.currentState.controls, { id: 'c_' + _ctrlIdCounter, type: typeId, value: def.default, range: range }];
+        const newId = 'c_' + _ctrlIdCounter;
+        this.currentState.controls = [...this.currentState.controls, { id: newId, type: typeId, value: def.default, range: range }];
+        this._expandedCtrlId = newId; // déplier automatiquement le contrôle ajouté
         this._updateUIFromState();
         this.applyPreview();
         this._scheduleAutoSave();
@@ -629,6 +640,7 @@ export class ImageEditor {
 
     _removeControl(ctrlId) {
         this.currentState.controls = this.currentState.controls.filter(c => c.id !== ctrlId);
+        if (this._expandedCtrlId === ctrlId) this._expandedCtrlId = null;
         this._updateUIFromState();
         this.applyPreview();
         this._scheduleAutoSave();
@@ -641,16 +653,18 @@ export class ImageEditor {
 
         let html = '';
 
-        // ── Ligne « Masque » (outil global, feather + édition) ──
+        // ── Ligne « Masque » (outil global, feather + édition + visibilité) ──
         if (this.currentState.mask) {
             const feather = this.currentState.mask.feather || 0;
             html += `
-                <div class="holaf-editor-slider-container" data-mask-row>
+                <div class="holaf-editor-slider-container" data-mask-row style="grid-template-columns:80px 65px 1fr auto;">
                     <label>🎭 ${t('iv.maskLabel')}</label>
                     <span class="holaf-editor-range-label" style="font-size:11px;opacity:0.6;">${t('iv.featherLabel')}</span>
                     <input type="range" min="0" max="50" step="1" value="${feather}" data-mask-feather>
                     <div style="display:flex;align-items:center;gap:4px;">
                         <span class="holaf-editor-slider-value" style="min-width:36px;">${Math.round(feather)}px</span>
+                        <button class="holaf-editor-remove-ctrl" data-mask-hide title="${t(this._maskHidden ? 'iv.showMask' : 'iv.hideMask')}"
+                                style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;">${this._maskHidden ? '🙈' : '👁'}</button>
                         <button class="holaf-editor-remove-ctrl" data-mask-edit title="${t('iv.editMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-accent-color,#4682B4);padding:0 2px;font-size:14px;line-height:1;">✏️</button>
                         <button class="holaf-editor-remove-ctrl" data-mask-clear title="${t('iv.clearMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">🗑</button>
                     </div>
@@ -663,21 +677,45 @@ export class ImageEditor {
             return;
         }
 
-        html += controls.map(c => {
+        // Affichage compact 2 niveaux : ligne repliée (nom + plage + valeur +
+        // ordre + suppression, pas de slider) ; un clic sur la ligne déplie
+        // slider + plage + valeur en dessous (this._expandedCtrlId).
+        html += controls.map((c, idx) => {
             const def = CONTROL_TYPES.find(t => t.id === c.type);
             if (!def) return '';
             const meta = _ctrlSliderMeta(def, c.value);
             const rangeLabel = c.range === 'all' ? t('iv.all') : c.range.charAt(0).toUpperCase() + c.range.slice(1);
             const rangeStyle = c.range === 'all' ? 'opacity:0.5;' : 'color:var(--holaf-accent-color,#4682B4);font-weight:bold;';
+            const expanded = this._expandedCtrlId === c.id;
+            const iconBtn = (attrs, glyph, extraStyle = '') =>
+                `<button class="holaf-editor-remove-ctrl" ${attrs} style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;${extraStyle}">${glyph}</button>`;
+            const dimUp = idx === 0, dimDown = idx === controls.length - 1;
+            const upBtn = iconBtn(`data-ctrl-up title="${t('iv.moveUp')}"${dimUp ? ' disabled' : ''}`, '↑', dimUp ? 'opacity:.3;cursor:default;' : '');
+            const downBtn = iconBtn(`data-ctrl-down title="${t('iv.moveDown')}"${dimDown ? ' disabled' : ''}`, '↓', dimDown ? 'opacity:.3;cursor:default;' : '');
+            const delBtn = iconBtn(`data-ctrl-id="${c.id}" title="${t('iv.removeCtrlTitle', { label: _controlTypeLabel(c.type) })}"`, '✕', 'color:var(--holaf-error-color,#c44);');
+            const nameStyle = 'text-align:left;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+
+            if (!expanded) {
+                // Replié : pas de slider — clic sur la ligne (hors boutons) pour déplier
+                return `
+                    <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}" style="display:flex;align-items:center;gap:6px;">
+                        <label style="${nameStyle}">${_controlTypeLabel(c.type)}</label>
+                        <span class="holaf-editor-range-label" style="font-size:11px;flex-shrink:0;${rangeStyle}">${rangeLabel}</span>
+                        <span class="holaf-editor-slider-value" style="min-width:36px;flex-shrink:0;">${meta.display}</span>
+                        ${upBtn}${downBtn}${delBtn}
+                    </div>`;
+            }
+            // Déplié : en-tête (nom + ordre + suppression) + slider/plage/valeur en dessous
             return `
-                <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}">
-                    <label>${_controlTypeLabel(c.type)}</label>
-                    <span class="holaf-editor-range-label" style="font-size:11px;${rangeStyle}">${rangeLabel}</span>
-                    <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${meta.sliderVal}">
-                    <div style="display:flex;align-items:center;gap:4px;">
-                        <span class="holaf-editor-slider-value" style="min-width:36px;">${meta.display}</span>
-                        <button class="holaf-editor-remove-ctrl" data-ctrl-id="${c.id}" title="${t('iv.removeCtrlTitle', { label: _controlTypeLabel(c.type) })}"
-                                style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">✕</button>
+                <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}" style="display:block;padding:2px 0;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <label style="${nameStyle}">${_controlTypeLabel(c.type)}</label>
+                        ${upBtn}${downBtn}${delBtn}
+                    </div>
+                    <div data-ctrl-body style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+                        <span class="holaf-editor-range-label" style="font-size:11px;flex-shrink:0;${rangeStyle}">${rangeLabel}</span>
+                        <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${meta.sliderVal}" style="flex-grow:1;min-width:0;margin:0;">
+                        <span class="holaf-editor-slider-value" style="min-width:36px;flex-shrink:0;">${meta.display}</span>
                     </div>
                 </div>`;
         }).join('');
@@ -691,6 +729,21 @@ export class ImageEditor {
         return document.querySelector('#holaf-viewer-zoom-view img');
     }
 
+    _maskImageRect(img) {
+        // Rect letterboxé réel de l'image affichée (object-fit:contain)
+        const boxW = img.offsetWidth || img.naturalWidth || 100;
+        const boxH = img.offsetHeight || img.naturalHeight || 100;
+        const natW = img.naturalWidth || boxW, natH = img.naturalHeight || boxH;
+        const s = Math.min(boxW / natW, boxH / natH);
+        const dispW = Math.max(1, Math.round(natW * s));
+        const dispH = Math.max(1, Math.round(natH * s));
+        return {
+            width: dispW, height: dispH,
+            dx: (boxW - dispW) / 2, dy: (boxH - dispH) / 2,
+            scale: s,
+        };
+    }
+
     _showMaskOverlay() {
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const img = this._maskImageEl();
@@ -701,10 +754,10 @@ export class ImageEditor {
             overlay.id = 'holaf-mask-overlay';
             zoomView.appendChild(overlay);
         }
-        overlay.width = Math.max(1, img.offsetWidth || img.naturalWidth || 100);
-        overlay.height = Math.max(1, img.offsetHeight || img.naturalHeight || 100);
-        overlay.style.cssText = `position:absolute;left:${img.offsetLeft}px;top:${img.offsetTop}px;z-index:60;pointer-events:none;opacity:0.45;`;
-        overlay.style.transform = img.style.transform || 'none';
+        const r = this._maskImageRect(img);
+        overlay.width = r.width; overlay.height = r.height;
+        overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;pointer-events:none;opacity:0.45;`;
+        overlay.style.transform = 'none';
         overlay.style.transformOrigin = '0 0';
         const ctx = overlay.getContext('2d');
         ctx.clearRect(0, 0, overlay.width, overlay.height);
@@ -719,13 +772,21 @@ export class ImageEditor {
 
         this._finishMaskEditor(false); // nettoie un éditeur déjà ouvert
 
+        // Éditer le mask implique le voir : ré-affiche l'overlay s'il était caché
+        this._maskHidden = false;
+
+        // ── Forcer le zoom à l'échelle 1 : le mask vit dans le repère image ──
+        if (this.viewer && this.viewer.zoomViewState) {
+            resetTransform(this.viewer.zoomViewState, img);
+        }
+
         const overlay = document.getElementById('holaf-mask-overlay') || document.createElement('canvas');
         overlay.id = 'holaf-mask-overlay';
         if (!overlay.parentNode) zoomView.appendChild(overlay);
-        overlay.width = Math.max(1, img.offsetWidth || img.naturalWidth || 100);
-        overlay.height = Math.max(1, img.offsetHeight || img.naturalHeight || 100);
-        overlay.style.cssText = `position:absolute;left:${img.offsetLeft}px;top:${img.offsetTop}px;z-index:60;cursor:crosshair;opacity:0.5;`;
-        overlay.style.transform = img.style.transform || 'none';
+        const r = this._maskImageRect(img);
+        overlay.width = r.width; overlay.height = r.height;
+        overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;cursor:crosshair;opacity:0.5;`;
+        overlay.style.transform = 'none';
         overlay.style.transformOrigin = '0 0';
         const octx = overlay.getContext('2d');
         octx.clearRect(0, 0, overlay.width, overlay.height);
@@ -904,6 +965,10 @@ export class ImageEditor {
         this._maskBar = null;
         this._maskSnap = null;
         this._maskPath = null;
+        // Annulation : restaure l'affichage passif du mask précédent (sauf s'il
+        // est volontairement caché via le bouton 👁)
+        if (!this._maskHidden && this._maskPreview && !document.getElementById('holaf-mask-overlay'))
+            this._showMaskOverlay();
         this.applyPreview();
         this._updateUIFromState();
     }
@@ -1013,13 +1078,18 @@ export class ImageEditor {
                 this._scheduleAutoSave();
             });
 
-            // Double-click → reset control value
+            // Double-click → reset control value (ligne dépliée uniquement ;
+            // le re-render du toggle de la ligne peut faire perdre la cible du
+            // dblclick → retombe sur la dernière ligne togglée < 600ms)
             list.addEventListener('dblclick', (e) => {
                 const container = e.target.closest('.holaf-editor-slider-container');
-                if (!container) return;
-                const ctrlId = container.dataset.ctrlId;
+                const ctrlId = container
+                    ? container.dataset.ctrlId
+                    : (this._lastToggledCtrlId && Date.now() - this._lastToggledAt < 600 ? this._lastToggledCtrlId : null);
+                if (!ctrlId) return;
                 const ctrl = this.currentState.controls.find(c => c.id === ctrlId);
                 if (!ctrl) return;
+                if (this._expandedCtrlId !== ctrlId) return; // reset visible seulement déplié
                 const def = CONTROL_TYPES.find(t => t.id === ctrl.type);
                 if (!def) return;
                 ctrl.value = def.default;
@@ -1028,13 +1098,52 @@ export class ImageEditor {
                 this._scheduleAutoSave();
             });
 
-            // Remove button → remove control (ou actions mask)
+            // Clic : boutons d'abord (mask / ordre / suppression), sinon
+            // clic-ligne hors boutons/inputs → replier / déplier le contrôle
             list.addEventListener('click', (e) => {
                 const btn = e.target.closest('.holaf-editor-remove-ctrl');
-                if (!btn) return;
-                if (btn.hasAttribute('data-mask-edit')) { this._openMaskEditor(); return; }
-                if (btn.hasAttribute('data-mask-clear')) { this._clearMask(); return; }
-                this._removeControl(btn.dataset.ctrlId);
+                if (btn) {
+                    if (btn.hasAttribute('data-mask-edit')) { this._openMaskEditor(); return; }
+                    if (btn.hasAttribute('data-mask-clear')) { this._clearMask(); return; }
+                    if (btn.hasAttribute('data-mask-hide')) {
+                        this._maskHidden = !this._maskHidden;
+                        if (this._maskHidden) {
+                            const ov = document.getElementById('holaf-mask-overlay');
+                            if (ov) ov.remove();
+                        } else this._showMaskOverlay();
+                        this._updateUIFromState();
+                        return;
+                    }
+                    if (btn.hasAttribute('data-ctrl-up') || btn.hasAttribute('data-ctrl-down')) {
+                        const row = btn.closest('[data-ctrl-id]');
+                        const cid = row?.dataset.ctrlId;
+                        const arr = [...this.currentState.controls];
+                        const i = arr.findIndex(c => c.id === cid);
+                        const j = btn.hasAttribute('data-ctrl-up') ? i - 1 : i + 1;
+                        if (i >= 0 && j >= 0 && j < arr.length) {
+                            [arr[i], arr[j]] = [arr[j], arr[i]];
+                            this.currentState.controls = arr;
+                            this._updateUIFromState();
+                            this.applyPreview(); // la chaîne est recalculée dans le nouvel ordre
+                            this._scheduleAutoSave();
+                        }
+                        return;
+                    }
+                    this._removeControl(btn.dataset.ctrlId);
+                    return;
+                }
+                // Clic-ligne (hors boutons/inputs, pas dans la ligne slider
+                // dépliée) → toggle d'expansion du contrôle
+                const row = e.target.closest('.holaf-editor-slider-container');
+                if (row && row.dataset.ctrlId && !e.target.closest('input')) {
+                    const bodyLine = row.querySelector('[data-ctrl-body]');
+                    if (bodyLine && bodyLine.contains(e.target)) return; // zone slider dépliée
+                    const cid = row.dataset.ctrlId;
+                    this._expandedCtrlId = this._expandedCtrlId === cid ? null : cid;
+                    this._lastToggledCtrlId = cid;
+                    this._lastToggledAt = Date.now();
+                    this._renderControlsList();
+                }
             });
 
             // Feather du mask (liste)

@@ -14,27 +14,9 @@ import { HolafPanelManager, dialogState } from '../holaf_panel_manager.js';
 import { getThumbnailUrl } from './image_viewer_gallery.js';
 import { getImageAt } from './image_viewer_data.js';
 
-function _applyEditorPreview(viewer, mediaEl) {
-    if (!viewer.editor || !mediaEl) return;
-
-    // Safety check for invalid sources
-    if (mediaEl.tagName === 'IMG' && (!mediaEl.src || mediaEl.src.endsWith('undefined'))) {
-        mediaEl.style.filter = 'none';
-        return;
-    }
-
-    const { currentState } = viewer.editor;
-    if (!currentState) {
-        mediaEl.style.filter = 'none';
-        if (mediaEl.tagName === 'VIDEO') mediaEl.playbackRate = 1.0;
-        return;
-    }
-
-    const filterValue = `brightness(${currentState.brightness}) contrast(${currentState.contrast}) saturate(${currentState.saturation})`;
-    mediaEl.style.filter = filterValue;
-
-    if (mediaEl.tagName === 'VIDEO') {
-        mediaEl.playbackRate = currentState.playbackRate;
+function _applyEditorPreview(viewer, element) {
+    if (viewer && viewer.editor && typeof viewer.editor.applyPreview === 'function') {
+        viewer.editor.applyPreview();
     }
 }
 
@@ -59,7 +41,7 @@ async function _handleUnsavedChanges(viewer) {
 }
 
 
-function resetTransform(state, element) {
+export function resetTransform(state, element) {
     if (!element) return;
     state.scale = 1;
     state.tx = 0;

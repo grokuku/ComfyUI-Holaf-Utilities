@@ -233,6 +233,17 @@ async def save_edits_route(request: web.Request):
             except Exception as e_thumb:
                 print(f"🟡 [Holaf-Edit] Thumbnail regeneration failed (non-fatal): {e_thumb}")
 
+            # ── Invalider le cache navigateur : nouveau thumb_hash ──
+            try:
+                conn2 = holaf_database.get_db_connection()
+                new_hash = hashlib.sha1((safe_path + str(time.time())).encode('utf-8')).hexdigest()[:12]
+                cursor2 = conn2.cursor()
+                cursor2.execute("UPDATE images SET thumb_hash = ? WHERE path_canon = ?", (new_hash, path_canon))
+                conn2.commit()
+                holaf_database.close_db_connection()
+            except Exception as e:
+                print(f"🟡 [Holaf-Edit] thumb_hash update failed: {e}")
+
         return web.json_response({"status": "ok", "message": "Edits saved successfully"})
 
     except json.JSONDecodeError:
