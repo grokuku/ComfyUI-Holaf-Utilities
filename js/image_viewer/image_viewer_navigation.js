@@ -50,7 +50,15 @@ export function resetTransform(state, element) {
     element.style.cursor = 'grab';
     element.style.transformOrigin = '0 0'; // Ensure origin is consistent
     const maskOv = document.getElementById('holaf-mask-overlay');
-    if (maskOv) maskOv.style.transform = element.style.transform;
+    if (maskOv) {
+        maskOv.style.transform = element.style.transform;
+        // FIX: synchronise aussi la transition, sinon l'img glisse (transform .2s)
+        // pendant que l'overlay saute instantanément → décalage visible au zoom/pan.
+        // Fallback sur la valeur calculée : l'img a une transition CSS par défaut
+        // (`#holaf-viewer-zoom-view img { transition: transform .2s ease-out }`) qui
+        // n'apparaît PAS dans le style inline.
+        maskOv.style.transition = element.style.transition || getComputedStyle(element).transition || 'none';
+    }
 }
 
 // --- Batch preload: load N images ahead when user stops navigating ---
@@ -635,7 +643,13 @@ export function setupZoomAndPan(state, container, element) {
     const updateTransform = () => {
         element.style.transform = `translate(${state.tx}px,${state.ty}px) scale(${state.scale})`;
         const maskOv = document.getElementById('holaf-mask-overlay');
-        if (maskOv) maskOv.style.transform = element.style.transform;
+        if (maskOv) {
+            maskOv.style.transform = element.style.transform;
+            // FIX: reflète aussi la transition de l'img (inline 'none' pendant le
+            // drag, 'transform .2s ease-out' au relâchement, sinon la valeur CSS
+            // calculée) pour que l'overlay anime exactement en phase avec l'image.
+            maskOv.style.transition = element.style.transition || getComputedStyle(element).transition || 'none';
+        }
     };
 
     // Attach wheel event to the container (the viewport)

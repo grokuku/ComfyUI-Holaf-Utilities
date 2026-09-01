@@ -871,7 +871,12 @@ export class ImageEditor {
         this._maskTransformObserver = new MutationObserver(() => {
             const ov = document.getElementById('holaf-mask-overlay');
             const im = this._maskImageEl();
-            if (ov && im) ov.style.transform = im.style.transform || 'none';
+            if (ov && im) {
+                ov.style.transform = im.style.transform || 'none';
+                // FIX: reflète aussi la transition effective de l'img (inline ou CSS)
+                // pour rester en phase avec elle pendant zoom/pan.
+                ov.style.transition = im.style.transition || getComputedStyle(im).transition || 'none';
+            }
         });
         if (img) this._maskTransformObserver.observe(img, { attributes: true, attributeFilter: ['style'] });
     }
@@ -889,7 +894,7 @@ export class ImageEditor {
         }
         const r = this._maskImageRect(img);
         overlay.width = r.width; overlay.height = r.height;
-        overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;pointer-events:none;opacity:0.45;`;
+        overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;pointer-events:none;opacity:0.45;transition:none;`;
         overlay.style.transform = img.style.transform || 'none';
         overlay.style.transformOrigin = '0 0';
         const ctx = overlay.getContext('2d');
@@ -920,7 +925,7 @@ export class ImageEditor {
         if (!overlay.parentNode) zoomView.appendChild(overlay);
         const r = this._maskImageRect(img);
         overlay.width = r.width; overlay.height = r.height;
-        overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;cursor:crosshair;opacity:0.5;`;
+        overlay.style.cssText = `position:absolute;left:${(img.offsetLeft || 0) + r.dx}px;top:${(img.offsetTop || 0) + r.dy}px;z-index:60;cursor:crosshair;opacity:0.5;transition:none;`;
         overlay.style.transform = img.style.transform || 'none';
         overlay.style.transformOrigin = '0 0';
         const octx = overlay.getContext('2d');
