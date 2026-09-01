@@ -1004,14 +1004,22 @@ def _migrate_edit_data(edit_data):
     return edit_data  # No known keys, return as-is
 
 
-def apply_edits_to_image(image, edit_data, mask_image=None):
+def apply_edits_to_image(image, edit_data, mask_images=None):
     """
     Applies adjustments (brightness, contrast, saturation, hue, blur, pixelate,
     vignette, sharpen) to a PIL Image. Supports both old flat format and new
     controls array format.
 
-    ``mask_image`` (optionnel, image 'L') : quand un mask est défini, tous les
-    effets ne s'appliquent QUE dans le mask (feather global appliqué ici).
+    ``mask_images`` (optionnel) : dict { file: PIL Image 'L' } des masks
+    référencés par les contrôles de type 'mask'. Pour rétro-compatibilité, un
+    ancien paramètre ``mask_image`` (image 'L' unique) est aussi accepté et
+    converti en dict { file: image }.
+
+    Les masks sont des éléments ORDONNÉS de la pipeline : un contrôle de type
+    'mask' change la zone active pour les contrôles suivants. Le traitement se
+    fait par SEGMENTS : le résultat d'un segment est composité avec l'entrée du
+    segment par le mask du segment (featheré). Un mask suivant REMPLACE la zone
+    active pour les segments suivants.
     """
     if not isinstance(edit_data, dict):
         return image
@@ -1023,91 +1031,134 @@ def apply_edits_to_image(image, edit_data, mask_image=None):
     if not controls:
         return image
 
+    # Rétro-compat : ancien paramètre mask_image (image 'L' unique) → dict
+    if mask_images is not None and not isinstance(mask_images, dict):
+        mask_images = {'__legacy__': mask_images}
+
+    # Segmente les contrôles aux entrées type=='mask'
+    segments = []
+    cur = {'mask_ctrl': None, 'controls': []}
+    for control in controls:
+        if control.get('type') == 'mask':
+            if cur['controls'] or cur['mask_ctrl']:
+                segments.append(cur)
+            cur = {'mask_ctrl': control, 'controls': []}
+        else:
+            cur['controls'].append(control)
+    if cur['controls'] or cur['mask_ctrl']:
+        segments.append(cur)
+
     result = image.copy()
 
-    for control in controls:
-        ctype = control.get('type')
-        value = control.get('value')
-        range_type = control.get('range', 'all')
+    for seg in segments:
+        seg_controls = seg['controls']
+        mask_ctrl = seg['mask_ctrl']
+        if not seg_controls and not mask_ctrl:
+            continue
 
-        if ctype == 'brightness':
-            if range_type == 'all':
-                result = ImageEnhance.Brightness(result).enhance(float(value))
-            else:
-                mask = _get_luminance_mask(image, range_type)
-                if mask:
-                    adjusted = ImageEnhance.Brightness(image.copy()).enhance(float(value))
-                    result = Image.composite(adjusted, result, mask)
+        # Entrée du segment (avant application des contrôles du segment)
+        base = result.copy()
 
-        elif ctype == 'contrast':
-            if range_type == 'all':
-                result = ImageEnhance.Contrast(result).enhance(float(value))
-            else:
-                mask = _get_luminance_mask(image, range_type)
-                if mask:
-                    adjusted = ImageEnhance.Contrast(image.copy()).enhance(float(value))
-                    result = Image.composite(adjusted, result, mask)
+        for control in seg_controls:
+            ctype = control.get('type')
+            value = control.get('value')
+            range_type = control.get('range', 'all')
 
-        elif ctype == 'saturation':
-            if range_type == 'all':
-                result = ImageEnhance.Color(result).enhance(float(value))
-            else:
-                mask = _get_luminance_mask(image, range_type)
-                if mask:
-                    adjusted = ImageEnhance.Color(image.copy()).enhance(float(value))
-                    result = Image.composite(adjusted, result, mask)
-
-        elif ctype == 'hue' and value != 0:
-            try:
-                hue_deg = float(value)
-
-                def _apply_hue(img):
-                    img_hsv = img.convert('HSV')
-                    h, s, v = img_hsv.split()
-                    shift = int((hue_deg % 360) * (255 / 360))
-                    h = h.point(lambda i: (i + shift) % 255)
-                    return Image.merge('HSV', (h, s, v)).convert('RGB')
-
+            if ctype == 'brightness':
                 if range_type == 'all':
-                    result = _apply_hue(result)
+                    result = ImageEnhance.Brightness(result).enhance(float(value))
                 else:
-                    mask = _get_luminance_mask(image, range_type)
+                    mask = _get_luminance_mask(result, range_type)
                     if mask:
-                        adjusted = _apply_hue(image.copy())
+                        adjusted = ImageEnhance.Brightness(result.copy()).enhance(float(value))
                         result = Image.composite(adjusted, result, mask)
+
+            elif ctype == 'contrast':
+                if range_type == 'all':
+                    result = ImageEnhance.Contrast(result).enhance(float(value))
+                else:
+                    mask = _get_luminance_mask(result, range_type)
+                    if mask:
+                        adjusted = ImageEnhance.Contrast(result.copy()).enhance(float(value))
+                        result = Image.composite(adjusted, result, mask)
+
+            elif ctype == 'saturation':
+                if range_type == 'all':
+                    result = ImageEnhance.Color(result).enhance(float(value))
+                else:
+                    mask = _get_luminance_mask(result, range_type)
+                    if mask:
+                        adjusted = ImageEnhance.Color(result.copy()).enhance(float(value))
+                        result = Image.composite(adjusted, result, mask)
+
+            elif ctype == 'hue' and value != 0:
+                try:
+                    hue_deg = float(value)
+
+                    def _apply_hue(img):
+                        img_hsv = img.convert('HSV')
+                        h, s, v = img_hsv.split()
+                        shift = int((hue_deg % 360) * (255 / 360))
+                        h = h.point(lambda i: (i + shift) % 255)
+                        return Image.merge('HSV', (h, s, v)).convert('RGB')
+
+                    if range_type == 'all':
+                        result = _apply_hue(result)
+                    else:
+                        mask = _get_luminance_mask(result, range_type)
+                        if mask:
+                            adjusted = _apply_hue(result.copy())
+                            result = Image.composite(adjusted, result, mask)
+                except Exception as e:
+                    print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
+
+            elif ctype == 'blur':
+                radius = max(0.0, float(value))
+                if radius > 0:
+                    result = result.filter(ImageFilter.GaussianBlur(radius))
+
+            elif ctype == 'pixelate':
+                size = max(2, int(value))
+                w, h = result.size
+                result = result.resize((max(1, w // size), max(1, h // size)), Image.Resampling.NEAREST)
+                result = result.resize((w, h), Image.Resampling.NEAREST)
+
+            elif ctype == 'vignette':
+                result = _apply_vignette(result, float(value))
+
+            elif ctype == 'sharpen':
+                amount = float(value)
+                if amount > 0:
+                    result = result.filter(ImageFilter.UnsharpMask(radius=2, percent=round(min(300, amount * 100)), threshold=2))
+
+        # ── Composite avec le mask du segment (featheré) ──
+        if mask_ctrl and mask_images:
+            try:
+                file_ref = mask_ctrl.get('file')
+                mask_image = mask_images.get(file_ref) if file_ref else None
+                if mask_image is not None:
+                    feather = float(mask_ctrl.get('value', 0) or 0)
+                    if feather > 0:
+                        mask_image = mask_image.filter(ImageFilter.GaussianBlur(feather))
+                    if mask_image.size != result.size:
+                        mask_image = mask_image.resize(result.size, Image.Resampling.BILINEAR)
+                    result = Image.composite(result, base, mask_image)
             except Exception as e:
-                print(f"🟡 [Holaf-Logic] Failed to apply Hue adjustment: {e}")
+                print(f"🟡 [Holaf-Logic] Failed to apply edit mask: {e}")
 
-        elif ctype == 'blur':
-            radius = max(0.0, float(value))
-            if radius > 0:
-                result = result.filter(ImageFilter.GaussianBlur(radius))
-
-        elif ctype == 'pixelate':
-            size = max(2, int(value))
-            w, h = result.size
-            result = result.resize((max(1, w // size), max(1, h // size)), Image.Resampling.NEAREST)
-            result = result.resize((w, h), Image.Resampling.NEAREST)
-
-        elif ctype == 'vignette':
-            result = _apply_vignette(result, float(value))
-
-        elif ctype == 'sharpen':
-            amount = float(value)
-            if amount > 0:
-                result = result.filter(ImageFilter.UnsharpMask(radius=2, percent=round(min(300, amount * 100)), threshold=2))
-
-    # ── Mask : les effets ne s'appliquent que dans le mask (feather global) ──
-    if mask_image is not None:
+    # Rétro-compat : ancien mask_image unique (sans contrôle 'mask') → appliqué
+    # globalement sur le résultat final (comme l'ancien comportement).
+    if mask_images is not None and '__legacy__' in mask_images:
         try:
+            legacy_mask = mask_images['__legacy__']
             feather = float(((edit_data.get('mask') or {}).get('feather', 0) or 0))
             if feather > 0:
-                mask_image = mask_image.filter(ImageFilter.GaussianBlur(feather))
-            if mask_image.size != result.size:
-                mask_image = mask_image.resize(result.size, Image.Resampling.BILINEAR)
-            result = Image.composite(result, image, mask_image)
+                legacy_mask = legacy_mask.filter(ImageFilter.GaussianBlur(feather))
+            if legacy_mask.size != result.size:
+                legacy_mask = legacy_mask.resize(result.size, Image.Resampling.BILINEAR)
+            result = Image.composite(result, image, legacy_mask)
         except Exception as e:
-            print(f"🟡 [Holaf-Logic] Failed to apply edit mask: {e}")
+            print(f"🟡 [Holaf-Logic] Failed to apply legacy edit mask: {e}")
 
     return result
 
@@ -1134,23 +1185,28 @@ def _apply_vignette(img, intensity):
 
 
 def _load_edit_mask(edit_data, original_path_abs):
-    """Charge le mask PNG (éventuel) référencé par le .edt.
+    """Charge les PNG de mask référencés par les contrôles de type 'mask' du .edt.
 
-    Le champ ``mask.file`` est relatif au dossier de l'image
-    (ex: ``edit/<nom>_mask.png``). Retourne une image 'L' (0-255) ou None.
+    Retourne un dict { file: PIL Image 'L' } pour tous les contrôles de type
+    'mask' ayant un champ ``file`` (chemin relatif au dossier de l'image,
+    ex: ``edit/<nom>_mask_<id>.png``). Retourne {} si aucun.
     """
+    masks = {}
     try:
-        mask_info = (edit_data or {}).get('mask') or {}
-        file_ref = mask_info.get('file')
-        if not file_ref:
-            return None
-        mask_path = os.path.normpath(os.path.join(os.path.dirname(original_path_abs), str(file_ref)))
-        if not os.path.isfile(mask_path):
-            return None
-        return Image.open(mask_path).convert('L')
+        controls = (edit_data or {}).get('controls') or []
+        for control in controls:
+            if control.get('type') != 'mask':
+                continue
+            file_ref = control.get('file')
+            if not file_ref:
+                continue
+            mask_path = os.path.normpath(os.path.join(os.path.dirname(original_path_abs), str(file_ref)))
+            if not os.path.isfile(mask_path):
+                continue
+            masks[file_ref] = Image.open(mask_path).convert('L')
     except Exception as e:
-        print(f"🟡 [Holaf-Logic] Failed to load edit mask: {e}")
-        return None
+        print(f"🟡 [Holaf-Logic] Failed to load edit masks: {e}")
+    return masks
 
 
 def build_ffmpeg_filter_string(edit_data):
@@ -1158,6 +1214,8 @@ def build_ffmpeg_filter_string(edit_data):
     Translates edit_data into an FFmpeg filter string (-vf).
     Supports both old flat format and new controls array format.
     Ranges are ignored (FFmpeg can't do luminance masking).
+    Masks (contrôles de type 'mask') sont ignorés en vidéo : FFmpeg ne peut pas
+    appliquer de masks bitmap par pixel dans un filtre simple -vf.
     """
     if not edit_data:
         return ""

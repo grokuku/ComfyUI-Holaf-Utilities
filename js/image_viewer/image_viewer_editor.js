@@ -117,6 +117,7 @@ const DEFAULT_EDIT_STATE = () => ({
 });
 
 let _ctrlIdCounter = 0;
+let _maskIdCounter = 0;
 
 export class ImageEditor {
     constructor(viewer) {
@@ -130,6 +131,9 @@ export class ImageEditor {
         // État UI de la liste : contrôle déplié + visibilité de l'overlay mask
         this._expandedCtrlId = null;
         this._maskHidden = false;
+        // Masks multiples : map id→canvas full-res + id du mask dont l'overlay est affiché
+        this._maskCanvases = {};
+        this._activeOverlayMaskId = null;
         this._lastToggledCtrlId = null; // mémo pour le dblclick reset après re-render
         this._lastToggledAt = 0;
     }
@@ -222,6 +226,8 @@ export class ImageEditor {
         // Nouvelle image → UI de liste fraîche : tout replié, overlay mask visible
         this._expandedCtrlId = null;
         this._maskHidden = false;
+        this._maskCanvases = {};
+        this._activeOverlayMaskId = null;
         this._updateUIFromState();
         this.applyPreview();
         await this._loadEditsForCurrentImage();
@@ -238,7 +244,8 @@ export class ImageEditor {
         if (ov) ov.remove();
         if (this._maskBar) { this._maskBar.remove(); this._maskBar = null; }
         this._maskOverlay = null;
-        this._maskPreview = null;
+        this._maskCanvases = {};
+        this._activeOverlayMaskId = null;
         this.activeImage = null;
     }
 
@@ -275,20 +282,29 @@ export class ImageEditor {
                         this.currentState.controls = d.edits.controls.map(c => ({ ...c }));
                     }
                 }
-                // ── Mask : charger le PNG serveur dans un canvas de préview ──
-                this._maskPreview = null;
-                if (d.edits && d.edits.mask && d.edits.mask_base64) {
-                    const img = new Image();
-                    img.onload = () => {
-                        const c = document.createElement('canvas');
-                        c.width = img.naturalWidth;
-                        c.height = img.naturalHeight;
-                        c.getContext('2d').drawImage(img, 0, 0);
-                        this._maskPreview = c;
-                        if (!this._maskHidden) this._showMaskOverlay();
-                        this.applyPreview();
-                    };
-                    img.src = d.edits.mask_base64;
+                // ── Masks multiples : charger le PNG de CHAQUE contrôle type 'mask' ──
+                this._maskCanvases = {};
+                this._activeOverlayMaskId = null;
+                const maskControls = (this.currentState.controls || []).filter(c => c.type === 'mask');
+                if (maskControls.length) {
+                    let loaded = 0;
+                    maskControls.forEach((c) => {
+                        if (!c.mask_base64) { loaded++; return; }
+                        const img = new Image();
+                        img.onload = () => {
+                            const cv = document.createElement('canvas');
+                            cv.width = img.naturalWidth;
+                            cv.height = img.naturalHeight;
+                            cv.getContext('2d').drawImage(img, 0, 0);
+                            this._maskCanvases[c.id] = cv;
+                            // Affiche l'overlay du dernier mask actif
+                            this._activeOverlayMaskId = c.id;
+                            if (!this._maskHidden) this._showMaskOverlay(c.id);
+                            this.applyPreview();
+                        };
+                        img.onerror = () => { loaded++; if (loaded === maskControls.length) this.applyPreview(); };
+                        img.src = c.mask_base64;
+                    });
                 } else {
                     const ov = document.getElementById('holaf-mask-overlay');
                     if (ov) ov.remove();
@@ -326,13 +342,24 @@ export class ImageEditor {
             this.currentState.playbackRate = this.currentState.targetFps / this.nativeFps;
 
         try {
-            // ── Mask : inclure le PNG (data URL) pour la sauvegarde sidecar ──
-            const payload = { path_canon: path, edits: this.currentState };
-            if (this.currentState.mask && this._maskPreview) {
-                payload.edits = { ...this.currentState, mask_base64: this._maskPreview.toDataURL('image/png') };
-            } else if (!this.currentState.mask) {
-                payload.edits = { ...this.currentState, mask: null };
+            // ── Masks multiples : inclure les PNG (data URL) dans mask_layers ──
+            const maskLayers = {};
+            for (const c of this.currentState.controls || []) {
+                if (c.type === 'mask' && this._maskCanvases[c.id]) {
+                    maskLayers[c.id] = this._maskCanvases[c.id].toDataURL('image/png');
+                }
             }
+            // Ne pas muter currentState.controls avec les base64 : on les met dans
+            // une structure séparée payload.mask_layers. On retire aussi les
+            // mask_base64 injectés au load (le serveur les re-injecte au prochain load).
+            const editsPayload = {
+                ...this.currentState,
+                controls: (this.currentState.controls || []).map(c => {
+                    const { mask_base64, ...rest } = c;
+                    return rest;
+                }),
+            };
+            const payload = { path_canon: path, edits: editsPayload, mask_layers: maskLayers };
             const r = await fetch('/holaf/images/save-edits', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -422,8 +449,7 @@ export class ImageEditor {
     _requiresCanvasPreview() {
         if (this.nativeFps > 0) return false;
         const spatial = ['blur', 'pixelate', 'vignette', 'sharpen'];
-        return (this.currentState.controls || []).some(c => spatial.includes(c.type))
-            || !!this.currentState.mask;
+        return (this.currentState.controls || []).some(c => spatial.includes(c.type) || c.type === 'mask');
     }
 
     async _processRangedPreviewOnCanvas(els) {
@@ -450,146 +476,46 @@ export class ImageEditor {
                 this._previewCanvas.getContext('2d').drawImage(loadImg, 0, 0, pw, ph);
                 this._originalImgData = this._previewCanvas.getContext('2d').getImageData(0, 0, pw, ph);
             }
-            const src = this._originalImgData.data, w = this._previewCanvas.width, h = this._previewCanvas.height;
-            const dst = new Uint8ClampedArray(src.length);
+            const w = this._previewCanvas.width, h = this._previewCanvas.height;
             const controls = this.currentState.controls || [];
-            const allControls = controls.filter(c => (c.range || 'all') === 'all');
-            const rangedControls = controls.filter(c => (c.range || 'all') !== 'all');
-            const hasRanged = rangedControls.length > 0;
-            const len = src.length;
 
-            for (let i = 0; i < len; i += 4) {
-                let r = src[i], g = src[i + 1], b = src[i + 2];
-                const a0 = src[i + 3];
-                for (let ci = 0; ci < allControls.length; ci++) {
-                    const ctrl = allControls[ci]; const val = ctrl.value;
-                    if (ctrl.type === 'brightness') { r *= val; g *= val; b *= val; }
-                    else if (ctrl.type === 'contrast') { r = 128 + (r - 128) * val; g = 128 + (g - 128) * val; b = 128 + (b - 128) * val; }
-                    else if (ctrl.type === 'saturation') { const gr = 0.299 * r + 0.587 * g + 0.114 * b; r = gr + (r - gr) * val; g = gr + (g - gr) * val; b = gr + (b - gr) * val; }
-                    else if (ctrl.type === 'hue') {
-                        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-                        let hh; if (d === 0) hh = 0; else if (mx === r) hh = ((g - b) / d) % 6; else if (mx === g) hh = (b - r) / d + 2; else hh = (r - g) / d + 4;
-                        hh = hh * 60; if (hh < 0) hh += 360;
-                        const ss = mx === 0 ? 0 : d / mx, vv = mx;
-                        let nH = (hh + val) % 360; if (nH < 0) nH += 360;
-                        const c = vv * ss, x = c * (1 - Math.abs((nH / 60) % 2 - 1)), m = vv - c;
-                        let nr2, ng2, nb2;
-                        if (nH < 60) { nr2 = c; ng2 = x; nb2 = 0; } else if (nH < 120) { nr2 = x; ng2 = c; nb2 = 0; } else if (nH < 180) { nr2 = 0; ng2 = c; nb2 = x; } else if (nH < 240) { nr2 = 0; ng2 = x; nb2 = c; } else if (nH < 300) { nr2 = x; ng2 = 0; nb2 = c; } else { nr2 = c; ng2 = 0; nb2 = x; }
-                        r = nr2 + m; g = ng2 + m; b = nb2 + m;
+            // ── Segmentation : découpe aux entrées type=='mask' ─────────────
+            const segments = [];
+            let cur = { maskCtrl: null, controls: [] };
+            for (const c of controls) {
+                if (c.type === 'mask') {
+                    if (cur.controls.length || cur.maskCtrl) segments.push(cur);
+                    cur = { maskCtrl: c, controls: [] };
+                } else {
+                    cur.controls.push(c);
+                }
+            }
+            if (cur.controls.length || cur.maskCtrl) segments.push(cur);
+
+            // Le résultat démarre sur l'original
+            const resultCanvas = this._cloneCanvas(this._previewCanvas);
+            const rctx = resultCanvas.getContext('2d');
+
+            for (const seg of segments) {
+                if (!seg.controls.length && !seg.maskCtrl) continue;
+                const baseCanvas = this._cloneCanvas(resultCanvas);
+                // Contrôles par pixel (brightness/contrast/saturation/hue + ranges)
+                const srcData = rctx.getImageData(0, 0, w, h);
+                rctx.putImageData(this._applyPixelControls(srcData, w, h, seg.controls), 0, 0);
+                // Effets spatiaux (pixelate/blur/vignette/sharpen)
+                this._applySpatialEffects(resultCanvas, seg.controls);
+                // Composite avec le mask du segment (featheré)
+                if (seg.maskCtrl) {
+                    const maskCanvas = this._maskCanvases[seg.maskCtrl.id];
+                    if (maskCanvas) {
+                        this._compositeWithMask(resultCanvas, baseCanvas, maskCanvas, seg.maskCtrl.value || 0);
                     }
                 }
-                if (hasRanged) {
-                    const oR = src[i], oG = src[i + 1], oB = src[i + 2];
-                    const origLum = 0.299 * oR + 0.587 * oG + 0.114 * oB;
-                    for (let ci = 0; ci < rangedControls.length; ci++) {
-                        const ctrl = rangedControls[ci]; const val = ctrl.value;
-                        const weight = this._luminanceWeight(origLum, ctrl.range);
-                        if (weight <= 0) continue;
-                        if (ctrl.type === 'brightness') { r += (oR * val - oR) * weight; g += (oG * val - oG) * weight; b += (oB * val - oB) * weight; }
-                        else if (ctrl.type === 'contrast') { r += (128 + (oR - 128) * val - oR) * weight; g += (128 + (oG - 128) * val - oG) * weight; b += (128 + (oB - 128) * val - oB) * weight; }
-                        else if (ctrl.type === 'saturation') { const oGr = 0.299 * oR + 0.587 * oG + 0.114 * oB; r += (oGr + (oR - oGr) * val - oR) * weight; g += (oGr + (oG - oGr) * val - oG) * weight; b += (oGr + (oB - oGr) * val - oB) * weight; }
-                        else if (ctrl.type === 'hue') {
-                            const mx = Math.max(oR, oG, oB), mn = Math.min(oR, oG, oB), d = mx - mn;
-                            let hh; if (d === 0) hh = 0; else if (mx === oR) hh = ((oG - oB) / d) % 6; else if (mx === oG) hh = (oB - oR) / d + 2; else hh = (oR - oG) / d + 4;
-                            hh = hh * 60; if (hh < 0) hh += 360;
-                            const ss = mx === 0 ? 0 : d / mx, vv = mx;
-                            let nH = (hh + val) % 360; if (nH < 0) nH += 360;
-                            const c = vv * ss, x = c * (1 - Math.abs((nH / 60) % 2 - 1)), m = vv - c;
-                            let nr2, ng2, nb2;
-                            if (nH < 60) { nr2 = c; ng2 = x; nb2 = 0; } else if (nH < 120) { nr2 = x; ng2 = c; nb2 = 0; } else if (nH < 180) { nr2 = 0; ng2 = c; nb2 = x; } else if (nH < 240) { nr2 = 0; ng2 = x; nb2 = c; } else if (nH < 300) { nr2 = x; ng2 = 0; nb2 = c; } else { nr2 = c; ng2 = 0; nb2 = x; }
-                            r += (nr2 + m - oR) * weight; g += (ng2 + m - oG) * weight; b += (nb2 + m - oB) * weight;
-                        }
-                    }
-                }
-                dst[i] = Math.round(r); dst[i+1] = Math.round(g); dst[i+2] = Math.round(b); dst[i+3] = a0;
             }
 
-            this._previewCanvas.getContext('2d').putImageData(new ImageData(dst, w, h), 0, 0);
-
-            // ── Effets spatiaux (canvas) + mask ─────────────────────────────
-            const ctx2 = this._previewCanvas.getContext('2d');
-            const controls2 = this.currentState.controls || [];
-
-            // Pixelate : downscale + upscale NEAREST
-            const pix = controls2.find(c => c.type === 'pixelate' && c.value > 1);
-            if (pix) {
-                const s = Math.max(2, pix.value);
-                const tmp = document.createElement('canvas');
-                tmp.width = Math.max(1, Math.round(w / s));
-                tmp.height = Math.max(1, Math.round(h / s));
-                const tctx = tmp.getContext('2d');
-                tctx.imageSmoothingEnabled = false;
-                tctx.drawImage(this._previewCanvas, 0, 0, tmp.width, tmp.height);
-                ctx2.imageSmoothingEnabled = false;
-                ctx2.drawImage(tmp, 0, 0, w, h);
-                ctx2.imageSmoothingEnabled = true;
-            }
-
-            // Blur : ctx.filter
-            const blr = controls2.find(c => c.type === 'blur' && c.value > 0);
-            if (blr) {
-                ctx2.filter = `blur(${Math.max(0.5, blr.value)}px)`;
-                ctx2.drawImage(this._previewCanvas, 0, 0);
-                ctx2.filter = 'none';
-            }
-
-            // Vignette : assombrissement radial
-            const vig = controls2.find(c => c.type === 'vignette' && c.value > 0);
-            if (vig) {
-                const cx = w / 2, cy = h / 2;
-                const maxR = Math.sqrt(cx * cx + cy * cy) * 1.05;
-                const grad = ctx2.createRadialGradient(cx, cy, maxR * 0.35, cx, cy, maxR);
-                grad.addColorStop(0, 'rgba(0,0,0,0)');
-                grad.addColorStop(1, `rgba(0,0,0,${Math.min(0.85, vig.value * 0.7)})`);
-                ctx2.fillStyle = grad;
-                ctx2.fillRect(0, 0, w, h);
-            }
-
-            // Sharpen : unsharp mask (original + (original - flou) * quantité)
-            const shp = controls2.find(c => c.type === 'sharpen' && c.value > 0);
-            if (shp) {
-                const tmp = document.createElement('canvas');
-                tmp.width = w; tmp.height = h;
-                const tctx = tmp.getContext('2d');
-                tctx.filter = 'blur(2px)';
-                tctx.drawImage(this._previewCanvas, 0, 0);
-                tctx.filter = 'none';
-                const cur = ctx2.getImageData(0, 0, w, h).data;
-                const blrD = tctx.getImageData(0, 0, w, h).data;
-                const out = new Uint8ClampedArray(cur.length);
-                const amount = Math.min(3, shp.value);
-                for (let i = 0; i < cur.length; i += 4) {
-                    for (let ch = 0; ch < 3; ch++) {
-                        const d = cur[i + ch] - blrD[i + ch];
-                        out[i + ch] = Math.max(0, Math.min(255, cur[i + ch] + d * amount));
-                    }
-                    out[i + 3] = cur[i + 3];
-                }
-                ctx2.putImageData(new ImageData(out, w, h), 0, 0);
-            }
-
-            // ── Mask : les effets ne s'appliquent que dans le mask (featheré) ──
-            if (this._maskPreview) {
-                const maskCanvas = document.createElement('canvas');
-                maskCanvas.width = w; maskCanvas.height = h;
-                const mctx = maskCanvas.getContext('2d');
-                const feather = (this.currentState.mask && this.currentState.mask.feather) || 0;
-                if (feather > 0) { mctx.filter = `blur(${feather}px)`; }
-                mctx.drawImage(this._maskPreview, 0, 0, w, h);
-                mctx.filter = 'none';
-                const maskData = mctx.getImageData(0, 0, w, h).data;
-                const cur = ctx2.getImageData(0, 0, w, h).data;
-                const orig = this._originalImgData.data;
-                const out = new Uint8ClampedArray(cur.length);
-                for (let i = 0; i < cur.length; i += 4) {
-                    const ma = maskData[i] / 255; // 0 (hors mask) → 1 (dans mask)
-                    out[i] = orig[i] * (1 - ma) + cur[i] * ma;
-                    out[i + 1] = orig[i + 1] * (1 - ma) + cur[i + 1] * ma;
-                    out[i + 2] = orig[i + 2] * (1 - ma) + cur[i + 2] * ma;
-                    out[i + 3] = cur[i + 3];
-                }
-                ctx2.putImageData(new ImageData(out, w, h), 0, 0);
-            }
+            // Copie le résultat dans _previewCanvas pour la génération du blob
+            this._previewCanvas.getContext('2d').clearRect(0, 0, w, h);
+            this._previewCanvas.getContext('2d').drawImage(resultCanvas, 0, 0);
 
             const blob = await new Promise(r => this._previewCanvas.toBlob(r, 'image/jpeg', 0.92));
             if (!blob) return;
@@ -602,6 +528,151 @@ export class ImageEditor {
         } finally {
             this._rangedPreviewPending = false;
         }
+    }
+
+    // Applique les contrôles par pixel (brightness/contrast/saturation/hue) à un
+    // ImageData source, en tenant compte des plages (ranges) de luminance.
+    _applyPixelControls(srcData, w, h, controls) {
+        const data = srcData.data;
+        const dst = new Uint8ClampedArray(data.length);
+        const allControls = controls.filter(c => (c.range || 'all') === 'all');
+        const rangedControls = controls.filter(c => (c.range || 'all') !== 'all');
+        const hasRanged = rangedControls.length > 0;
+        const len = data.length;
+        for (let i = 0; i < len; i += 4) {
+            let r = data[i], g = data[i + 1], b = data[i + 2];
+            const a0 = data[i + 3];
+            for (let ci = 0; ci < allControls.length; ci++) {
+                const ctrl = allControls[ci]; const val = ctrl.value;
+                if (ctrl.type === 'brightness') { r *= val; g *= val; b *= val; }
+                else if (ctrl.type === 'contrast') { r = 128 + (r - 128) * val; g = 128 + (g - 128) * val; b = 128 + (b - 128) * val; }
+                else if (ctrl.type === 'saturation') { const gr = 0.299 * r + 0.587 * g + 0.114 * b; r = gr + (r - gr) * val; g = gr + (g - gr) * val; b = gr + (b - gr) * val; }
+                else if (ctrl.type === 'hue') {
+                    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+                    let hh; if (d === 0) hh = 0; else if (mx === r) hh = ((g - b) / d) % 6; else if (mx === g) hh = (b - r) / d + 2; else hh = (r - g) / d + 4;
+                    hh = hh * 60; if (hh < 0) hh += 360;
+                    const ss = mx === 0 ? 0 : d / mx, vv = mx;
+                    let nH = (hh + val) % 360; if (nH < 0) nH += 360;
+                    const c = vv * ss, x = c * (1 - Math.abs((nH / 60) % 2 - 1)), m = vv - c;
+                    let nr2, ng2, nb2;
+                    if (nH < 60) { nr2 = c; ng2 = x; nb2 = 0; } else if (nH < 120) { nr2 = x; ng2 = c; nb2 = 0; } else if (nH < 180) { nr2 = 0; ng2 = c; nb2 = x; } else if (nH < 240) { nr2 = 0; ng2 = x; nb2 = c; } else if (nH < 300) { nr2 = x; ng2 = 0; nb2 = c; } else { nr2 = c; ng2 = 0; nb2 = x; }
+                    r = nr2 + m; g = ng2 + m; b = nb2 + m;
+                }
+            }
+            if (hasRanged) {
+                const oR = data[i], oG = data[i + 1], oB = data[i + 2];
+                const origLum = 0.299 * oR + 0.587 * oG + 0.114 * oB;
+                for (let ci = 0; ci < rangedControls.length; ci++) {
+                    const ctrl = rangedControls[ci]; const val = ctrl.value;
+                    const weight = this._luminanceWeight(origLum, ctrl.range);
+                    if (weight <= 0) continue;
+                    if (ctrl.type === 'brightness') { r += (oR * val - oR) * weight; g += (oG * val - oG) * weight; b += (oB * val - oB) * weight; }
+                    else if (ctrl.type === 'contrast') { r += (128 + (oR - 128) * val - oR) * weight; g += (128 + (oG - 128) * val - oG) * weight; b += (128 + (oB - 128) * val - oB) * weight; }
+                    else if (ctrl.type === 'saturation') { const oGr = 0.299 * oR + 0.587 * oG + 0.114 * oB; r += (oGr + (oR - oGr) * val - oR) * weight; g += (oGr + (oG - oGr) * val - oG) * weight; b += (oGr + (oB - oGr) * val - oB) * weight; }
+                    else if (ctrl.type === 'hue') {
+                        const mx = Math.max(oR, oG, oB), mn = Math.min(oR, oG, oB), d = mx - mn;
+                        let hh; if (d === 0) hh = 0; else if (mx === oR) hh = ((oG - oB) / d) % 6; else if (mx === oG) hh = (oB - oR) / d + 2; else hh = (oR - oG) / d + 4;
+                        hh = hh * 60; if (hh < 0) hh += 360;
+                        const ss = mx === 0 ? 0 : d / mx, vv = mx;
+                        let nH = (hh + val) % 360; if (nH < 0) nH += 360;
+                        const c = vv * ss, x = c * (1 - Math.abs((nH / 60) % 2 - 1)), m = vv - c;
+                        let nr2, ng2, nb2;
+                        if (nH < 60) { nr2 = c; ng2 = x; nb2 = 0; } else if (nH < 120) { nr2 = x; ng2 = c; nb2 = 0; } else if (nH < 180) { nr2 = 0; ng2 = c; nb2 = x; } else if (nH < 240) { nr2 = 0; ng2 = x; nb2 = c; } else if (nH < 300) { nr2 = x; ng2 = 0; nb2 = c; } else { nr2 = c; ng2 = 0; nb2 = x; }
+                        r += (nr2 + m - oR) * weight; g += (ng2 + m - oG) * weight; b += (nb2 + m - oB) * weight;
+                    }
+                }
+            }
+            dst[i] = Math.round(r); dst[i+1] = Math.round(g); dst[i+2] = Math.round(b); dst[i+3] = a0;
+        }
+        return new ImageData(dst, w, h);
+    }
+
+    // Applique les effets spatiaux (pixelate/blur/vignette/sharpen) sur un canvas.
+    _applySpatialEffects(canvas, controls) {
+        const w = canvas.width, h = canvas.height;
+        const ctx = canvas.getContext('2d');
+
+        // Pixelate : downscale + upscale NEAREST
+        const pix = controls.find(c => c.type === 'pixelate' && c.value > 1);
+        if (pix) {
+            const s = Math.max(2, pix.value);
+            const tmp = document.createElement('canvas');
+            tmp.width = Math.max(1, Math.round(w / s));
+            tmp.height = Math.max(1, Math.round(h / s));
+            const tctx = tmp.getContext('2d');
+            tctx.imageSmoothingEnabled = false;
+            tctx.drawImage(canvas, 0, 0, tmp.width, tmp.height);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(tmp, 0, 0, w, h);
+            ctx.imageSmoothingEnabled = true;
+        }
+
+        // Blur : ctx.filter
+        const blr = controls.find(c => c.type === 'blur' && c.value > 0);
+        if (blr) {
+            ctx.filter = `blur(${Math.max(0.5, blr.value)}px)`;
+            ctx.drawImage(canvas, 0, 0);
+            ctx.filter = 'none';
+        }
+
+        // Vignette : assombrissement radial
+        const vig = controls.find(c => c.type === 'vignette' && c.value > 0);
+        if (vig) {
+            const cx = w / 2, cy = h / 2;
+            const maxR = Math.sqrt(cx * cx + cy * cy) * 1.05;
+            const grad = ctx.createRadialGradient(cx, cy, maxR * 0.35, cx, cy, maxR);
+            grad.addColorStop(0, 'rgba(0,0,0,0)');
+            grad.addColorStop(1, `rgba(0,0,0,${Math.min(0.85, vig.value * 0.7)})`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+        }
+
+        // Sharpen : unsharp mask (original + (original - flou) * quantité)
+        const shp = controls.find(c => c.type === 'sharpen' && c.value > 0);
+        if (shp) {
+            const tmp = document.createElement('canvas');
+            tmp.width = w; tmp.height = h;
+            const tctx = tmp.getContext('2d');
+            tctx.filter = 'blur(2px)';
+            tctx.drawImage(canvas, 0, 0);
+            tctx.filter = 'none';
+            const cur = ctx.getImageData(0, 0, w, h).data;
+            const blrD = tctx.getImageData(0, 0, w, h).data;
+            const out = new Uint8ClampedArray(cur.length);
+            const amount = Math.min(3, shp.value);
+            for (let i = 0; i < cur.length; i += 4) {
+                for (let ch = 0; ch < 3; ch++) {
+                    const d = cur[i + ch] - blrD[i + ch];
+                    out[i + ch] = Math.max(0, Math.min(255, cur[i + ch] + d * amount));
+                }
+                out[i + 3] = cur[i + 3];
+            }
+            ctx.putImageData(new ImageData(out, w, h), 0, 0);
+        }
+    }
+
+    // Composite resultCanvas avec baseCanvas via le mask (featheré) : hors mask,
+    // on garde la base (entrée du segment).
+    _compositeWithMask(resultCanvas, baseCanvas, maskCanvas, feather) {
+        const w = resultCanvas.width, h = resultCanvas.height;
+        const maskC = document.createElement('canvas');
+        maskC.width = w; maskC.height = h;
+        const mctx = maskC.getContext('2d');
+        if (feather > 0) { mctx.filter = `blur(${feather}px)`; }
+        mctx.drawImage(maskCanvas, 0, 0, w, h);
+        mctx.filter = 'none';
+        const maskData = mctx.getImageData(0, 0, w, h).data;
+        const cur = resultCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+        const base = baseCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+        const out = new Uint8ClampedArray(cur.length);
+        for (let i = 0; i < cur.length; i += 4) {
+            const ma = maskData[i] / 255; // 0 (hors mask) → 1 (dans mask)
+            out[i] = base[i] * (1 - ma) + cur[i] * ma;
+            out[i + 1] = base[i + 1] * (1 - ma) + cur[i + 1] * ma;
+            out[i + 2] = base[i + 2] * (1 - ma) + cur[i + 2] * ma;
+            out[i + 3] = cur[i + 3];
+        }
+        resultCanvas.getContext('2d').putImageData(new ImageData(out, w, h), 0, 0);
     }
 
     _luminanceWeight(lum, range) {
@@ -638,9 +709,38 @@ export class ImageEditor {
         this._scheduleAutoSave();
     }
 
+    // Crée un NOUVEAU layer mask (élément ordonné de la pipeline) et ouvre son éditeur.
+    _addMaskLayer() {
+        if (!this.activeImage) return;
+        _maskIdCounter++;
+        const id = 'm_' + _maskIdCounter;
+        this.currentState.controls = [...this.currentState.controls, { type: 'mask', id, value: 0 }];
+        // Canvas vierge full-res (taille naturelle de l'image, cap 4096)
+        const img = this._maskImageEl();
+        const nw = (img && img.naturalWidth) || 0;
+        const nh = (img && img.naturalHeight) || 0;
+        const maxDim = 4096;
+        const sc = Math.min(1, maxDim / Math.max(nw, nh));
+        const fw = Math.max(1, Math.round(nw * sc));
+        const fh = Math.max(1, Math.round(nh * sc));
+        const c = document.createElement('canvas');
+        c.width = fw; c.height = fh;
+        this._maskCanvases[id] = c;
+        this._expandedCtrlId = id;
+        this._updateUIFromState();
+        this._openMaskEditor(id);
+    }
+
     _removeControl(ctrlId) {
         this.currentState.controls = this.currentState.controls.filter(c => c.id !== ctrlId);
         if (this._expandedCtrlId === ctrlId) this._expandedCtrlId = null;
+        // Suppression d'un layer mask : retire le canvas + l'overlay éventuel
+        if (this._maskCanvases[ctrlId]) delete this._maskCanvases[ctrlId];
+        if (this._activeOverlayMaskId === ctrlId) {
+            this._activeOverlayMaskId = null;
+            const ov = document.getElementById('holaf-mask-overlay');
+            if (ov) ov.remove();
+        }
         this._updateUIFromState();
         this.applyPreview();
         this._scheduleAutoSave();
@@ -651,74 +751,75 @@ export class ImageEditor {
         if (!container) return;
         const controls = this.currentState.controls || [];
 
-        let html = '';
-
-        // ── Ligne « Masque » (outil global, feather + édition + visibilité) ──
-        if (this.currentState.mask) {
-            const feather = this.currentState.mask.feather || 0;
-            html += `
-                <div class="holaf-editor-slider-container" data-mask-row style="grid-template-columns:80px 65px 1fr auto;">
-                    <label>🎭 ${t('iv.maskLabel')}</label>
-                    <span class="holaf-editor-range-label" style="font-size:11px;opacity:0.6;">${t('iv.featherLabel')}</span>
-                    <input type="range" min="0" max="50" step="1" value="${feather}" data-mask-feather>
-                    <div style="display:flex;align-items:center;gap:4px;">
-                        <span class="holaf-editor-slider-value" style="min-width:36px;">${Math.round(feather)}px</span>
-                        <button class="holaf-editor-remove-ctrl" data-mask-hide title="${t(this._maskHidden ? 'iv.showMask' : 'iv.hideMask')}"
-                                style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;">${this._maskHidden ? '🙈' : '👁'}</button>
-                        <button class="holaf-editor-remove-ctrl" data-mask-edit title="${t('iv.editMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-accent-color,#4682B4);padding:0 2px;font-size:14px;line-height:1;">✏️</button>
-                        <button class="holaf-editor-remove-ctrl" data-mask-clear title="${t('iv.clearMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">🗑</button>
-                    </div>
-                </div>
-                <div style="height:4px;"></div>`;
-        }
-
-        if (controls.length === 0 && !this.currentState.mask) {
+        if (controls.length === 0) {
             container.innerHTML = `<p style="opacity:0.5;font-size:12px;text-align:center;padding:12px 0;">${t('iv.noControlsYet')}</p>`;
             return;
         }
 
-        // Affichage compact 2 niveaux : ligne repliée (nom + plage + valeur +
-        // ordre + suppression, pas de slider) ; un clic sur la ligne déplie
-        // slider + plage + valeur en dessous (this._expandedCtrlId).
-        html += controls.map((c, idx) => {
+        const iconBtn = (attrs, glyph, extraStyle = '') =>
+            `<button class="holaf-editor-remove-ctrl" ${attrs} style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;${extraStyle}">${glyph}</button>`;
+
+        let html = '';
+        controls.forEach((c, idx) => {
+            const dimUp = idx === 0, dimDown = idx === controls.length - 1;
+            const upBtn = iconBtn(`data-ctrl-up title="${t('iv.moveUp')}"${dimUp ? ' disabled' : ''}`, '↑', dimUp ? 'opacity:.3;cursor:default;' : '');
+            const downBtn = iconBtn(`data-ctrl-down title="${t('iv.moveDown')}"${dimDown ? ' disabled' : ''}`, '↓', dimDown ? 'opacity:.3;cursor:default;' : '');
+
+            // ── Ligne « Mask » (layer ordonné de la pipeline) ──
+            if (c.type === 'mask') {
+                const feather = c.value || 0;
+                const hidden = this._activeOverlayMaskId !== c.id;
+                html += `
+                    <div class="holaf-editor-slider-container" data-mask-id="${c.id}" data-ctrl-id="${c.id}" style="grid-template-columns:80px 65px 1fr auto;">
+                        <label>🎭 ${t('iv.maskLabel')}</label>
+                        <span class="holaf-editor-range-label" style="font-size:11px;opacity:0.6;">${t('iv.featherLabel')}</span>
+                        <input type="range" min="0" max="50" step="1" value="${feather}" data-mask-feather>
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            <span class="holaf-editor-slider-value" style="min-width:36px;">${Math.round(feather)}px</span>
+                            ${upBtn}${downBtn}
+                            <button class="holaf-editor-remove-ctrl" data-mask-hide title="${t(hidden ? 'iv.showMask' : 'iv.hideMask')}" style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;">${hidden ? '🙈' : '👁'}</button>
+                            <button class="holaf-editor-remove-ctrl" data-mask-edit title="${t('iv.editMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-accent-color,#4682B4);padding:0 2px;font-size:14px;line-height:1;">✏️</button>
+                            <button class="holaf-editor-remove-ctrl" data-mask-clear title="${t('iv.clearMask')}" style="background:none;border:none;cursor:pointer;color:var(--holaf-error-color,#c44);padding:0 2px;font-size:14px;line-height:1;">🗑</button>
+                        </div>
+                    </div>
+                    <div style="height:4px;"></div>`;
+                return;
+            }
+
             const def = CONTROL_TYPES.find(t => t.id === c.type);
-            if (!def) return '';
+            if (!def) return;
             const meta = _ctrlSliderMeta(def, c.value);
             const rangeLabel = c.range === 'all' ? t('iv.all') : c.range.charAt(0).toUpperCase() + c.range.slice(1);
             const rangeStyle = c.range === 'all' ? 'opacity:0.5;' : 'color:var(--holaf-accent-color,#4682B4);font-weight:bold;';
             const expanded = this._expandedCtrlId === c.id;
-            const iconBtn = (attrs, glyph, extraStyle = '') =>
-                `<button class="holaf-editor-remove-ctrl" ${attrs} style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:14px;line-height:1;${extraStyle}">${glyph}</button>`;
-            const dimUp = idx === 0, dimDown = idx === controls.length - 1;
-            const upBtn = iconBtn(`data-ctrl-up title="${t('iv.moveUp')}"${dimUp ? ' disabled' : ''}`, '↑', dimUp ? 'opacity:.3;cursor:default;' : '');
-            const downBtn = iconBtn(`data-ctrl-down title="${t('iv.moveDown')}"${dimDown ? ' disabled' : ''}`, '↓', dimDown ? 'opacity:.3;cursor:default;' : '');
             const delBtn = iconBtn(`data-ctrl-id="${c.id}" title="${t('iv.removeCtrlTitle', { label: _controlTypeLabel(c.type) })}"`, '✕', 'color:var(--holaf-error-color,#c44);');
             const nameStyle = 'text-align:left;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
 
             if (!expanded) {
                 // Replié : pas de slider — clic sur la ligne (hors boutons) pour déplier
-                return `
+                html += `
                     <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}" style="display:flex;align-items:center;gap:6px;">
                         <label style="${nameStyle}">${_controlTypeLabel(c.type)}</label>
                         <span class="holaf-editor-range-label" style="font-size:11px;flex-shrink:0;${rangeStyle}">${rangeLabel}</span>
                         <span class="holaf-editor-slider-value" style="min-width:36px;flex-shrink:0;">${meta.display}</span>
                         ${upBtn}${downBtn}${delBtn}
                     </div>`;
+            } else {
+                // Déplié : en-tête (nom + ordre + suppression) + slider/plage/valeur en dessous
+                html += `
+                    <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}" style="display:block;padding:2px 0;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <label style="${nameStyle}">${_controlTypeLabel(c.type)}</label>
+                            ${upBtn}${downBtn}${delBtn}
+                        </div>
+                        <div data-ctrl-body style="display:flex;align-items:center;gap:6px;margin-top:3px;">
+                            <span class="holaf-editor-range-label" style="font-size:11px;flex-shrink:0;${rangeStyle}">${rangeLabel}</span>
+                            <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${meta.sliderVal}" style="flex-grow:1;min-width:0;margin:0;">
+                            <span class="holaf-editor-slider-value" style="min-width:36px;flex-shrink:0;">${meta.display}</span>
+                        </div>
+                    </div>`;
             }
-            // Déplié : en-tête (nom + ordre + suppression) + slider/plage/valeur en dessous
-            return `
-                <div class="holaf-editor-slider-container" data-ctrl-id="${c.id}" style="display:block;padding:2px 0;">
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <label style="${nameStyle}">${_controlTypeLabel(c.type)}</label>
-                        ${upBtn}${downBtn}${delBtn}
-                    </div>
-                    <div data-ctrl-body style="display:flex;align-items:center;gap:6px;margin-top:3px;">
-                        <span class="holaf-editor-range-label" style="font-size:11px;flex-shrink:0;${rangeStyle}">${rangeLabel}</span>
-                        <input type="range" min="${def.min}" max="${def.max}" step="${def.step}" value="${meta.sliderVal}" style="flex-grow:1;min-width:0;margin:0;">
-                        <span class="holaf-editor-slider-value" style="min-width:36px;flex-shrink:0;">${meta.display}</span>
-                    </div>
-                </div>`;
-        }).join('');
+        });
 
         container.innerHTML = html;
     }
@@ -744,10 +845,11 @@ export class ImageEditor {
         };
     }
 
-    _showMaskOverlay() {
+    _showMaskOverlay(maskId) {
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const img = this._maskImageEl();
-        if (!zoomView || !img || !this._maskPreview) return;
+        const maskCanvas = this._maskCanvases[maskId];
+        if (!zoomView || !img || !maskCanvas) return;
         let overlay = document.getElementById('holaf-mask-overlay');
         if (!overlay) {
             overlay = document.createElement('canvas');
@@ -761,10 +863,11 @@ export class ImageEditor {
         overlay.style.transformOrigin = '0 0';
         const ctx = overlay.getContext('2d');
         ctx.clearRect(0, 0, overlay.width, overlay.height);
-        ctx.drawImage(this._maskPreview, 0, 0, overlay.width, overlay.height);
+        ctx.drawImage(maskCanvas, 0, 0, overlay.width, overlay.height);
+        this._activeOverlayMaskId = maskId;
     }
 
-    _openMaskEditor() {
+    _openMaskEditor(maskId) {
         if (!this.activeImage) return;
         const zoomView = document.getElementById('holaf-viewer-zoom-view');
         const img = this._maskImageEl();
@@ -790,7 +893,10 @@ export class ImageEditor {
         overlay.style.transformOrigin = '0 0';
         const octx = overlay.getContext('2d');
         octx.clearRect(0, 0, overlay.width, overlay.height);
-        if (this._maskPreview) octx.drawImage(this._maskPreview, 0, 0, overlay.width, overlay.height);
+        if (this._maskCanvases[maskId]) octx.drawImage(this._maskCanvases[maskId], 0, 0, overlay.width, overlay.height);
+
+        const maskCtrl = this.currentState.controls.find(c => c.id === maskId);
+        const feather = (maskCtrl && maskCtrl.value) || 0;
 
         const bar = document.createElement('div');
         bar.id = 'holaf-mask-toolbar';
@@ -802,7 +908,7 @@ export class ImageEditor {
             <button data-mask-tool="erase" class="comfy-button" style="padding:3px 8px;">🧽 ${t('iv.maskErase')}</button>
             <button data-mask-clear class="comfy-button" style="padding:3px 8px;">🗑 ${t('iv.maskClear')}</button>
             <span style="opacity:.7;margin-left:6px;">${t('iv.featherLabel')}</span>
-            <input type="range" data-mask-feather-edit min="0" max="50" step="1" value="${(this.currentState.mask && this.currentState.mask.feather) || 0}" style="width:80px;">
+            <input type="range" data-mask-feather-edit min="0" max="50" step="1" value="${feather}" style="width:80px;">
             <button data-mask-ok class="comfy-button" style="padding:3px 10px;background:var(--holaf-accent-color,#4682B4);color:#fff;">${t('iv.maskValidate')}</button>
             <button data-mask-cancel class="comfy-button" style="padding:3px 10px;">${t('iv.cancel')}</button>
         `;
@@ -811,9 +917,10 @@ export class ImageEditor {
         this._maskOverlay = overlay;
         this._maskBar = bar;
         this._maskTool = 'rect';
-        this._maskFeather = (this.currentState.mask && this.currentState.mask.feather) || 0;
-        this._maskPrev = this.currentState.mask ? { ...this.currentState.mask } : null;
-        this._maskPrevPreview = this._maskPreview ? this._cloneCanvas(this._maskPreview) : null;
+        this._maskFeather = feather;
+        this._maskPrev = maskCtrl ? { ...maskCtrl } : null;
+        this._maskPrevCanvas = this._maskCanvases[maskId] ? this._cloneCanvas(this._maskCanvases[maskId]) : null;
+        this._activeMaskId = maskId;
 
         bar.addEventListener('click', (e) => {
             const tool = e.target.closest('[data-mask-tool]');
@@ -941,23 +1048,25 @@ export class ImageEditor {
     }
 
     _finishMaskEditor(commit) {
-        if (commit && this._maskOverlay) {
-            this._maskPreview = this._bakeMaskToFull();
-            this.currentState.mask = {
-                feather: this._maskFeather || 0,
-                file: (this.currentState.mask && this.currentState.mask.file) || undefined,
-            };
+        if (commit && this._maskOverlay && this._activeMaskId) {
+            this._maskCanvases[this._activeMaskId] = this._bakeMaskToFull();
+            const maskCtrl = this.currentState.controls.find(c => c.id === this._activeMaskId);
+            if (maskCtrl) maskCtrl.value = this._maskFeather || 0;
             // overlay → affichage passif du mask
             this._maskOverlay.style.pointerEvents = 'none';
             this._maskOverlay.style.opacity = '0.45';
             this._maskOverlay.style.cursor = 'default';
+            this._activeOverlayMaskId = this._activeMaskId;
             this._scheduleAutoSave();
             this.applyPreview();
             this._updateUIFromState();
         } else {
-            // annulation : restaure l'état précédent
-            this.currentState.mask = this._maskPrev ? { ...this._maskPrev } : null;
-            this._maskPreview = this._maskPrevPreview;
+            // annulation : restaure l'état précédent du layer
+            if (this._activeMaskId) {
+                if (this._maskPrevCanvas) this._maskCanvases[this._activeMaskId] = this._maskPrevCanvas;
+                const maskCtrl = this.currentState.controls.find(c => c.id === this._activeMaskId);
+                if (maskCtrl && this._maskPrev) maskCtrl.value = this._maskPrev.value;
+            }
             if (this._maskOverlay) { this._maskOverlay.remove(); }
         }
         if (this._maskBar) { this._maskBar.remove(); this._maskBar = null; }
@@ -965,20 +1074,11 @@ export class ImageEditor {
         this._maskBar = null;
         this._maskSnap = null;
         this._maskPath = null;
+        this._activeMaskId = null;
         // Annulation : restaure l'affichage passif du mask précédent (sauf s'il
         // est volontairement caché via le bouton 👁)
-        if (!this._maskHidden && this._maskPreview && !document.getElementById('holaf-mask-overlay'))
-            this._showMaskOverlay();
-        this.applyPreview();
-        this._updateUIFromState();
-    }
-
-    _clearMask() {
-        this.currentState.mask = null;
-        this._maskPreview = null;
-        const ov = document.getElementById('holaf-mask-overlay');
-        if (ov) ov.remove();
-        this._scheduleAutoSave();
+        if (!this._maskHidden && this._activeOverlayMaskId && this._maskCanvases[this._activeOverlayMaskId] && !document.getElementById('holaf-mask-overlay'))
+            this._showMaskOverlay(this._activeOverlayMaskId);
         this.applyPreview();
         this._updateUIFromState();
     }
@@ -1020,24 +1120,17 @@ export class ImageEditor {
                         .filter((ct) => ct.category === cat.id)
                         .map((ct) => ({ id: ct.id, label: _controlTypeLabel(ct.id) })),
                 })).filter((g) => g.items.length > 0);
-                // Item spécial « Masque » (outil global, pas un contrôle de réglage)
-                if (this.currentState.mask) {
-                    groups.push({
-                        label: t('iv.maskGroup'),
-                        items: [{ id: 'mask', label: t('iv.editMask') }],
-                    });
-                } else {
-                    groups.push({
-                        label: t('iv.maskGroup'),
-                        items: [{ id: 'mask', label: t('iv.createMask') }],
-                    });
-                }
+                // Item spécial « Masque » : crée toujours un NOUVEAU layer mask
+                groups.push({
+                    label: t('iv.maskGroup'),
+                    items: [{ id: 'mask', label: t('iv.createMask') }],
+                });
                 const chosenType = await _pickFromList(t('iv.addControlTitle'), groups);
                 if (!chosenType) return;
 
-                // Masque : outil global → ouvre l'éditeur de mask
+                // Masque : crée un nouveau layer mask et ouvre son éditeur
                 if (chosenType === 'mask') {
-                    this._openMaskEditor();
+                    this._addMaskLayer();
                     return;
                 }
 
@@ -1103,14 +1196,26 @@ export class ImageEditor {
             list.addEventListener('click', (e) => {
                 const btn = e.target.closest('.holaf-editor-remove-ctrl');
                 if (btn) {
-                    if (btn.hasAttribute('data-mask-edit')) { this._openMaskEditor(); return; }
-                    if (btn.hasAttribute('data-mask-clear')) { this._clearMask(); return; }
+                    if (btn.hasAttribute('data-mask-edit')) {
+                        const row = btn.closest('[data-mask-id]');
+                        this._openMaskEditor(row?.dataset.maskId);
+                        return;
+                    }
+                    if (btn.hasAttribute('data-mask-clear')) {
+                        const row = btn.closest('[data-mask-id]');
+                        this._removeControl(row?.dataset.maskId);
+                        return;
+                    }
                     if (btn.hasAttribute('data-mask-hide')) {
-                        this._maskHidden = !this._maskHidden;
-                        if (this._maskHidden) {
+                        const row = btn.closest('[data-mask-id]');
+                        const mid = row?.dataset.maskId;
+                        if (this._activeOverlayMaskId === mid) {
+                            this._activeOverlayMaskId = null;
                             const ov = document.getElementById('holaf-mask-overlay');
                             if (ov) ov.remove();
-                        } else this._showMaskOverlay();
+                        } else {
+                            this._showMaskOverlay(mid);
+                        }
                         this._updateUIFromState();
                         return;
                     }
@@ -1146,13 +1251,17 @@ export class ImageEditor {
                 }
             });
 
-            // Feather du mask (liste)
+            // Feather du mask (liste) — un slider par layer mask
             list.addEventListener('input', (e) => {
                 const f = e.target.closest('[data-mask-feather]');
-                if (!f || !this.currentState.mask) return;
-                this.currentState.mask.feather = parseFloat(f.value) || 0;
-                const valEl = e.target.parentNode.querySelector('.holaf-editor-slider-value');
-                if (valEl) valEl.textContent = this.currentState.mask.feather + 'px';
+                if (!f) return;
+                const row = f.closest('[data-mask-id]');
+                const mid = row?.dataset.maskId;
+                const ctrl = this.currentState.controls.find(c => c.id === mid);
+                if (!ctrl) return;
+                ctrl.value = parseFloat(f.value) || 0;
+                const valEl = f.parentNode.querySelector('.holaf-editor-slider-value');
+                if (valEl) valEl.textContent = ctrl.value + 'px';
                 this._schedulePreview();
                 this._scheduleAutoSave();
             });
@@ -1216,6 +1325,10 @@ export class ImageEditor {
 
             this.currentState = DEFAULT_EDIT_STATE();
             if (this.nativeFps > 0) this.currentState.targetFps = this.nativeFps;
+            this._maskCanvases = {};
+            this._activeOverlayMaskId = null;
+            const ov = document.getElementById('holaf-mask-overlay');
+            if (ov) ov.remove();
             this.processedVideoUrl = null;
             this._dispatchVideoOverride(null);
             this._clearCanvasCache();

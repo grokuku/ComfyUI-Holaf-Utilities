@@ -81,18 +81,25 @@ async def load_edits_route(request: web.Request):
                 content = await f.read()
                 edit_data = json.loads(content)
 
-        # ── Mask : renvoyer le PNG au frontend (data URL) pour affichage/édition ──
-        if isinstance(edit_data, dict) and edit_data.get('mask', {}).get('file'):
-            try:
-                import base64
-                mask_path = os.path.normpath(
-                    os.path.join(os.path.dirname(new_path), os.path.basename(edit_data['mask']['file']))
-                )
-                if os.path.isfile(mask_path):
-                    with open(mask_path, 'rb') as mf:
-                        edit_data['mask_base64'] = 'data:image/png;base64,' + base64.b64encode(mf.read()).decode('ascii')
-            except Exception as e:
-                print(f"🟡 [Holaf-Edit] Failed to load mask image: {e}")
+        # ── Masks multiples : renvoyer le PNG de chaque contrôle type 'mask' (data URL) ──
+        if isinstance(edit_data, dict):
+            controls = edit_data.get('controls') or []
+            for ctrl in controls:
+                if ctrl.get('type') != 'mask' or not ctrl.get('file'):
+                    continue
+                try:
+                    import base64
+                    mask_path = os.path.normpath(
+                        os.path.join(os.path.dirname(new_path), os.path.basename(ctrl['file']))
+                    )
+                    if os.path.isfile(mask_path):
+                        with open(mask_path, 'rb') as mf:
+                            ctrl['mask_base64'] = 'data:image/png;base64,' + base64.b64encode(mf.read()).decode('ascii')
+                except Exception as e:
+                    print(f"🟡 [Holaf-Edit] Failed to load mask image: {e}")
+            # Retirer l'ancien champ mask unique / mask_base64 de niveau edits
+            edit_data.pop('mask', None)
+            edit_data.pop('mask_base64', None)
 
         # --- ENRICH WITH METADATA (FPS & SIDE-LOAD) ---
         response_data = {"status": "ok", "edits": edit_data}
@@ -151,33 +158,54 @@ async def save_edits_route(request: web.Request):
         if not new_path.startswith(os.path.normpath(output_dir)):
             return web.json_response({"status": "error", "message": "Forbidden path"}, status=403)
 
-        # ── Mask : écriture du PNG sidecar si le frontend envoie mask_base64 ──
+        # ── Masks multiples : écriture des PNG sidecar pour chaque contrôle type 'mask' ──
         base_name = os.path.splitext(os.path.basename(safe_path))[0]
-        mask_filename = f"{base_name}_mask.png"
+        mask_layers = data.get('mask_layers') or {}
         if isinstance(edits, dict):
-            mask_b64 = edits.pop('mask_base64', None)
-            if mask_b64:
-                import base64
-                if ',' in mask_b64:
-                    mask_b64 = mask_b64.split(',', 1)[1]
-                mask_abs = os.path.join(os.path.dirname(new_path), mask_filename)
-                with open(mask_abs, 'wb') as mf:
-                    mf.write(base64.b64decode(mask_b64))
-                feather = (edits.get('mask') or {}).get('feather', 0)
-                edits['mask'] = {"file": os.path.join(EDIT_DIR_NAME, mask_filename).replace("\\", "/"), "feather": feather}
-            elif edits.get('mask'):
-                # Mask existant (changement de feather) : préserver la référence fichier
-                if not edits['mask'].get('file'):
-                    edits['mask']['file'] = os.path.join(EDIT_DIR_NAME, mask_filename).replace("\\", "/")
-            else:
-                # Mask supprimé : retirer la référence + nettoyer le PNG orphelin
-                edits.pop('mask', None)
-                try:
-                    old_mask = os.path.join(os.path.dirname(new_path), mask_filename)
-                    if os.path.isfile(old_mask):
-                        os.remove(old_mask)
-                except Exception:
-                    pass
+            # Retirer l'ancien champ mask unique (remplacé par les entrées dans controls)
+            edits.pop('mask', None)
+            edits.pop('mask_base64', None)
+
+            controls = edits.get('controls') or []
+            active_mask_files = set()
+            for ctrl in controls:
+                if ctrl.get('type') != 'mask':
+                    continue
+                ctrl_id = ctrl.get('id')
+                data_url = mask_layers.get(ctrl_id)
+                if data_url:
+                    import base64
+                    if ',' in data_url:
+                        data_url = data_url.split(',', 1)[1]
+                    mask_filename = f"{base_name}_mask_{ctrl_id}.png"
+                    mask_abs = os.path.join(os.path.dirname(new_path), mask_filename)
+                    with open(mask_abs, 'wb') as mf:
+                        mf.write(base64.b64decode(data_url))
+                    ctrl['file'] = os.path.join(EDIT_DIR_NAME, mask_filename).replace("\\", "/")
+                # Sinon conserver ctrl.file existant
+                if ctrl.get('file'):
+                    active_mask_files.add(ctrl['file'])
+
+            # Nettoyage : supprimer les PNG mask_<*>_*.png qui ne correspondent plus
+            # à aucun contrôle mask actuel
+            try:
+                for fname in os.listdir(os.path.dirname(new_path)):
+                    if fname.startswith(f"{base_name}_mask_") and fname.endswith(".png"):
+                        rel = os.path.join(EDIT_DIR_NAME, fname).replace("\\", "/")
+                        if rel not in active_mask_files:
+                            try:
+                                os.remove(os.path.join(os.path.dirname(new_path), fname))
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            # Nettoyage de l'ancien mask unique (format pré-refactor)
+            try:
+                legacy_mask = os.path.join(os.path.dirname(new_path), f"{base_name}_mask.png")
+                if os.path.isfile(legacy_mask):
+                    os.remove(legacy_mask)
+            except Exception:
+                pass
 
         # Ensure 'edit' directory exists
         if not os.path.exists(edit_dir):
